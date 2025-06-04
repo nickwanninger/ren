@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cmath>
+#include <iomanip>
 #include <iostream>
 
 namespace ren {
@@ -98,7 +99,11 @@ inline float2 operator*(float s, const float2 &v) { return v * s; }
 
 // Stream output
 inline std::ostream &operator<<(std::ostream &os, const float2 &v) {
-  return os << "(" << v.x << ", " << v.y << ")";
+
+  std::cout << std::fixed << std::setprecision(6) << std::showpos;
+  os << "(" << v.x << ", " << v.y << ")";
+  os << std::defaultfloat << std::noshowpos;
+  return os;
 }
 
 struct float3 {
@@ -181,12 +186,20 @@ struct float3 {
   void normalize() { *this = normalized(); }
 };
 
+inline std::ostream &operator<<(std::ostream &os, const float3 &e) {
+  std::cout << std::fixed << std::setprecision(6) << std::showpos;
+  os << "(" << e.x << ", " << e.y << ", " << e.z << ")";
+  os << std::defaultfloat << std::noshowpos;
+  return os;
+}
+
 // 4x4 Matrix class (column-major storage like OpenGL)
 struct matrix4 {
   float m[16];
 
   // Constructors
   matrix4() { identity(); }
+
   matrix4(float diagonal) {
     for (int i = 0; i < 16; i++)
       m[i] = 0;
@@ -322,10 +335,22 @@ struct matrix4 {
     result.at(2, 3) = f.dot(eye);
     return result;
   }
+
+  matrix4 transpose() const {
+    matrix4 result;
+    for (int row = 0; row < 4; row++) {
+      for (int col = 0; col < 4; col++) {
+        result.at(row, col) = at(col, row);
+      }
+    }
+    return result;
+  }
 };
 
 // Stream output for matrix
 inline std::ostream &operator<<(std::ostream &os, const matrix4 &mat) {
+
+  std::cout << std::fixed << std::setprecision(6) << std::showpos;
   for (int row = 0; row < 4; row++) {
     os << "[";
     for (int col = 0; col < 4; col++) {
@@ -337,6 +362,7 @@ inline std::ostream &operator<<(std::ostream &os, const matrix4 &mat) {
     if (row < 3)
       os << "\n";
   }
+  os << std::defaultfloat << std::noshowpos;
   return os;
 }
 

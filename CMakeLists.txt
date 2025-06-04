@@ -1,8 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(ren 
-    VERSION 1.0.0
-    LANGUAGES CXX)
+project(ren C CXX)
 
 # Set C standard
 set(CMAKE_C_STANDARD 17)
@@ -11,13 +9,6 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Find OpenMP (optional)
-find_package(OpenMP)
-if(OpenMP_C_FOUND)
-  target_link_libraries(ren OpenMP::OpenMP_C)
-  message(STATUS "OpenMP found - parallel processing enabled")
-else()
-  message(STATUS "OpenMP not found - using single-threaded execution")
-endif()
 
 
 # Find SDL2
@@ -28,7 +19,27 @@ pkg_check_modules(SDL2 REQUIRED sdl2)
 add_executable(ren
   src/main.cpp
   src/RenderTarget.cpp
+
+  src/wren/optional/wren_opt_meta.c
+  src/wren/optional/wren_opt_random.c
+  src/wren/vm/wren_compiler.c
+  src/wren/vm/wren_core.c
+  src/wren/vm/wren_debug.c
+  src/wren/vm/wren_primitive.c
+  src/wren/vm/wren_utils.c
+  src/wren/vm/wren_value.c
+  src/wren/vm/wren_vm.c
 )
+
+
+
+find_package(OpenMP)
+if(OpenMP_C_FOUND)
+  target_link_libraries(ren OpenMP::OpenMP_C)
+  message(STATUS "OpenMP found - parallel processing enabled")
+else()
+  message(STATUS "OpenMP not found - using single-threaded execution")
+endif()
 
 # Link libraries
 target_link_libraries(ren 
@@ -40,12 +51,16 @@ target_link_libraries(ren
 target_include_directories(ren PRIVATE 
   ${SDL2_INCLUDE_DIRS}
   include/
+  src/wren/vm/
+  src/wren/optional/
 )
 
 # Compiler flags
 target_compile_options(ren PRIVATE 
     ${SDL2_CFLAGS_OTHER}
     -Wall
-    -Wextra
+    # -Wextra
+    -Wno-deprecated-declarations
+    -Wno-unused-parameter
     -O3
 )

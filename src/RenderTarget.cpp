@@ -17,9 +17,9 @@ static inline uint32_t linear_to_srgb(const float3 &linear_color) {
 
   // Apply sRGB gamma correction (approximation: gamma = 2.2)
   // More accurate sRGB conversion would use piecewise function
-  r = std::pow(r, 1.0f / 2.2f);
-  g = std::pow(g, 1.0f / 2.2f);
-  b = std::pow(b, 1.0f / 2.2f);
+  // r = std::pow(r, 1.0f / 2.2f);
+  // g = std::pow(g, 1.0f / 2.2f);
+  // b = std::pow(b, 1.0f / 2.2f);
 
   // Convert to 8-bit integers and pack into 32-bit RGBA
   uint8_t r8 = (uint8_t)(r * 255.0f + 0.5f);
@@ -33,6 +33,7 @@ static inline uint32_t linear_to_srgb(const float3 &linear_color) {
 }
 
 void RenderTarget::quantize_screen(uint32_t *bitmap) const {
+#pragma omp parallel for schedule(static)
   for (int y = 0; y < height; y++) {
     for (int x = 0; x < width; x++) {
       bitmap[y * width + x] = linear_to_srgb(pixels[y * width + x]);
@@ -41,6 +42,10 @@ void RenderTarget::quantize_screen(uint32_t *bitmap) const {
 }
 
 void RenderTarget::draw_line(float2 p0, float2 p1, float3 color) {
+
+  p0 = to_device(p0);
+  p1 = to_device(p1);
+
   // Bresenham's line algorithm
   int x0 = (int)p0.x;
   int y0 = (int)p0.y;
@@ -160,6 +165,12 @@ bool is_front_facing(const float2 &a, const float2 &b, const float2 &c) {
 }
 
 void RenderTarget::rasterize(float2 a, float2 b, float2 c) {
+
+  a = to_device(a);
+  b = to_device(b);
+  c = to_device(c);
+  
+  
   if (is_front_facing(a, b, c) == false) {
     // Backface culling: skip rasterization if triangle is back-facing
     return;

@@ -54,6 +54,17 @@ public:
     }
   }
 
+  float2 to_device(float2 p) const {
+    // Convert from normalized device coordinates to pixel coordinates
+    return float2((int)((p.x + 1.0f) * 0.5f * width),
+                  (int)((p.y + 1.0f) * 0.5f * height));
+  }
+
+  float2 from_device(float2 p) const {
+    // Convert from pixel coordinates to normalized device coordinates
+    return float2((p.x / width) * 2.0f - 1.0f, (p.y / height) * 2.0f - 1.0f);
+  }
+
   void quantize_screen(uint32_t *bitmap) const;
 
   // other helpful debug methods. These should not generally be used.
