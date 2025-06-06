@@ -3,7 +3,8 @@
 using namespace ren;
 
 RenderTarget::RenderTarget(int width, int height)
-    : width(width), height(height) {
+    : width(width)
+    , height(height) {
   pixels.resize(width * height);
   depth.resize(width * height);
 }
@@ -25,11 +26,10 @@ static inline uint32_t linear_to_srgb(const glm::vec3 &linear_color) {
   uint8_t r8 = (uint8_t)(r * 255.0f + 0.5f);
   uint8_t g8 = (uint8_t)(g * 255.0f + 0.5f);
   uint8_t b8 = (uint8_t)(b * 255.0f + 0.5f);
-  uint8_t a8 = 255; // Full alpha
+  uint8_t a8 = 255;  // Full alpha
 
   // Pack into 32-bit value (RGBA format)
-  return (uint32_t(a8) << 24) | (uint32_t(b8) << 16) | (uint32_t(g8) << 8) |
-         uint32_t(r8);
+  return (uint32_t(a8) << 24) | (uint32_t(b8) << 16) | (uint32_t(g8) << 8) | uint32_t(r8);
 }
 
 void RenderTarget::quantize_screen(uint32_t *bitmap) const {
@@ -42,7 +42,6 @@ void RenderTarget::quantize_screen(uint32_t *bitmap) const {
 }
 
 void RenderTarget::draw_line(glm::vec2 p0, glm::vec2 p1, glm::vec3 color) {
-
   p0 = to_device(p0);
   p1 = to_device(p1);
 
@@ -121,20 +120,24 @@ void RenderTarget::draw_line(glm::vec2 p0, glm::vec2 p1, glm::vec3 color) {
 
 // Fragment shader interface - receives barycentric coordinates and vertex
 // positions
-glm::vec3 shader(const glm::vec2 &pixel_pos, const glm::vec3 &bary_coords,
-              const glm::vec2 &v0, const glm::vec2 &v1, const glm::vec2 &v2) {
+glm::vec3 shader(const glm::vec2 &pixel_pos, const glm::vec3 &bary_coords, const glm::vec4 &v0, const glm::vec4 &v1,
+    const glm::vec4 &v2) {
+  // interpolate depth (z-coordinate) using barycentric coordinates
+  float z = v0.z * bary_coords.x + v1.z * bary_coords.y + v2.z * bary_coords.z;
+  z = 1.0f - z;
+
+  return glm::vec3(z, z, z);  // Return grayscale color based on depth
+
+
   // Example: interpolate colors based on barycentric coordinates
   // In a real system, you'd have vertex attributes (colors, UVs, normals, etc.)
-  glm::vec3 color0(1.0f, 0.0f, 0.0f); // Red at vertex 0
-  glm::vec3 color1(0.0f, 1.0f, 0.0f); // Green at vertex 1
-  glm::vec3 color2(0.0f, 0.0f, 1.0f); // Blue at vertex 2
+  glm::vec3 color0(1.0f, 0.0f, 0.0f);  // Red at vertex 0
+  glm::vec3 color1(0.0f, 1.0f, 0.0f);  // Green at vertex 1
+  glm::vec3 color2(0.0f, 0.0f, 1.0f);  // Blue at vertex 2
 
-  return glm::vec3(color0.x * bary_coords.x + color1.x * bary_coords.y +
-                    color2.x * bary_coords.z,
-                color0.y * bary_coords.x + color1.y * bary_coords.y +
-                    color2.y * bary_coords.z,
-                color0.z * bary_coords.x + color1.z * bary_coords.y +
-                    color2.z * bary_coords.z);
+  return glm::vec3(color0.x * bary_coords.x + color1.x * bary_coords.y + color2.x * bary_coords.z,
+      color0.y * bary_coords.x + color1.y * bary_coords.y + color2.y * bary_coords.z,
+      color0.z * bary_coords.x + color1.z * bary_coords.y + color2.z * bary_coords.z);
 }
 
 // Edge function for barycentric coordinate calculation
@@ -143,11 +146,9 @@ float edge_function(const glm::vec2 &a, const glm::vec2 &b, const glm::vec2 &c) 
 }
 
 // Calculate barycentric coordinates
-glm::vec3 barycentric(const glm::vec2 &p, const glm::vec2 &a, const glm::vec2 &b,
-                   const glm::vec2 &c) {
+glm::vec3 barycentric(const glm::vec2 &p, const glm::vec2 &a, const glm::vec2 &b, const glm::vec2 &c) {
   float area = edge_function(a, b, c);
-  if (std::abs(area) < 1e-6f)
-    return glm::vec3(0, 0, 0); // Degenerate triangle
+  if (std::abs(area) < 1e-6f) return glm::vec3(0, 0, 0);  // Degenerate triangle
 
   float w0 = edge_function(b, c, p) / area;
   float w1 = edge_function(c, a, p) / area;
@@ -164,8 +165,8 @@ bool is_front_facing(const glm::vec2 &a, const glm::vec2 &b, const glm::vec2 &c)
   return signed_area > 0.0f;
 }
 
-void RenderTarget::rasterize(glm::vec2 a, glm::vec2 b, glm::vec2 c) {
-  // glm::vec3 color = glm::vec3(1.0f, 1.0f, 1.0f);
+void RenderTarget::rasterize(glm::vec4 a, glm::vec4 b, glm::vec4 c) {
+  glm::vec3 color = glm::vec3(1.0f, 1.0f, 1.0f);
   // if (not is_front_facing(a, b, c)) {
   //   color.r = 1.0f;
   //   color.g = 0.0f;
@@ -179,11 +180,10 @@ void RenderTarget::rasterize(glm::vec2 a, glm::vec2 b, glm::vec2 c) {
   // return;
 
   // Backface culling: skip rasterization if triangle is back-facing
-  if (not is_front_facing(a, b, c))
-    return;
-  a = to_device(a);
-  b = to_device(b);
-  c = to_device(c);
+  // if (is_front_facing(a, b, c)) return;
+  auto aDev = to_device(a);
+  auto bDev = to_device(b);
+  auto cDev = to_device(c);
 
   const float left = 0;
   const float right = width - left;
@@ -191,19 +191,16 @@ void RenderTarget::rasterize(glm::vec2 a, glm::vec2 b, glm::vec2 c) {
   const float bottom = height - top;
 
   // get bounding box of the triangle (clamped to the screen bounds)
-  glm::vec2 min_xy = glm::vec2(std::min({a.x, b.x, c.x}), std::min({a.y, b.y, c.y}));
-  glm::vec2 max_xy = glm::vec2(std::max({a.x, b.x, c.x}), std::max({a.y, b.y, c.y}));
+  glm::vec2 min_xy = glm::vec2(std::min({aDev.x, bDev.x, cDev.x}), std::min({aDev.y, bDev.y, cDev.y}));
+  glm::vec2 max_xy = glm::vec2(std::max({aDev.x, bDev.x, cDev.x}), std::max({aDev.y, bDev.y, cDev.y}));
   min_xy.x = std::max(min_xy.x, left);
   min_xy.y = std::max(min_xy.y, top);
   max_xy.x = std::min(max_xy.x, right);
   max_xy.y = std::min(max_xy.y, bottom);
 
-  // draw_box(from_device(min_xy), from_device(max_xy),
-  // glm::vec3(1.0f, 1.0f, 1.0f));
+  if (min_xy.x > max_xy.x || min_xy.y > max_xy.y) { return; }
+  // draw_box(from_device(min_xy), from_device(max_xy), glm::vec3(1.0f, 1.0f, 1.0f));
 
-  if (min_xy.x > max_xy.x || min_xy.y > max_xy.y) {
-    return;
-  }
 
   int min_x = std::floor(min_xy.x);
   int min_y = std::floor(min_xy.y);
@@ -211,9 +208,8 @@ void RenderTarget::rasterize(glm::vec2 a, glm::vec2 b, glm::vec2 c) {
   int max_y = std::ceil(max_xy.y);
 
   // Calculate triangle area once (for barycentric coordinate normalization)
-  float area = edge_function(a, b, c);
-  if (std::abs(area) < 1e-6f)
-    return; // Skip degenerate triangles
+  float area = edge_function(aDev, bDev, cDev);
+  // if (std::abs(area) < 1e-6f) return;  // Skip degenerate triangles
 
   for (int y = min_y; y <= max_y; y++) {
     float scan_y = y + 0.5f;
@@ -222,9 +218,9 @@ void RenderTarget::rasterize(glm::vec2 a, glm::vec2 b, glm::vec2 c) {
       glm::vec2 pixel_pos(x + 0.5f, scan_y);
 
       // Calculate barycentric coordinates
-      float w0 = edge_function(b, c, pixel_pos) / area;
-      float w1 = edge_function(c, a, pixel_pos) / area;
-      float w2 = edge_function(a, b, pixel_pos) / area;
+      float w0 = edge_function(bDev, cDev, pixel_pos) / area;
+      float w1 = edge_function(cDev, aDev, pixel_pos) / area;
+      float w2 = edge_function(aDev, bDev, pixel_pos) / area;
 
       // Check if point is inside triangle (all barycentric coords >= 0)
       if (w0 >= 0 && w1 >= 0 && w2 >= 0) {
@@ -232,11 +228,94 @@ void RenderTarget::rasterize(glm::vec2 a, glm::vec2 b, glm::vec2 c) {
         //   x_start = x; // First valid pixel
         // x_end = x;     // Update last valid pixel
 
+
+
+
         // Call shader and set pixel
         glm::vec3 bary_coords(w0, w1, w2);
-        glm::vec3 color = shader(pixel_pos, bary_coords, a, b, c);
-        pix(x, y) = color;
+
+        float z = a.z * bary_coords.x + b.z * bary_coords.y + c.z * bary_coords.z;
+        z = 1.0f - z;  // Convert to depth value (0 at near plane, 1 at far plane)
+        if (depth[y * width + x] < z) {
+          // Update depth buffer
+          depth[y * width + x] = z;
+        } else {
+          // Skip pixel if depth test fails
+          continue;
+        }
+
+        pix(x, y) = shader(pixel_pos, bary_coords, a, b, c);
       }
     }
+  }
+}
+
+
+
+
+void RenderTarget::rasterizeClip(glm::vec4 a, glm::vec4 b, glm::vec4 c) {
+  std::vector<glm::vec4> input = {a, b, c};
+  std::vector<glm::vec4> out;
+
+  auto isVisible = [](const glm::vec4 &v) {
+    // Check if vertex is in front of near plane (visible)
+    return v.z > 0;  // Negative Z is forward in view space
+  };
+  auto getDistance = [](const glm::vec4 &v) {
+    // Get signed distance from vertex to near plane
+    return v.z;  // Near plane at z = -w
+  };
+
+  auto toNDC = [](const glm::vec4 &v) { return v / v.w; };
+
+  auto computeIntersection = [&](const glm::vec4 &v1, const glm::vec4 &v2) {
+    // Compute intersection point between edge and near plane
+    float d1 = getDistance(v1);
+    float d2 = getDistance(v2);
+
+    // Parametric intersection: t = d1 / (d1 - d2)
+    float t = d1 / (d1 - d2);
+    return glm::mix(v1, v2, t);
+  };
+
+  auto prev = input.back();
+  bool prevVisible = isVisible(prev);
+
+  for (auto &current : input) {
+    bool currentVisible = isVisible(current);
+
+    if (currentVisible) {
+      if (!prevVisible) {
+        // Entering visible region - add intersection
+        out.push_back(computeIntersection(prev, current));
+      }
+      // Add current vertex
+      out.push_back(current);
+    } else if (prevVisible) {
+      // Exiting visible region - add intersection
+      out.push_back(computeIntersection(prev, current));
+    }
+    // If both invisible, add nothing
+
+    prev = current;
+    prevVisible = currentVisible;
+  }
+
+
+  // for (auto &v : out) {
+  //   // Convert to NDC (Normalized Device Coordinates)
+  //   draw_circle(toNDC(v), 0.01f, glm::vec3(1.0f, 0.0f, 1.0f));  // Magenta for debug
+  // }
+
+
+  if (out.size() == 3) {
+    // No clipping required! Just rasterize the triangle
+    rasterize(toNDC(out[0]), toNDC(out[1]), toNDC(out[2]));  // Convert to NDC
+  } else if (out.size() == 4) {
+    // quad - split into two triangles
+    rasterize(toNDC(out[0]), toNDC(out[1]), toNDC(out[2]));  // Triangle 1
+    rasterize(toNDC(out[0]), toNDC(out[2]), toNDC(out[3]));  // Triangle 2
+  } else {
+    //
   }
 }

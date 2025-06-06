@@ -99,9 +99,6 @@ struct Camera {
     }
     if (keys[SDL_SCANCODE_SPACE]) { position.y += speed; }
     if (keys[SDL_SCANCODE_LSHIFT]) { position.y -= speed; }
-    std::cout << "speed:  " << speed << std::endl;
-    std::cout << "angles: " << angles << std::endl;
-    std::cout << "posn:   " << position << std::endl;
   }
 };
 
@@ -225,32 +222,34 @@ void render(RenderTarget &targ, int frame) {
   glm::vec2 mouse_pos = targ.from_device(glm::vec2(mouse_x / (float)WINDOW_SCALE, mouse_y / (float)WINDOW_SCALE));
 
   (void)frame;
-  targ.clear(glm::vec3(0.0));
 
-  float fNear = 0.01f;
-  float fFar = 10.0f;
-  float fFov = 90.0f;
+  // clear to sky blue
+  targ.clear(glm::vec3(0.5f, 0.7f, 1.0f));
+
+  float fNear = 0.1f;
+  float fFar = 1000.0f;
+  float wScale = 1.0f;
+  float fFov = 90.0f / wScale;
   float fAspectRatio = (float)targ.width / (float)targ.height;
+
+
+
 
   NearPlaneClipper clipper(fNear);
 
   glm::mat4 view = camera.view_matrix();
   glm::mat4 proj = glm::perspective(glm::radians(fFov), fAspectRatio, fNear, fFar);
 
-  // std::cout << "View Matrix:\n" << view << std::endl;
-  // std::cout << "Projection Matrix:\n" << proj << std::endl;
-
-
   Mesh cube;
 
-  // for (int i = 0; i < teapot_count; i += 9) {
-  //   Triangle face = *(Triangle *)(teapot + i);
-  //   face.p[0].y *= -1;  // Invert Y for OpenGL style
-  //   face.p[1].y *= -1;  // Invert Y for OpenGL style
-  //   face.p[2].y *= -1;  // Invert Y for OpenGL style
-  //   // This thing is wound wrong, I think.
-  //   cube.add_triangle(face.p[2], face.p[1], face.p[0]);
-  // }
+  for (int i = 0; i < teapot_count; i += 9) {
+    Triangle face = *(Triangle *)(teapot + i);
+    face.p[0].y *= -1;  // Invert Y for OpenGL style
+    face.p[1].y *= -1;  // Invert Y for OpenGL style
+    face.p[2].y *= -1;  // Invert Y for OpenGL style
+    // This thing is wound wrong, I think.
+    cube.add_triangle(face.p[2], face.p[1], face.p[0]);
+  }
 
 #if 0
   cube.add_triangle({0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 1.0f, 0.0f});
@@ -267,48 +266,38 @@ void render(RenderTarget &targ, int frame) {
   cube.add_triangle({1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f});
 #endif
 
+
   for (auto &tri : cube.triangles) {
-    glm::vec3 a = tri.p[0];
-    glm::vec3 b = tri.p[1];
-    glm::vec3 c = tri.p[2];
+    glm::vec4 a = glm::vec4(tri.p[0], 1);
+    glm::vec4 b = glm::vec4(tri.p[1], 1);
+    glm::vec4 c = glm::vec4(tri.p[2], 1);
 
-    a.y += 1;
-    b.y += 1;
-    c.y += 1;
+    auto model = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, 0.0f));  // Move model up
+    auto mvp = proj * view * model;
 
-    a = transform_point(view, a);
-    b = transform_point(view, b);
-    c = transform_point(view, c);
+    a = mvp * a;
+    b = mvp * b;
+    c = mvp * c;
 
-    // Early rejection - if all vertices behind camera, skip entirely
-    if (clipper.shouldCullTriangle(a, b, c)) continue;
-
-    // if any vertex is behind the near plane, we need to clip
-    if (a.z > -fNear || b.z > -fNear || c.z > -fNear) {
-      // Clip triangle - may produce 0, 1, or 2 triangles
-      glm::vec3 clippedTriangles[6];  // Max 2 triangles * 3 vertices each
-      int numTriangles = clipper.clipTriangle(a, b, c, clippedTriangles);
-
-      // Render each resulting triangle
-      for (int i = 0; i < numTriangles; ++i) {
-        glm::vec3 &t0 = clippedTriangles[i * 3 + 0];
-        glm::vec3 &t1 = clippedTriangles[i * 3 + 1];
-        glm::vec3 &t2 = clippedTriangles[i * 3 + 2];
-        t0 = transform_point(proj, t0);
-        t1 = transform_point(proj, t1);
-        t2 = transform_point(proj, t2);
-        // Now safe to project and rasterize
-        targ.rasterize(t0, t1, t2);
-      }
-    } else {
-      // No clipping needed, just project and rasterize
-      a = transform_point(proj, a);
-      b = transform_point(proj, b);
-      c = transform_point(proj, c);
-      // Now safe to project and rasterize
-      targ.rasterize(a, b, c);
-    }
+    targ.rasterizeClip(a, b, c);
   }
+
+
+  float floorSize = 10.0f;
+  // render a massive floor plane with two triangles
+  glm::vec4 floorA = glm::vec4(-floorSize, 0.0f, -floorSize, 1.0f);
+  glm::vec4 floorB = glm::vec4(floorSize, 0.0f, -floorSize,  1.0f);
+  glm::vec4 floorC = glm::vec4(-floorSize, 0.0f, floorSize,  1.0f);
+  glm::vec4 floorD = glm::vec4(floorSize, 0.0f, floorSize,   1.0f);
+
+  auto mvp = proj * view * glm::mat4(3.0f);
+  floorA = mvp * floorA;
+  floorB = mvp * floorB;
+  floorC = mvp * floorC;
+  floorD = mvp * floorD;
+  targ.rasterizeClip(floorA, floorB, floorC);
+  targ.rasterizeClip(floorB, floorC, floorD);
+
 
 
   auto render_direction = [&](glm::vec3 _end, glm::vec3 color, const char *name = "") {
@@ -318,9 +307,7 @@ void render(RenderTarget &targ, int frame) {
 
     start = proj * view * start;
     end = proj * view * end;
-    start /= start.w;
-    std::cout << name << ": " << end << std::endl;
-
+    start /= start.w * wScale;
 
 
 
@@ -328,48 +315,26 @@ void render(RenderTarget &targ, int frame) {
     float clip_w = fabs(end.w);
 
     if (fabs(end.x) > clip_w || fabs(end.y) > clip_w || fabs(end.z) > clip_w) {
-      std::cout << "Clipping " << name << " at " << end << std::endl;
-      circle_color = color * 0.5f; // dim
-      // end.x = glm::clamp(end.x, -clip_w, clip_w);
-      // end.y = glm::clamp(end.y, -clip_w, clip_w);
-      // end.z = glm::clamp(end.z, -clip_w, clip_w);
+      circle_color = color * 0.5f;  // dim
     }
 
-    end /= end.w;
-    std::cout << name << ": " << end << std::endl;
+    end /= end.w * wScale;
 
     float zBuffer = (end.z + 1.0f) * 0.5f;
-    printf("z_NDC = %16f\n", end.z);
-    printf("z_BUF = %16f\n", zBuffer);
-
-
-
 
     targ.draw_line(start, end, color);
-
-    targ.draw_circle(end, end.z * 0.5f, circle_color);
-
-    // start = transform_point(view, start);
-    // end = transform_point(view, end);
-
-    // start = transform_point(proj, start);
-    // end = transform_point(proj, end);
-    // targ.draw_line(start, end, color);
+    targ.draw_circle(end, 0.02f, circle_color);
   };
 
-  std::cout << "Distance from origin: " << glm::length(camera.position) << std::endl;
-
   // Positive x is red
-  render_direction(glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(1.0f, 0.0f, 0.0f), "x");
+  render_direction(glm::vec3(0.2f, 0.0f, 0.0f), glm::vec3(1.0f, 0.0f, 0.0f), "x");
   // Positive y is green
-  render_direction(glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f), "y");
+  render_direction(glm::vec3(0.0f, 0.2f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f), "y");
   // Positive z is blue
-  render_direction(glm::vec3(0.0f, 0.0f, 1.0f), glm::vec3(0.0f, 0.0f, 1.0f), "z");
+  render_direction(glm::vec3(0.0f, 0.0f, 0.2f), glm::vec3(0.0f, 0.0f, 1.0f), "z");
 
-
-  // draw a crosshair in the middle of the screen
-  targ.draw_line(glm::vec2(-0.05f, 0.0f), glm::vec2(0.05f, 0.0f), glm::vec3(1.0f, 1.0f, 1.0f));
-  targ.draw_line(glm::vec2(0.0f, -0.05f), glm::vec2(0.0f, 0.05f), glm::vec3(1.0f, 1.0f, 1.0f));
+  // crosshair thing
+  targ.draw_circle(glm::vec2(0.0f, 0.0f), 0.01f, glm::vec3(1.0f, 1.0f, 1.0f));
 }
 
 int main(void) {

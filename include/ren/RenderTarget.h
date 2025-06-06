@@ -69,6 +69,9 @@ namespace ren {
     void clear(glm::vec3 color = glm::vec3(0.0f, 0.0f, 0.0f)) {
       for (auto &p : pixels)
         p = color;
+
+      for (auto &d : depth)
+        d = 0;
     }
 
     void draw_line(glm::vec2 p0, glm::vec2 p1, glm::vec3 color);
@@ -88,6 +91,13 @@ namespace ren {
     }
 
     // rasterize triangles in 2d space (screen space) without clipping checks
-    void rasterize(glm::vec2 a, glm::vec2 b, glm::vec2 c);
+    void rasterize(glm::vec4 a, glm::vec4 b, glm::vec4 c);
+
+
+    // Given a triangle in clip space, rasterize it to the render target.
+    // This handles *near* clipping, but not edge or anything else.
+    // That will be another step later, but I don't see why optimizing it
+    // would be all that useful right now.
+    void rasterizeClip(glm::vec4 a, glm::vec4 b, glm::vec4 c);
   };
 }  // namespace ren
