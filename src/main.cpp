@@ -10,11 +10,12 @@
 #include <string>
 #include <vector>
 
-// #include <wren.hpp>
 
-#define WINDOW_WIDTH (320 * 2)
-#define WINDOW_HEIGHT (240 * 2)
-#define WINDOW_SCALE 2
+#include <teapot.h>
+
+#define WINDOW_WIDTH (320 * 1)
+#define WINDOW_HEIGHT (240 * 1)
+#define WINDOW_SCALE 3
 
 // #define WINDOW_WIDTH 1920
 // #define WINDOW_HEIGHT 1080
@@ -22,42 +23,236 @@
 
 using namespace ren;
 
+struct Camera {
+  glm::vec3 position = {0.5f, 1.0f, 2.0f};
+  glm::vec3 angles = {0.0f, 0.0f, 0.0f};  // pitch, yaw, roll
+  bool mouse_captured = true;
+
+  glm::mat4 view_matrix() const {
+    float pitch = angles.x;
+    float yaw = angles.y;
+
+    float sinPitch = sinf(pitch);
+    float cosPitch = cosf(pitch);
+    float sinYaw = sinf(yaw);
+    float cosYaw = cosf(yaw);
+
+    glm::vec3 forward(sinYaw * cosPitch,  // X component
+        sinPitch,                         // Y component
+        -cosYaw * cosPitch                // Z component
+    );
+
+    glm::mat4 view = glm::lookAt(position, position + forward, glm::vec3(0.0f, 1.0f, 0.0f));
+    return view;
+  }
+
+  void update(float dt) {
+    const Uint8 *keys = SDL_GetKeyboardState(NULL);
+    int mouse_x, mouse_y;
+    SDL_GetRelativeMouseState(&mouse_x, &mouse_y);
+
+    // Toggle mouse capture with ESC
+    if (keys[SDL_SCANCODE_ESCAPE]) {
+      mouse_captured = !mouse_captured;
+      SDL_SetRelativeMouseMode(mouse_captured ? SDL_TRUE : SDL_FALSE);
+      SDL_Delay(100);  // Prevent rapid toggling
+    }
+
+    // Mouse look
+    if (mouse_captured) {
+      angles.y += mouse_x * 0.002f;  // yaw
+      angles.x -= mouse_y * 0.002f;  // pitch
+
+      // Clamp pitch
+      if (angles.x > M_PI / 2.0f) angles.x = M_PI / 2.0f;
+      if (angles.x < -M_PI / 2.0f) angles.x = -M_PI / 2.0f;
+    }
+
+    // Movement vectors
+    float cos_yaw = cosf(angles.y);
+    float sin_yaw = sinf(angles.y);
+    glm::vec3 forward = {sin_yaw, 0.0f, -cos_yaw};
+    glm::vec3 right = {cos_yaw, 0.0f, sin_yaw};
+
+    float speed = 1.0f * dt;
+
+    // WASD movement
+    if (keys[SDL_SCANCODE_W]) {
+      // position.x += speed / 2.0f;
+      position.x += forward.x * speed;
+      position.z += forward.z * speed;
+    }
+    if (keys[SDL_SCANCODE_S]) {
+      // position.x -= speed / 2.0f;
+      position.x -= forward.x * speed;
+      position.z -= forward.z * speed;
+    }
+    if (keys[SDL_SCANCODE_A]) {
+      // position.z -= speed / 2.0f;
+      position.x -= right.x * speed;
+      position.z -= right.z * speed;
+    }
+    if (keys[SDL_SCANCODE_D]) {
+      // position.z += speed / 2.0f;
+      position.x += right.x * speed;
+      position.z += right.z * speed;
+    }
+    if (keys[SDL_SCANCODE_SPACE]) { position.y += speed; }
+    if (keys[SDL_SCANCODE_LSHIFT]) { position.y -= speed; }
+    std::cout << "speed:  " << speed << std::endl;
+    std::cout << "angles: " << angles << std::endl;
+    std::cout << "posn:   " << position << std::endl;
+  }
+};
+
+Camera camera;
+
 struct Triangle {
-  float3 p[3];
+  glm::vec3 p[3];
 };
 
 struct Mesh {
   std::vector<Triangle> triangles;
 
-  void add_triangle(const float3 &a, const float3 &b, const float3 &c) {
-    triangles.push_back({{a, b, c}});
+  void add_triangle(const glm::vec3 &a, const glm::vec3 &b, const glm::vec3 &c) { triangles.push_back({{a, b, c}}); }
+};
+
+class NearPlaneClipper {
+ private:
+  float nearPlane = 0.01f;
+
+  // Check if vertex is in front of near plane (visible)
+  bool isVec3Visible(const glm::vec3 &v) const {
+    return v.z <= -nearPlane;  // Negative Z is forward in view space
+  }
+
+  // Get signed distance from vertex to near plane
+  float getDistance(const glm::vec3 &v) const { return v.z + nearPlane; }
+
+
+
+
+  // Compute intersection point between edge and near plane
+  glm::vec3 computeIntersection(const glm::vec3 &v1, const glm::vec3 &v2) const {
+    float d1 = getDistance(v1);
+    float d2 = getDistance(v2);
+
+    // Parametric intersection: t = d1 / (d1 - d2)
+    float t = d1 / (d1 - d2);
+
+    return ren::lerp(v1, v2, t);
+  }
+
+ public:
+  NearPlaneClipper(float nearPlane)
+      : nearPlane(nearPlane) {}
+
+  // Clip a single triangle against the near plane
+  // Returns number of output triangles (0, 1, or 2)
+  int clipTriangle(const glm::vec3 &v0, const glm::vec3 &v1, const glm::vec3 &v2, glm::vec3 *outTriangles) const {
+    std::vector<glm::vec3> inputList = {v0, v1, v2};
+    std::vector<glm::vec3> outputList;
+
+    // Sutherland-Hodgman clipping against near plane
+    if (inputList.empty()) return 0;
+
+    glm::vec3 prevVec3 = inputList.back();
+    bool prevVisible = isVec3Visible(prevVec3);
+
+    for (const glm::vec3 &currentVec3 : inputList) {
+      bool currentVisible = isVec3Visible(currentVec3);
+
+      if (currentVisible) {
+        if (!prevVisible) {
+          // Entering visible region - add intersection
+          outputList.push_back(computeIntersection(prevVec3, currentVec3));
+        }
+        // Add current vertex
+        outputList.push_back(currentVec3);
+      } else if (prevVisible) {
+        // Exiting visible region - add intersection
+        outputList.push_back(computeIntersection(prevVec3, currentVec3));
+      }
+      // If both invisible, add nothing
+
+      prevVec3 = currentVec3;
+      prevVisible = currentVisible;
+    }
+
+    // Convert clipped polygon back to triangles
+    if (outputList.size() < 3) {
+      return 0;  // Completely clipped
+    } else if (outputList.size() == 3) {
+      // Still a triangle
+      outTriangles[0] = outputList[0];
+      outTriangles[1] = outputList[1];
+      outTriangles[2] = outputList[2];
+      return 1;
+    } else if (outputList.size() == 4) {
+      // Quad - split into two triangles
+      // Triangle 1: 0,1,2
+      outTriangles[0] = outputList[0];
+      outTriangles[1] = outputList[1];
+      outTriangles[2] = outputList[2];
+
+      // Triangle 2: 0,2,3
+      outTriangles[3] = outputList[0];
+      outTriangles[4] = outputList[2];
+      outTriangles[5] = outputList[3];
+      return 2;
+    }
+
+    // For polygons with >4 vertices, use fan triangulation
+    int numTriangles = outputList.size() - 2;
+    for (int i = 0; i < numTriangles; ++i) {
+      outTriangles[i * 3 + 0] = outputList[0];
+      outTriangles[i * 3 + 1] = outputList[i + 1];
+      outTriangles[i * 3 + 2] = outputList[i + 2];
+    }
+    return numTriangles;
+  }
+
+  // Convenience method for simple culling check
+  bool shouldCullTriangle(const glm::vec3 &v0, const glm::vec3 &v1, const glm::vec3 &v2) const {
+    return !isVec3Visible(v0) && !isVec3Visible(v1) && !isVec3Visible(v2);
   }
 };
 
 void render(RenderTarget &targ, int frame) {
-
   int mouse_x, mouse_y;
   SDL_GetMouseState(&mouse_x, &mouse_y);
-  mouse_x = (int)(mouse_x / (float)WINDOW_SCALE);
-  mouse_y = (int)(mouse_y / (float)WINDOW_SCALE);
 
-  float2 mouse_pos = targ.from_device(float2(mouse_x, mouse_y));
+  glm::vec2 mouse_pos = targ.from_device(glm::vec2(mouse_x / (float)WINDOW_SCALE, mouse_y / (float)WINDOW_SCALE));
 
   (void)frame;
-  targ.clear(float3(0.0));
+  targ.clear(glm::vec3(0.0));
 
   float fNear = 0.01f;
-  float fFar = 1000.0f;
+  float fFar = 10.0f;
   float fFov = 90.0f;
   float fAspectRatio = (float)targ.width / (float)targ.height;
 
-  matrix4 matProj = matrix4::perspective(fFov, fAspectRatio, fNear, fFar);
-  std::cout << "Projection Matrix:\n" << matProj << std::endl;
+  NearPlaneClipper clipper(fNear);
 
-  matrix4 matRotZ = matrix4::rotation_x(-mouse_pos.y);
-  matrix4 matRotX = matrix4::rotation_y(mouse_pos.x);
+  glm::mat4 view = camera.view_matrix();
+  glm::mat4 proj = glm::perspective(glm::radians(fFov), fAspectRatio, fNear, fFar);
+
+  // std::cout << "View Matrix:\n" << view << std::endl;
+  // std::cout << "Projection Matrix:\n" << proj << std::endl;
+
 
   Mesh cube;
+
+  // for (int i = 0; i < teapot_count; i += 9) {
+  //   Triangle face = *(Triangle *)(teapot + i);
+  //   face.p[0].y *= -1;  // Invert Y for OpenGL style
+  //   face.p[1].y *= -1;  // Invert Y for OpenGL style
+  //   face.p[2].y *= -1;  // Invert Y for OpenGL style
+  //   // This thing is wound wrong, I think.
+  //   cube.add_triangle(face.p[2], face.p[1], face.p[0]);
+  // }
+
+#if 0
   cube.add_triangle({0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 1.0f, 0.0f});
   cube.add_triangle({0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f});
   cube.add_triangle({1.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 0.0f}, {1.0f, 1.0f, 1.0f});
@@ -70,47 +265,111 @@ void render(RenderTarget &targ, int frame) {
   cube.add_triangle({0.0f, 1.0f, 0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 0.0f});
   cube.add_triangle({1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f});
   cube.add_triangle({1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f});
+#endif
 
   for (auto &tri : cube.triangles) {
-    float3 a = tri.p[0] - float3(0.5f, 0.5f, 0.5f);
-    float3 b = tri.p[1] - float3(0.5f, 0.5f, 0.5f);
-    float3 c = tri.p[2] - float3(0.5f, 0.5f, 0.5f);
+    glm::vec3 a = tri.p[0];
+    glm::vec3 b = tri.p[1];
+    glm::vec3 c = tri.p[2];
 
-    a = matRotZ.transform_point(a);
-    b = matRotZ.transform_point(b);
-    c = matRotZ.transform_point(c);
+    a.y += 1;
+    b.y += 1;
+    c.y += 1;
 
-    a = matRotX.transform_point(a);
-    b = matRotX.transform_point(b);
-    c = matRotX.transform_point(c);
+    a = transform_point(view, a);
+    b = transform_point(view, b);
+    c = transform_point(view, c);
 
-    a.z -= 2;
-    b.z -= 2;
-    c.z -= 2;
+    // Early rejection - if all vertices behind camera, skip entirely
+    if (clipper.shouldCullTriangle(a, b, c)) continue;
 
-    a = matProj.transform_point(a);
-    b = matProj.transform_point(b);
-    c = matProj.transform_point(c);
+    // if any vertex is behind the near plane, we need to clip
+    if (a.z > -fNear || b.z > -fNear || c.z > -fNear) {
+      // Clip triangle - may produce 0, 1, or 2 triangles
+      glm::vec3 clippedTriangles[6];  // Max 2 triangles * 3 vertices each
+      int numTriangles = clipper.clipTriangle(a, b, c, clippedTriangles);
 
-    // targ.rasterize(c.xy(), b.xy(), a.xy());
-
-    std::cout << "Triangle: " << a << " " << b << " " << c << std::endl;
-    targ.draw_line(a.xy(), b.xy(), float3(1, 1, 1));
-    targ.draw_line(b.xy(), c.xy(), float3(1, 1, 1));
-    targ.draw_line(c.xy(), a.xy(), float3(1, 1, 1));
+      // Render each resulting triangle
+      for (int i = 0; i < numTriangles; ++i) {
+        glm::vec3 &t0 = clippedTriangles[i * 3 + 0];
+        glm::vec3 &t1 = clippedTriangles[i * 3 + 1];
+        glm::vec3 &t2 = clippedTriangles[i * 3 + 2];
+        t0 = transform_point(proj, t0);
+        t1 = transform_point(proj, t1);
+        t2 = transform_point(proj, t2);
+        // Now safe to project and rasterize
+        targ.rasterize(t0, t1, t2);
+      }
+    } else {
+      // No clipping needed, just project and rasterize
+      a = transform_point(proj, a);
+      b = transform_point(proj, b);
+      c = transform_point(proj, c);
+      // Now safe to project and rasterize
+      targ.rasterize(a, b, c);
+    }
   }
 
-  // auto a = float2(-0.5, -0.5);
-  // auto b = float2(0.0, 0.1);
-  // auto c = mouse_pos;
-  // targ.rasterize(a, b, c);
 
-  // targ.draw_line(a, b, float3(1.0f, 0.0f, 0.0f));
-  // targ.draw_line(b, c, float3(0.0f, 1.0f, 0.0f));
-  // targ.draw_line(c, a, float3(0.0f, 0.0f, 1.0f));
+  auto render_direction = [&](glm::vec3 _end, glm::vec3 color, const char *name = "") {
+    glm::vec3 circle_color = color;
+    glm::vec4 start = {0.0f, 0.0f, 0.0f, 1.0f};
+    glm::vec4 end = glm::vec4(_end, 1.0f);
 
-  // targ.draw_box(min_xy, max_xy, float3(1.0f, 1.0f, 1.0f));
-  targ.draw_line(float2(0.0f, 0.0f), mouse_pos, float3(1.0f, 1.0f, 1.0f));
+    start = proj * view * start;
+    end = proj * view * end;
+    start /= start.w;
+    std::cout << name << ": " << end << std::endl;
+
+
+
+
+
+    float clip_w = fabs(end.w);
+
+    if (fabs(end.x) > clip_w || fabs(end.y) > clip_w || fabs(end.z) > clip_w) {
+      std::cout << "Clipping " << name << " at " << end << std::endl;
+      circle_color = color * 0.5f; // dim
+      // end.x = glm::clamp(end.x, -clip_w, clip_w);
+      // end.y = glm::clamp(end.y, -clip_w, clip_w);
+      // end.z = glm::clamp(end.z, -clip_w, clip_w);
+    }
+
+    end /= end.w;
+    std::cout << name << ": " << end << std::endl;
+
+    float zBuffer = (end.z + 1.0f) * 0.5f;
+    printf("z_NDC = %16f\n", end.z);
+    printf("z_BUF = %16f\n", zBuffer);
+
+
+
+
+    targ.draw_line(start, end, color);
+
+    targ.draw_circle(end, end.z * 0.5f, circle_color);
+
+    // start = transform_point(view, start);
+    // end = transform_point(view, end);
+
+    // start = transform_point(proj, start);
+    // end = transform_point(proj, end);
+    // targ.draw_line(start, end, color);
+  };
+
+  std::cout << "Distance from origin: " << glm::length(camera.position) << std::endl;
+
+  // Positive x is red
+  render_direction(glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(1.0f, 0.0f, 0.0f), "x");
+  // Positive y is green
+  render_direction(glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f), "y");
+  // Positive z is blue
+  render_direction(glm::vec3(0.0f, 0.0f, 1.0f), glm::vec3(0.0f, 0.0f, 1.0f), "z");
+
+
+  // draw a crosshair in the middle of the screen
+  targ.draw_line(glm::vec2(-0.05f, 0.0f), glm::vec2(0.05f, 0.0f), glm::vec3(1.0f, 1.0f, 1.0f));
+  targ.draw_line(glm::vec2(0.0f, -0.05f), glm::vec2(0.0f, 0.05f), glm::vec3(1.0f, 1.0f, 1.0f));
 }
 
 int main(void) {
@@ -119,10 +378,12 @@ int main(void) {
     return 1;
   }
 
-  SDL_Window *window =
-      SDL_CreateWindow("ren", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
-                       WINDOW_WIDTH * WINDOW_SCALE,
-                       WINDOW_HEIGHT * WINDOW_SCALE, SDL_WINDOW_SHOWN);
+  SDL_Window *window = SDL_CreateWindow("ren", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_CENTERED,
+      WINDOW_WIDTH * WINDOW_SCALE, WINDOW_HEIGHT * WINDOW_SCALE, SDL_WINDOW_SHOWN);
+
+  SDL_SetRelativeMouseMode(SDL_TRUE);
+  SDL_StopTextInput();
+  SDL_EventState(SDL_KEYDOWN, SDL_ENABLE);
 
   if (!window) {
     printf("Window could not be created! SDL_Error: %s\n", SDL_GetError());
@@ -130,8 +391,7 @@ int main(void) {
     return 1;
   }
 
-  SDL_Renderer *renderer =
-      SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+  SDL_Renderer *renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
   if (!renderer) {
     printf("Renderer could not be created! SDL_Error: %s\n", SDL_GetError());
     SDL_DestroyWindow(window);
@@ -140,9 +400,8 @@ int main(void) {
   }
 
   // Create a streaming texture for CPU-side pixel manipulation
-  SDL_Texture *texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888,
-                                           SDL_TEXTUREACCESS_STREAMING,
-                                           WINDOW_WIDTH, WINDOW_HEIGHT);
+  SDL_Texture *texture =
+      SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STREAMING, WINDOW_WIDTH, WINDOW_HEIGHT);
 
   if (!texture) {
     printf("Texture could not be created! SDL_Error: %s\n", SDL_GetError());
@@ -159,11 +418,15 @@ int main(void) {
 
   RenderTarget render_target(WINDOW_WIDTH, WINDOW_HEIGHT);
 
+  Uint32 last_time = SDL_GetTicks();
+
   while (running) {
+    Uint32 current_time = SDL_GetTicks();
+    float dt = (current_time - last_time) / 1000.0f;
+    last_time = current_time;
+
     while (SDL_PollEvent(&e)) {
-      if (e.type == SDL_QUIT) {
-        running = 0;
-      }
+      if (e.type == SDL_QUIT) { running = 0; }
     }
 
     // Lock texture for CPU writing
@@ -175,6 +438,8 @@ int main(void) {
     }
 
     uint64_t framestart = SDL_GetPerformanceCounter();
+
+    camera.update(dt);
 
     // Render the scene
     render(render_target, frame);
@@ -196,7 +461,7 @@ int main(void) {
 
     frame++;
     printf("Frame: %7d rendered in %fms\n", frame, seconds * 1000);
-    // SDL_Delay(16); // ~60 FPS
+    SDL_Delay(16);  // ~60 FPS
   }
 
   // Cleanup

@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.5)
 
 project(ren C CXX)
 
@@ -14,6 +14,8 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # Find SDL2
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(SDL2 REQUIRED sdl2)
+
+find_package(OpenMP)
 
 # Add executable
 add_executable(ren
@@ -33,16 +35,18 @@ add_executable(ren
 
 
 
-find_package(OpenMP)
 if(OpenMP_C_FOUND)
-  target_link_libraries(ren OpenMP::OpenMP_C)
+  target_link_libraries(ren PUBLIC OpenMP::OpenMP_C)
   message(STATUS "OpenMP found - parallel processing enabled")
 else()
   message(STATUS "OpenMP not found - using single-threaded execution")
 endif()
 
+
+
 # Link libraries
-target_link_libraries(ren 
+target_link_libraries(ren
+  PUBLIC
   ${SDL2_LIBRARIES}
   m  # math library for sin/cos functions
 )
@@ -50,6 +54,7 @@ target_link_libraries(ren
 # Include directories
 target_include_directories(ren PRIVATE 
   ${SDL2_INCLUDE_DIRS}
+  # include/ has many vendored libraries (GLM, mainly)
   include/
   src/wren/vm/
   src/wren/optional/

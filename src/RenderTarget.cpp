@@ -9,11 +9,11 @@ RenderTarget::RenderTarget(int width, int height)
 }
 
 // Gamma correction and tone mapping
-static inline uint32_t linear_to_srgb(const float3 &linear_color) {
+static inline uint32_t linear_to_srgb(const glm::vec3 &linear_color) {
   // Clamp values to [0, 1] range (tone mapping)
-  float r = std::max(0.0f, std::min(1.0f, linear_color.x));
-  float g = std::max(0.0f, std::min(1.0f, linear_color.y));
-  float b = std::max(0.0f, std::min(1.0f, linear_color.z));
+  float r = std::max(0.0f, std::min(1.0f, linear_color.r));
+  float g = std::max(0.0f, std::min(1.0f, linear_color.g));
+  float b = std::max(0.0f, std::min(1.0f, linear_color.b));
 
   // Apply sRGB gamma correction (approximation: gamma = 2.2)
   // More accurate sRGB conversion would use piecewise function
@@ -41,7 +41,7 @@ void RenderTarget::quantize_screen(uint32_t *bitmap) const {
   }
 }
 
-void RenderTarget::draw_line(float2 p0, float2 p1, float3 color) {
+void RenderTarget::draw_line(glm::vec2 p0, glm::vec2 p1, glm::vec3 color) {
 
   p0 = to_device(p0);
   p1 = to_device(p1);
@@ -121,15 +121,15 @@ void RenderTarget::draw_line(float2 p0, float2 p1, float3 color) {
 
 // Fragment shader interface - receives barycentric coordinates and vertex
 // positions
-float3 shader(const float2 &pixel_pos, const float3 &bary_coords,
-              const float2 &v0, const float2 &v1, const float2 &v2) {
+glm::vec3 shader(const glm::vec2 &pixel_pos, const glm::vec3 &bary_coords,
+              const glm::vec2 &v0, const glm::vec2 &v1, const glm::vec2 &v2) {
   // Example: interpolate colors based on barycentric coordinates
   // In a real system, you'd have vertex attributes (colors, UVs, normals, etc.)
-  float3 color0(1.0f, 0.0f, 0.0f); // Red at vertex 0
-  float3 color1(0.0f, 1.0f, 0.0f); // Green at vertex 1
-  float3 color2(0.0f, 0.0f, 1.0f); // Blue at vertex 2
+  glm::vec3 color0(1.0f, 0.0f, 0.0f); // Red at vertex 0
+  glm::vec3 color1(0.0f, 1.0f, 0.0f); // Green at vertex 1
+  glm::vec3 color2(0.0f, 0.0f, 1.0f); // Blue at vertex 2
 
-  return float3(color0.x * bary_coords.x + color1.x * bary_coords.y +
+  return glm::vec3(color0.x * bary_coords.x + color1.x * bary_coords.y +
                     color2.x * bary_coords.z,
                 color0.y * bary_coords.x + color1.y * bary_coords.y +
                     color2.y * bary_coords.z,
@@ -138,119 +138,104 @@ float3 shader(const float2 &pixel_pos, const float3 &bary_coords,
 }
 
 // Edge function for barycentric coordinate calculation
-float edge_function(const float2 &a, const float2 &b, const float2 &c) {
+float edge_function(const glm::vec2 &a, const glm::vec2 &b, const glm::vec2 &c) {
   return (c.x - a.x) * (b.y - a.y) - (c.y - a.y) * (b.x - a.x);
 }
 
 // Calculate barycentric coordinates
-float3 barycentric(const float2 &p, const float2 &a, const float2 &b,
-                   const float2 &c) {
+glm::vec3 barycentric(const glm::vec2 &p, const glm::vec2 &a, const glm::vec2 &b,
+                   const glm::vec2 &c) {
   float area = edge_function(a, b, c);
   if (std::abs(area) < 1e-6f)
-    return float3(0, 0, 0); // Degenerate triangle
+    return glm::vec3(0, 0, 0); // Degenerate triangle
 
   float w0 = edge_function(b, c, p) / area;
   float w1 = edge_function(c, a, p) / area;
   float w2 = edge_function(a, b, p) / area;
 
-  return float3(w0, w1, w2);
+  return glm::vec3(w0, w1, w2);
 }
 
 // Backface culling check - call this before rasterize()
-bool is_front_facing(const float2 &a, const float2 &b, const float2 &c) {
+bool is_front_facing(const glm::vec2 &a, const glm::vec2 &b, const glm::vec2 &c) {
   // Calculate signed area (cross product of two edges)
   // Positive area = counter-clockwise = front-facing (assuming CCW front faces)
   float signed_area = edge_function(a, b, c);
   return signed_area > 0.0f;
 }
 
-void RenderTarget::rasterize(float2 a, float2 b, float2 c) {
+void RenderTarget::rasterize(glm::vec2 a, glm::vec2 b, glm::vec2 c) {
+  // glm::vec3 color = glm::vec3(1.0f, 1.0f, 1.0f);
+  // if (not is_front_facing(a, b, c)) {
+  //   color.r = 1.0f;
+  //   color.g = 0.0f;
+  //   color.b = 0.0f;
+  // }
+  //   // color = glm::vec3(0.0f, 0.0f, 1.0f);
 
+  // draw_line(a, b, color);
+  // draw_line(b, c, color);
+  // draw_line(c, a, color);
+  // return;
+
+  // Backface culling: skip rasterization if triangle is back-facing
+  if (not is_front_facing(a, b, c))
+    return;
   a = to_device(a);
   b = to_device(b);
   c = to_device(c);
-  
-  
-  if (is_front_facing(a, b, c) == false) {
-    // Backface culling: skip rasterization if triangle is back-facing
+
+  const float left = 0;
+  const float right = width - left;
+  const float top = 0;
+  const float bottom = height - top;
+
+  // get bounding box of the triangle (clamped to the screen bounds)
+  glm::vec2 min_xy = glm::vec2(std::min({a.x, b.x, c.x}), std::min({a.y, b.y, c.y}));
+  glm::vec2 max_xy = glm::vec2(std::max({a.x, b.x, c.x}), std::max({a.y, b.y, c.y}));
+  min_xy.x = std::max(min_xy.x, left);
+  min_xy.y = std::max(min_xy.y, top);
+  max_xy.x = std::min(max_xy.x, right);
+  max_xy.y = std::min(max_xy.y, bottom);
+
+  // draw_box(from_device(min_xy), from_device(max_xy),
+  // glm::vec3(1.0f, 1.0f, 1.0f));
+
+  if (min_xy.x > max_xy.x || min_xy.y > max_xy.y) {
     return;
   }
 
-  // Sort vertices by y-coordinate (top to bottom)
-  float2 v0 = a, v1 = b, v2 = c;
-  if (v0.y > v1.y)
-    std::swap(v0, v1);
-  if (v1.y > v2.y)
-    std::swap(v1, v2);
-  if (v0.y > v1.y)
-    std::swap(v0, v1);
+  int min_x = std::floor(min_xy.x);
+  int min_y = std::floor(min_xy.y);
+  int max_x = std::ceil(max_xy.x);
+  int max_y = std::ceil(max_xy.y);
 
-  // Calculate triangle area for barycentric coordinates
+  // Calculate triangle area once (for barycentric coordinate normalization)
   float area = edge_function(a, b, c);
   if (std::abs(area) < 1e-6f)
-    return;
+    return; // Skip degenerate triangles
 
-  // Rasterize upper half (v0 to v1)
-  if (v0.y != v1.y) {
-    float inv_slope1 = (v1.x - v0.x) / (v1.y - v0.y);
-    float inv_slope2 = (v2.x - v0.x) / (v2.y - v0.y);
+  for (int y = min_y; y <= max_y; y++) {
+    float scan_y = y + 0.5f;
 
-    int start_y = (int)std::ceil(v0.y - 0.5f);
-    int end_y = (int)std::floor(v1.y + 0.5f);
+    for (int x = min_x; x <= max_x; x++) {
+      glm::vec2 pixel_pos(x + 0.5f, scan_y);
 
-    for (int y = start_y; y <= end_y; y++) {
-      float scan_y = y + 0.5f;
-      float dy = scan_y - v0.y;
+      // Calculate barycentric coordinates
+      float w0 = edge_function(b, c, pixel_pos) / area;
+      float w1 = edge_function(c, a, pixel_pos) / area;
+      float w2 = edge_function(a, b, pixel_pos) / area;
 
-      float x1 = v0.x + inv_slope1 * dy;
-      float x2 = v0.x + inv_slope2 * dy;
+      // Check if point is inside triangle (all barycentric coords >= 0)
+      if (w0 >= 0 && w1 >= 0 && w2 >= 0) {
+        // if (x_start > max_x)
+        //   x_start = x; // First valid pixel
+        // x_end = x;     // Update last valid pixel
 
-      if (x1 > x2)
-        std::swap(x1, x2);
-
-      int start_x = (int)std::ceil(x1 - 0.5f);
-      int end_x = (int)std::floor(x2 + 0.5f);
-
-      for (int x = start_x; x <= end_x; x++) {
-        float2 pixel_pos(x + 0.5f, scan_y);
-        float3 bary_coords = barycentric(pixel_pos, a, b, c);
-
-        if (bary_coords.x >= 0 && bary_coords.y >= 0 && bary_coords.z >= 0) {
-          float3 color = shader(pixel_pos, bary_coords, a, b, c);
-          pix(x, y) = color;
-        }
-      }
-    }
-  }
-
-  // Rasterize lower half (v1 to v2)
-  if (v1.y != v2.y) {
-    float inv_slope1 = (v2.x - v1.x) / (v2.y - v1.y);
-    float inv_slope2 = (v2.x - v0.x) / (v2.y - v0.y);
-
-    int start_y = (int)std::ceil(v1.y - 0.5f);
-    int end_y = (int)std::floor(v2.y + 0.5f);
-
-    for (int y = start_y; y <= end_y; y++) {
-      float scan_y = y + 0.5f;
-
-      float x1 = v1.x + inv_slope1 * (scan_y - v1.y);
-      float x2 = v0.x + inv_slope2 * (scan_y - v0.y);
-
-      if (x1 > x2)
-        std::swap(x1, x2);
-
-      int start_x = (int)std::ceil(x1 - 0.5f);
-      int end_x = (int)std::floor(x2 + 0.5f);
-
-      for (int x = start_x; x <= end_x; x++) {
-        float2 pixel_pos(x + 0.5f, scan_y);
-        float3 bary_coords = barycentric(pixel_pos, a, b, c);
-
-        if (bary_coords.x >= 0 && bary_coords.y >= 0 && bary_coords.z >= 0) {
-          float3 color = shader(pixel_pos, bary_coords, a, b, c);
-          pix(x, y) = color;
-        }
+        // Call shader and set pixel
+        glm::vec3 bary_coords(w0, w1, w2);
+        glm::vec3 color = shader(pixel_pos, bary_coords, a, b, c);
+        pix(x, y) = color;
       }
     }
   }
