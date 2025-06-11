@@ -4,3 +4,5 @@ build/
 /.cache/
 
 /.direnv/
+.DS_Store
+/.vscode/

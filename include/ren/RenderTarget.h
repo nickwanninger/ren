@@ -1,13 +1,16 @@
 #pragma once
 
 #include <ren/math.h>
+#include <glm/glm.hpp>
 #include <vector>
+
 
 namespace ren {
   // A render target is a simple buffer of floating point RGB pixels.
   // Somewhere down the line we quantize/render this to a texture or framebuffer.
   class RenderTarget {
    public:
+    long triangles;  // how many triangles were rasterized
     int width, height;
     glm::vec3 off_screen;  // This is what we return if pix() is called out of bounds.
     std::vector<glm::vec3> pixels;

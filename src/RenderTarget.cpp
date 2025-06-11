@@ -118,15 +118,23 @@ void RenderTarget::draw_line(glm::vec2 p0, glm::vec2 p1, glm::vec3 color) {
   }
 }
 
+float linearize_depth(float d, float zNear, float zFar) { return zNear * zFar / (zFar + d * (zNear - zFar)); }
+
 // Fragment shader interface - receives barycentric coordinates and vertex
 // positions
 glm::vec3 shader(const glm::vec2 &pixel_pos, const glm::vec3 &bary_coords, const glm::vec4 &v0, const glm::vec4 &v1,
     const glm::vec4 &v2) {
   // interpolate depth (z-coordinate) using barycentric coordinates
-  float z = v0.z * bary_coords.x + v1.z * bary_coords.y + v2.z * bary_coords.z;
-  z = 1.0f - z;
+  // float z = v0.z * bary_coords.x + v1.z * bary_coords.y + v2.z * bary_coords.z;
+  // z = 1.0f - z;
 
-  return glm::vec3(z, z, z);  // Return grayscale color based on depth
+
+  // float fNear = 0.01f;
+  // float fFar = 100.0f;
+  // z = linearize_depth(z, fNear, fFar);
+  // return glm::vec3(z);
+
+
 
 
   // Example: interpolate colors based on barycentric coordinates
@@ -162,11 +170,11 @@ bool is_front_facing(const glm::vec2 &a, const glm::vec2 &b, const glm::vec2 &c)
   // Calculate signed area (cross product of two edges)
   // Positive area = counter-clockwise = front-facing (assuming CCW front faces)
   float signed_area = edge_function(a, b, c);
-  return signed_area > 0.0f;
+  return signed_area >= 0.0f;
 }
 
 void RenderTarget::rasterize(glm::vec4 a, glm::vec4 b, glm::vec4 c) {
-  glm::vec3 color = glm::vec3(1.0f, 1.0f, 1.0f);
+  triangles++;
   // if (not is_front_facing(a, b, c)) {
   //   color.r = 1.0f;
   //   color.g = 0.0f;
@@ -174,16 +182,22 @@ void RenderTarget::rasterize(glm::vec4 a, glm::vec4 b, glm::vec4 c) {
   // }
   //   // color = glm::vec3(0.0f, 0.0f, 1.0f);
 
+
   // draw_line(a, b, color);
   // draw_line(b, c, color);
   // draw_line(c, a, color);
-  // return;
 
   // Backface culling: skip rasterization if triangle is back-facing
-  // if (is_front_facing(a, b, c)) return;
+  if (is_front_facing(a, b, c)) return;
+
   auto aDev = to_device(a);
   auto bDev = to_device(b);
   auto cDev = to_device(c);
+
+  // draw_pixel(aDev.x, aDev.y, color);
+  // draw_pixel(bDev.x, bDev.y, color);
+  // draw_pixel(cDev.x, cDev.y, color);
+  // return;
 
   const float left = 0;
   const float right = width - left;
@@ -253,9 +267,34 @@ void RenderTarget::rasterize(glm::vec4 a, glm::vec4 b, glm::vec4 c) {
 
 
 
+template <typename T, int N = 8>
+struct StackVec {
+  T data[N];
+  size_t size = 0;
+
+  void push_back(const T &value) {
+    if (size < N) {
+      data[size++] = value;
+    } else {
+      throw std::overflow_error("StackVec overflow");
+    }
+  }
+
+  bool empty() const { return size == 0; }
+  T &back() { return data[size - 1]; }
+
+  T &operator[](size_t index) { return data[index]; }
+};
+
 void RenderTarget::rasterizeClip(glm::vec4 a, glm::vec4 b, glm::vec4 c) {
-  std::vector<glm::vec4> input = {a, b, c};
-  std::vector<glm::vec4> out;
+  // if (is_front_facing(a, b, c)) { return; }
+  StackVec<glm::vec4, 3> input;
+  input.push_back(a);
+  input.push_back(b);
+  input.push_back(c);
+
+  StackVec<glm::vec4, 8> out;
+
 
   auto isVisible = [](const glm::vec4 &v) {
     // Check if vertex is in front of near plane (visible)
@@ -267,6 +306,13 @@ void RenderTarget::rasterizeClip(glm::vec4 a, glm::vec4 b, glm::vec4 c) {
   };
 
   auto toNDC = [](const glm::vec4 &v) { return v / v.w; };
+
+
+  // if all th e vertices are in front of the near plane, we can just rasterize the triangle
+  // if (std::all_of(input.begin(), input.end(), [](const glm::vec4 &v) { return v.z > 0; })) {
+  //   rasterize(toNDC(a), toNDC(b), toNDC(c));
+  //   return;
+  // }
 
   auto computeIntersection = [&](const glm::vec4 &v1, const glm::vec4 &v2) {
     // Compute intersection point between edge and near plane
@@ -281,7 +327,9 @@ void RenderTarget::rasterizeClip(glm::vec4 a, glm::vec4 b, glm::vec4 c) {
   auto prev = input.back();
   bool prevVisible = isVisible(prev);
 
-  for (auto &current : input) {
+
+  for (int i = 0; i < input.size; i++) {
+    auto current = input[i];
     bool currentVisible = isVisible(current);
 
     if (currentVisible) {
@@ -301,17 +349,10 @@ void RenderTarget::rasterizeClip(glm::vec4 a, glm::vec4 b, glm::vec4 c) {
     prevVisible = currentVisible;
   }
 
-
-  // for (auto &v : out) {
-  //   // Convert to NDC (Normalized Device Coordinates)
-  //   draw_circle(toNDC(v), 0.01f, glm::vec3(1.0f, 0.0f, 1.0f));  // Magenta for debug
-  // }
-
-
-  if (out.size() == 3) {
+  if (out.size == 3) {
     // No clipping required! Just rasterize the triangle
     rasterize(toNDC(out[0]), toNDC(out[1]), toNDC(out[2]));  // Convert to NDC
-  } else if (out.size() == 4) {
+  } else if (out.size == 4) {
     // quad - split into two triangles
     rasterize(toNDC(out[0]), toNDC(out[1]), toNDC(out[2]));  // Triangle 1
     rasterize(toNDC(out[0]), toNDC(out[2]), toNDC(out[3]));  // Triangle 2

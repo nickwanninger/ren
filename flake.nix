@@ -11,9 +11,25 @@
       (system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
+          stdenv = pkgs.stdenv;
 
           runInputs = with pkgs; [
             SDL2
+            glfw
+            glew
+
+            libGL
+			      libGLU
+
+            fmt
+
+            gdb
+
+            # moltenvk
+            vulkan-headers
+            vulkan-loader
+            vulkan-tools
+            shaderc
           ];
 
           buildInputs = with pkgs; runInputs ++ [
@@ -28,16 +44,11 @@
           # devShell = mkShell {
           #   inherit buildInputs;
 
-
-          #   LOCALE_ARCHIVE = "${glibcLocales}/lib/locale/locale-archive";
           #   hardeningDisable = ["all"];
-
-          #   shellHook = ''
-          #     source $PWD/enable
-          #   '';
+          #   # VULKAN_SDK = "${vulkan-validation-layers}/share/vulkan/explicit_layer.d";
           # };
 
-          packages.default = pkgs.stdenv.mkDerivation {
+          packages.default = stdenv.mkDerivation {
             pname = "ren";
             version = "0.1.0";
 
@@ -57,7 +68,6 @@
 
             installPhase = ''
                 mkdir -p $out/bin
-                cp build/mono_embedded $out/bin/
             '';
           };
         }
