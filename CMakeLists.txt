@@ -27,8 +27,12 @@ add_executable(ren
   src/main.cpp
   src/RenderTarget.cpp
 
+
   src/Engine.cpp
   src/VulkanInstance.cpp
+
+
+  src/vkb/VkBootstrap.cpp
 
   # src/wren/optional/wren_opt_meta.c
   # src/wren/optional/wren_opt_random.c

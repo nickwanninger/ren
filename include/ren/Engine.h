@@ -25,6 +25,6 @@ private:
   SDL_Window *window = nullptr;
 
   // It also has a pointer to the Vulkan instance at the top
-  std::unique_ptr<ren::VulkanInstance> vk_instance;
+  std::unique_ptr<ren::VulkanInstance> vulkan;
 };
 }; // namespace ren
