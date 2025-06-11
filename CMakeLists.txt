@@ -22,6 +22,35 @@ find_package(Vulkan REQUIRED)
 find_package(fmt REQUIRED)
 find_package(OpenMP)
 
+
+
+# -- IMGUI -- #
+# ImGui source files
+set(IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/imgui)
+set(IMGUI_SOURCES
+    ${IMGUI_DIR}/imgui.cpp
+    ${IMGUI_DIR}/imgui_demo.cpp
+    ${IMGUI_DIR}/imgui_draw.cpp
+    ${IMGUI_DIR}/imgui_tables.cpp
+    ${IMGUI_DIR}/imgui_widgets.cpp
+)
+
+# Add Vulkan + GLFW backend files
+list(APPEND IMGUI_SOURCES
+    ${IMGUI_DIR}/backends/imgui_impl_sdl2.cpp
+    ${IMGUI_DIR}/backends/imgui_impl_vulkan.cpp
+)
+
+
+
+
+
+
+
+
+
+
+
 # Add executable
 add_executable(ren
   src/main.cpp
@@ -33,6 +62,9 @@ add_executable(ren
 
 
   src/vkb/VkBootstrap.cpp
+
+  ${IMGUI_SOURCES}
+
 
   # src/wren/optional/wren_opt_meta.c
   # src/wren/optional/wren_opt_random.c
@@ -121,6 +153,8 @@ target_link_libraries(ren
 # Include directories
 target_include_directories(ren PRIVATE
   ${SDL2_INCLUDE_DIRS}
+  ${IMGUI_DIR}
+  ${IMGUI_DIR}/backends
   # include/ has many vendored libraries (GLM, mainly)
   include/
   # src/wren/vm/
