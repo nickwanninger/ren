@@ -50,13 +50,23 @@ void ren::VulkanInstance::draw_frame(void) {
   u64 current_frame = (this->frame_number++) % MAX_FRAMES_IN_FLIGHT;
 
   vkWaitForFences(device, 1, &inFlightFences[current_frame], VK_TRUE, UINT64_MAX);
-  vkResetFences(device, 1, &inFlightFences[current_frame]);
 
 
   // Acquire the next image from the swapchain
   u32 imageIndex;
-  vkAcquireNextImageKHR(device, swapchain, UINT64_MAX, imageAvailableSemaphores[current_frame],
-                        VK_NULL_HANDLE, &imageIndex);
+  auto result =
+      vkAcquireNextImageKHR(device, swapchain, UINT64_MAX, imageAvailableSemaphores[current_frame],
+                            VK_NULL_HANDLE, &imageIndex);
+
+  if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || framebuffer_resized) {
+    recreate_swapchain();
+    return;
+  } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+    throw std::runtime_error("failed to acquire swap chain image!");
+  }
+
+  // Only reset the fence if we are submitting work
+  vkResetFences(device, 1, &inFlightFences[current_frame]);
 
 
   vkResetCommandBuffer(commandBuffers[current_frame], 0);
@@ -234,6 +244,12 @@ ren::VulkanInstance::~VulkanInstance() {
 
 
 void ren::VulkanInstance::init_swapchain(void) {
+  int width, height;
+  SDL_Vulkan_GetDrawableSize(window, &width, &height);
+  this->extent.width = width;
+  this->extent.height = height;
+
+
   fmt::print("Creating Vulkan swapchain for window size: {}x{}\n", extent.width, extent.height);
 
   printf("Vulkan instance: %p, device: %p, surface: %p\n", this->instance, this->device,
@@ -580,7 +596,7 @@ void ren::VulkanInstance::record_command_buffer(VkCommandBuffer commandBuffer, u
   renderPassInfo.renderArea.extent = extent;
 
   // setup the clear values
-  VkClearValue clearColor = {{{1.0f, 0.0f, 0.0f, 1.0f}}};
+  VkClearValue clearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
   renderPassInfo.clearValueCount = 1;
   renderPassInfo.pClearValues = &clearColor;
 
@@ -639,6 +655,19 @@ void ren::VulkanInstance::init_sync_objects(void) {
       throw std::runtime_error("failed to create synchronization objects for a frame!");
     }
   }
+}
+
+
+void ren::VulkanInstance::cleanup_swapchain(void) {
+  for (size_t i = 0; i < swapchain_framebuffers.size(); i++) {
+    vkDestroyFramebuffer(device, swapchain_framebuffers[i], nullptr);
+  }
+
+  for (size_t i = 0; i < image_views.size(); i++) {
+    vkDestroyImageView(device, image_views[i], nullptr);
+  }
+
+  vkDestroySwapchainKHR(device, swapchain, nullptr);
 }
 
 

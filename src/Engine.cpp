@@ -4,7 +4,7 @@ ren::Engine::Engine(const std::string &app_name, glm::uvec2 window_size)
     : app_name(app_name) {
   // First, initialize SDL with video and vulkan support.
   SDL_Init(SDL_INIT_VIDEO);
-  SDL_WindowFlags window_flags = (SDL_WindowFlags)(SDL_WINDOW_VULKAN);
+  SDL_WindowFlags window_flags = (SDL_WindowFlags)(SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
 
   // Then, create a window with the specified name and size.
   this->window =
@@ -25,6 +25,15 @@ void ren::Engine::run(void) {
   while (!bQuit) {
     // Handle events on queue
     while (SDL_PollEvent(&e) != 0) {
+      // if the window resizes
+      if (e.type == SDL_WINDOWEVENT && e.window.event == SDL_WINDOWEVENT_RESIZED) {
+        int width = e.window.data1;
+        int height = e.window.data2;
+        fmt::print("Window resized to {}x{}\n", width, height);
+        // Update the Vulkan swapchain with the new size
+        this->vulkan->framebuffer_resized = true;
+      }
+      
       // close the window when user alt-f4s or clicks the X button
       if (e.type == SDL_QUIT) {
         bQuit = true;

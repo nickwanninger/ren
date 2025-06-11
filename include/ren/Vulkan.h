@@ -81,10 +81,19 @@ namespace ren {
     std::vector<VkSemaphore> imageAvailableSemaphores;
     std::vector<VkSemaphore> renderFinishedSemaphores;
     std::vector<VkFence> inFlightFences;
+    bool framebuffer_resized = false;
 
     u64 frame_number = 0;
 
     void draw_frame(void);
+
+    void recreate_swapchain(void) {
+      vkDeviceWaitIdle(device);
+      cleanup_swapchain();
+      init_swapchain();
+      init_framebuffers();
+      framebuffer_resized = false;
+    }
 
 
    private:
@@ -96,6 +105,8 @@ namespace ren {
     void init_command_pool(void);
     void init_command_buffer(void);
     void init_sync_objects(void);
+
+    void cleanup_swapchain(void);
 
     // writes the commands we want to execute into a command buffer
     void record_command_buffer(VkCommandBuffer commandBuffer, u32 imageIndex);
