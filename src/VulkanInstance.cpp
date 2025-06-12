@@ -5,6 +5,13 @@
 #include <fstream>
 
 #include "vkb/VkBootstrap.h"
+#include "vulkan/vulkan_core.h"
+
+
+
+// Implement vk_mem_alloc here!
+#define VMA_IMPLEMENTATION
+#include "vk_mem_alloc.h"
 
 const int MAX_FRAMES_IN_FLIGHT = 3;
 
@@ -35,10 +42,54 @@ ren::VulkanInstance::VulkanInstance(const std::string &app_name, SDL_Window *win
   init_pipeline();
   init_framebuffers();
   init_command_pool();
+  create_vertex_buffer();
   init_command_buffer();
   init_sync_objects();
 }
 
+
+struct Vertex {
+  glm::vec2 pos;
+  glm::vec3 color;
+
+  static VkVertexInputBindingDescription get_binding_description() {
+    VkVertexInputBindingDescription bindingDescription{};
+    bindingDescription.binding = 0;
+    bindingDescription.stride = sizeof(Vertex);
+    bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    return bindingDescription;
+  }
+  static std::array<VkVertexInputAttributeDescription, 2> get_attribute_descriptions() {
+    std::array<VkVertexInputAttributeDescription, 2> attributeDescriptions{};
+
+
+    // First, we need to describe the vertex input attributes.
+
+    // Position attribute
+    attributeDescriptions[0].binding = 0;
+    attributeDescriptions[0].location = 0;
+    // float: VK_FORMAT_R32_SFLOAT
+    // vec2:  VK_FORMAT_R32G32_SFLOAT
+    // vec3:  VK_FORMAT_R32G32B32_SFLOAT
+    // vec4:  VK_FORMAT_R32G32B32A32_SFLOAT
+    attributeDescriptions[0].format = VK_FORMAT_R32G32_SFLOAT;
+    attributeDescriptions[0].offset = offsetof(Vertex, pos);
+
+
+    // And color
+    attributeDescriptions[1].binding = 0;
+    attributeDescriptions[1].location = 1;
+    attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
+    attributeDescriptions[1].offset = offsetof(Vertex, color);
+
+    return attributeDescriptions;
+  }
+};
+
+std::vector<Vertex> vertices = {{{0.0f, -0.5f}, {1.0f, 1.0f, 1.0f}},
+                                {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
+                                {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}};
 
 void ren::VulkanInstance::draw_frame(void) {
   // At a high level, rendering a frame in Vulkan consists of a common set of steps:
@@ -65,12 +116,14 @@ void ren::VulkanInstance::draw_frame(void) {
     throw std::runtime_error("failed to acquire swap chain image!");
   }
 
+
+  vkResetCommandBuffer(commandBuffers[current_frame], 0);
+  record_command_buffer(commandBuffers[current_frame], imageIndex);
+
   // Only reset the fence if we are submitting work
   vkResetFences(device, 1, &inFlightFences[current_frame]);
 
 
-  vkResetCommandBuffer(commandBuffers[current_frame], 0);
-  record_command_buffer(commandBuffers[current_frame], imageIndex);
 
   VkSubmitInfo submitInfo{};
   submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -188,6 +241,22 @@ void ren::VulkanInstance::init_instance(void) {
   this->graphics_queue = vkbDevice.get_queue(vkb::QueueType::graphics).value();
   this->graphics_queue_family = vkbDevice.get_queue_index(vkb::QueueType::graphics).value();
   fmt::print("Created graphics queue with family index: {}\n", this->graphics_queue_family);
+
+
+  // Now that we have an instance, allocate the vulkan allocator
+  VmaVulkanFunctions vulkanFunctions = {};
+  vulkanFunctions.vkGetInstanceProcAddr = &vkGetInstanceProcAddr;
+  vulkanFunctions.vkGetDeviceProcAddr = &vkGetDeviceProcAddr;
+
+  VmaAllocatorCreateInfo allocatorCreateInfo = {};
+  allocatorCreateInfo.flags = VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT;
+  allocatorCreateInfo.vulkanApiVersion = VK_API_VERSION_1_2;
+  allocatorCreateInfo.physicalDevice = physicalDevice;
+  allocatorCreateInfo.device = device;
+  allocatorCreateInfo.instance = instance;
+  allocatorCreateInfo.pVulkanFunctions = &vulkanFunctions;
+
+  VkResult res = vmaCreateAllocator(&allocatorCreateInfo, &allocator);
 }
 
 ren::VulkanInstance::~VulkanInstance() {
@@ -197,6 +266,9 @@ ren::VulkanInstance::~VulkanInstance() {
     vkDestroyFence(device, inFlightFences[i], nullptr);
   }
 
+  vkDestroyBuffer(device, vertex_buffer, nullptr);
+
+
   // Command Pool
   vkDestroyCommandPool(device, commandPool, nullptr);
 
@@ -205,6 +277,9 @@ ren::VulkanInstance::~VulkanInstance() {
   for (auto framebuffer : swapchain_framebuffers) {
     vkDestroyFramebuffer(device, framebuffer, nullptr);
   }
+
+  vkDestroyBuffer(device, vertex_buffer, nullptr);
+  vkFreeMemory(device, vertex_buffer_memory, nullptr);
 
   // Graphics Pipeline
   vkDestroyPipeline(device, graphics_pipeline, nullptr);
@@ -223,6 +298,9 @@ ren::VulkanInstance::~VulkanInstance() {
   vkDestroySwapchainKHR(device, swapchain, nullptr);
 
   vkDestroySurfaceKHR(instance, surface, nullptr);
+
+  vmaDestroyAllocator(allocator);
+
 
   vkDestroyDevice(device, nullptr);
 
@@ -376,13 +454,18 @@ void ren::VulkanInstance::init_pipeline(void) {
 
 
 
+  auto bindingDescription = Vertex::get_binding_description();
+  auto attributeDescriptions = Vertex::get_attribute_descriptions();
+
   // Vertex input
   VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
   vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-  vertexInputInfo.vertexBindingDescriptionCount = 0;
-  vertexInputInfo.pVertexBindingDescriptions = nullptr;  // Optional
-  vertexInputInfo.vertexAttributeDescriptionCount = 0;
-  vertexInputInfo.pVertexAttributeDescriptions = nullptr;  // Optional;
+  vertexInputInfo.vertexBindingDescriptionCount = 1;
+  vertexInputInfo.vertexAttributeDescriptionCount =
+      static_cast<uint32_t>(attributeDescriptions.size());
+  vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
+  vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
+
 
   // Input assembly
   VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
@@ -577,8 +660,8 @@ void ren::VulkanInstance::record_command_buffer(VkCommandBuffer commandBuffer, u
 
   VkCommandBufferBeginInfo beginInfo{};
   beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-  beginInfo.flags = 0;                   // Optional
-  beginInfo.pInheritanceInfo = nullptr;  // Optional
+  beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+  beginInfo.pInheritanceInfo = nullptr;
 
   if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
     throw std::runtime_error("failed to begin recording command buffer!");
@@ -604,6 +687,25 @@ void ren::VulkanInstance::record_command_buffer(VkCommandBuffer commandBuffer, u
 
   // We can now bind the graphics pipeline:
   vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline);
+
+
+
+  printf("--------------------------------\n");
+
+  VkDeviceSize buffer_size = sizeof(vertices[0]) * vertices.size();
+  ren::Buffer *buf = new ren::Buffer(*this, buffer_size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+  vertices[0].pos.x = sinf(SDL_GetTicks() / 1000.0f) * 0.5f;
+  buf->copyFromHost((void *)vertices.data(), buffer_size);
+
+  VkBuffer vertexBuffers[] = {buf->getHandle()};
+  VkDeviceSize offsets[] = {0};
+  vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
+
+  vkCmdDraw(commandBuffer, static_cast<uint32_t>(vertices.size()), 1, 0, 0);
+
+  printf("--------------------------------\n");
 
 
   VkViewport viewport{};
@@ -657,6 +759,101 @@ void ren::VulkanInstance::init_sync_objects(void) {
   }
 }
 
+void ren::VulkanInstance::create_vertex_buffer(void) {
+  // TODO look into staging buffers!
+  VkDeviceSize buffer_size = sizeof(vertices[0]) * vertices.size();
+  create_buffer(buffer_size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                vertex_buffer, vertex_buffer_memory);
+
+  void *data;
+  vkMapMemory(device, vertex_buffer_memory, 0, buffer_size, 0, &data);
+  memcpy(data, vertices.data(), (size_t)buffer_size);
+  vkUnmapMemory(device, vertex_buffer_memory);
+}
+
+
+void ren::VulkanInstance::create_buffer(VkDeviceSize size, VkBufferUsageFlags usage,
+                                        VkMemoryPropertyFlags properties, VkBuffer &buffer,
+                                        VkDeviceMemory &bufferMemory) {
+  VkBufferCreateInfo bufferInfo{};
+  bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+  bufferInfo.size = size;
+  bufferInfo.usage = usage;
+  bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+  if (vkCreateBuffer(device, &bufferInfo, nullptr, &buffer) != VK_SUCCESS) {
+    throw std::runtime_error("failed to create buffer!");
+  }
+
+  VkMemoryRequirements memRequirements;
+  vkGetBufferMemoryRequirements(device, buffer, &memRequirements);
+
+  VkMemoryAllocateInfo allocInfo{};
+  allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+  allocInfo.allocationSize = memRequirements.size;
+  allocInfo.memoryTypeIndex = find_memory_type(memRequirements.memoryTypeBits, properties);
+
+  if (vkAllocateMemory(device, &allocInfo, nullptr, &bufferMemory) != VK_SUCCESS) {
+    throw std::runtime_error("failed to allocate buffer memory!");
+  }
+
+  vkBindBufferMemory(device, buffer, bufferMemory, 0);
+}
+
+
+void ren::VulkanInstance::copy_buffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size,
+                                      u32 srcOffset, u32 dstOffset) {
+  VkCommandBufferAllocateInfo allocInfo{};
+  allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+  allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+  allocInfo.commandPool = commandPool;
+  allocInfo.commandBufferCount = 1;
+
+  VkCommandBuffer commandBuffer;
+  vkAllocateCommandBuffers(device, &allocInfo, &commandBuffer);
+
+  VkCommandBufferBeginInfo beginInfo{};
+  beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+  beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+  vkBeginCommandBuffer(commandBuffer, &beginInfo);
+
+  VkBufferCopy copyRegion{};
+  copyRegion.srcOffset = srcOffset;
+  copyRegion.dstOffset = dstOffset;
+  copyRegion.size = size;
+  vkCmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, 1, &copyRegion);
+
+  vkEndCommandBuffer(commandBuffer);
+
+  VkSubmitInfo submitInfo{};
+  submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+  submitInfo.commandBufferCount = 1;
+  submitInfo.pCommandBuffers = &commandBuffer;
+
+  vkQueueSubmit(graphics_queue, 1, &submitInfo, VK_NULL_HANDLE);
+  vkQueueWaitIdle(graphics_queue);
+
+  vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
+}
+
+u32 ren::VulkanInstance::find_memory_type(u32 typeFilter, VkMemoryPropertyFlags properties) {
+  // First we need to query info about the available types of memory
+  // using vkGetPhysicalDeviceMemoryProperties.
+  VkPhysicalDeviceMemoryProperties memProperties;
+  vkGetPhysicalDeviceMemoryProperties(physical_device, &memProperties);
+
+
+  for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
+    if ((typeFilter & (1 << i)) &&
+        (memProperties.memoryTypes[i].propertyFlags & properties) == properties) {
+      return i;
+    }
+  }
+
+  throw std::runtime_error("failed to find suitable memory type!");
+}
 
 void ren::VulkanInstance::cleanup_swapchain(void) {
   for (size_t i = 0; i < swapchain_framebuffers.size(); i++) {

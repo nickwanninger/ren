@@ -11,6 +11,7 @@
 #include <SDL2/SDL.h>         // for SDL_Window
 #include <SDL2/SDL_vulkan.h>  // for SDL_Vulkan functions
 
+#include <vk_mem_alloc.h>  // for VMA (Vulkan Memory Allocator)
 
 #define CHECK_VK_RESULT(x, msg)                                          \
   do {                                                                   \
@@ -40,6 +41,10 @@ namespace ren {
     VkDevice device = VK_NULL_HANDLE;
     VkQueue graphics_queue = VK_NULL_HANDLE;
     u32 graphics_queue_family = 0;
+
+
+    // ---- Memory Allocator ---- //
+    VmaAllocator allocator;
 
     // The surface is the window that we render to (we link against SDL2)
     VkSurfaceKHR surface = VK_NULL_HANDLE;
@@ -77,6 +82,12 @@ namespace ren {
     // We should somehow merge this and the semaphores into a single struct per frame/image
     std::vector<VkCommandBuffer> commandBuffers;
 
+
+    VkBuffer vertex_buffer;
+    VkDeviceMemory vertex_buffer_memory;
+
+
+
     // ---- Semaphores ---- //
     std::vector<VkSemaphore> imageAvailableSemaphores;
     std::vector<VkSemaphore> renderFinishedSemaphores;
@@ -96,6 +107,14 @@ namespace ren {
     }
 
 
+    void create_buffer(VkDeviceSize size, VkBufferUsageFlags usage,
+                       VkMemoryPropertyFlags properties, VkBuffer &buffer,
+                       VkDeviceMemory &bufferMemory);
+
+
+    void copy_buffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size, u32 srcOffset = 0,
+                     u32 dstOffset = 0);
+
    private:
     void init_instance(void);
     void init_swapchain(void);
@@ -106,7 +125,11 @@ namespace ren {
     void init_command_buffer(void);
     void init_sync_objects(void);
 
+    void create_vertex_buffer(void);
+
     void cleanup_swapchain(void);
+
+    u32 find_memory_type(u32 typeFilter, VkMemoryPropertyFlags properties);
 
     // writes the commands we want to execute into a command buffer
     void record_command_buffer(VkCommandBuffer commandBuffer, u32 imageIndex);
@@ -118,6 +141,49 @@ namespace ren {
   };
 
 
-  class VulkanShader {};
+
+
+  // Represents a buffer in Vulkan memory.
+  class Buffer {
+   public:
+    Buffer(VulkanInstance &vulkan_instance, VkDeviceSize size, VkBufferUsageFlags usage,
+           VkMemoryPropertyFlags properties);
+
+    virtual ~Buffer();
+
+    // Non-copyable, movable
+    Buffer(const Buffer &) = delete;
+    Buffer &operator=(const Buffer &) = delete;
+    Buffer(Buffer &&other) noexcept;
+    Buffer &operator=(Buffer &&other) noexcept;
+
+
+    void *map(void);
+    void unmap(void);
+
+    void copyFrom(const Buffer &src, VkDeviceSize size, VkDeviceSize srcOffset = 0,
+                  VkDeviceSize dstOffset = 0);
+    void copyFromHost(const void *data, VkDeviceSize size, VkDeviceSize offset = 0);
+
+
+    // Getters
+    VkBuffer getHandle() const { return buffer; }
+    VkDeviceSize getSize() const { return size; }
+    bool isMapped() const { return mapped != nullptr; }
+
+
+   protected:
+    VulkanInstance &vulkan;
+
+    VmaAllocation allocation = VK_NULL_HANDLE;
+    VkBuffer buffer = VK_NULL_HANDLE;
+    VkDeviceSize size = 0;
+
+    VkBufferUsageFlags usage;
+    VkMemoryPropertyFlags properties;
+
+    void *mapped = nullptr;
+  };
+
 
 };  // namespace ren

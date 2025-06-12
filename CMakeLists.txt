@@ -24,6 +24,8 @@ find_package(OpenMP)
 
 
 
+add_subdirectory(lib/VulkanMemoryAllocator)
+
 # -- IMGUI -- #
 # ImGui source files
 set(IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/imgui)
@@ -49,8 +51,6 @@ list(APPEND IMGUI_SOURCES
 
 
 
-
-
 # Add executable
 add_executable(ren
   src/main.cpp
@@ -62,6 +62,8 @@ add_executable(ren
 
 
   src/vkb/VkBootstrap.cpp
+
+  src/Buffer.cpp
 
   ${IMGUI_SOURCES}
 
@@ -146,6 +148,8 @@ target_link_libraries(ren
   fmt::fmt
 
   Vulkan::Vulkan
+  GPUOpen::VulkanMemoryAllocator
+
   m  # math library for sin/cos functions
 )
 
@@ -165,7 +169,9 @@ target_include_directories(ren PRIVATE
 target_compile_options(ren PRIVATE 
     ${SDL2_CFLAGS_OTHER}
     -Wall
-    # -Wextra
+    -Wno-nullability-completeness
+    -Wno-unused-variable
+    -Wno-unused-private-field
     -Wno-deprecated-declarations
     -Wno-unused-parameter
     -O3
