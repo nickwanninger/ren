@@ -36,8 +36,9 @@ namespace ren {
 
   // TEMPORARY VERTEX TYPE
   struct Vertex {
-    glm::vec2 pos;
+    glm::vec3 pos;
     glm::vec3 color;
+    glm::vec2 texCoord;
 
     static VkVertexInputBindingDescription get_binding_description() {
       VkVertexInputBindingDescription bindingDescription{};
@@ -47,8 +48,8 @@ namespace ren {
 
       return bindingDescription;
     }
-    static std::array<VkVertexInputAttributeDescription, 2> get_attribute_descriptions() {
-      std::array<VkVertexInputAttributeDescription, 2> attributeDescriptions{};
+    static std::array<VkVertexInputAttributeDescription, 3> get_attribute_descriptions() {
+      std::array<VkVertexInputAttributeDescription, 3> attributeDescriptions{};
 
 
       // First, we need to describe the vertex input attributes.
@@ -60,15 +61,22 @@ namespace ren {
       // vec2:  VK_FORMAT_R32G32_SFLOAT
       // vec3:  VK_FORMAT_R32G32B32_SFLOAT
       // vec4:  VK_FORMAT_R32G32B32A32_SFLOAT
-      attributeDescriptions[0].format = VK_FORMAT_R32G32_SFLOAT;
+      attributeDescriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;  // vec3
       attributeDescriptions[0].offset = offsetof(Vertex, pos);
 
 
-      // And color
+      // Color
       attributeDescriptions[1].binding = 0;
       attributeDescriptions[1].location = 1;
       attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
       attributeDescriptions[1].offset = offsetof(Vertex, color);
+
+
+      // Texture
+      attributeDescriptions[2].binding = 0;
+      attributeDescriptions[2].location = 2;
+      attributeDescriptions[2].format = VK_FORMAT_R32G32_SFLOAT;
+      attributeDescriptions[2].offset = offsetof(Vertex, texCoord);
 
       return attributeDescriptions;
     }
@@ -138,6 +146,11 @@ namespace ren {
     std::vector<VkCommandBuffer> commandBuffers;
 
 
+    VkImage textureImage;
+    VkDeviceMemory textureImageMemory;
+    VkImageView textureImageView;
+    VkSampler textureSampler;
+
 
     std::shared_ptr<ren::VertexBuffer<Vertex>> vertex_buffer;
     std::shared_ptr<ren::IndexBuffer<u32>> index_buffer;
@@ -146,7 +159,6 @@ namespace ren {
 
     VkDescriptorPool descriptorPool;
     std::vector<VkDescriptorSet> descriptorSets;
-
 
 
 
@@ -169,7 +181,7 @@ namespace ren {
       framebuffer_resized = false;
     }
 
-jk
+
     void create_buffer(VkDeviceSize size, VkBufferUsageFlags usage,
                        VkMemoryPropertyFlags properties, VkBuffer &buffer,
                        VkDeviceMemory &bufferMemory);
@@ -177,6 +189,21 @@ jk
 
     void copy_buffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size, u32 srcOffset = 0,
                      u32 dstOffset = 0);
+
+
+    void create_image(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling,
+                      VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage &image,
+                      VkDeviceMemory &imageMemory);
+
+
+    VkImageView create_image_view(VkImage image, VkFormat format);
+
+
+    VkCommandBuffer beginSingleTimeCommands();
+    void endSingleTimeCommands(VkCommandBuffer commandBuffer);
+
+    void copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);
+
 
    private:
     void init_instance(void);
@@ -187,11 +214,18 @@ jk
     void init_command_pool(void);
     void init_command_buffer(void);
     void init_sync_objects(void);
+    void init_imgui(void);
 
-    void create_vertex_buffer(void);
+    void createVertexBuffer(void);
     void create_descriptor_set_layout(void);
     void create_descriptor_pool(void);
     void create_descriptor_sets(void);
+
+    void transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout,
+                               VkImageLayout newLayout);
+
+    void createTextureImage(void);
+
 
     void cleanup_swapchain(void);
 

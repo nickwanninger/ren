@@ -35,10 +35,7 @@ set(IMGUI_SOURCES
     ${IMGUI_DIR}/imgui_draw.cpp
     ${IMGUI_DIR}/imgui_tables.cpp
     ${IMGUI_DIR}/imgui_widgets.cpp
-)
 
-# Add Vulkan + GLFW backend files
-list(APPEND IMGUI_SOURCES
     ${IMGUI_DIR}/backends/imgui_impl_sdl2.cpp
     ${IMGUI_DIR}/backends/imgui_impl_vulkan.cpp
 )
@@ -59,9 +56,8 @@ add_executable(ren
 
   src/Engine.cpp
   src/VulkanInstance.cpp
-
-
   src/vkb/VkBootstrap.cpp
+  src/stb/stb_image.c
 
   src/Buffer.cpp
 

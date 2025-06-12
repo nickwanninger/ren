@@ -1,6 +1,11 @@
 #include <ren/Engine.h>
 
-ren::Engine::Engine(const std::string &app_name, glm::uvec2 window_size)
+#include <stb/stb_image.h>
+
+
+#include <imgui_impl_sdl2.h>
+
+ren::Engine::Engine(const std::string& app_name, glm::uvec2 window_size)
     : app_name(app_name) {
   // First, initialize SDL with video and vulkan support.
   SDL_Init(SDL_INIT_VIDEO);
@@ -25,6 +30,8 @@ void ren::Engine::run(void) {
   while (!bQuit) {
     // Handle events on queue
     while (SDL_PollEvent(&e) != 0) {
+      ImGui_ImplSDL2_ProcessEvent(&e);
+
       // if the window resizes
       if (e.type == SDL_WINDOWEVENT && e.window.event == SDL_WINDOWEVENT_RESIZED) {
         int width = e.window.data1;
@@ -33,7 +40,7 @@ void ren::Engine::run(void) {
         // Update the Vulkan swapchain with the new size
         this->vulkan->framebuffer_resized = true;
       }
-      
+
       // close the window when user alt-f4s or clicks the X button
       if (e.type == SDL_QUIT) {
         bQuit = true;
@@ -42,11 +49,11 @@ void ren::Engine::run(void) {
       }
     }
 
-    auto start = std::chrono::high_resolution_clock::now();
+    // auto start = std::chrono::high_resolution_clock::now();
     vulkan->draw_frame();
-    auto end = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-    fmt::print("Frame {} took {} ms\n", vulkan->frame_number, duration.count());
+    // auto end = std::chrono::high_resolution_clock::now();
+    // auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    // fmt::print("Frame {} took {} ms\n", vulkan->frame_number, duration.count());
   }
   // Before exting, we need to wait for the device to finish all operations.
   vkDeviceWaitIdle(vulkan->device);

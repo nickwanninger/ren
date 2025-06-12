@@ -3,9 +3,21 @@
 #include <vector>
 #include <fmt/core.h>
 #include <fstream>
+#include "imgui.h"
 #include "vkb/VkBootstrap.h"
 #include "vulkan/vulkan_core.h"
 
+#include <stb/stb_image.h>
+
+
+#include <imconfig.h>
+#include <imgui.h>
+#include <imgui_internal.h>
+#include <imstb_rectpack.h>
+#include <imstb_textedit.h>
+#include <imstb_truetype.h>
+#include <imgui_impl_sdl2.h>
+#include <imgui_impl_vulkan.h>
 
 
 // Implement vk_mem_alloc here!
@@ -48,21 +60,45 @@ ren::VulkanInstance::VulkanInstance(const std::string &app_name, SDL_Window *win
   init_framebuffers();
   init_command_pool();
 
-  create_vertex_buffer();
+  createTextureImage();
+  createVertexBuffer();
   create_descriptor_pool();
   create_descriptor_sets();
 
 
   init_command_buffer();
   init_sync_objects();
+
+
+  init_imgui();
 }
 
 
 
-std::vector<ren::Vertex> vertices = {{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-                                     {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
-                                     {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
-                                     {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}};
+std::vector<ren::Vertex> vertices = {
+    //
+    {
+        glm::vec3(-0.5f, -0.5f, 0.0f),
+        glm::vec3(1.0f, 0.0f, 0.0f),
+        -glm::vec2(1.0f, 0.0f),
+    },
+    {
+        glm::vec3(0.5f, -0.5f, 0.0f),
+        glm::vec3(0.0f, 1.0f, 0.0f),
+        -glm::vec2(0.0f, 0.0f),
+    },
+    {
+        glm::vec3(0.5f, 0.5f, 0.0f),
+        glm::vec3(0.0f, 0.0f, 1.0f),
+        -glm::vec2(0.0f, 1.0f),
+    },
+    {
+        glm::vec3(-0.5f, 0.5f, 0.0f),
+        glm::vec3(1.0f, 1.0f, 1.0f),
+        -glm::vec2(1.0f, 1.0f),
+    }
+    //
+};
 
 const std::vector<uint32_t> indices = {0, 1, 2, 2, 3, 0};
 
@@ -91,6 +127,16 @@ void ren::VulkanInstance::draw_frame(void) {
     throw std::runtime_error("failed to acquire swap chain image!");
   }
 
+
+  // imgui new frame
+  ImGui_ImplVulkan_NewFrame();
+  ImGui_ImplSDL2_NewFrame();
+
+  ImGui::NewFrame();
+
+
+  // imgui commands
+  ImGui::ShowDemoWindow();
 
   vkResetCommandBuffer(commandBuffers[current_frame], 0);
   record_command_buffer(commandBuffers[current_frame], imageIndex);
@@ -252,6 +298,13 @@ ren::VulkanInstance::~VulkanInstance() {
 
   // Command Pool
   vkDestroyCommandPool(device, commandPool, nullptr);
+
+
+  // texture
+  vkDestroySampler(device, textureSampler, nullptr);
+  vkDestroyImageView(device, textureImageView, nullptr);
+  vkDestroyImage(device, textureImage, nullptr);
+  vkFreeMemory(device, textureImageMemory, nullptr);
 
 
   // Framebuffers
@@ -686,6 +739,25 @@ void ren::VulkanInstance::record_command_buffer(VkCommandBuffer commandBuffer, u
   vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
 
+
+  ImGui::Begin("Vertex Editor");
+
+
+  auto editVertex = [](ren::Vertex &v, const std::string &name) {
+    ImGui::PushID(name.c_str());
+    ImGui::Text("Vertex Editor: %s", name.c_str());
+    ImGui::DragFloat3("Position", &v.pos.x, 0.01f);
+    ImGui::ColorEdit3("Color", &v.color.r);
+    ImGui::DragFloat2("TexCoord", &v.texCoord.x, 0.01f);
+    ImGui::PopID();
+  };
+
+  editVertex(vertices[0], "Vertex 0");
+  editVertex(vertices[1], "Vertex 1");
+  editVertex(vertices[2], "Vertex 2");
+
+  ImGui::End();
+
   // vertices[0].pos.x = sinf(SDL_GetTicks() / 1000.0f) * 0.3f;
   vertex_buffer->copyFromHost(vertices);
   index_buffer->copyFromHost(indices);
@@ -706,6 +778,11 @@ void ren::VulkanInstance::record_command_buffer(VkCommandBuffer commandBuffer, u
 
   // Now we can issue the draw command for the triangle
   vkCmdDraw(commandBuffer, 3, 1, 0, 0);
+
+
+  // Right before we end the render pass, we need to render the ImGui draw data.
+  ImGui::Render();
+  ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer);
 
   // The render pass can now be ended:
   vkCmdEndRenderPass(commandBuffer);
@@ -741,7 +818,7 @@ void ren::VulkanInstance::init_sync_objects(void) {
   }
 }
 
-void ren::VulkanInstance::create_vertex_buffer(void) {
+void ren::VulkanInstance::createVertexBuffer(void) {
   vertex_buffer = std::make_shared<ren::VertexBuffer<ren::Vertex>>(*this, vertices);
   index_buffer = std::make_shared<ren::IndexBuffer<u32>>(*this, indices);
 
@@ -752,6 +829,82 @@ void ren::VulkanInstance::create_vertex_buffer(void) {
     uniform_buffers[i] = std::make_shared<ren::UniformBuffer<ren::UniformBufferObject>>(*this, 1);
   }
 }
+
+void ren::VulkanInstance::transitionImageLayout(VkImage image, VkFormat format,
+                                                VkImageLayout oldLayout, VkImageLayout newLayout) {
+  VkCommandBuffer commandBuffer = beginSingleTimeCommands();
+
+  VkImageMemoryBarrier barrier{};
+  barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+  barrier.oldLayout = oldLayout;
+  barrier.newLayout = newLayout;
+  barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+  barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+
+  barrier.image = image;
+  barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+  barrier.subresourceRange.baseMipLevel = 0;
+  barrier.subresourceRange.levelCount = 1;
+  barrier.subresourceRange.baseArrayLayer = 0;
+  barrier.subresourceRange.layerCount = 1;
+
+  barrier.srcAccessMask = 0;  // TODO
+  barrier.dstAccessMask = 0;  // TODO
+
+  VkPipelineStageFlags sourceStage;
+  VkPipelineStageFlags destinationStage;
+
+  if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
+    barrier.srcAccessMask = 0;
+    barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+
+    sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+    destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+  } else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL &&
+             newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+    sourceStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+  } else {
+    throw std::invalid_argument("unsupported layout transition!");
+  }
+
+  vkCmdPipelineBarrier(commandBuffer, sourceStage, destinationStage, 0, 0, nullptr, 0, nullptr, 1,
+                       &barrier);
+
+  endSingleTimeCommands(commandBuffer);
+}
+
+
+
+
+void ren::VulkanInstance::copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width,
+                                            uint32_t height) {
+  VkCommandBuffer commandBuffer = beginSingleTimeCommands();
+
+  VkBufferImageCopy region{};
+  region.bufferOffset = 0;
+  region.bufferRowLength = 0;
+  region.bufferImageHeight = 0;
+
+  region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+  region.imageSubresource.mipLevel = 0;
+  region.imageSubresource.baseArrayLayer = 0;
+  region.imageSubresource.layerCount = 1;
+
+  region.imageOffset = {0, 0, 0};
+  region.imageExtent = {width, height, 1};
+
+  vkCmdCopyBufferToImage(commandBuffer, buffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,
+                         &region);
+
+  endSingleTimeCommands(commandBuffer);
+}
+
+
+
 
 void ren::VulkanInstance::create_descriptor_set_layout(void) {
   // Every binding needs to be described through a VkDescriptorSetLayoutBinding struct.
@@ -780,10 +933,20 @@ void ren::VulkanInstance::create_descriptor_set_layout(void) {
   // we'll look at later. You can leave this to its default value.
   uboLayoutBinding.pImmutableSamplers = nullptr;  // Optional
 
+
+  VkDescriptorSetLayoutBinding samplerLayoutBinding{};
+  samplerLayoutBinding.binding = 1;
+  samplerLayoutBinding.descriptorCount = 1;
+  samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+  samplerLayoutBinding.pImmutableSamplers = nullptr;
+  samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+  std::array<VkDescriptorSetLayoutBinding, 2> bindings = {uboLayoutBinding, samplerLayoutBinding};
+
   VkDescriptorSetLayoutCreateInfo layoutInfo{};
   layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-  layoutInfo.bindingCount = 1;
-  layoutInfo.pBindings = &uboLayoutBinding;
+  layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
+  layoutInfo.pBindings = bindings.data();
 
   if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout) !=
       VK_SUCCESS) {
@@ -794,20 +957,26 @@ void ren::VulkanInstance::create_descriptor_set_layout(void) {
 
 
 void ren::VulkanInstance::create_descriptor_pool(void) {
-  VkDescriptorPoolSize poolSize{};
-  poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-  poolSize.descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+  std::array<VkDescriptorPoolSize, 2> poolSizes{};
+  poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+  poolSizes[0].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+  poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+  poolSizes[1].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
 
   VkDescriptorPoolCreateInfo poolInfo{};
   poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-  poolInfo.poolSizeCount = 1;
-  poolInfo.pPoolSizes = &poolSize;
+  poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+  poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
+  poolInfo.pPoolSizes = poolSizes.data();
   poolInfo.maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
 
   if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS) {
     throw std::runtime_error("failed to create descriptor pool!");
   }
 }
+
+
+
 void ren::VulkanInstance::create_descriptor_sets(void) {
   std::vector<VkDescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, descriptorSetLayout);
   VkDescriptorSetAllocateInfo allocInfo{};
@@ -827,40 +996,314 @@ void ren::VulkanInstance::create_descriptor_sets(void) {
     bufferInfo.offset = 0;
     bufferInfo.range = sizeof(UniformBufferObject);
 
-    VkWriteDescriptorSet descriptorWrite{};
-    descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptorWrite.dstSet = descriptorSets[i];
-    descriptorWrite.dstBinding = 0;
-    descriptorWrite.dstArrayElement = 0;
+    VkDescriptorImageInfo imageInfo{};
+    imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    imageInfo.imageView = textureImageView;
+    imageInfo.sampler = textureSampler;
 
-    descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    descriptorWrite.descriptorCount = 1;
 
-    descriptorWrite.pBufferInfo = &bufferInfo;
-    descriptorWrite.pImageInfo = nullptr;        // Optional
-    descriptorWrite.pTexelBufferView = nullptr;  // Optional
-    vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, nullptr);
+    std::array<VkWriteDescriptorSet, 2> descriptorWrites{};
+
+    descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWrites[0].dstSet = descriptorSets[i];
+    descriptorWrites[0].dstBinding = 0;
+    descriptorWrites[0].dstArrayElement = 0;
+    descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    descriptorWrites[0].descriptorCount = 1;
+    descriptorWrites[0].pBufferInfo = &bufferInfo;
+
+    descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWrites[1].dstSet = descriptorSets[i];
+    descriptorWrites[1].dstBinding = 1;
+    descriptorWrites[1].dstArrayElement = 0;
+    descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    descriptorWrites[1].descriptorCount = 1;
+    descriptorWrites[1].pImageInfo = &imageInfo;
+
+
+
+    vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()),
+                           descriptorWrites.data(), 0, nullptr);
+  }
+}
+
+
+void ren::VulkanInstance::createTextureImage() {
+  printf("Loading texture image...\n");
+  int texWidth, texHeight, texChannels;
+  stbi_uc *pixels =
+      stbi_load("assets/actually.png", &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+  VkDeviceSize imageSize = texWidth * texHeight * 4;
+
+  if (!pixels) { throw std::runtime_error("failed to load texture image!"); }
+
+  {
+    ren::Buffer stagingBuffer(
+        *this, imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+    stagingBuffer.copyFromHost(pixels, imageSize);
+
+    stbi_image_free(pixels);
+
+
+    // now we have a staging buffer with the texture data, we can create the
+    // actual texture image
+
+    create_image(texWidth, texHeight, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_TILING_OPTIMAL,
+                 VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, textureImage, textureImageMemory);
+
+    transitionImageLayout(textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_UNDEFINED,
+                          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+    copyBufferToImage(stagingBuffer.getHandle(), textureImage, static_cast<uint32_t>(texWidth),
+                      static_cast<uint32_t>(texHeight));
+
+    transitionImageLayout(textureImage, VK_FORMAT_R8G8B8A8_SRGB,
+                          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                          VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+  }
+
+  // Now, create the texture image view
+  textureImageView = create_image_view(textureImage, VK_FORMAT_R8G8B8A8_SRGB);
+
+  // Texture Sampler
+  VkSamplerCreateInfo samplerInfo{};
+  samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+  samplerInfo.magFilter = samplerInfo.minFilter = VK_FILTER_NEAREST;
+
+  samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+  samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+  samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+
+  samplerInfo.anisotropyEnable = VK_FALSE;
+  samplerInfo.maxAnisotropy = 1.0f;
+
+  samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+  samplerInfo.unnormalizedCoordinates = VK_FALSE;
+  samplerInfo.compareEnable = VK_FALSE;
+  samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
+
+  samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+  samplerInfo.mipLodBias = 0.0f;
+  samplerInfo.minLod = 0.0f;
+  samplerInfo.maxLod = 0.0f;
+
+  if (vkCreateSampler(device, &samplerInfo, nullptr, &textureSampler) != VK_SUCCESS) {
+    throw std::runtime_error("failed to create texture sampler!");
   }
 }
 
 
 
+VkImageView ren::VulkanInstance::create_image_view(VkImage image, VkFormat format) {
+  VkImageViewCreateInfo viewInfo{};
+  viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+  viewInfo.image = image;
+  viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+  viewInfo.format = format;
+  viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+  viewInfo.subresourceRange.baseMipLevel = 0;
+  viewInfo.subresourceRange.levelCount = 1;
+  viewInfo.subresourceRange.baseArrayLayer = 0;
+  viewInfo.subresourceRange.layerCount = 1;
+
+  VkImageView imageView;
+  if (vkCreateImageView(device, &viewInfo, nullptr, &imageView) != VK_SUCCESS) {
+    throw std::runtime_error("failed to create texture image view!");
+  }
+
+  return imageView;
+}
+
+
+void ren::VulkanInstance::create_image(uint32_t width, uint32_t height, VkFormat format,
+                                       VkImageTiling tiling, VkImageUsageFlags usage,
+                                       VkMemoryPropertyFlags properties, VkImage &image,
+                                       VkDeviceMemory &imageMemory) {
+  VkImageCreateInfo imageInfo{};
+  imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+  imageInfo.imageType = VK_IMAGE_TYPE_2D;
+  imageInfo.extent.width = width;
+  imageInfo.extent.height = height;
+  imageInfo.extent.depth = 1;
+  imageInfo.mipLevels = 1;
+  imageInfo.arrayLayers = 1;
+  imageInfo.format = format;
+  imageInfo.tiling = tiling;
+  imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+  imageInfo.usage = usage;
+  imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+  imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+  if (vkCreateImage(device, &imageInfo, nullptr, &image) != VK_SUCCESS) {
+    throw std::runtime_error("failed to create image!");
+  }
+
+  VkMemoryRequirements memRequirements;
+  vkGetImageMemoryRequirements(device, image, &memRequirements);
+
+  VkMemoryAllocateInfo allocInfo{};
+  allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+  allocInfo.allocationSize = memRequirements.size;
+  allocInfo.memoryTypeIndex = find_memory_type(memRequirements.memoryTypeBits, properties);
+
+  if (vkAllocateMemory(device, &allocInfo, nullptr, &imageMemory) != VK_SUCCESS) {
+    throw std::runtime_error("failed to allocate image memory!");
+  }
+
+  vkBindImageMemory(device, image, imageMemory, 0);
+}
+
+
+VkCommandBuffer ren::VulkanInstance::beginSingleTimeCommands() {
+  VkCommandBufferAllocateInfo allocInfo{};
+  allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+  allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+  allocInfo.commandPool = commandPool;
+  allocInfo.commandBufferCount = 1;
+
+  VkCommandBuffer commandBuffer;
+  vkAllocateCommandBuffers(device, &allocInfo, &commandBuffer);
+
+  VkCommandBufferBeginInfo beginInfo{};
+  beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+  beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+  vkBeginCommandBuffer(commandBuffer, &beginInfo);
+
+  return commandBuffer;
+}
+
+void ren::VulkanInstance::endSingleTimeCommands(VkCommandBuffer commandBuffer) {
+  vkEndCommandBuffer(commandBuffer);
+
+  VkSubmitInfo submitInfo{};
+  submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+  submitInfo.commandBufferCount = 1;
+  submitInfo.pCommandBuffers = &commandBuffer;
+
+  vkQueueSubmit(graphics_queue, 1, &submitInfo, VK_NULL_HANDLE);
+  vkQueueWaitIdle(graphics_queue);
+
+  vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
+}
+
+
+struct Camera {
+  glm::vec3 position = {0.0f, 0.0f, 3.0f};
+  glm::vec3 angles = {0.0f, 0.0f, 0.0f};  // pitch, yaw, roll
+  bool mouse_captured = false;
+  bool first_update = true;
+
+  glm::mat4 view_matrix() const {
+    float pitch = angles.x;
+    float yaw = angles.y;
+
+    float sinPitch = sinf(pitch);
+    float cosPitch = cosf(pitch);
+    float sinYaw = sinf(yaw);
+    float cosYaw = cosf(yaw);
+
+    glm::vec3 forward(sinYaw * cosPitch,  // X component
+                      sinPitch,           // Y component
+                      -cosYaw * cosPitch  // Z component
+    );
+
+    glm::mat4 view = glm::lookAt(position, position + forward, glm::vec3(0.0f, 1.0f, 0.0f));
+    return view;
+  }
+
+  void update(float dt) {
+    const Uint8 *keys = SDL_GetKeyboardState(NULL);
+    int mouse_x, mouse_y;
+    SDL_GetRelativeMouseState(&mouse_x, &mouse_y);
+
+    if (first_update) {
+      // Capture mouse on first update
+      SDL_SetRelativeMouseMode(mouse_captured ? SDL_TRUE : SDL_FALSE);
+      first_update = false;
+    }
+
+    // Toggle mouse capture with ESC
+    if (keys[SDL_SCANCODE_E]) {
+      mouse_captured = !mouse_captured;
+      SDL_SetRelativeMouseMode(mouse_captured ? SDL_TRUE : SDL_FALSE);
+      SDL_Delay(100);  // Prevent rapid toggling
+    }
+
+    if (!mouse_captured) return;
+
+    // Mouse look
+    angles.y += mouse_x * 0.002f;  // yaw
+    angles.x -= mouse_y * 0.002f;  // pitch
+
+    // Clamp pitch
+    if (angles.x > M_PI / 2.0f) angles.x = M_PI / 2.0f;
+    if (angles.x < -M_PI / 2.0f) angles.x = -M_PI / 2.0f;
+
+    // Movement vectors
+    float cos_yaw = cosf(angles.y);
+    float sin_yaw = sinf(angles.y);
+    glm::vec3 forward = {sin_yaw, 0.0f, -cos_yaw};
+    glm::vec3 right = {cos_yaw, 0.0f, sin_yaw};
+
+    float speed = 1.0f * dt;
+
+    // WASD movement
+    if (keys[SDL_SCANCODE_W]) {
+      // position.x += speed / 2.0f;
+      position.x += forward.x * speed;
+      position.z += forward.z * speed;
+    }
+    if (keys[SDL_SCANCODE_S]) {
+      // position.x -= speed / 2.0f;
+      position.x -= forward.x * speed;
+      position.z -= forward.z * speed;
+    }
+    if (keys[SDL_SCANCODE_A]) {
+      // position.z -= speed / 2.0f;
+      position.x -= right.x * speed;
+      position.z -= right.z * speed;
+    }
+    if (keys[SDL_SCANCODE_D]) {
+      // position.z += speed / 2.0f;
+      position.x += right.x * speed;
+      position.z += right.z * speed;
+    }
+    if (keys[SDL_SCANCODE_SPACE]) { position.y += speed; }
+    if (keys[SDL_SCANCODE_LSHIFT]) { position.y -= speed; }
+  }
+};
+
+Camera camera;
+
 
 void ren::VulkanInstance::update_uniform_buffer(u32 current_frame) {
   static auto startTime = std::chrono::high_resolution_clock::now();
+  static auto lastTime = startTime;
 
   auto currentTime = std::chrono::high_resolution_clock::now();
+
   float time =
       std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
 
+  auto deltaTime =
+      std::chrono::duration<float, std::chrono::seconds::period>(currentTime - lastTime).count();
+  lastTime = currentTime;
 
+
+
+  camera.update(deltaTime);
 
   UniformBufferObject ubo{};
-  ubo.model = glm::rotate(glm::mat4(1.0f), sinf(time) * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-  ubo.view = glm::lookAt(glm::vec3(5.0f, 2.0f, sinf(time) + 2.0f), glm::vec3(0.0f, 0.0f, 0.0f),
-                         glm::vec3(0.0f, 0.0f, 1.0f));
+  ubo.model = glm::rotate(glm::mat4(1.0f), 0 * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+  ubo.view = camera.view_matrix();
+
+  // glm::lookAt(glm::vec3(5.0f, 2.0f, sinf(time) + 2.0f), glm::vec3(0.0f, 0.0f, 0.0f),
+  //                      glm::vec3(0.0f, 0.0f, 1.0f));
   ubo.proj =
-      glm::perspective(glm::radians(45.0f), extent.width / (float)extent.height, 0.1f, 10.0f);
+      glm::perspective(glm::radians(90.0f), extent.width / (float)extent.height, 0.01f, 1000.0f);
 
   ubo.proj[1][1] *= -1;
 
@@ -899,38 +1342,13 @@ void ren::VulkanInstance::create_buffer(VkDeviceSize size, VkBufferUsageFlags us
 
 void ren::VulkanInstance::copy_buffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size,
                                       u32 srcOffset, u32 dstOffset) {
-  VkCommandBufferAllocateInfo allocInfo{};
-  allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-  allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-  allocInfo.commandPool = commandPool;
-  allocInfo.commandBufferCount = 1;
-
-  VkCommandBuffer commandBuffer;
-  vkAllocateCommandBuffers(device, &allocInfo, &commandBuffer);
-
-  VkCommandBufferBeginInfo beginInfo{};
-  beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-  beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-
-  vkBeginCommandBuffer(commandBuffer, &beginInfo);
+  VkCommandBuffer commandBuffer = beginSingleTimeCommands();
 
   VkBufferCopy copyRegion{};
-  copyRegion.srcOffset = srcOffset;
-  copyRegion.dstOffset = dstOffset;
   copyRegion.size = size;
   vkCmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, 1, &copyRegion);
 
-  vkEndCommandBuffer(commandBuffer);
-
-  VkSubmitInfo submitInfo{};
-  submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-  submitInfo.commandBufferCount = 1;
-  submitInfo.pCommandBuffers = &commandBuffer;
-
-  vkQueueSubmit(graphics_queue, 1, &submitInfo, VK_NULL_HANDLE);
-  vkQueueWaitIdle(graphics_queue);
-
-  vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
+  endSingleTimeCommands(commandBuffer);
 }
 
 u32 ren::VulkanInstance::find_memory_type(u32 typeFilter, VkMemoryPropertyFlags properties) {
@@ -999,4 +1417,91 @@ VkShaderModule ren::VulkanInstance::load_shader_module(const std::string &filena
   fmt::print("Loading shader from {} ({} bytes)\n", filename, size);
 
   return create_shader_module(code);
+}
+
+
+
+void ren::VulkanInstance::init_imgui(void) {
+  // 1: create descriptor pool for IMGUI
+  // the size of the pool is very oversize, but it's copied from imgui demo itself.
+  VkDescriptorPoolSize pool_sizes[] = {
+      //
+      {VK_DESCRIPTOR_TYPE_SAMPLER, 1000},
+      {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000},
+      {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1000},
+      {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1000},
+      {VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1000},
+      {VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 1000},
+      {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000},
+      {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000},
+      {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1000},
+      {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 1000},
+      {VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1000},
+  };
+
+  VkDescriptorPoolCreateInfo pool_info = {};
+  pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+  pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+  pool_info.maxSets = 1000;
+  pool_info.poolSizeCount = 11;  // size of pool_sizes
+  pool_info.pPoolSizes = pool_sizes;
+
+  VkDescriptorPool imguiPool;
+  VK_CHECK(vkCreateDescriptorPool(device, &pool_info, nullptr, &imguiPool));
+
+
+  // 2: initialize imgui library
+
+  // this initializes the core structures of imgui
+  ImGui::CreateContext();
+
+  ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+
+
+
+  // this initializes imgui for SDL
+  ImGui_ImplSDL2_InitForVulkan(window);
+
+  // this initializes imgui for Vulkan
+  ImGui_ImplVulkan_InitInfo init_info = {};
+  init_info.Instance = instance;
+  init_info.PhysicalDevice = physical_device;
+  init_info.Device = device;
+  init_info.Queue = graphics_queue;
+  init_info.DescriptorPool = imguiPool;
+  init_info.MinImageCount = 3;
+  init_info.ImageCount = 3;
+  init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+  init_info.RenderPass = render_pass;
+
+  ImGui_ImplVulkan_Init(&init_info);
+
+
+  ImGuiStyle *style = &ImGui::GetStyle();
+
+  style->WindowPadding = ImVec2(5, 5);
+  style->WindowRounding = 5.0f;
+  style->FramePadding = ImVec2(3, 3);
+  style->FrameRounding = 4.0f;
+  style->ItemSpacing = ImVec2(12, 8);
+  style->ItemInnerSpacing = ImVec2(8, 6);
+  style->IndentSpacing = 25.0f;
+  style->ScrollbarSize = 15.0f;
+  style->ScrollbarRounding = 9.0f;
+  style->GrabMinSize = 5.0f;
+  style->GrabRounding = 3.0f;
+
+
+
+  // execute a gpu command to upload imgui font textures
+  // ImGui_ImplVulkan_CreateFontsTexture();
+
+  // // clear font textures from cpu data
+  // ImGui_ImplVulkan_DestroyFontUploadObjects();
+
+  // // add the destroy the imgui created structures
+  // _mainDeletionQueue.push_function([=]() {
+  //   vkDestroyDescriptorPool(_device, imguiPool, nullptr);
+  //   ImGui_ImplVulkan_Shutdown();
+  // });
 }
