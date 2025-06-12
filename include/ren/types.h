@@ -8,14 +8,16 @@
 #include <span>
 #include <string>
 #include <vector>
+#include <iostream>
 
 #include <vulkan/vulkan.h>
-// #include <vk_mem_alloc.h>
+#include <vk_mem_alloc.h>
 
 #include <fmt/core.h>
 
-#include <glm/mat4x4.hpp>
-#include <glm/vec4.hpp>
+#define GLM_FORCE_RADIANS
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 
 using u8 = uint8_t;
 using i8 = int8_t;

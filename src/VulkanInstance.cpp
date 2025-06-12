@@ -3,7 +3,6 @@
 #include <vector>
 #include <fmt/core.h>
 #include <fstream>
-
 #include "vkb/VkBootstrap.h"
 #include "vulkan/vulkan_core.h"
 
@@ -38,58 +37,34 @@ ren::VulkanInstance::VulkanInstance(const std::string &app_name, SDL_Window *win
 
   init_instance();
   init_swapchain();
+
+
   init_renderpass();
+
+  create_descriptor_set_layout();
+
+
   init_pipeline();
   init_framebuffers();
   init_command_pool();
+
   create_vertex_buffer();
+  create_descriptor_pool();
+  create_descriptor_sets();
+
+
   init_command_buffer();
   init_sync_objects();
 }
 
 
-struct Vertex {
-  glm::vec2 pos;
-  glm::vec3 color;
 
-  static VkVertexInputBindingDescription get_binding_description() {
-    VkVertexInputBindingDescription bindingDescription{};
-    bindingDescription.binding = 0;
-    bindingDescription.stride = sizeof(Vertex);
-    bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+std::vector<ren::Vertex> vertices = {{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+                                     {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
+                                     {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
+                                     {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}};
 
-    return bindingDescription;
-  }
-  static std::array<VkVertexInputAttributeDescription, 2> get_attribute_descriptions() {
-    std::array<VkVertexInputAttributeDescription, 2> attributeDescriptions{};
-
-
-    // First, we need to describe the vertex input attributes.
-
-    // Position attribute
-    attributeDescriptions[0].binding = 0;
-    attributeDescriptions[0].location = 0;
-    // float: VK_FORMAT_R32_SFLOAT
-    // vec2:  VK_FORMAT_R32G32_SFLOAT
-    // vec3:  VK_FORMAT_R32G32B32_SFLOAT
-    // vec4:  VK_FORMAT_R32G32B32A32_SFLOAT
-    attributeDescriptions[0].format = VK_FORMAT_R32G32_SFLOAT;
-    attributeDescriptions[0].offset = offsetof(Vertex, pos);
-
-
-    // And color
-    attributeDescriptions[1].binding = 0;
-    attributeDescriptions[1].location = 1;
-    attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
-    attributeDescriptions[1].offset = offsetof(Vertex, color);
-
-    return attributeDescriptions;
-  }
-};
-
-std::vector<Vertex> vertices = {{{0.0f, -0.5f}, {1.0f, 1.0f, 1.0f}},
-                                {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
-                                {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}};
+const std::vector<uint32_t> indices = {0, 1, 2, 2, 3, 0};
 
 void ren::VulkanInstance::draw_frame(void) {
   // At a high level, rendering a frame in Vulkan consists of a common set of steps:
@@ -266,7 +241,13 @@ ren::VulkanInstance::~VulkanInstance() {
     vkDestroyFence(device, inFlightFences[i], nullptr);
   }
 
-  vkDestroyBuffer(device, vertex_buffer, nullptr);
+  // Clear the index/vertex/uniform buffer
+  vertex_buffer.reset();
+  index_buffer.reset();
+  uniform_buffers.clear();
+
+  vkDestroyDescriptorPool(device, descriptorPool, nullptr);
+  vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
 
 
   // Command Pool
@@ -278,8 +259,6 @@ ren::VulkanInstance::~VulkanInstance() {
     vkDestroyFramebuffer(device, framebuffer, nullptr);
   }
 
-  vkDestroyBuffer(device, vertex_buffer, nullptr);
-  vkFreeMemory(device, vertex_buffer_memory, nullptr);
 
   // Graphics Pipeline
   vkDestroyPipeline(device, graphics_pipeline, nullptr);
@@ -497,7 +476,7 @@ void ren::VulkanInstance::init_pipeline(void) {
   rasterizer.lineWidth = 1.0f;
 
   rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
-  rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
+  rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
 
   rasterizer.depthBiasEnable = VK_FALSE;
   rasterizer.depthBiasConstantFactor = 0.0f;  // Optional
@@ -558,8 +537,8 @@ void ren::VulkanInstance::init_pipeline(void) {
 
   VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
   pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-  pipelineLayoutInfo.setLayoutCount = 0;             // Optional
-  pipelineLayoutInfo.pSetLayouts = nullptr;          // Optional
+  pipelineLayoutInfo.setLayoutCount = 1;
+  pipelineLayoutInfo.pSetLayouts = &descriptorSetLayout;
   pipelineLayoutInfo.pushConstantRangeCount = 0;     // Optional
   pipelineLayoutInfo.pPushConstantRanges = nullptr;  // Optional
 
@@ -689,23 +668,7 @@ void ren::VulkanInstance::record_command_buffer(VkCommandBuffer commandBuffer, u
   vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline);
 
 
-
-  printf("--------------------------------\n");
-
-  VkDeviceSize buffer_size = sizeof(vertices[0]) * vertices.size();
-  ren::Buffer *buf = new ren::Buffer(*this, buffer_size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-
-  vertices[0].pos.x = sinf(SDL_GetTicks() / 1000.0f) * 0.5f;
-  buf->copyFromHost((void *)vertices.data(), buffer_size);
-
-  VkBuffer vertexBuffers[] = {buf->getHandle()};
-  VkDeviceSize offsets[] = {0};
-  vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
-
-  vkCmdDraw(commandBuffer, static_cast<uint32_t>(vertices.size()), 1, 0, 0);
-
-  printf("--------------------------------\n");
+  update_uniform_buffer(imageIndex);
 
 
   VkViewport viewport{};
@@ -721,6 +684,25 @@ void ren::VulkanInstance::record_command_buffer(VkCommandBuffer commandBuffer, u
   scissor.offset = {0, 0};
   scissor.extent = extent;
   vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+
+
+  // vertices[0].pos.x = sinf(SDL_GetTicks() / 1000.0f) * 0.3f;
+  vertex_buffer->copyFromHost(vertices);
+  index_buffer->copyFromHost(indices);
+
+  VkBuffer vertexBuffers[] = {vertex_buffer->getHandle()};
+  VkDeviceSize offsets[] = {0};
+
+
+  vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
+  vkCmdBindIndexBuffer(commandBuffer, index_buffer->getHandle(), 0, VK_INDEX_TYPE_UINT32);
+
+  vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 0, 1,
+                          &descriptorSets[imageIndex], 0, nullptr);
+
+  vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
+
+
 
   // Now we can issue the draw command for the triangle
   vkCmdDraw(commandBuffer, 3, 1, 0, 0);
@@ -760,16 +742,129 @@ void ren::VulkanInstance::init_sync_objects(void) {
 }
 
 void ren::VulkanInstance::create_vertex_buffer(void) {
-  // TODO look into staging buffers!
-  VkDeviceSize buffer_size = sizeof(vertices[0]) * vertices.size();
-  create_buffer(buffer_size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                vertex_buffer, vertex_buffer_memory);
+  vertex_buffer = std::make_shared<ren::VertexBuffer<ren::Vertex>>(*this, vertices);
+  index_buffer = std::make_shared<ren::IndexBuffer<u32>>(*this, indices);
 
-  void *data;
-  vkMapMemory(device, vertex_buffer_memory, 0, buffer_size, 0, &data);
-  memcpy(data, vertices.data(), (size_t)buffer_size);
-  vkUnmapMemory(device, vertex_buffer_memory);
+  uniform_buffers.resize(MAX_FRAMES_IN_FLIGHT);
+
+  for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+    // Nice and simple with my API
+    uniform_buffers[i] = std::make_shared<ren::UniformBuffer<ren::UniformBufferObject>>(*this, 1);
+  }
+}
+
+void ren::VulkanInstance::create_descriptor_set_layout(void) {
+  // Every binding needs to be described through a VkDescriptorSetLayoutBinding struct.
+  VkDescriptorSetLayoutBinding uboLayoutBinding{};
+  uboLayoutBinding.binding = 0;
+
+  // The first two fields specify the binding used in the shader and
+  // the type of descriptor, which is a uniform buffer object. It is
+  // possible for the shader variable to represent an array of uniform
+  // buffer objects, and descriptorCount specifies the number of
+  // values in the array. This could be used to specify a
+  // transformation for each of the bones in a skeleton for skeletal
+  // animation, for example. Our MVP transformation is in a single
+  // uniform buffer object, so we're using a descriptorCount of 1.
+  uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+  uboLayoutBinding.descriptorCount = 1;
+
+  // We also need to specify in which shader stages the descriptor is
+  // going to be referenced. The stageFlags field can be a combination
+  // of VkShaderStageFlagBits values or the value
+  // VK_SHADER_STAGE_ALL_GRAPHICS. In our case, we're only referencing
+  // the descriptor from the vertex shader.
+  uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+  // The pImmutableSamplers field is only relevant for image sampling related descriptors, which
+  // we'll look at later. You can leave this to its default value.
+  uboLayoutBinding.pImmutableSamplers = nullptr;  // Optional
+
+  VkDescriptorSetLayoutCreateInfo layoutInfo{};
+  layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+  layoutInfo.bindingCount = 1;
+  layoutInfo.pBindings = &uboLayoutBinding;
+
+  if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout) !=
+      VK_SUCCESS) {
+    throw std::runtime_error("failed to create descriptor set layout!");
+  }
+}
+
+
+
+void ren::VulkanInstance::create_descriptor_pool(void) {
+  VkDescriptorPoolSize poolSize{};
+  poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+  poolSize.descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+
+  VkDescriptorPoolCreateInfo poolInfo{};
+  poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+  poolInfo.poolSizeCount = 1;
+  poolInfo.pPoolSizes = &poolSize;
+  poolInfo.maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+
+  if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS) {
+    throw std::runtime_error("failed to create descriptor pool!");
+  }
+}
+void ren::VulkanInstance::create_descriptor_sets(void) {
+  std::vector<VkDescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, descriptorSetLayout);
+  VkDescriptorSetAllocateInfo allocInfo{};
+  allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+  allocInfo.descriptorPool = descriptorPool;
+  allocInfo.descriptorSetCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+  allocInfo.pSetLayouts = layouts.data();
+
+  descriptorSets.resize(MAX_FRAMES_IN_FLIGHT);
+  if (vkAllocateDescriptorSets(device, &allocInfo, descriptorSets.data()) != VK_SUCCESS) {
+    throw std::runtime_error("failed to allocate descriptor sets!");
+  }
+
+  for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+    VkDescriptorBufferInfo bufferInfo{};
+    bufferInfo.buffer = uniform_buffers[i]->getHandle();
+    bufferInfo.offset = 0;
+    bufferInfo.range = sizeof(UniformBufferObject);
+
+    VkWriteDescriptorSet descriptorWrite{};
+    descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWrite.dstSet = descriptorSets[i];
+    descriptorWrite.dstBinding = 0;
+    descriptorWrite.dstArrayElement = 0;
+
+    descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    descriptorWrite.descriptorCount = 1;
+
+    descriptorWrite.pBufferInfo = &bufferInfo;
+    descriptorWrite.pImageInfo = nullptr;        // Optional
+    descriptorWrite.pTexelBufferView = nullptr;  // Optional
+    vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, nullptr);
+  }
+}
+
+
+
+
+void ren::VulkanInstance::update_uniform_buffer(u32 current_frame) {
+  static auto startTime = std::chrono::high_resolution_clock::now();
+
+  auto currentTime = std::chrono::high_resolution_clock::now();
+  float time =
+      std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
+
+
+
+  UniformBufferObject ubo{};
+  ubo.model = glm::rotate(glm::mat4(1.0f), sinf(time) * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+  ubo.view = glm::lookAt(glm::vec3(5.0f, 2.0f, sinf(time) + 2.0f), glm::vec3(0.0f, 0.0f, 0.0f),
+                         glm::vec3(0.0f, 0.0f, 1.0f));
+  ubo.proj =
+      glm::perspective(glm::radians(45.0f), extent.width / (float)extent.height, 0.1f, 10.0f);
+
+  ubo.proj[1][1] *= -1;
+
+  uniform_buffers[current_frame]->copyFromHost(&ubo, 1);
 }
 
 

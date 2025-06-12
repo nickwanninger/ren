@@ -1,12 +1,11 @@
 #pragma once
 
 #include <fmt/core.h>
-#include <iostream>
 #include <string>
-#include <ren/types.h>
+#include <memory>
 
-#include <vulkan/vulkan.h>
-#include <vulkan/vulkan_core.h>
+#include <ren/types.h>
+#include <ren/Buffer.h>
 
 #include <SDL2/SDL.h>         // for SDL_Window
 #include <SDL2/SDL_vulkan.h>  // for SDL_Vulkan functions
@@ -23,6 +22,61 @@
   } while (0)
 
 namespace ren {
+
+  class VulkanInstance;
+
+
+  struct UniformBufferObject {
+    glm::mat4 model;
+    glm::mat4 view;
+    glm::mat4 proj;
+  };
+
+
+
+  // TEMPORARY VERTEX TYPE
+  struct Vertex {
+    glm::vec2 pos;
+    glm::vec3 color;
+
+    static VkVertexInputBindingDescription get_binding_description() {
+      VkVertexInputBindingDescription bindingDescription{};
+      bindingDescription.binding = 0;
+      bindingDescription.stride = sizeof(Vertex);
+      bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+      return bindingDescription;
+    }
+    static std::array<VkVertexInputAttributeDescription, 2> get_attribute_descriptions() {
+      std::array<VkVertexInputAttributeDescription, 2> attributeDescriptions{};
+
+
+      // First, we need to describe the vertex input attributes.
+
+      // Position attribute
+      attributeDescriptions[0].binding = 0;
+      attributeDescriptions[0].location = 0;
+      // float: VK_FORMAT_R32_SFLOAT
+      // vec2:  VK_FORMAT_R32G32_SFLOAT
+      // vec3:  VK_FORMAT_R32G32B32_SFLOAT
+      // vec4:  VK_FORMAT_R32G32B32A32_SFLOAT
+      attributeDescriptions[0].format = VK_FORMAT_R32G32_SFLOAT;
+      attributeDescriptions[0].offset = offsetof(Vertex, pos);
+
+
+      // And color
+      attributeDescriptions[1].binding = 0;
+      attributeDescriptions[1].location = 1;
+      attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
+      attributeDescriptions[1].offset = offsetof(Vertex, color);
+
+      return attributeDescriptions;
+    }
+  };
+
+
+
+
   // Every vulkan application needs at least one Vulkan instance.
   // This class also contains the physical device, device, and surface.
   class VulkanInstance {
@@ -69,6 +123,7 @@ namespace ren {
 
     // ---- Pipeline ---- //
 
+    VkDescriptorSetLayout descriptorSetLayout;
     VkPipelineLayout pipeline_layout = VK_NULL_HANDLE;
     VkPipeline graphics_pipeline;
 
@@ -83,8 +138,16 @@ namespace ren {
     std::vector<VkCommandBuffer> commandBuffers;
 
 
-    VkBuffer vertex_buffer;
-    VkDeviceMemory vertex_buffer_memory;
+
+    std::shared_ptr<ren::VertexBuffer<Vertex>> vertex_buffer;
+    std::shared_ptr<ren::IndexBuffer<u32>> index_buffer;
+    // One for each frame in flight
+    std::vector<std::shared_ptr<ren::UniformBuffer<UniformBufferObject>>> uniform_buffers;
+
+    VkDescriptorPool descriptorPool;
+    std::vector<VkDescriptorSet> descriptorSets;
+
+
 
 
 
@@ -106,7 +169,7 @@ namespace ren {
       framebuffer_resized = false;
     }
 
-
+jk
     void create_buffer(VkDeviceSize size, VkBufferUsageFlags usage,
                        VkMemoryPropertyFlags properties, VkBuffer &buffer,
                        VkDeviceMemory &bufferMemory);
@@ -126,8 +189,13 @@ namespace ren {
     void init_sync_objects(void);
 
     void create_vertex_buffer(void);
+    void create_descriptor_set_layout(void);
+    void create_descriptor_pool(void);
+    void create_descriptor_sets(void);
 
     void cleanup_swapchain(void);
+
+    void update_uniform_buffer(u32 current_image);
 
     u32 find_memory_type(u32 typeFilter, VkMemoryPropertyFlags properties);
 
@@ -138,51 +206,6 @@ namespace ren {
 
     VkShaderModule create_shader_module(const std::vector<u8> &code);
     VkShaderModule load_shader_module(const std::string &filename);
-  };
-
-
-
-
-  // Represents a buffer in Vulkan memory.
-  class Buffer {
-   public:
-    Buffer(VulkanInstance &vulkan_instance, VkDeviceSize size, VkBufferUsageFlags usage,
-           VkMemoryPropertyFlags properties);
-
-    virtual ~Buffer();
-
-    // Non-copyable, movable
-    Buffer(const Buffer &) = delete;
-    Buffer &operator=(const Buffer &) = delete;
-    Buffer(Buffer &&other) noexcept;
-    Buffer &operator=(Buffer &&other) noexcept;
-
-
-    void *map(void);
-    void unmap(void);
-
-    void copyFrom(const Buffer &src, VkDeviceSize size, VkDeviceSize srcOffset = 0,
-                  VkDeviceSize dstOffset = 0);
-    void copyFromHost(const void *data, VkDeviceSize size, VkDeviceSize offset = 0);
-
-
-    // Getters
-    VkBuffer getHandle() const { return buffer; }
-    VkDeviceSize getSize() const { return size; }
-    bool isMapped() const { return mapped != nullptr; }
-
-
-   protected:
-    VulkanInstance &vulkan;
-
-    VmaAllocation allocation = VK_NULL_HANDLE;
-    VkBuffer buffer = VK_NULL_HANDLE;
-    VkDeviceSize size = 0;
-
-    VkBufferUsageFlags usage;
-    VkMemoryPropertyFlags properties;
-
-    void *mapped = nullptr;
   };
 
 

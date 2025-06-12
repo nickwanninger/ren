@@ -18,7 +18,8 @@ ren::Buffer::Buffer(VulkanInstance &vulkan_instance, VkDeviceSize size, VkBuffer
   VmaAllocationCreateInfo allocInfo = {};
   allocInfo.preferredFlags = properties;
   allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
-  allocInfo.flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
+  allocInfo.flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT |
+                    VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
 
   vmaCreateBuffer(vulkan.allocator, &bufferInfo, &allocInfo, &buffer, &allocation, nullptr);
 }
