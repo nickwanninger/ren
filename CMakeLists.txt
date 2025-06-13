@@ -2,39 +2,32 @@ cmake_minimum_required(VERSION 3.6)
 
 project(ren CXX C)
 
-# set(CMAKE_C_COMPILER gcc)
-# set(CMAKE_CXX_COMPILER g++)
-
 # Set C standard
 set(CMAKE_C_STANDARD 17)
 set(CMAKE_C_STANDARD_REQUIRED ON)
-
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-
-
-# Find SDL2
+# Find various packages we need
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(SDL2 REQUIRED sdl2)
-
 find_package(Vulkan REQUIRED)
 find_package(fmt REQUIRED)
 
+
+# Add some of the libraries we vendor
 add_subdirectory(lib/VulkanMemoryAllocator)
 add_subdirectory(lib/entt)
 
-# -- IMGUI -- #
-# ImGui source files
 set(IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/imgui)
 set(IMGUI_SOURCES
-    ${IMGUI_DIR}/imgui.cpp
-    ${IMGUI_DIR}/imgui_demo.cpp
-    ${IMGUI_DIR}/imgui_draw.cpp
-    ${IMGUI_DIR}/imgui_tables.cpp
-    ${IMGUI_DIR}/imgui_widgets.cpp
-
-    ${IMGUI_DIR}/backends/imgui_impl_sdl2.cpp
-    ${IMGUI_DIR}/backends/imgui_impl_vulkan.cpp
+   ${IMGUI_DIR}/imgui.cpp
+   ${IMGUI_DIR}/imgui_demo.cpp
+   ${IMGUI_DIR}/imgui_draw.cpp
+   ${IMGUI_DIR}/imgui_tables.cpp
+   ${IMGUI_DIR}/imgui_widgets.cpp
+   
+   ${IMGUI_DIR}/backends/imgui_impl_sdl2.cpp
+   ${IMGUI_DIR}/backends/imgui_impl_vulkan.cpp
 )
 
 
@@ -44,33 +37,20 @@ set(IMGUI_SOURCES
 
 
 
-
-# Add executable
+# Ren is the main target of this project. For now, it's a single executable,
+# but eventually ren should be `libren` and we can have multiple executables
+# that link against it.
 add_executable(ren
   src/main.cpp
-  src/RenderTarget.cpp
-
 
   src/Engine.cpp
-  src/VulkanInstance.cpp
-
-  src/Buffer.cpp
+  src/renderer/VulkanInstance.cpp
+  src/renderer/Buffer.cpp
 
   lib/vkb/VkBootstrap.cpp
   lib/stb/stb_image.c
 
   ${IMGUI_SOURCES}
-
-
-  # src/wren/optional/wren_opt_meta.c
-  # src/wren/optional/wren_opt_random.c
-  # src/wren/vm/wren_compiler.c
-  # src/wren/vm/wren_core.c
-  # src/wren/vm/wren_debug.c
-  # src/wren/vm/wren_primitive.c
-  # src/wren/vm/wren_utils.c
-  # src/wren/vm/wren_value.c
-  # src/wren/vm/wren_vm.c
 )
 
 
