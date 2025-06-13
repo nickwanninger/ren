@@ -56,17 +56,13 @@ ren::VulkanInstance::VulkanInstance(const std::string &app_name, SDL_Window *win
   create_descriptor_set_layout();
 
 
-  init_pipeline();
-
-  createDepthResources();
-
-  init_framebuffers();
   init_command_pool();
 
+  createDepthResources();
   createTextureImage();
-  create_descriptor_pool();
-  create_descriptor_sets();
+  init_framebuffers();
 
+  init_pipeline();
 
   init_command_buffer();
   init_sync_objects();
@@ -709,8 +705,6 @@ void ren::VulkanInstance::record_command_buffer(VkCommandBuffer commandBuffer, u
   vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
 
 
-  //
-
   // Right before we end the render pass, we need to render the ImGui draw data.
   ImGui::Render();
   ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer);
@@ -888,7 +882,6 @@ void ren::VulkanInstance::createDepthResources() {
 
 
 void ren::VulkanInstance::createTextureImage() {
-  printf("Loading texture image...\n");
   int texWidth, texHeight, texChannels;
   stbi_uc *pixels =
       stbi_load("assets/actually.png", &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
