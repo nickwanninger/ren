@@ -1471,7 +1471,7 @@ void ren::VulkanInstance::init_imgui(void) {
   init_info.DescriptorPool = imguiPool;
   init_info.MinImageCount = 3;
   init_info.ImageCount = 3;
-  init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+  init_info.MSAASamples = VK_SAMPLE_COUNT_2_BIT;
   init_info.RenderPass = render_pass;
 
   ImGui_ImplVulkan_Init(&init_info);
@@ -1483,10 +1483,10 @@ void ren::VulkanInstance::init_imgui(void) {
   style->WindowRounding = 5.0f;
   style->FramePadding = ImVec2(3, 3);
   style->FrameRounding = 4.0f;
-  style->ItemSpacing = ImVec2(12, 8);
-  style->ItemInnerSpacing = ImVec2(8, 6);
+  style->ItemSpacing = ImVec2(4, 4);
+  style->ItemInnerSpacing = ImVec2(3, 3);
   style->IndentSpacing = 25.0f;
-  style->ScrollbarSize = 15.0f;
+  style->ScrollbarSize = 10.0f;
   style->ScrollbarRounding = 9.0f;
   style->GrabMinSize = 5.0f;
   style->GrabRounding = 3.0f;

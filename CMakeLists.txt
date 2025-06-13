@@ -11,7 +11,6 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# Find OpenMP (optional)
 
 
 # Find SDL2
@@ -20,11 +19,9 @@ pkg_check_modules(SDL2 REQUIRED sdl2)
 
 find_package(Vulkan REQUIRED)
 find_package(fmt REQUIRED)
-find_package(OpenMP)
-
-
 
 add_subdirectory(lib/VulkanMemoryAllocator)
+add_subdirectory(lib/entt)
 
 # -- IMGUI -- #
 # ImGui source files
@@ -56,10 +53,11 @@ add_executable(ren
 
   src/Engine.cpp
   src/VulkanInstance.cpp
-  src/vkb/VkBootstrap.cpp
-  src/stb/stb_image.c
 
   src/Buffer.cpp
+
+  lib/vkb/VkBootstrap.cpp
+  lib/stb/stb_image.c
 
   ${IMGUI_SOURCES}
 
@@ -74,6 +72,52 @@ add_executable(ren
   # src/wren/vm/wren_value.c
   # src/wren/vm/wren_vm.c
 )
+
+
+
+# Link libraries
+target_link_libraries(ren
+  PUBLIC
+  ${SDL2_LIBRARIES}
+  fmt::fmt # fmt library
+
+  Vulkan::Vulkan # Vulkan SDK
+  GPUOpen::VulkanMemoryAllocator # Vulkan Memory Allocator
+  EnTT::EnTT # EnTT for ECS
+
+  m # Everything needs math
+)
+
+
+# Include directories
+target_include_directories(ren PRIVATE
+  ${SDL2_INCLUDE_DIRS}
+  ${IMGUI_DIR}
+  ${IMGUI_DIR}/backends
+
+  include/
+  lib/
+)
+
+# Compiler flags
+target_compile_options(ren PRIVATE 
+    ${SDL2_CFLAGS_OTHER}
+    -Wall
+    -Wno-nullability-completeness
+    -Wno-unused-variable
+    -Wno-unused-private-field
+    -Wno-deprecated-declarations
+    -Wno-unused-parameter
+    -O3
+    -g3
+)
+
+
+
+
+
+
+
 
 
 
@@ -134,42 +178,3 @@ endforeach(GLSL)
 
 
 
-# Link libraries
-target_link_libraries(ren
-  PUBLIC
-  ${SDL2_LIBRARIES}
-  # OpenGL::GL
-  # OpenGL::GLU
-  glfw
-  fmt::fmt
-
-  Vulkan::Vulkan
-  GPUOpen::VulkanMemoryAllocator
-
-  m  # math library for sin/cos functions
-)
-
-
-# Include directories
-target_include_directories(ren PRIVATE
-  ${SDL2_INCLUDE_DIRS}
-  ${IMGUI_DIR}
-  ${IMGUI_DIR}/backends
-  # include/ has many vendored libraries (GLM, mainly)
-  include/
-  # src/wren/vm/
-  # src/wren/optional/
-)
-
-# Compiler flags
-target_compile_options(ren PRIVATE 
-    ${SDL2_CFLAGS_OTHER}
-    -Wall
-    -Wno-nullability-completeness
-    -Wno-unused-variable
-    -Wno-unused-private-field
-    -Wno-deprecated-declarations
-    -Wno-unused-parameter
-    -O3
-    -g3
-)
