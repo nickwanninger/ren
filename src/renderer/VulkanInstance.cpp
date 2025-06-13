@@ -49,20 +49,15 @@ ren::VulkanInstance::VulkanInstance(const std::string &app_name, SDL_Window *win
   init_instance();
   init_swapchain();
 
-  createVertexBuffer();
-
+  createUniformBuffers();
   init_renderpass();
-
-  create_descriptor_set_layout();
 
 
   init_command_pool();
 
   createDepthResources();
-  createTextureImage();
+  createTextureImage(); // TODO
   init_framebuffers();
-
-  init_pipeline();
 
   init_command_buffer();
   init_sync_objects();
@@ -73,99 +68,27 @@ ren::VulkanInstance::VulkanInstance(const std::string &app_name, SDL_Window *win
 
 
 
-std::vector<ren::Vertex> vertices = {
-    //
-    {
-        glm::vec3(-0.5f, -0.5f, 0.0f),
-        glm::vec3(1.0f, 0.0f, 0.0f),
-        -glm::vec2(1.0f, 0.0f),
-    },
-    {
-        glm::vec3(0.5f, -0.5f, 0.0f),
-        glm::vec3(0.0f, 1.0f, 0.0f),
-        -glm::vec2(0.0f, 0.0f),
-    },
-    {
-        glm::vec3(0.5f, 0.5f, 0.0f),
-        glm::vec3(0.0f, 0.0f, 1.0f),
-        -glm::vec2(0.0f, 1.0f),
-    },
-    {
-        glm::vec3(-0.5f, 0.5f, 0.0f),
-        glm::vec3(1.0f, 1.0f, 1.0f),
-        -glm::vec2(1.0f, 1.0f),
-    },
 
-    // ---
+VkCommandBuffer ren::VulkanInstance::beginFrame(void) {
+  this->imageIndex = (this->frame_number++) % MAX_FRAMES_IN_FLIGHT;
 
-
-    {
-        glm::vec3(-0.5f, -0.5f, -1.0f),
-        glm::vec3(1.0f, 0.0f, 0.0f),
-        -glm::vec2(1.0f, 0.0f),
-    },
-    {
-        glm::vec3(0.5f, -0.5f, -1.0f),
-        glm::vec3(0.0f, 1.0f, 0.0f),
-        -glm::vec2(0.0f, 0.0f),
-    },
-    {
-        glm::vec3(0.5f, 0.5f, -1.0f),
-        glm::vec3(0.0f, 0.0f, 1.0f),
-        -glm::vec2(0.0f, 1.0f),
-    },
-    {
-        glm::vec3(-0.5f, 0.5f, -1.0f),
-        glm::vec3(1.0f, 1.0f, 1.0f),
-        -glm::vec2(1.0f, 1.0f),
-    },
-
-
-    // line test
-    {
-        glm::vec3(1.0f, 1.0f, 1.0f),
-        glm::vec3(1.0f, 1.0f, 1.0f),
-        glm::vec2(0, 0),
-    },
-    {
-        glm::vec3(0.0f, 0.0f, 1.0f),
-        glm::vec3(1.0f, 1.0f, 1.0f),
-        glm::vec2(0, 0),
-    },
-};
-
-const std::vector<uint32_t> indices = {
-    0, 1, 2, 2, 3, 0,  // square 1
-    4, 5, 6, 6, 7, 4,  // square 2
-
-
-    // 0, 1
-};
-
-void ren::VulkanInstance::draw_frame(void) {
-  // At a high level, rendering a frame in Vulkan consists of a common set of steps:
-  //  - Wait for the previous frame to finish
-  //  - Acquire an image from the swap chain
-  //  - Record a command buffer which draws the scene onto that image
-  //  - Submit the recorded command buffer
-  //  - Present the swap chain image
-  u64 current_frame = (this->frame_number++) % MAX_FRAMES_IN_FLIGHT;
-
-  vkWaitForFences(device, 1, &inFlightFences[current_frame], VK_TRUE, UINT64_MAX);
+  vkWaitForFences(device, 1, &inFlightFences[imageIndex], VK_TRUE, UINT64_MAX);
 
 
   // Acquire the next image from the swapchain
-  u32 imageIndex;
+
   auto result =
-      vkAcquireNextImageKHR(device, swapchain, UINT64_MAX, imageAvailableSemaphores[current_frame],
+      vkAcquireNextImageKHR(device, swapchain, UINT64_MAX, imageAvailableSemaphores[imageIndex],
                             VK_NULL_HANDLE, &imageIndex);
 
   if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || framebuffer_resized) {
     recreate_swapchain();
-    return;
+    return VK_NULL_HANDLE;
   } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
     throw std::runtime_error("failed to acquire swap chain image!");
   }
+
+  auto commandBuffer = commandBuffers[imageIndex];
 
 
   // imgui new frame
@@ -178,34 +101,101 @@ void ren::VulkanInstance::draw_frame(void) {
   // imgui commands
   ImGui::ShowDemoWindow();
 
-  vkResetCommandBuffer(commandBuffers[current_frame], 0);
+  vkResetCommandBuffer(commandBuffer, 0);
 
-  // Here, we submit all the draw calls.
 
-  record_command_buffer(commandBuffers[current_frame], imageIndex);
+  VkCommandBufferBeginInfo beginInfo{};
+  beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+  beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+  beginInfo.pInheritanceInfo = nullptr;
+
+  if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
+    throw std::runtime_error("failed to begin recording command buffer!");
+  }
+
+
+
+  // Finally, start the render pass
+  VkRenderPassBeginInfo renderPassInfo{};
+  renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+  renderPassInfo.renderPass = render_pass;
+  renderPassInfo.framebuffer = swapchain_framebuffers[imageIndex];
+  renderPassInfo.renderArea.offset = {0, 0};
+  renderPassInfo.renderArea.extent = extent;
+
+  // setup the clear values
+
+  std::array<VkClearValue, 2> clearValues{};
+  clearValues[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
+  clearValues[1].depthStencil = {1.0f, 0};
+
+  renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
+  renderPassInfo.pClearValues = clearValues.data();
+
+  vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+
+  // oh.. do this stuff too.
+  VkViewport viewport{};
+  viewport.x = 0.0f;
+  viewport.y = 0.0f;
+  viewport.width = static_cast<float>(extent.width);
+  viewport.height = static_cast<float>(extent.height);
+  viewport.minDepth = 0.0f;
+  viewport.maxDepth = 1.0f;
+  vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+
+  VkRect2D scissor{};
+  scissor.offset = {0, 0};
+  scissor.extent = extent;
+  vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+
+
+
+  return commandBuffer;
+}
+
+void ren::VulkanInstance::endFrame(void) {
+  auto commandBuffer = commandBuffers[imageIndex];
+
+
+
+  // Right before we end the render pass, we need to render the ImGui draw data.
+  ImGui::Render();
+  ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer);
+
+  // The render pass can now be ended:
+  vkCmdEndRenderPass(commandBuffer);
+
+  // And we've finished recording the command buffer:
+  if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
+    throw std::runtime_error("failed to record command buffer!");
+  }
+
+
 
   // Only reset the fence if we are submitting work
-  vkResetFences(device, 1, &inFlightFences[current_frame]);
+  vkResetFences(device, 1, &inFlightFences[imageIndex]);
 
 
 
   VkSubmitInfo submitInfo{};
   submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
-  VkSemaphore waitSemaphores[] = {imageAvailableSemaphores[current_frame]};
+  VkSemaphore waitSemaphores[] = {imageAvailableSemaphores[imageIndex]};
   VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
   submitInfo.waitSemaphoreCount = 1;
   submitInfo.pWaitSemaphores = waitSemaphores;
   submitInfo.pWaitDstStageMask = waitStages;
 
   submitInfo.commandBufferCount = 1;
-  submitInfo.pCommandBuffers = &commandBuffers[current_frame];
+  submitInfo.pCommandBuffers = &commandBuffers[imageIndex];
 
-  VkSemaphore signalSemaphores[] = {renderFinishedSemaphores[current_frame]};
+  VkSemaphore signalSemaphores[] = {renderFinishedSemaphores[imageIndex]};
   submitInfo.signalSemaphoreCount = 1;
   submitInfo.pSignalSemaphores = signalSemaphores;
 
-  if (vkQueueSubmit(graphics_queue, 1, &submitInfo, inFlightFences[current_frame]) != VK_SUCCESS) {
+  if (vkQueueSubmit(graphics_queue, 1, &submitInfo, inFlightFences[imageIndex]) != VK_SUCCESS) {
     throw std::runtime_error("failed to submit draw command buffer!");
   }
 
@@ -219,13 +209,18 @@ void ren::VulkanInstance::draw_frame(void) {
   VkSwapchainKHR swapChains[] = {swapchain};
   presentInfo.swapchainCount = 1;
   presentInfo.pSwapchains = swapChains;
-  presentInfo.pImageIndices = &imageIndex;
+  uint32_t index = imageIndex;  // we need a u32
+  presentInfo.pImageIndices = &index;
 
   presentInfo.pResults = nullptr;  // Optional
 
   vkQueuePresentKHR(graphics_queue, &presentInfo);
 
-  current_frame = (current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
+  imageIndex = (imageIndex + 1) % MAX_FRAMES_IN_FLIGHT;
+}
+
+void ren::VulkanInstance::draw_frame(void) {
+  // Not Needed
 }
 
 void ren::VulkanInstance::init_instance(void) {
@@ -333,11 +328,7 @@ ren::VulkanInstance::~VulkanInstance() {
   }
 
   // Clear the index/vertex/uniform buffer
-  vertex_buffer.reset();
-  index_buffer.reset();
   uniform_buffers.clear();
-
-  vkDestroyDescriptorPool(device, descriptorPool, nullptr);
 
 
   // Command Pool
@@ -498,64 +489,6 @@ void ren::VulkanInstance::init_renderpass(void) {
 
 
 
-void ren::VulkanInstance::init_pipeline(void) {
-  pipeline = std::make_shared<ren::VulkanPipeline>(*this);
-
-
-  auto bindingDesc = ren::Vertex::get_binding_description();
-  auto attributeDescs = ren::Vertex::get_attribute_descriptions();
-
-
-  // this is still a little gross.
-  pipeline->vertexInputInfo.vertexBindingDescriptionCount = 1;
-  pipeline->vertexInputInfo.pVertexBindingDescriptions = &bindingDesc;
-  pipeline->vertexInputInfo.vertexAttributeDescriptionCount = attributeDescs.size();
-  pipeline->vertexInputInfo.pVertexAttributeDescriptions = attributeDescs.data();
-
-
-  // set topology
-  pipeline->inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-  pipeline->rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
-  pipeline->depthStencil.depthTestEnable = VK_TRUE;
-  pipeline->depthStencil.depthWriteEnable = VK_TRUE;
-
-
-
-  std::shared_ptr<ren::VertexShader> vertex_shader =
-      std::make_shared<ren::VertexShader>(*this, "shaders/triangle.vert.spv");
-  std::shared_ptr<ren::FragmentShader> fragment_shader =
-      std::make_shared<ren::FragmentShader>(*this, "shaders/triangle.frag.spv");
-
-
-  pipeline->addShader(vertex_shader);
-  pipeline->addShader(fragment_shader);
-
-
-
-  // Kinda gross.
-  VkDescriptorSetLayoutBinding uboLayoutBinding{};
-  uboLayoutBinding.binding = 0;
-  uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-  uboLayoutBinding.descriptorCount = 1;
-  uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-  uboLayoutBinding.pImmutableSamplers = nullptr;  // Optional
-
-  pipeline->addBinding(uboLayoutBinding);
-
-  VkDescriptorSetLayoutBinding samplerLayoutBinding{};
-  samplerLayoutBinding.binding = 1;
-  samplerLayoutBinding.descriptorCount = 1;
-  samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-  samplerLayoutBinding.pImmutableSamplers = nullptr;
-  samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-  pipeline->addBinding(samplerLayoutBinding);
-
-
-  pipeline->build();
-}
-
-
 void ren::VulkanInstance::init_framebuffers(void) {
   swapchain_framebuffers.resize(image_views.size());
 
@@ -609,117 +542,6 @@ void ren::VulkanInstance::init_command_buffer(void) {
 }
 
 
-void ren::VulkanInstance::record_command_buffer(VkCommandBuffer commandBuffer, u32 imageIndex) {
-  // We always begin recording a command buffer by calling
-  // vkBeginCommandBuffer with a small VkCommandBufferBeginInfo
-  // structure as argument that specifies some details about the usage
-  // of this specific command buffer.
-
-  VkCommandBufferBeginInfo beginInfo{};
-  beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-  beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-  beginInfo.pInheritanceInfo = nullptr;
-
-  if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
-    throw std::runtime_error("failed to begin recording command buffer!");
-  }
-
-  // Drawing starts by beginning the render pass with
-  // vkCmdBeginRenderPass. The render pass is configured using some
-  // parameters in a VkRenderPassBeginInfo struct.
-
-  VkRenderPassBeginInfo renderPassInfo{};
-  renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-  renderPassInfo.renderPass = render_pass;
-  renderPassInfo.framebuffer = swapchain_framebuffers[imageIndex];
-  renderPassInfo.renderArea.offset = {0, 0};
-  renderPassInfo.renderArea.extent = extent;
-
-  // setup the clear values
-
-  std::array<VkClearValue, 2> clearValues{};
-  clearValues[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
-  clearValues[1].depthStencil = {1.0f, 0};
-
-  renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
-  renderPassInfo.pClearValues = clearValues.data();
-
-  vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-
-  // We can now start issuing rendering commands.
-
-  // We can now bind the graphics pipeline:
-  pipeline->bind(commandBuffer);
-
-  update_uniform_buffer(imageIndex);
-
-
-  VkViewport viewport{};
-  viewport.x = 0.0f;
-  viewport.y = 0.0f;
-  viewport.width = static_cast<float>(extent.width);
-  viewport.height = static_cast<float>(extent.height);
-  viewport.minDepth = 0.0f;
-  viewport.maxDepth = 1.0f;
-  vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
-
-  VkRect2D scissor{};
-  scissor.offset = {0, 0};
-  scissor.extent = extent;
-  vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
-
-
-
-  ImGui::Begin("Vertex Editor");
-
-
-  auto editVertex = [](ren::Vertex &v, const std::string &name) {
-    ImGui::PushID(name.c_str());
-    ImGui::Text("Vertex Editor: %s", name.c_str());
-    ImGui::DragFloat3("Position", &v.pos.x, 0.01f);
-    ImGui::ColorEdit3("Color", &v.color.r);
-    ImGui::DragFloat2("TexCoord", &v.texCoord.x, 0.01f);
-    ImGui::PopID();
-  };
-
-  editVertex(vertices[0], "Vertex 0");
-  editVertex(vertices[1], "Vertex 1");
-  editVertex(vertices[2], "Vertex 2");
-
-  ImGui::End();
-
-  // vertices[0].pos.x = sinf(SDL_GetTicks() / 1000.0f) * 0.3f;
-  vertex_buffer->copyFromHost(vertices);
-  index_buffer->copyFromHost(indices);
-
-  VkBuffer vertexBuffers[] = {vertex_buffer->getHandle()};
-  VkDeviceSize offsets[] = {0};
-
-  ren::bind(commandBuffer, *vertex_buffer);
-  ren::bind(commandBuffer, *index_buffer);
-
-  auto dset = pipeline->getDescriptorSet(imageIndex);
-  vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->getLayout(), 0,
-                          1, &dset, 0, nullptr);
-
-  vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
-
-
-  // Right before we end the render pass, we need to render the ImGui draw data.
-  ImGui::Render();
-  ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer);
-
-  // The render pass can now be ended:
-  vkCmdEndRenderPass(commandBuffer);
-
-  // And we've finished recording the command buffer:
-  if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
-    throw std::runtime_error("failed to record command buffer!");
-  }
-}
-
-
-
 void ren::VulkanInstance::init_sync_objects(void) {
   imageAvailableSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
   renderFinishedSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
@@ -743,10 +565,7 @@ void ren::VulkanInstance::init_sync_objects(void) {
   }
 }
 
-void ren::VulkanInstance::createVertexBuffer(void) {
-  vertex_buffer = std::make_shared<ren::VertexBuffer<ren::Vertex>>(*this, vertices);
-  index_buffer = std::make_shared<ren::IndexBuffer>(*this, indices);
-
+void ren::VulkanInstance::createUniformBuffers(void) {
   uniform_buffers.resize(MAX_FRAMES_IN_FLIGHT);
 
   for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
@@ -830,22 +649,6 @@ void ren::VulkanInstance::copyBufferToImage(VkBuffer buffer, VkImage image, uint
 
 
 
-
-void ren::VulkanInstance::create_descriptor_set_layout(void) {
-  // Not Needed
-}
-
-
-
-void ren::VulkanInstance::create_descriptor_pool(void) {
-  // Not Needed
-}
-
-
-
-void ren::VulkanInstance::create_descriptor_sets(void) {
-  // Not Needed
-}
 
 VkFormat ren::VulkanInstance::findSupportedFormat(const std::vector<VkFormat> &candidates,
                                                   VkImageTiling tiling,
@@ -1044,124 +847,9 @@ void ren::VulkanInstance::endSingleTimeCommands(VkCommandBuffer commandBuffer) {
 }
 
 
-struct Camera {
-  glm::vec3 position = {0.0f, 0.0f, 3.0f};
-  glm::vec3 angles = {0.0f, 0.0f, 0.0f};  // pitch, yaw, roll
-  bool mouse_captured = false;
-  bool first_update = true;
-
-  glm::mat4 view_matrix() const {
-    float pitch = angles.x;
-    float yaw = angles.y;
-
-    float sinPitch = sinf(pitch);
-    float cosPitch = cosf(pitch);
-    float sinYaw = sinf(yaw);
-    float cosYaw = cosf(yaw);
-
-    glm::vec3 forward(sinYaw * cosPitch,  // X component
-                      sinPitch,           // Y component
-                      -cosYaw * cosPitch  // Z component
-    );
-
-    glm::mat4 view = glm::lookAt(position, position + forward, glm::vec3(0.0f, 1.0f, 0.0f));
-    return view;
-  }
-
-  void update(float dt) {
-    const Uint8 *keys = SDL_GetKeyboardState(NULL);
-    int mouse_x, mouse_y;
-    SDL_GetRelativeMouseState(&mouse_x, &mouse_y);
-
-    if (first_update) {
-      // Capture mouse on first update
-      SDL_SetRelativeMouseMode(mouse_captured ? SDL_TRUE : SDL_FALSE);
-      first_update = false;
-    }
-
-    // Toggle mouse capture with ESC
-    if (keys[SDL_SCANCODE_E]) {
-      mouse_captured = !mouse_captured;
-      SDL_SetRelativeMouseMode(mouse_captured ? SDL_TRUE : SDL_FALSE);
-      SDL_Delay(100);  // Prevent rapid toggling
-    }
-
-    if (!mouse_captured) return;
-
-    // Mouse look
-    angles.y += mouse_x * 0.002f;  // yaw
-    angles.x -= mouse_y * 0.002f;  // pitch
-
-    // Clamp pitch
-    if (angles.x > M_PI / 2.0f) angles.x = M_PI / 2.0f;
-    if (angles.x < -M_PI / 2.0f) angles.x = -M_PI / 2.0f;
-
-    // Movement vectors
-    float cos_yaw = cosf(angles.y);
-    float sin_yaw = sinf(angles.y);
-    glm::vec3 forward = {sin_yaw, 0.0f, -cos_yaw};
-    glm::vec3 right = {cos_yaw, 0.0f, sin_yaw};
-
-    float speed = 1.0f * dt;
-
-    // WASD movement
-    if (keys[SDL_SCANCODE_W]) {
-      // position.x += speed / 2.0f;
-      position.x += forward.x * speed;
-      position.z += forward.z * speed;
-    }
-    if (keys[SDL_SCANCODE_S]) {
-      // position.x -= speed / 2.0f;
-      position.x -= forward.x * speed;
-      position.z -= forward.z * speed;
-    }
-    if (keys[SDL_SCANCODE_A]) {
-      // position.z -= speed / 2.0f;
-      position.x -= right.x * speed;
-      position.z -= right.z * speed;
-    }
-    if (keys[SDL_SCANCODE_D]) {
-      // position.z += speed / 2.0f;
-      position.x += right.x * speed;
-      position.z += right.z * speed;
-    }
-    if (keys[SDL_SCANCODE_SPACE]) { position.y += speed; }
-    if (keys[SDL_SCANCODE_LSHIFT]) { position.y -= speed; }
-  }
-};
-
-Camera camera;
-
 
 void ren::VulkanInstance::update_uniform_buffer(u32 current_frame) {
-  static auto startTime = std::chrono::high_resolution_clock::now();
-  static auto lastTime = startTime;
-
-  auto currentTime = std::chrono::high_resolution_clock::now();
-
-  float time =
-      std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
-
-  auto deltaTime =
-      std::chrono::duration<float, std::chrono::seconds::period>(currentTime - lastTime).count();
-  lastTime = currentTime;
-
-
-
-  camera.update(deltaTime);
-
-  UniformBufferObject ubo{};
-  ubo.model = glm::rotate(glm::mat4(1.0f), 0 * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-  ubo.view = camera.view_matrix();
-
-  // glm::lookAt(glm::vec3(5.0f, 2.0f, sinf(time) + 2.0f), glm::vec3(0.0f, 0.0f, 0.0f),
-  //                      glm::vec3(0.0f, 0.0f, 1.0f));
-  ubo.proj =
-      glm::perspective(glm::radians(90.0f), extent.width / (float)extent.height, 0.01f, 1000.0f);
-
-  ubo.proj[1][1] *= -1;
-
-  uniform_buffers[current_frame]->copyFromHost(&ubo, 1);
+  // Not Needed
 }
 
 

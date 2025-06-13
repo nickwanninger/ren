@@ -127,51 +127,26 @@ namespace ren {
     VkExtent2D extent = {};
 
     // ---- Render Pass ---- //
-
     VkRenderPass render_pass = VK_NULL_HANDLE;
-
-    // ---- Pipeline ---- //
-
-
-    std::shared_ptr<ren::VulkanPipeline> pipeline;
-    VkDescriptorSetLayout descriptorSetLayout;
-    // VkPipelineLayout pipeline_layout = VK_NULL_HANDLE;
-    // VkPipeline graphics_pipeline;
-
-    // ---- Framebuffers ---- //
-
     std::vector<VkFramebuffer> swapchain_framebuffers;
-
     // ---- Command Pool ---- //
-
     VkCommandPool commandPool;
-    // We should somehow merge this and the semaphores into a single struct per frame/image
     std::vector<VkCommandBuffer> commandBuffers;
 
-
-
-
-    // Depth resources
+    // ---- Depth resources ---- //
     VkImage depthImage;
     VkDeviceMemory depthImageMemory;
     VkImageView depthImageView;
 
-    // Texture resources
+    // ---- Textures ---- //
+    // TODO: move this elsewhere
     VkImage textureImage;
     VkDeviceMemory textureImageMemory;
     VkImageView textureImageView;
     VkSampler textureSampler;
 
-
-    std::shared_ptr<ren::VertexBuffer<Vertex>> vertex_buffer;
-    std::shared_ptr<ren::IndexBuffer> index_buffer;
     // One for each frame in flight
     std::vector<std::shared_ptr<ren::UniformBuffer<UniformBufferObject>>> uniform_buffers;
-
-    VkDescriptorPool descriptorPool;
-    std::vector<VkDescriptorSet> descriptorSets;
-
-
 
 
     // ---- Semaphores ---- //
@@ -180,10 +155,10 @@ namespace ren {
     std::vector<VkFence> inFlightFences;
     bool framebuffer_resized = false;
 
-    u64 imageIndex = 0;
+    u32 imageIndex = 0;
     u64 frame_number = 0;
 
-    void beginFrame(void);
+    VkCommandBuffer beginFrame(void);
     void endFrame(void);
 
     void draw_frame(void);
@@ -192,6 +167,7 @@ namespace ren {
       vkDeviceWaitIdle(device);
       cleanup_swapchain();
       init_swapchain();
+      createDepthResources();
       init_framebuffers();
       framebuffer_resized = false;
     }
@@ -223,7 +199,7 @@ namespace ren {
     VkShaderModule create_shader_module(const std::vector<u8> &code);
     VkShaderModule load_shader_module(const std::string &filename);
 
-
+    void update_uniform_buffer(u32 current_image);
 
    private:
     inline auto findDepthFormat(void) {
@@ -234,36 +210,27 @@ namespace ren {
     void init_instance(void);
     void init_swapchain(void);
     void init_renderpass(void);
-    void init_pipeline(void);
     void init_framebuffers(void);
     void init_command_pool(void);
     void init_command_buffer(void);
     void init_sync_objects(void);
     void init_imgui(void);
 
-    void createVertexBuffer(void);
-    void create_descriptor_set_layout(void);
-    void create_descriptor_pool(void);
-    void create_descriptor_sets(void);
-
     void transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout,
                                VkImageLayout newLayout);
 
     void createDepthResources(void);
     void createTextureImage(void);
+    void createUniformBuffers(void);
 
 
     void cleanup_swapchain(void);
 
-    void update_uniform_buffer(u32 current_image);
 
     u32 find_memory_type(u32 typeFilter, VkMemoryPropertyFlags properties);
 
     VkFormat findSupportedFormat(const std::vector<VkFormat> &candidates, VkImageTiling tiling,
                                  VkFormatFeatureFlags features);
-
-    // writes the commands we want to execute into a command buffer
-    void record_command_buffer(VkCommandBuffer commandBuffer, u32 imageIndex);
   };
 
 

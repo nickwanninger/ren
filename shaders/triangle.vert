@@ -1,11 +1,11 @@
 #version 450
 
 // From uniform buffer
-layout(binding = 0) uniform UniformBufferObject {
-    mat4 model;
-    mat4 view;
-    mat4 proj;
-} ubo;
+layout( push_constant ) uniform constants {
+   mat4 model;
+   mat4 view;
+   mat4 proj;
+} pc;
 
 // From vertex buffer (and clip stuff)
 layout(location = 0) in vec3 inPosition;
@@ -18,7 +18,7 @@ layout(location = 1) out vec2 fragTexCoord;
 
 
 void main() {
-    gl_Position = ubo.proj * ubo.view * ubo.model * vec4(inPosition, 1.0);
+    gl_Position = pc.proj * pc.view * pc.model * vec4(inPosition, 1.0);
     fragColor = inColor;
     fragTexCoord = inTexCoord;
 }

@@ -130,12 +130,19 @@ void ren::VulkanPipeline::populateDefaultCreateInfo() {
   colorBlending.blendConstants[3] = 0.0f;  // Optional
 
 
+  // this push constant range starts at the beginning
+  pushConstants.offset = 0;
+  // this push constant range takes up the size of a MeshPushConstants struct
+  pushConstants.size = sizeof(ren::MeshPushConstants);
+  // this push constant range is accessible only in the vertex shader
+  pushConstants.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
 
   pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
   pipelineLayoutInfo.setLayoutCount = 1;
   // pipelineLayoutInfo.pSetLayouts = &descriptorSetLayout;  // TODO: Not sure
-  pipelineLayoutInfo.pushConstantRangeCount = 0;     // Optional
-  pipelineLayoutInfo.pPushConstantRanges = nullptr;  // Optional
+  // pipelineLayoutInfo.pushConstantRangeCount = 0;     // P
+  // pipelineLayoutInfo.pPushConstantRanges = nullptr;  // Optional
 
 
 
@@ -200,8 +207,7 @@ void ren::VulkanPipeline::build(void) {
 
   // ---- Descriptor Sets ---- //
 
-  std::vector<VkDescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT,
-                                             getDescriptorSetLayout());
+  std::vector<VkDescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, getDescriptorSetLayout());
   VkDescriptorSetAllocateInfo allocInfo{};
   allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
   allocInfo.descriptorPool = descriptorPool;
@@ -257,8 +263,8 @@ void ren::VulkanPipeline::build(void) {
   pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
   pipelineLayoutInfo.setLayoutCount = 1;
   pipelineLayoutInfo.pSetLayouts = &this->descriptorSetLayout;
-  pipelineLayoutInfo.pushConstantRangeCount = 0;     // Optional
-  pipelineLayoutInfo.pPushConstantRanges = nullptr;  // Optional
+  pipelineLayoutInfo.pushConstantRangeCount = 1;            // Optional
+  pipelineLayoutInfo.pPushConstantRanges = &pushConstants;  // Optional
 
   if (vkCreatePipelineLayout(vulkan.device, &pipelineLayoutInfo, nullptr, &this->pipelineLayout) !=
       VK_SUCCESS) {

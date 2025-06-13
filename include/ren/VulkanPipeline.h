@@ -123,6 +123,8 @@ namespace ren {
     VkPipelineColorBlendStateCreateInfo colorBlending{};
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     VkPipelineDynamicStateCreateInfo dynamicState{};
+    VkPushConstantRange pushConstants{};
+
 
     VkGraphicsPipelineCreateInfo pipelineInfo{};
 
@@ -149,4 +151,8 @@ namespace ren {
     // Populate the default create info below for this pipeline.
     void populateDefaultCreateInfo();
   };
+
+  inline void bind(VkCommandBuffer commandBuffer, const VulkanPipeline &pipeline) {
+    pipeline.bind(commandBuffer);
+  }
 };  // namespace ren

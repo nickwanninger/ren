@@ -41,6 +41,7 @@ using f32 = float;
 using f64 = double;
 
 
+
 // we want to immediately abort when there is an error. In normal engines this
 // would give an error message to the user, or perform a dump of state.
 #define VK_CHECK(x)                                               \
@@ -51,3 +52,13 @@ using f64 = double;
       abort();                                                    \
     }                                                             \
   } while (0)
+
+
+
+namespace ren {
+  struct MeshPushConstants {
+    glm::mat4 model;
+    glm::mat4 view;
+    glm::mat4 proj;
+  };
+}
