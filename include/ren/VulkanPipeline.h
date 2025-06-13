@@ -27,6 +27,24 @@ namespace ren {
     // This must be called by the *creator* of the pipeline.
     void build(void);
 
+
+    // Add a shader to the pipeline.
+    void addShader(std::shared_ptr<Shader> shader) {
+      if (pipeline != VK_NULL_HANDLE) {
+        fmt::print("VulkanPipeline::addShader() called, but pipeline is already built.\n");
+        abort();
+      }
+      shaders.push_back(shader);
+    }
+    // add a binding to the descriptor set layout.
+    void addBinding(const VkDescriptorSetLayoutBinding &bindingDesc) {
+      if (pipeline != VK_NULL_HANDLE) {
+        fmt::print("VulkanPipeline::addBinding() called, but pipeline is already built.\n");
+        abort();
+      }
+      bindings.push_back(bindingDesc);
+    }
+
     inline VkPipeline getHandle(void) const {
       if (pipeline == VK_NULL_HANDLE) {
         fmt::print("VulkanPipeline::getHandle() called, but pipeline is not built yet.\n");
@@ -43,24 +61,18 @@ namespace ren {
       return pipelineLayout;
     }
 
-    // Add a shader to the pipeline.
-    void addShader(std::shared_ptr<Shader> shader) { shaders.push_back(shader); }
-
-   protected:
-    VulkanInstance &vulkan;
-
-    std::vector<std::shared_ptr<Shader>> shaders;
-
-    // The pipeline layout
-    VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
-    // The main Vulkan pipeline handle.
-    VkPipeline pipeline = VK_NULL_HANDLE;
+    inline VkDescriptorSetLayout getDescriptorSetLayout(void) const {
+      if (descriptorSetLayout == VK_NULL_HANDLE) {
+        fmt::print(
+            "VulkanPipeline::getDescriptorSetLayout() called, but descriptor set layout is "
+            "not built yet.\n");
+        abort();
+      }
+      return descriptorSetLayout;
+    }
 
 
-   private:
-    void cleanup(void);
-    // Populate the default create info below for this pipeline.
-    void populateDefaultCreateInfo();
+
     VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
     VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
     VkPipelineViewportStateCreateInfo viewportState{};
@@ -72,5 +84,25 @@ namespace ren {
     VkPipelineDynamicStateCreateInfo dynamicState{};
 
     VkGraphicsPipelineCreateInfo pipelineInfo{};
+
+   protected:
+    VulkanInstance &vulkan;
+
+    std::vector<std::shared_ptr<Shader>> shaders;
+    std::vector<VkDescriptorSetLayoutBinding> bindings;
+
+    // The pipeline layout
+    VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
+    // The main Vulkan pipeline handle.
+    VkPipeline pipeline = VK_NULL_HANDLE;
+
+    // The pipeline layout.
+    VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
+
+
+   private:
+    void cleanup(void);
+    // Populate the default create info below for this pipeline.
+    void populateDefaultCreateInfo();
   };
 };  // namespace ren

@@ -1,5 +1,6 @@
 #include <ren/VulkanPipeline.h>
 #include <ren/Vulkan.h>
+#include "vulkan/vulkan_core.h"
 
 
 ren::VulkanPipeline::VulkanPipeline(ren::VulkanInstance &vulkan)
@@ -19,9 +20,9 @@ void ren::VulkanPipeline::cleanup(void) {
     pipeline = VK_NULL_HANDLE;
   }
 
-  if (pipeline_layout != VK_NULL_HANDLE) {
-    vkDestroyPipelineLayout(vulkan.device, pipeline_layout, nullptr);
-    pipeline_layout = VK_NULL_HANDLE;
+  if (pipelineLayout != VK_NULL_HANDLE) {
+    vkDestroyPipelineLayout(vulkan.device, pipelineLayout, nullptr);
+    pipelineLayout = VK_NULL_HANDLE;
   }
 }
 
@@ -109,15 +110,14 @@ void ren::VulkanPipeline::populateDefaultCreateInfo() {
 
   pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
   pipelineLayoutInfo.setLayoutCount = 1;
-  pipelineLayoutInfo.pSetLayouts = &vulkan.descriptorSetLayout;  // TODO: Not sure
-  pipelineLayoutInfo.pushConstantRangeCount = 0;                 // Optional
-  pipelineLayoutInfo.pPushConstantRanges = nullptr;              // Optional
+  // pipelineLayoutInfo.pSetLayouts = &descriptorSetLayout;  // TODO: Not sure
+  pipelineLayoutInfo.pushConstantRangeCount = 0;     // Optional
+  pipelineLayoutInfo.pPushConstantRanges = nullptr;  // Optional
 
 
 
   pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
   pipelineInfo.stageCount = 2;
-  pipelineInfo.pStages = shaderStages;
   // We start by referencing the array of VkPipelineShaderStageCreateInfo structs.
   pipelineInfo.pVertexInputState = &vertexInputInfo;
   pipelineInfo.pInputAssemblyState = &inputAssembly;
@@ -139,15 +139,26 @@ void ren::VulkanPipeline::populateDefaultCreateInfo() {
 
 
 void ren::VulkanPipeline::build(void) {
-  // First, build the pipeline layout.
-
   cleanup();
+
+  // build up the descriptor set pipeline
+
+
+  VkDescriptorSetLayoutCreateInfo layoutInfo{};
+  layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+  layoutInfo.bindingCount = static_cast<uint32_t>(this->bindings.size());
+  layoutInfo.pBindings = bindings.data();
+
+  if (vkCreateDescriptorSetLayout(vulkan.device, &layoutInfo, nullptr, &this->descriptorSetLayout) !=
+      VK_SUCCESS) {
+    throw std::runtime_error("failed to create descriptor set layout!");
+  }
 
 
   VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
   pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
   pipelineLayoutInfo.setLayoutCount = 1;
-  pipelineLayoutInfo.pSetLayouts = &vulkan.descriptorSetLayout;
+  pipelineLayoutInfo.pSetLayouts = &this->descriptorSetLayout;
   pipelineLayoutInfo.pushConstantRangeCount = 0;     // Optional
   pipelineLayoutInfo.pPushConstantRanges = nullptr;  // Optional
 

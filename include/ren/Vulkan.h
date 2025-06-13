@@ -6,6 +6,7 @@
 
 #include <ren/types.h>
 #include <ren/Buffer.h>
+#include <ren/VulkanPipeline.h>
 
 #include <SDL2/SDL.h>         // for SDL_Window
 #include <SDL2/SDL_vulkan.h>  // for SDL_Vulkan functions
@@ -130,9 +131,11 @@ namespace ren {
 
     // ---- Pipeline ---- //
 
+
+    std::shared_ptr<ren::VulkanPipeline> pipeline;
     VkDescriptorSetLayout descriptorSetLayout;
-    VkPipelineLayout pipeline_layout = VK_NULL_HANDLE;
-    VkPipeline graphics_pipeline;
+    // VkPipelineLayout pipeline_layout = VK_NULL_HANDLE;
+    // VkPipeline graphics_pipeline;
 
     // ---- Framebuffers ---- //
 
