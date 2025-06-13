@@ -46,6 +46,8 @@ add_executable(ren
   src/Engine.cpp
   src/renderer/VulkanInstance.cpp
   src/renderer/Buffer.cpp
+  src/renderer/Shader.cpp
+  src/renderer/VulkanPipeline.cpp
 
   lib/vkb/VkBootstrap.cpp
   lib/stb/stb_image.c

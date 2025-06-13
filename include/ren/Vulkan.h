@@ -33,7 +33,6 @@ namespace ren {
   };
 
 
-
   // TEMPORARY VERTEX TYPE
   struct Vertex {
     glm::vec3 pos;
@@ -204,6 +203,8 @@ namespace ren {
 
     void copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);
 
+    VkShaderModule create_shader_module(const std::vector<u8> &code);
+    VkShaderModule load_shader_module(const std::string &filename);
 
    private:
     void init_instance(void);
@@ -235,11 +236,6 @@ namespace ren {
 
     // writes the commands we want to execute into a command buffer
     void record_command_buffer(VkCommandBuffer commandBuffer, u32 imageIndex);
-
-
-
-    VkShaderModule create_shader_module(const std::vector<u8> &code);
-    VkShaderModule load_shader_module(const std::string &filename);
   };
 
 

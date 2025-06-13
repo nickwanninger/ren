@@ -281,6 +281,8 @@ void ren::VulkanInstance::init_instance(void) {
 }
 
 ren::VulkanInstance::~VulkanInstance() {
+  ImGui_ImplVulkan_Shutdown();
+
   for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
     vkDestroySemaphore(device, renderFinishedSemaphores[i], nullptr);
     vkDestroySemaphore(device, imageAvailableSemaphores[i], nullptr);
@@ -1471,10 +1473,11 @@ void ren::VulkanInstance::init_imgui(void) {
   init_info.DescriptorPool = imguiPool;
   init_info.MinImageCount = 3;
   init_info.ImageCount = 3;
-  init_info.MSAASamples = VK_SAMPLE_COUNT_2_BIT;
+  init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
   init_info.RenderPass = render_pass;
 
   ImGui_ImplVulkan_Init(&init_info);
+
 
 
   ImGuiStyle *style = &ImGui::GetStyle();
