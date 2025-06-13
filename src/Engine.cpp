@@ -31,6 +31,7 @@ struct Camera {
   glm::vec3 angles = {0.0f, 0.0f, 0.0f};  // pitch, yaw, roll
   bool mouse_captured = false;
   bool first_update = true;
+  float cameraSpeed = 1.0f;
 
   glm::mat4 view_matrix() const {
     float pitch = angles.x;
@@ -84,7 +85,7 @@ struct Camera {
     glm::vec3 forward = {sin_yaw, 0.0f, -cos_yaw};
     glm::vec3 right = {cos_yaw, 0.0f, sin_yaw};
 
-    float speed = 1.0f * dt;
+    float speed = cameraSpeed * dt;
 
     // WASD movement
     if (keys[SDL_SCANCODE_W]) {
@@ -136,51 +137,10 @@ std::vector<ren::Vertex> vertices = {
         glm::vec3(1.0f, 1.0f, 1.0f),
         -glm::vec2(1.0f, 1.0f),
     },
-
-    // ---
-
-
-    {
-        glm::vec3(-0.5f, -0.5f, -1.0f),
-        glm::vec3(1.0f, 0.0f, 0.0f),
-        -glm::vec2(1.0f, 0.0f),
-    },
-    {
-        glm::vec3(0.5f, -0.5f, -1.0f),
-        glm::vec3(0.0f, 1.0f, 0.0f),
-        -glm::vec2(0.0f, 0.0f),
-    },
-    {
-        glm::vec3(0.5f, 0.5f, -1.0f),
-        glm::vec3(0.0f, 0.0f, 1.0f),
-        -glm::vec2(0.0f, 1.0f),
-    },
-    {
-        glm::vec3(-0.5f, 0.5f, -1.0f),
-        glm::vec3(1.0f, 1.0f, 1.0f),
-        -glm::vec2(1.0f, 1.0f),
-    },
-
-
-    // line test
-    {
-        glm::vec3(1.0f, 1.0f, 1.0f),
-        glm::vec3(1.0f, 1.0f, 1.0f),
-        glm::vec2(0, 0),
-    },
-    {
-        glm::vec3(0.0f, 0.0f, 1.0f),
-        glm::vec3(1.0f, 1.0f, 1.0f),
-        glm::vec2(0, 0),
-    },
 };
 
 const std::vector<uint32_t> indices = {
     0, 1, 2, 2, 3, 0,  // square 1
-    4, 5, 6, 6, 7, 4,  // square 2
-
-
-    // 0, 1
 };
 
 
@@ -258,11 +218,13 @@ void ren::Engine::run(void) {
   float fov = 90.0f;
   float fNear = 0.01f;
   float fFar = 1000.0f;
+
+  int drawCount = 10;
   // main loop
   while (!bQuit) {
     // Handle events on queue
     while (SDL_PollEvent(&e) != 0) {
-      ImGui_ImplSDL2_ProcessEvent(&e);
+      if (!camera.mouse_captured) { ImGui_ImplSDL2_ProcessEvent(&e); }
 
       // if the window resizes
       if (e.type == SDL_WINDOWEVENT && e.window.event == SDL_WINDOWEVENT_RESIZED) {
@@ -302,11 +264,13 @@ void ren::Engine::run(void) {
     camera.update(deltaTime);
 
 
-    ImGui::Begin("Projection Controls");
+    ImGui::Begin("Test Controls");
+    ImGui::Text("FPS: %.2f", 1.0f / deltaTime);
     ImGui::DragFloat("FOV", &fov, 0.1f, 1.0f, 180.0f);
     ImGui::DragFloat("Near Plane", &fNear, 0.01f, 0.001f, 10.0f);
     ImGui::DragFloat("Far Plane", &fFar, 0.1f, 1.0f, 10000.0f);
-    ImGui::Text("FPS: %.2f", 1.0f / deltaTime);
+    ImGui::DragInt("Draw Count", &drawCount, 1, 1);
+    ImGui::DragFloat("Camera Speed", &camera.cameraSpeed, 0.1f, 0.1f);
     ImGui::End();
     // vulkan->record_command_buffer(cb, vulkan->imageIndex);
 
@@ -317,37 +281,41 @@ void ren::Engine::run(void) {
 
     auto matView = camera.view_matrix();
 
-    //
-
     vulkan->update_uniform_buffer(vulkan->imageIndex);
 
     ren::bind(cb, *pipeline);
 
-    ren::bind(cb, *vertex_buffer);
-    ren::bind(cb, *index_buffer);
+
+    for (int i = 0; i < drawCount; i++) {
+      ren::bind(cb, *vertex_buffer);
+      ren::bind(cb, *index_buffer);
 
 
-    auto dset = pipeline->getDescriptorSet(vulkan->imageIndex);
-    vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->getLayout(), 0, 1, &dset,
-                            0, nullptr);
+      auto dset = pipeline->getDescriptorSet(vulkan->imageIndex);
+      vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->getLayout(), 0, 1,
+                              &dset, 0, nullptr);
 
 
-    MeshPushConstants push_constants{};
-    push_constants.model =
-        glm::rotate(glm::mat4(1.0f), 0 * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-    push_constants.view = matView;
-    push_constants.proj = matProj;
+      MeshPushConstants push_constants{};
+
+      float loc = i / 5.0f;
+      glm::vec3 transform(sin(loc), cos(loc), 1.0f - (i * 0.001f));
+
+      push_constants.model = glm::scale(glm::translate(glm::mat4(1.0), transform), glm::vec3(1.0)) *
+                             glm::rotate(glm::mat4(1.0f), 0 * glm::radians(90.0f),
+                                         glm::vec3(0.0f, 0.0f, 1.0f));
+
+      push_constants.view = matView;
+      push_constants.proj = matProj;
 
 
-    vkCmdPushConstants(cb, pipeline->getLayout(), VK_SHADER_STAGE_VERTEX_BIT, 0,
-                       sizeof(push_constants), &push_constants);
+      vkCmdPushConstants(cb, pipeline->getLayout(), VK_SHADER_STAGE_VERTEX_BIT, 0,
+                         sizeof(push_constants), &push_constants);
 
-    vkCmdDrawIndexed(cb, static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
+      vkCmdDrawIndexed(cb, static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
+    }
+
     vulkan->endFrame();
-    // vulkan->draw_frame();
-    // auto end = std::chrono::high_resolution_clock::now();
-    // auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-    // fmt::print("Frame {} took {} ms\n", vulkan->frame_number, duration.count());
   }
   // Before exting, we need to wait for the device to finish all operations.
   vkDeviceWaitIdle(vulkan->device);

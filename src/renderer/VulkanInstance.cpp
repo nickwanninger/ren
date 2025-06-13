@@ -26,17 +26,6 @@
 #include "vk_mem_alloc.h"
 
 
-static unsigned int debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
-                                  VkDebugUtilsMessageTypeFlagsEXT messageType,
-                                  const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData,
-                                  void *pUserData) {
-  // ren::VulkanInstance *instance = static_cast<ren::VulkanInstance
-  // *>(pUserData);
-  auto severity = vkb::to_string_message_severity(messageSeverity);
-  auto type = vkb::to_string_message_type(messageType);
-  printf("[REN %s: %s] %s\n", severity, type, pCallbackData->pMessage);
-  return VK_FALSE;
-}
 
 ren::VulkanInstance::VulkanInstance(const std::string &app_name, SDL_Window *window) {
   this->window = window;
@@ -99,7 +88,7 @@ VkCommandBuffer ren::VulkanInstance::beginFrame(void) {
 
 
   // imgui commands
-  ImGui::ShowDemoWindow();
+  // ImGui::ShowDemoWindow();
 
   vkResetCommandBuffer(commandBuffer, 0);
 
@@ -216,7 +205,6 @@ void ren::VulkanInstance::endFrame(void) {
 
   vkQueuePresentKHR(graphics_queue, &presentInfo);
 
-  imageIndex = (imageIndex + 1) % MAX_FRAMES_IN_FLIGHT;
 }
 
 void ren::VulkanInstance::draw_frame(void) {
@@ -225,15 +213,6 @@ void ren::VulkanInstance::draw_frame(void) {
 
 void ren::VulkanInstance::init_instance(void) {
   vkb::InstanceBuilder builder;
-  builder.set_debug_callback([](VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
-                                VkDebugUtilsMessageTypeFlagsEXT messageType,
-                                const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData,
-                                void *pUserData) -> VkBool32 {
-    auto severity = vkb::to_string_message_severity(messageSeverity);
-    auto type = vkb::to_string_message_type(messageType);
-    printf("[%s: %s] %s\n", severity, type, pCallbackData->pMessage);
-    return VK_FALSE;
-  });
 
   // make the vulkan instance, with basic debug features
   auto inst_ret = builder.set_app_name("Example Vulkan Application")
@@ -255,32 +234,6 @@ void ren::VulkanInstance::init_instance(void) {
 
   // grab the instance and store it away in the VulkanInstance class
   this->instance = vkb_inst.instance;
-
-  // setup a debug messenger
-  VkDebugUtilsMessengerCreateInfoEXT messengerCreateInfo = {
-      .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
-      .pNext = nullptr,
-      .flags = 0,
-      .messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
-                         VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
-                         VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
-      .messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
-                     VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
-                     VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,
-      .pfnUserCallback = &debugCallback,
-      .pUserData = this,
-  };
-  PFN_vkCreateDebugUtilsMessengerEXT createDebugUtilsMessenger =
-      reinterpret_cast<PFN_vkCreateDebugUtilsMessengerEXT>(
-          vkGetInstanceProcAddr(vkb_inst.instance, "vkCreateDebugUtilsMessengerEXT"));
-  if (!createDebugUtilsMessenger) {
-    std::cerr << "Failed to load vkCreateDebugUtilsMessengerEXT" << std::endl;
-    exit(-1);
-  }
-
-  VkResult result = createDebugUtilsMessenger(vkb_inst.instance, &messengerCreateInfo, nullptr,
-                                              &this->debug_messenger);
-  CHECK_VK_RESULT(result, "Failed to create debug messenger");
 
   // Create the vulkan surface from SDL
   SDL_Vulkan_CreateSurface(window, instance, &surface);
@@ -366,18 +319,6 @@ ren::VulkanInstance::~VulkanInstance() {
 
   vkDestroyDevice(device, nullptr);
 
-  if (debug_messenger) {
-    PFN_vkDestroyDebugUtilsMessengerEXT destroyDebugUtilsMessenger =
-        reinterpret_cast<PFN_vkDestroyDebugUtilsMessengerEXT>(
-            vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT"));
-    if (destroyDebugUtilsMessenger) {
-      fmt::print("Destroying debug messenger\n");
-      destroyDebugUtilsMessenger(instance, debug_messenger, nullptr);
-    } else {
-      fmt::print("Failed to load vkDestroyDebugUtilsMessengerEXT\n");
-    }
-  }
-
   // Cleanup code for the Vulkan instance
   vkDestroyInstance(instance, nullptr);
 }
@@ -417,8 +358,6 @@ void ren::VulkanInstance::init_swapchain(void) {
 
 
 void ren::VulkanInstance::init_renderpass(void) {
-  // from
-  // https://vulkan-tutorial.com/Drawing_a_triangle/Graphics_pipeline_basics/Render_passes
   VkAttachmentDescription colorAttachment{};
 
   colorAttachment.format = this->image_format;
