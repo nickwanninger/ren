@@ -97,9 +97,23 @@ namespace ren {
 
   template <typename T>
   using VertexBuffer = FixedUsageTypedBuffer<T, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT>;
-  template <typename T>
-  using IndexBuffer = FixedUsageTypedBuffer<T, VK_BUFFER_USAGE_INDEX_BUFFER_BIT>;
+  using IndexBuffer = FixedUsageTypedBuffer<u32, VK_BUFFER_USAGE_INDEX_BUFFER_BIT>;
   template <typename T>
   using UniformBuffer = FixedUsageTypedBuffer<T, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT>;
+
+
+  template <typename T>
+  inline void bind(VkCommandBuffer cmd, VertexBuffer<T> &buf) {
+    VkBuffer vertexBuffers[] = {buf.getHandle()};
+    VkDeviceSize offsets[] = {0};
+
+
+    vkCmdBindVertexBuffers(cmd, 0, 1, vertexBuffers, offsets);
+  }
+
+
+  inline void bind(VkCommandBuffer cmd, IndexBuffer &buf) {
+    vkCmdBindIndexBuffer(cmd, buf.getHandle(), 0, VK_INDEX_TYPE_UINT32);
+  }
 
 }  // namespace ren

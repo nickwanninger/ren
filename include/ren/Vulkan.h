@@ -22,6 +22,7 @@
     }                                                                    \
   } while (0)
 
+
 namespace ren {
 
   class VulkanInstance;
@@ -148,6 +149,14 @@ namespace ren {
     std::vector<VkCommandBuffer> commandBuffers;
 
 
+
+
+    // Depth resources
+    VkImage depthImage;
+    VkDeviceMemory depthImageMemory;
+    VkImageView depthImageView;
+
+    // Texture resources
     VkImage textureImage;
     VkDeviceMemory textureImageMemory;
     VkImageView textureImageView;
@@ -155,7 +164,7 @@ namespace ren {
 
 
     std::shared_ptr<ren::VertexBuffer<Vertex>> vertex_buffer;
-    std::shared_ptr<ren::IndexBuffer<u32>> index_buffer;
+    std::shared_ptr<ren::IndexBuffer> index_buffer;
     // One for each frame in flight
     std::vector<std::shared_ptr<ren::UniformBuffer<UniformBufferObject>>> uniform_buffers;
 
@@ -171,7 +180,11 @@ namespace ren {
     std::vector<VkFence> inFlightFences;
     bool framebuffer_resized = false;
 
+    u64 imageIndex = 0;
     u64 frame_number = 0;
+
+    void beginFrame(void);
+    void endFrame(void);
 
     void draw_frame(void);
 
@@ -198,7 +211,8 @@ namespace ren {
                       VkDeviceMemory &imageMemory);
 
 
-    VkImageView create_image_view(VkImage image, VkFormat format);
+    VkImageView create_image_view(VkImage image, VkFormat format,
+                                  VkImageAspectFlags aspectFlags = VK_IMAGE_ASPECT_COLOR_BIT);
 
 
     VkCommandBuffer beginSingleTimeCommands();
@@ -209,7 +223,14 @@ namespace ren {
     VkShaderModule create_shader_module(const std::vector<u8> &code);
     VkShaderModule load_shader_module(const std::string &filename);
 
+
+
    private:
+    inline auto findDepthFormat(void) {
+      return findSupportedFormat(
+          {VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT},
+          VK_IMAGE_TILING_OPTIMAL, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
+    }
     void init_instance(void);
     void init_swapchain(void);
     void init_renderpass(void);
@@ -228,6 +249,7 @@ namespace ren {
     void transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout,
                                VkImageLayout newLayout);
 
+    void createDepthResources(void);
     void createTextureImage(void);
 
 
@@ -236,6 +258,9 @@ namespace ren {
     void update_uniform_buffer(u32 current_image);
 
     u32 find_memory_type(u32 typeFilter, VkMemoryPropertyFlags properties);
+
+    VkFormat findSupportedFormat(const std::vector<VkFormat> &candidates, VkImageTiling tiling,
+                                 VkFormatFeatureFlags features);
 
     // writes the commands we want to execute into a command buffer
     void record_command_buffer(VkCommandBuffer commandBuffer, u32 imageIndex);

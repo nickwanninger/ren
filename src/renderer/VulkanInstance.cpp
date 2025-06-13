@@ -25,8 +25,6 @@
 #define VMA_IMPLEMENTATION
 #include "vk_mem_alloc.h"
 
-const int MAX_FRAMES_IN_FLIGHT = 3;
-
 
 static unsigned int debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
                                   VkDebugUtilsMessageTypeFlagsEXT messageType,
@@ -51,6 +49,7 @@ ren::VulkanInstance::VulkanInstance(const std::string &app_name, SDL_Window *win
   init_instance();
   init_swapchain();
 
+  createVertexBuffer();
 
   init_renderpass();
 
@@ -58,11 +57,13 @@ ren::VulkanInstance::VulkanInstance(const std::string &app_name, SDL_Window *win
 
 
   init_pipeline();
+
+  createDepthResources();
+
   init_framebuffers();
   init_command_pool();
 
   createTextureImage();
-  createVertexBuffer();
   create_descriptor_pool();
   create_descriptor_sets();
 
@@ -97,11 +98,53 @@ std::vector<ren::Vertex> vertices = {
         glm::vec3(-0.5f, 0.5f, 0.0f),
         glm::vec3(1.0f, 1.0f, 1.0f),
         -glm::vec2(1.0f, 1.0f),
-    }
-    //
+    },
+
+    // ---
+
+
+    {
+        glm::vec3(-0.5f, -0.5f, -1.0f),
+        glm::vec3(1.0f, 0.0f, 0.0f),
+        -glm::vec2(1.0f, 0.0f),
+    },
+    {
+        glm::vec3(0.5f, -0.5f, -1.0f),
+        glm::vec3(0.0f, 1.0f, 0.0f),
+        -glm::vec2(0.0f, 0.0f),
+    },
+    {
+        glm::vec3(0.5f, 0.5f, -1.0f),
+        glm::vec3(0.0f, 0.0f, 1.0f),
+        -glm::vec2(0.0f, 1.0f),
+    },
+    {
+        glm::vec3(-0.5f, 0.5f, -1.0f),
+        glm::vec3(1.0f, 1.0f, 1.0f),
+        -glm::vec2(1.0f, 1.0f),
+    },
+
+
+    // line test
+    {
+        glm::vec3(1.0f, 1.0f, 1.0f),
+        glm::vec3(1.0f, 1.0f, 1.0f),
+        glm::vec2(0, 0),
+    },
+    {
+        glm::vec3(0.0f, 0.0f, 1.0f),
+        glm::vec3(1.0f, 1.0f, 1.0f),
+        glm::vec2(0, 0),
+    },
 };
 
-const std::vector<uint32_t> indices = {0, 1, 2, 2, 3, 0};
+const std::vector<uint32_t> indices = {
+    0, 1, 2, 2, 3, 0,  // square 1
+    4, 5, 6, 6, 7, 4,  // square 2
+
+
+    // 0, 1
+};
 
 void ren::VulkanInstance::draw_frame(void) {
   // At a high level, rendering a frame in Vulkan consists of a common set of steps:
@@ -140,6 +183,9 @@ void ren::VulkanInstance::draw_frame(void) {
   ImGui::ShowDemoWindow();
 
   vkResetCommandBuffer(commandBuffers[current_frame], 0);
+
+  // Here, we submit all the draw calls.
+
   record_command_buffer(commandBuffers[current_frame], imageIndex);
 
   // Only reset the fence if we are submitting work
@@ -397,31 +443,55 @@ void ren::VulkanInstance::init_renderpass(void) {
   colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
   colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
+
+
   VkAttachmentReference colorAttachmentRef{};
   colorAttachmentRef.attachment = 0;
   colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+
+
+  VkAttachmentDescription depthAttachment{};
+  depthAttachment.format = findDepthFormat();
+  depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+  depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+  depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+  depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+  depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+  depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+  depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+  VkAttachmentReference depthAttachmentRef{};
+  depthAttachmentRef.attachment = 1;
+  depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
   VkSubpassDescription subpass{};
   subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
   subpass.colorAttachmentCount = 1;
   subpass.pColorAttachments = &colorAttachmentRef;
+  subpass.pDepthStencilAttachment = &depthAttachmentRef;
+
 
   VkSubpassDependency dependency{};
   dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
   dependency.dstSubpass = 0;
-  dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
   dependency.srcAccessMask = 0;
-  dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-  dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+  dependency.srcStageMask =
+      VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+  dependency.dstStageMask =
+      VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+  dependency.dstAccessMask =
+      VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 
 
+
+  std::array<VkAttachmentDescription, 2> attachments = {colorAttachment, depthAttachment};
   VkRenderPassCreateInfo renderPassInfo{};
   renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-  renderPassInfo.attachmentCount = 1;
-  renderPassInfo.pAttachments = &colorAttachment;
+  renderPassInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
+  renderPassInfo.pAttachments = attachments.data();
   renderPassInfo.subpassCount = 1;
   renderPassInfo.pSubpasses = &subpass;
-  //
   renderPassInfo.dependencyCount = 1;
   renderPassInfo.pDependencies = &dependency;
 
@@ -433,9 +503,6 @@ void ren::VulkanInstance::init_renderpass(void) {
 
 
 void ren::VulkanInstance::init_pipeline(void) {
-  // from https://vulkan-tutorial.com/en/Drawing_a_triangle/Graphics_pipeline_basics/Fixed_functions
-
-
   pipeline = std::make_shared<ren::VulkanPipeline>(*this);
 
 
@@ -448,6 +515,13 @@ void ren::VulkanInstance::init_pipeline(void) {
   pipeline->vertexInputInfo.pVertexBindingDescriptions = &bindingDesc;
   pipeline->vertexInputInfo.vertexAttributeDescriptionCount = attributeDescs.size();
   pipeline->vertexInputInfo.pVertexAttributeDescriptions = attributeDescs.data();
+
+
+  // set topology
+  pipeline->inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+  pipeline->rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+  pipeline->depthStencil.depthTestEnable = VK_TRUE;
+  pipeline->depthStencil.depthWriteEnable = VK_TRUE;
 
 
 
@@ -490,13 +564,17 @@ void ren::VulkanInstance::init_framebuffers(void) {
   swapchain_framebuffers.resize(image_views.size());
 
   for (size_t i = 0; i < image_views.size(); i++) {
-    VkImageView attachments[] = {image_views[i]};
+    if (image_views[i] == VK_NULL_HANDLE) {
+      throw std::runtime_error("Image view is null for swapchain image " + std::to_string(i));
+    }
+    if (depthImageView == VK_NULL_HANDLE) { throw std::runtime_error("Depth image view is null"); }
+    std::array<VkImageView, 2> attachments = {image_views[i], depthImageView};
 
     VkFramebufferCreateInfo framebufferInfo{};
     framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
     framebufferInfo.renderPass = render_pass;
-    framebufferInfo.attachmentCount = 1;
-    framebufferInfo.pAttachments = attachments;
+    framebufferInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
+    framebufferInfo.pAttachments = attachments.data();
     framebufferInfo.width = extent.width;
     framebufferInfo.height = extent.height;
     framebufferInfo.layers = 1;
@@ -562,15 +640,20 @@ void ren::VulkanInstance::record_command_buffer(VkCommandBuffer commandBuffer, u
   renderPassInfo.renderArea.extent = extent;
 
   // setup the clear values
-  VkClearValue clearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
-  renderPassInfo.clearValueCount = 1;
-  renderPassInfo.pClearValues = &clearColor;
+
+  std::array<VkClearValue, 2> clearValues{};
+  clearValues[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
+  clearValues[1].depthStencil = {1.0f, 0};
+
+  renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
+  renderPassInfo.pClearValues = clearValues.data();
 
   vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-  // We can now bind the graphics pipeline:
-  vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->getHandle());
+  // We can now start issuing rendering commands.
 
+  // We can now bind the graphics pipeline:
+  pipeline->bind(commandBuffer);
 
   update_uniform_buffer(imageIndex);
 
@@ -616,20 +699,17 @@ void ren::VulkanInstance::record_command_buffer(VkCommandBuffer commandBuffer, u
   VkBuffer vertexBuffers[] = {vertex_buffer->getHandle()};
   VkDeviceSize offsets[] = {0};
 
+  ren::bind(commandBuffer, *vertex_buffer);
+  ren::bind(commandBuffer, *index_buffer);
 
-  vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
-  vkCmdBindIndexBuffer(commandBuffer, index_buffer->getHandle(), 0, VK_INDEX_TYPE_UINT32);
-
+  auto dset = pipeline->getDescriptorSet(imageIndex);
   vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->getLayout(), 0,
-                          1, &descriptorSets[imageIndex], 0, nullptr);
+                          1, &dset, 0, nullptr);
 
   vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
 
 
-
-  // Now we can issue the draw command for the triangle
-  vkCmdDraw(commandBuffer, 3, 1, 0, 0);
-
+  //
 
   // Right before we end the render pass, we need to render the ImGui draw data.
   ImGui::Render();
@@ -671,7 +751,7 @@ void ren::VulkanInstance::init_sync_objects(void) {
 
 void ren::VulkanInstance::createVertexBuffer(void) {
   vertex_buffer = std::make_shared<ren::VertexBuffer<ren::Vertex>>(*this, vertices);
-  index_buffer = std::make_shared<ren::IndexBuffer<u32>>(*this, indices);
+  index_buffer = std::make_shared<ren::IndexBuffer>(*this, indices);
 
   uniform_buffers.resize(MAX_FRAMES_IN_FLIGHT);
 
@@ -758,113 +838,52 @@ void ren::VulkanInstance::copyBufferToImage(VkBuffer buffer, VkImage image, uint
 
 
 void ren::VulkanInstance::create_descriptor_set_layout(void) {
-  // Every binding needs to be described through a VkDescriptorSetLayoutBinding struct.
-  VkDescriptorSetLayoutBinding uboLayoutBinding{};
-  uboLayoutBinding.binding = 0;
-
-  // The first two fields specify the binding used in the shader and
-  // the type of descriptor, which is a uniform buffer object. It is
-  // possible for the shader variable to represent an array of uniform
-  // buffer objects, and descriptorCount specifies the number of
-  // values in the array. This could be used to specify a
-  // transformation for each of the bones in a skeleton for skeletal
-  // animation, for example. Our MVP transformation is in a single
-  // uniform buffer object, so we're using a descriptorCount of 1.
-  uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-  uboLayoutBinding.descriptorCount = 1;
-
-  // We also need to specify in which shader stages the descriptor is
-  // going to be referenced. The stageFlags field can be a combination
-  // of VkShaderStageFlagBits values or the value
-  // VK_SHADER_STAGE_ALL_GRAPHICS. In our case, we're only referencing
-  // the descriptor from the vertex shader.
-  uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-
-  // The pImmutableSamplers field is only relevant for image sampling related descriptors, which
-  // we'll look at later. You can leave this to its default value.
-  uboLayoutBinding.pImmutableSamplers = nullptr;  // Optional
-
-
-  VkDescriptorSetLayoutBinding samplerLayoutBinding{};
-  samplerLayoutBinding.binding = 1;
-  samplerLayoutBinding.descriptorCount = 1;
-  samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-  samplerLayoutBinding.pImmutableSamplers = nullptr;
-  samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+  // Not Needed
 }
 
 
 
 void ren::VulkanInstance::create_descriptor_pool(void) {
-  std::array<VkDescriptorPoolSize, 2> poolSizes{};
-  poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-  poolSizes[0].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
-  poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-  poolSizes[1].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
-
-  VkDescriptorPoolCreateInfo poolInfo{};
-  poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-  poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
-  poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
-  poolInfo.pPoolSizes = poolSizes.data();
-  poolInfo.maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
-
-  if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS) {
-    throw std::runtime_error("failed to create descriptor pool!");
-  }
+  // Not Needed
 }
 
 
 
 void ren::VulkanInstance::create_descriptor_sets(void) {
-  std::vector<VkDescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT,
-                                             pipeline->getDescriptorSetLayout());
-  VkDescriptorSetAllocateInfo allocInfo{};
-  allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-  allocInfo.descriptorPool = descriptorPool;
-  allocInfo.descriptorSetCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
-  allocInfo.pSetLayouts = layouts.data();
+  // Not Needed
+}
 
-  descriptorSets.resize(MAX_FRAMES_IN_FLIGHT);
-  if (vkAllocateDescriptorSets(device, &allocInfo, descriptorSets.data()) != VK_SUCCESS) {
-    throw std::runtime_error("failed to allocate descriptor sets!");
+VkFormat ren::VulkanInstance::findSupportedFormat(const std::vector<VkFormat> &candidates,
+                                                  VkImageTiling tiling,
+                                                  VkFormatFeatureFlags features) {
+  for (VkFormat format : candidates) {
+    VkFormatProperties props;
+    vkGetPhysicalDeviceFormatProperties(this->physical_device, format, &props);
+
+    if (tiling == VK_IMAGE_TILING_LINEAR && (props.linearTilingFeatures & features) == features) {
+      return format;
+    } else if (tiling == VK_IMAGE_TILING_OPTIMAL &&
+               (props.optimalTilingFeatures & features) == features) {
+      return format;
+    }
   }
 
-  for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-    VkDescriptorBufferInfo bufferInfo{};
-    bufferInfo.buffer = uniform_buffers[i]->getHandle();
-    bufferInfo.offset = 0;
-    bufferInfo.range = sizeof(UniformBufferObject);
-
-    VkDescriptorImageInfo imageInfo{};
-    imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    imageInfo.imageView = textureImageView;
-    imageInfo.sampler = textureSampler;
+  throw std::runtime_error("failed to find supported format!");
+}
 
 
-    std::array<VkWriteDescriptorSet, 2> descriptorWrites{};
-
-    descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptorWrites[0].dstSet = descriptorSets[i];
-    descriptorWrites[0].dstBinding = 0;
-    descriptorWrites[0].dstArrayElement = 0;
-    descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    descriptorWrites[0].descriptorCount = 1;
-    descriptorWrites[0].pBufferInfo = &bufferInfo;
-
-    descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptorWrites[1].dstSet = descriptorSets[i];
-    descriptorWrites[1].dstBinding = 1;
-    descriptorWrites[1].dstArrayElement = 0;
-    descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    descriptorWrites[1].descriptorCount = 1;
-    descriptorWrites[1].pImageInfo = &imageInfo;
+bool hasStencilComponent(VkFormat format) {
+  return format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT;
+}
 
 
+void ren::VulkanInstance::createDepthResources() {
+  auto depthFormat = findDepthFormat();
 
-    vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()),
-                           descriptorWrites.data(), 0, nullptr);
-  }
+  create_image(extent.width, extent.height, depthFormat, VK_IMAGE_TILING_OPTIMAL,
+               VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+               depthImage, depthImageMemory);
+  depthImageView = create_image_view(depthImage, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT);
 }
 
 
@@ -936,17 +955,19 @@ void ren::VulkanInstance::createTextureImage() {
 
 
 
-VkImageView ren::VulkanInstance::create_image_view(VkImage image, VkFormat format) {
+VkImageView ren::VulkanInstance::create_image_view(VkImage image, VkFormat format,
+                                                   VkImageAspectFlags aspectFlags) {
   VkImageViewCreateInfo viewInfo{};
   viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
   viewInfo.image = image;
   viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
   viewInfo.format = format;
-  viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+  viewInfo.subresourceRange.aspectMask = aspectFlags;
   viewInfo.subresourceRange.baseMipLevel = 0;
   viewInfo.subresourceRange.levelCount = 1;
   viewInfo.subresourceRange.baseArrayLayer = 0;
   viewInfo.subresourceRange.layerCount = 1;
+
 
   VkImageView imageView;
   if (vkCreateImageView(device, &viewInfo, nullptr, &imageView) != VK_SUCCESS) {
@@ -1209,6 +1230,10 @@ u32 ren::VulkanInstance::find_memory_type(u32 typeFilter, VkMemoryPropertyFlags 
 }
 
 void ren::VulkanInstance::cleanup_swapchain(void) {
+  vkDestroyImageView(device, depthImageView, nullptr);
+  vkDestroyImage(device, depthImage, nullptr);
+  vkFreeMemory(device, depthImageMemory, nullptr);
+
   for (size_t i = 0; i < swapchain_framebuffers.size(); i++) {
     vkDestroyFramebuffer(device, swapchain_framebuffers[i], nullptr);
   }

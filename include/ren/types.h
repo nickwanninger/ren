@@ -22,6 +22,13 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
+
+// How many frames we want to render in flight at once.
+// 3 = triple buffering
+// 2 = double buffering
+// 1 = single buffering
+const int MAX_FRAMES_IN_FLIGHT = 3;
+
 using u8 = uint8_t;
 using i8 = int8_t;
 using u16 = uint16_t;

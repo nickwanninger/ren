@@ -15,6 +15,16 @@ ren::VulkanPipeline::~VulkanPipeline() {
 }
 
 void ren::VulkanPipeline::cleanup(void) {
+  if (descriptorSetLayout != VK_NULL_HANDLE) {
+    vkDestroyDescriptorSetLayout(vulkan.device, descriptorSetLayout, nullptr);
+    pipeline = VK_NULL_HANDLE;
+  }
+
+  if (descriptorPool != VK_NULL_HANDLE) {
+    vkDestroyDescriptorPool(vulkan.device, descriptorPool, nullptr);
+    pipeline = VK_NULL_HANDLE;
+  }
+
   if (pipeline != VK_NULL_HANDLE) {
     vkDestroyPipeline(vulkan.device, pipeline, nullptr);
     pipeline = VK_NULL_HANDLE;
@@ -69,6 +79,19 @@ void ren::VulkanPipeline::populateDefaultCreateInfo() {
   rasterizer.depthBiasConstantFactor = 0.0f;  // Optional
   rasterizer.depthBiasClamp = 0.0f;           // Optional
   rasterizer.depthBiasSlopeFactor = 0.0f;     // Optional
+
+
+  // Depth stencil Create Info
+  depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+  depthStencil.depthTestEnable = VK_TRUE;
+  depthStencil.depthWriteEnable = VK_TRUE;
+  depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
+  depthStencil.depthBoundsTestEnable = VK_FALSE;
+  depthStencil.minDepthBounds = 0.0f;  // Optional
+  depthStencil.maxDepthBounds = 1.0f;  // Optional
+  depthStencil.stencilTestEnable = VK_FALSE;
+  depthStencil.front = {};  // Optional
+  depthStencil.back = {};   // Optional
 
 
   // Multisample Create Info
@@ -141,18 +164,93 @@ void ren::VulkanPipeline::populateDefaultCreateInfo() {
 void ren::VulkanPipeline::build(void) {
   cleanup();
 
-  // build up the descriptor set pipeline
-
+  // ---- Descriptor Set Layout ---- //
 
   VkDescriptorSetLayoutCreateInfo layoutInfo{};
   layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
   layoutInfo.bindingCount = static_cast<uint32_t>(this->bindings.size());
   layoutInfo.pBindings = bindings.data();
 
-  if (vkCreateDescriptorSetLayout(vulkan.device, &layoutInfo, nullptr, &this->descriptorSetLayout) !=
-      VK_SUCCESS) {
+  if (vkCreateDescriptorSetLayout(vulkan.device, &layoutInfo, nullptr,
+                                  &this->descriptorSetLayout) != VK_SUCCESS) {
     throw std::runtime_error("failed to create descriptor set layout!");
   }
+  // ---- Descriptor Pool ---- ///
+
+  // Make the descriptor pool
+  std::vector<VkDescriptorPoolSize> poolSizes;
+  for (auto &binding : bindings) {
+    VkDescriptorPoolSize ps;
+    ps.descriptorCount = MAX_FRAMES_IN_FLIGHT;
+    ps.type = binding.descriptorType;
+    poolSizes.push_back(ps);
+  }
+
+  VkDescriptorPoolCreateInfo poolInfo{};
+  poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+  poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+  poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
+  poolInfo.pPoolSizes = poolSizes.data();
+  poolInfo.maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+
+  if (vkCreateDescriptorPool(vulkan.device, &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS) {
+    throw std::runtime_error("failed to create descriptor pool!");
+  }
+
+
+  // ---- Descriptor Sets ---- //
+
+  std::vector<VkDescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT,
+                                             getDescriptorSetLayout());
+  VkDescriptorSetAllocateInfo allocInfo{};
+  allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+  allocInfo.descriptorPool = descriptorPool;
+  allocInfo.descriptorSetCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+  allocInfo.pSetLayouts = layouts.data();
+
+  if (vkAllocateDescriptorSets(vulkan.device, &allocInfo, descriptorSets.data()) != VK_SUCCESS) {
+    throw std::runtime_error("failed to allocate descriptor sets!");
+  }
+
+  for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+    VkDescriptorBufferInfo bufferInfo{};
+    bufferInfo.buffer = vulkan.uniform_buffers[i]->getHandle();
+    bufferInfo.offset = 0;
+    bufferInfo.range = sizeof(UniformBufferObject);
+
+    VkDescriptorImageInfo imageInfo{};
+    imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    // TODO: texture here!
+    imageInfo.imageView = vulkan.textureImageView;
+    imageInfo.sampler = vulkan.textureSampler;
+
+
+    std::array<VkWriteDescriptorSet, 2> descriptorWrites{};
+
+    descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWrites[0].dstSet = descriptorSets[i];
+    descriptorWrites[0].dstBinding = 0;
+    descriptorWrites[0].dstArrayElement = 0;
+    descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    descriptorWrites[0].descriptorCount = 1;
+    descriptorWrites[0].pBufferInfo = &bufferInfo;
+
+    descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWrites[1].dstSet = descriptorSets[i];
+    descriptorWrites[1].dstBinding = 1;
+    descriptorWrites[1].dstArrayElement = 0;
+    descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    descriptorWrites[1].descriptorCount = 1;
+    descriptorWrites[1].pImageInfo = &imageInfo;
+
+
+
+    vkUpdateDescriptorSets(vulkan.device, static_cast<uint32_t>(descriptorWrites.size()),
+                           descriptorWrites.data(), 0, nullptr);
+  }
+
+
+  // ---- Pipeline Layout Info ---- //
 
 
   VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
@@ -192,6 +290,8 @@ void ren::VulkanPipeline::build(void) {
   // Build the pipeline stages
   pipelineInfo.stageCount = shaderStages.size();
   pipelineInfo.pStages = shaderStages.data();
+  pipelineInfo.pDepthStencilState = &depthStencil;
+
 
   pipelineInfo.pDynamicState = &dynamicState;
   // Then we reference all of the structures describing the fixed-function stage.
