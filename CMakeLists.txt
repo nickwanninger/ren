@@ -33,22 +33,22 @@ set(IMGUI_SOURCES
 
 
 
+# Define a variable to store the list of C++ source files
+set(REN_SOURCE_FILES "")
 
-
-
+# Recursively find all .cpp files in the current directory and its subdirectories
+file(GLOB_RECURSE REN_SOURCE_FILES "src/ren/*.cpp")
 
 # Ren is the main target of this project. For now, it's a single executable,
 # but eventually ren should be `libren` and we can have multiple executables
 # that link against it.
 add_executable(ren
-  src/main.cpp
 
-  src/Engine.cpp
-  src/renderer/VulkanInstance.cpp
-  src/renderer/Buffer.cpp
-  src/renderer/Shader.cpp
-  src/renderer/VulkanPipeline.cpp
+  ${REN_SOURCE_FILES}
 
+  lib/spirv_reflect/spirv_reflect.c
+  lib/spirv_reflect/common.cpp
+  lib/spirv_reflect/output_stream.cpp
   lib/vkb/VkBootstrap.cpp
   lib/stb/stb_image.c
 
@@ -77,6 +77,8 @@ target_include_directories(ren PRIVATE
   ${IMGUI_DIR}
   ${IMGUI_DIR}/backends
 
+
+  src/
   include/
   lib/
 )
@@ -90,7 +92,7 @@ target_compile_options(ren PRIVATE
     -Wno-unused-private-field
     -Wno-deprecated-declarations
     -Wno-unused-parameter
-    -O3
+    # -O3
     -g3
 )
 
