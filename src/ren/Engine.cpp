@@ -240,7 +240,7 @@ void ren::Engine::run(void) {
   while (!bQuit) {
     // Handle events on queue
     while (SDL_PollEvent(&e) != 0) {
-      if (!camera.mouse_captured) { ImGui_ImplSDL2_ProcessEvent(&e); }
+      ImGui_ImplSDL2_ProcessEvent(&e);
 
       // if the window resizes
       if (e.type == SDL_WINDOWEVENT && e.window.event == SDL_WINDOWEVENT_RESIZED) {
@@ -281,8 +281,6 @@ void ren::Engine::run(void) {
 
 
     camera.update(deltaTime);
-    // nbody_step(bodies, deltaTime * simulationSpeed);
-
 
     ImGui::Begin("Test Controls");
     ImGui::Text("FPS: %.2f", 1.0f / deltaTime);
@@ -294,7 +292,6 @@ void ren::Engine::run(void) {
     ImGui::DragFloat3("Camera Position", &camera.position.x, 0.1f);
     ImGui::DragFloat3("Camera Velocity", &camera.velocity.x, 0.1f);
     ImGui::End();
-    // vulkan->record_command_buffer(cb, vulkan->imageIndex);
 
     auto matProj = glm::perspective(
         glm::radians(fov), vulkan->extent.width / (float)vulkan->extent.height, fNear, fFar);

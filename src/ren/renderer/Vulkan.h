@@ -30,27 +30,6 @@ namespace ren {
   VulkanInstance &getVulkan(void);
 
 
-  // class FrameData {
-  //  public:
-  //   FrameData(VulkanInstance &vulkan, u32 frame_index)
-  //       : vulkan(vulkan)
-  //       , frame_index(frame_index) {
-  //     uniform_buffer =
-  //         std::make_shared<ren::UniformBuffer<UniformBufferObject>>(vulkan,
-  //         "UniformBufferObject");
-  //   }
-
-  //   VulkanInstance &vulkan;
-  //   u32 frame_index;
-
-  //   // The uniform buffer for this frame
-  //   std::shared_ptr<ren::UniformBuffer<UniformBufferObject>> uniform_buffer;
-
-  //   // The command buffer for this frame
-  //   VkCommandBuffer command_buffer = VK_NULL_HANDLE;
-  // };
-
-
   struct UniformBufferObject {
     glm::mat4 model;
     glm::mat4 view;
