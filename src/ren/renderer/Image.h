@@ -14,6 +14,8 @@ namespace ren {
     using Ref = std::shared_ptr<Image>;
     // Construct an image with the given resources.
     // The resources of these images are owned by this class now.
+    // The memory allocation can be NULL, in the event that the image
+    // is allocated by vkb::SwapchainBuilder, for example.
     Image(const std::string &name, VkImage image, VkImageView imageView, VmaAllocation memory,
           VkImageCreateInfo &createInfo);
     static Image::Ref create(const std::string &name, VkImage image, VkImageView imageView,
@@ -63,7 +65,6 @@ namespace ren {
 
     // Image Settings
     IMAGE_BUILDER_SETTER(Type, VkImageType, imageInfo.imageType)
-    IMAGE_BUILDER_SETTER(Format, VkFormat, imageInfo.format)
     IMAGE_BUILDER_SETTER(Extent, VkExtent3D, imageInfo.extent)
     IMAGE_BUILDER_SETTER(Width, u32, imageInfo.extent.width)
     IMAGE_BUILDER_SETTER(Height, u32, imageInfo.extent.height)
@@ -79,7 +80,6 @@ namespace ren {
 
     // Image View Settings
     IMAGE_BUILDER_SETTER(ViewType, VkImageViewType, viewInfo.viewType)
-    IMAGE_BUILDER_SETTER(ViewFormat, VkFormat, viewInfo.format)
     IMAGE_BUILDER_SETTER(ViewAspectMask, VkImageAspectFlags, viewInfo.subresourceRange.aspectMask)
     IMAGE_BUILDER_SETTER(ViewBaseMipLevel, u32, viewInfo.subresourceRange.baseMipLevel)
     IMAGE_BUILDER_SETTER(ViewLevelCount, u32, viewInfo.subresourceRange.levelCount)
@@ -89,6 +89,13 @@ namespace ren {
     // Allocation settings
     IMAGE_BUILDER_SETTER(AllocationUsage, VmaMemoryUsage, allocCreateInfo.usage)
     IMAGE_BUILDER_SETTER(AllocationFlags, VmaAllocationCreateFlags, allocCreateInfo.flags)
+
+    // Some custom ones
+    ImageBuilder &setFormat(VkFormat format) {
+      imageInfo.format = format;
+      viewInfo.format = format;  // Ensure the view format matches the image format.
+      return *this;
+    }
 
 
 

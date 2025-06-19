@@ -10,14 +10,21 @@ namespace ren {
       , imageView(imageView)
       , memory(memory)
       , imageCreateInfo(createInfo) {
-    assert(image != VK_NULL_HANDLE && imageView != VK_NULL_HANDLE && memory != VK_NULL_HANDLE &&
+    assert(image != VK_NULL_HANDLE && imageView != VK_NULL_HANDLE &&
            "Image resources must be valid. Check the Vulkan instance and image creation.");
   }
 
   Image::~Image(void) {
     auto &vulkan = ren::getVulkan();
+
+    // If an Image has no memory, it means it is managed elsewhere and we should not actually
+    // destroy it here. (e.g., swapchain images)
+    if (this->memory == VK_NULL_HANDLE) { return; }
+
+
     if (image != VK_NULL_HANDLE) {
       vkDestroyImageView(vulkan.device, imageView, nullptr);
+
       vmaDestroyImage(vulkan.allocator, image, memory);
     }
   }
