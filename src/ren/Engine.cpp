@@ -2,11 +2,13 @@
 
 #include <stb/stb_image.h>
 #include <ren/renderer/pipelines/StandardPipeline.h>
+#include <ren/renderer/pipelines/PointPipeline.h>
 #include <ren/renderer/Texture.h>
 #include <ren/Camera.h>
 
 #include <imgui_impl_sdl2.h>
 #include "imgui.h"
+#include "imgui_impl_vulkan.h"
 #include "vulkan/vulkan_core.h"
 
 ren::Engine::Engine(const std::string& app_name, glm::uvec2 window_size)
@@ -80,6 +82,23 @@ void generate_sphere(std::vector<ren::Vertex>& vertices, std::vector<uint32_t>& 
 
 
 
+std::shared_ptr<ren::PointPipeline> createPointPipeline(void) {
+  auto& vulkan = ren::getVulkan();
+  VkDescriptorSetLayout descriptorSetLayout;
+
+  VkDescriptorSetLayoutCreateInfo layoutInfo{};
+  layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+  layoutInfo.bindingCount = 0;
+  layoutInfo.pBindings = NULL;
+
+  if (vkCreateDescriptorSetLayout(vulkan.device, &layoutInfo, nullptr, &descriptorSetLayout) !=
+      VK_SUCCESS) {
+    throw std::runtime_error("failed to create descriptor set layout!");
+  }
+
+  return std::make_shared<ren::PointPipeline>(descriptorSetLayout);
+}
+
 void ren::Engine::run(void) {
   SDL_Event e;
   bool bQuit = false;
@@ -92,6 +111,7 @@ void ren::Engine::run(void) {
   generate_sphere(vertices, indices, 1.0f, 64, 64, glm::vec3(1.0f, 1.0f, 1.0f));
 
 
+  auto pointPipeline = createPointPipeline();
 
   auto vertex_shader =
       std::make_shared<ren::Shader>("shaders/triangle.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
@@ -231,10 +251,30 @@ void ren::Engine::run(void) {
   auto lastTime = startTime;
 
 
+  float bounds = 2;
+  float moveSpeedRange = 1.0f;
+  std::vector<Vertex> pointVertices;
+  for (int i = 0; i < 50'000; i++) {
+    float distance = sqrt(ren::randomFloat(0.0f, 1.0f)) * 3.0f;
+    auto location = glm::vec3(ren::randomFloat(-1.0f, 1.0f) * bounds,
+                              ren::randomFloat(-1.0f, 1.0f) * bounds, 0.0f);
+
+    // the color is actually velocity.
+    // glm::vec3 color = glm::vec3(ren::randomFloat(0.0f, 0.05f));
+    glm::vec3 color = ren::randomDirection() * ren::randomFloat(0.0f, moveSpeedRange);
+    pointVertices.push_back({location, color, glm::vec2(0.0f, 0.0f)});
+  }
+
+  auto pointVertexBuffer = std::make_shared<ren::VertexBuffer<ren::Vertex>>(*vulkan, pointVertices);
+
   float fov = 90.0f;
   float fNear = 0.01f;
   float fFar = 1000.0f;
   float radius = 2.0f;
+
+  float gravity = 12.0f;
+
+
 
   // main loop
   while (!bQuit) {
@@ -282,6 +322,8 @@ void ren::Engine::run(void) {
 
     camera.update(deltaTime);
 
+    float windowAspect = vulkan->extent.width / (float)vulkan->extent.height;
+    float imageSize = 256;
     ImGui::Begin("Test Controls");
     ImGui::Text("FPS: %.2f", 1.0f / deltaTime);
     ImGui::DragFloat("FOV", &fov, 0.1f, 1.0f, 180.0f);
@@ -291,22 +333,74 @@ void ren::Engine::run(void) {
 
     ImGui::DragFloat3("Camera Position", &camera.position.x, 0.1f);
     ImGui::DragFloat3("Camera Velocity", &camera.velocity.x, 0.1f);
+    ImGui::DragFloat("bounds", &bounds, 0.1f, 0.1f, 10.0f);
+    ImGui::DragFloat("movespeedrange", &moveSpeedRange, 0.1f, 0.1f, 10.0f);
+    ImGui::DragFloat("Gravity", &gravity, 0.1f, 0.1f, 100.0f);
+
     ImGui::End();
 
     auto matProj = glm::perspective(
         glm::radians(fov), vulkan->extent.width / (float)vulkan->extent.height, fNear, fFar);
+
     matProj[1][1] *= -1;
 
-
     auto matView = camera.view_matrix();
+
+
+    float bx = cos(time * 0.1f) * radius;
+    float by = sin(time * 0.1f) * radius;
+    glm::vec3 bh1 = glm::vec3(bx, by, 0.0f);
+    glm::vec3 bh2 = glm::vec3(-bx, -by, 0.0f);
+
+    // first draw the points
+    for (size_t i = 0; i < pointVertices.size(); ++i) {
+      auto& v = pointVertices[i];
+      auto& pos = v.pos;
+      auto& vel = v.color;
+      // force from black hole #1
+      auto d = bh1 - pos;
+      float dist = glm::length(d);
+      glm::vec3 force = (gravity / dist) * glm::normalize(d);
+
+      // add force from black hole #2
+      d = bh2 - pos;
+      dist = glm::length(d);
+      force += (gravity / dist) * glm::normalize(d);
+      // Apply simple euler integrator
+      glm::vec3 a = force * 0.1f;  // acceleration
+      if (false && dist > 10.0f) {
+        pos = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
+        vel = glm::vec3(0.0f, 0.0f, 0.0f);
+      } else {
+        pos = pos + vel * deltaTime + 0.5f * a * deltaTime * deltaTime;
+        vel = vel + a * deltaTime;
+      }
+
+      pos.z = 0.0f;
+    }
+    pointVertexBuffer->copyFromHost(pointVertices);
+
+    ren::bind(cb, *pointPipeline);
+    ren::bind(cb, *pointVertexBuffer);
+
+
+    MeshPushConstants push_constants{};
+
+    glm::vec3 transform = glm::vec3(0.f);
+    push_constants.model = glm::translate(glm::mat4(1.0), transform);
+    push_constants.view = matView;
+    push_constants.proj = matProj;
+
+
+    vkCmdPushConstants(cb, pipeline.getLayout(), VK_SHADER_STAGE_VERTEX_BIT, 0,
+                       sizeof(push_constants), &push_constants);
+    vkCmdDraw(cb, static_cast<uint32_t>(pointVertices.size()), 1, 0, 0);
+
+
 
     ren::bind(cb, pipeline);
     ren::bind(cb, *vertex_buffer);
     ren::bind(cb, *index_buffer);
-
-
-
-    const double golden_angle = M_PI * (3.0 - sqrt(5.0));  // ~2.399... radians
 
 
 

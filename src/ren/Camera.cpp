@@ -9,22 +9,17 @@ void ren::Camera::update(float dt) {
   u32 mouse = SDL_GetMouseState(NULL, NULL);
   SDL_GetRelativeMouseState(&mouse_x, &mouse_y);
 
-  // if (first_update) {
-  //   // Capture mouse on first update
-  //   SDL_SetRelativeMouseMode(mouse_captured ? SDL_TRUE : SDL_FALSE);
-  //   first_update = false;
-  // }
-  //
-
   auto& io = ImGui::GetIO();
 
   bool right_pressed = mouse & SDL_BUTTON(SDL_BUTTON_RIGHT);
 
   if (right_pressed && !mouse_captured && not io.WantCaptureMouse) {
     SDL_SetRelativeMouseMode(SDL_TRUE);
+    printf("Mouse captured, relative mode enabled\n");
     mouse_captured = true;
   } else if (!right_pressed && mouse_captured) {
     SDL_SetRelativeMouseMode(SDL_FALSE);
+    printf("Mouse released, capturing disabled\n");
     mouse_captured = false;
   }
 
@@ -82,6 +77,6 @@ void ren::Camera::update(float dt) {
 
   // Apply velocity to position
   position += velocity * dt;
-  // damp velocity
-  velocity *= 0.95f;  // Dampen the velocity to simulate friction
+  // damp velocity according to dt
+  velocity *= (1.0f - dt * 5.0f);  // Damping factor, adjust as needed
 }

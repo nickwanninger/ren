@@ -171,6 +171,8 @@ namespace ren {
     }
 
 
+    VkSampler createSampler(VkFilter filter);
+
     void create_buffer(VkDeviceSize size, VkBufferUsageFlags usage,
                        VkMemoryPropertyFlags properties, VkBuffer &buffer,
                        VkDeviceMemory &bufferMemory);

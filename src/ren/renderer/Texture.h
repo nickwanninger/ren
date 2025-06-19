@@ -2,17 +2,17 @@
 
 #include <ren/types.h>
 #include <ren/renderer/Buffer.h>
-
+#include <ren/renderer/Image.h>
 
 namespace ren {
 
 
-  // This class represents a texture in the rendering engine.
+  // A texture is just a 2D image with a sampler.
   class Texture {
    public:
     // Construct a texture with CPU side pixel data. Expect R8G8B8A8_SRGB format.
     // Use the load methods to create textures.
-    Texture(const std::string &name, u32 width, u32 height, u8 *data);
+    Texture(const std::string &name, u32 width, u32 height, u8 *data = nullptr);
 
     ~Texture();
 
@@ -26,26 +26,27 @@ namespace ren {
     // Get the name of the texture.
     const std::string &getName(void) const { return name; }
     // Get the width of the texture.
-    u32 getWidth(void) const { return width; }
+    u32 getWidth(void) const { return this->image->getWidth(); }
     // Get the height of the texture.
-    u32 getHeight(void) const { return height; }
+    u32 getHeight(void) const { return this->image->getHeight(); }
+
     // Get the Vulkan image handle.
-    VkImage getImage(void) const { return image; }
-    // Get the Vulkan image view handle.
-    VkImageView getImageView(void) const { return imageView; }
+    ren::Image::Ref getImage(void) const { return this->image; }
+    VkImageView getImageView(void) const { return this->image->getImageView(); }
+
     // Get the Vulkan sampler handle.
     VkSampler getSampler(void) const { return sampler; }
 
+    VkDescriptorSet getImGui(void) { return imguiTextureID; }
 
 
    private:
     std::string name;
-    u32 width = 0;
-    u32 height = 0;
-    VkImage image = VK_NULL_HANDLE;
-    VkImageView imageView = VK_NULL_HANDLE;
-    VkDeviceMemory imageMemory = VK_NULL_HANDLE;
+
+    ren::Image::Ref image;
     VkSampler sampler = VK_NULL_HANDLE;
+
+    VkDescriptorSet imguiTextureID = VK_NULL_HANDLE;
   };
 
 }  // namespace ren

@@ -2,56 +2,53 @@
 #include <ren/renderer/Vulkan.h>
 
 #include <stb/stb_image.h>
+#include <imgui_impl_vulkan.h>
 
 ren::Texture::Texture(const std::string &name, u32 width, u32 height, u8 *pixels)
-    : name(name)
-    , width(width)
-    , height(height) {
+    : name(name) {
+  ren::ImageBuilder ib(name);
+
+  ib.setWidth(width).setHeight(height);
+
+  VkFormat format = VK_FORMAT_R8G8B8A8_SRGB;
+
+  ib.setFormat(format);
+  ib.setUsage(VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+  ib.setAllocationUsage(VMA_MEMORY_USAGE_GPU_ONLY);
+
+
+  this->image = ib.build();
+
   // TODO: move to an init function
   auto &vulkan = ren::getVulkan();
 
+  VkDeviceSize imageSize = getWidth() * getHeight() * 4;
+  printf("image size: %u bytes\n", imageSize);
+  ren::Buffer stagingBuffer(
+      vulkan, imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
-  VkDeviceSize imageSize = width * height * 4;
+  if (pixels != nullptr) stagingBuffer.copyFromHost(pixels, imageSize);
 
-  {
-    ren::Buffer stagingBuffer(
-        vulkan, imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+  vulkan.transitionImageLayout(image->getImage(), VK_FORMAT_R8G8B8A8_SRGB,
+                               VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+  vulkan.copyBufferToImage(stagingBuffer.getHandle(), image->getImage(),
+                           static_cast<uint32_t>(width), static_cast<uint32_t>(height));
 
-    stagingBuffer.copyFromHost(pixels, imageSize);
-
-
-
-    // now we have a staging buffer with the texture data, we can create the
-    // actual texture image
-
-    vulkan.create_image(width, height, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_TILING_OPTIMAL,
-                        VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-                        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, image, imageMemory);
-
-    vulkan.transitionImageLayout(image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_UNDEFINED,
-                                 VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-    vulkan.copyBufferToImage(stagingBuffer.getHandle(), image, static_cast<uint32_t>(width),
-                             static_cast<uint32_t>(height));
-
-    vulkan.transitionImageLayout(image, VK_FORMAT_R8G8B8A8_SRGB,
-                                 VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-  }
-
-  // Now, create the texture image view
-  imageView = vulkan.create_image_view(image, VK_FORMAT_R8G8B8A8_SRGB);
+  vulkan.transitionImageLayout(image->getImage(), VK_FORMAT_R8G8B8A8_SRGB,
+                               VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                               VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
   // Texture Sampler
   VkSamplerCreateInfo samplerInfo{};
   samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-  samplerInfo.magFilter = samplerInfo.minFilter = VK_FILTER_LINEAR;
+  samplerInfo.magFilter = samplerInfo.minFilter = VK_FILTER_NEAREST;
 
   samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
   samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
   samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
 
-  samplerInfo.anisotropyEnable = VK_FALSE;
+  samplerInfo.anisotropyEnable = VK_TRUE;
   samplerInfo.maxAnisotropy = 1.0f;
 
   samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
@@ -67,6 +64,11 @@ ren::Texture::Texture(const std::string &name, u32 width, u32 height, u8 *pixels
   if (vkCreateSampler(vulkan.device, &samplerInfo, nullptr, &sampler) != VK_SUCCESS) {
     throw std::runtime_error("failed to create texture sampler!");
   }
+
+
+  // create the imgui texture ID so we can display it in imgui
+  imguiTextureID = ImGui_ImplVulkan_AddTexture(sampler, image->getImageView(),
+                                               VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 }
 
 
@@ -74,10 +76,13 @@ ren::Texture::Texture(const std::string &name, u32 width, u32 height, u8 *pixels
 
 ren::Texture::~Texture(void) {
   auto &vulkan = ren::getVulkan();
+  // Remove the imgui texture ID first,
+  ImGui_ImplVulkan_RemoveTexture(imguiTextureID);
+
+  // then destroy the sampler.
   vkDestroySampler(vulkan.device, sampler, nullptr);
-  vkDestroyImageView(vulkan.device, imageView, nullptr);
-  vkDestroyImage(vulkan.device, image, nullptr);
-  vkFreeMemory(vulkan.device, imageMemory, nullptr);
+  // And release our image reference.
+  this->image.reset();
 }
 
 

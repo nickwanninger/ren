@@ -98,7 +98,7 @@ VkCommandBuffer ren::VulkanInstance::beginFrame(void) {
 
 
   // imgui commands
-  ImGui::ShowDemoWindow();
+  // ImGui::ShowDemoWindow();
 
   vkResetCommandBuffer(commandBuffer, 0);
 
@@ -250,8 +250,16 @@ void ren::VulkanInstance::init_instance(void) {
   // And select the GPU to use (I think we'd need to figure out how to pick the
   // best one if you have multiple GPUs, but I don't so this is fine for now)
   vkb::PhysicalDeviceSelector selector{vkb_inst};
-  vkb::PhysicalDevice physicalDevice =
-      selector.set_minimum_version(1, 1).set_surface(surface).select().value();
+  VkPhysicalDeviceFeatures requiredFeatures = {};
+  // requiredFeatures.geometryShader = VK_TRUE;     // Enable geometry shaders
+  requiredFeatures.samplerAnisotropy = VK_TRUE;  // Enable anisotropic filtering
+  requiredFeatures.fillModeNonSolid = VK_TRUE;
+
+  vkb::PhysicalDevice physicalDevice = selector.set_minimum_version(1, 1)
+                                           .set_required_features(requiredFeatures)
+                                           .set_surface(surface)
+                                           .select()
+                                           .value();
   fmt::print("Selected physical device: {}\n", physicalDevice.name);
   this->physical_device = physicalDevice.physical_device;
 
@@ -860,4 +868,37 @@ void ren::VulkanInstance::init_imgui(void) {
   style->ScrollbarRounding = 9.0f;
   style->GrabMinSize = 5.0f;
   style->GrabRounding = 3.0f;
+}
+
+
+
+VkSampler ren::VulkanInstance::createSampler(VkFilter filter) {
+  VkSampler sampler;  // we leak this for now.
+
+  // Texture Sampler
+  VkSamplerCreateInfo samplerInfo{};
+  samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+  samplerInfo.magFilter = samplerInfo.minFilter = filter;
+
+  samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+  samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+  samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+
+  samplerInfo.anisotropyEnable = VK_FALSE;
+  samplerInfo.maxAnisotropy = 1.0f;
+
+  samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+  samplerInfo.unnormalizedCoordinates = VK_FALSE;
+  samplerInfo.compareEnable = VK_FALSE;
+  samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
+
+  samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+  samplerInfo.mipLodBias = 0.0f;
+  samplerInfo.minLod = 0.0f;
+  samplerInfo.maxLod = 0.0f;
+
+  if (vkCreateSampler(this->device, &samplerInfo, nullptr, &sampler) != VK_SUCCESS) {
+    throw std::runtime_error("failed to create texture sampler!");
+  }
+  return sampler;
 }
