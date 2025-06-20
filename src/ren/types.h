@@ -24,9 +24,7 @@
 
 
 // How many frames we want to render in flight at once.
-// 3 = triple buffering
-// 2 = double buffering
-// 1 = single buffering
+// currently, anything other than 3 crashes.
 const int MAX_FRAMES_IN_FLIGHT = 3;
 
 using u8 = uint8_t;
@@ -81,4 +79,21 @@ namespace ren {
     float b = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
     return glm::vec3(r, g, b);
   }
+
+  template <typename T>
+  using ref = std::shared_ptr<T>;
+
+  template <typename T, typename... Args>
+  constexpr ref<T> makeRef(Args&&... args) {
+    return std::make_shared<T>(std::forward<Args>(args)...);
+  }
+
+  template <typename T>
+  using box = std::unique_ptr<T>;
+
+  template <typename T, typename... Args>
+  constexpr box<T> makeBox(Args&&... args) {
+    return std::make_unique<T>(std::forward<Args>(args)...);
+  }
+
 }  // namespace ren

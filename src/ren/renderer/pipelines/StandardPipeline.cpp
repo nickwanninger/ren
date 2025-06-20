@@ -3,8 +3,7 @@
 #include <ren/renderer/Shader.h>
 namespace ren {
 
-  StandardPipeline::StandardPipeline(std::shared_ptr<Shader> vertexShader,
-                                     std::shared_ptr<Shader> fragmentShader,
+  StandardPipeline::StandardPipeline(ref<Shader> vertexShader, ref<Shader> fragmentShader,
                                      VkDescriptorSetLayout descriptorSetLayout) {
     this->bindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
     auto &vulkan = ren::getVulkan();
@@ -134,7 +133,7 @@ namespace ren {
 
 
     std::vector<VkPipelineShaderStageCreateInfo> shaderStages;
-    std::vector<std::shared_ptr<Shader>> shaders = {vertexShader, fragmentShader};
+    std::vector<ref<Shader>> shaders = {vertexShader, fragmentShader};
 
     for (auto &shader : shaders) {
       VkPipelineShaderStageCreateInfo stageInfo{};
@@ -162,7 +161,7 @@ namespace ren {
     // Then we reference all of the structures describing the fixed-function stage.
     pipelineInfo.layout = pipelineLayout;
     // After that comes the pipeline layout, which is a Vulkan handle rather than a struct pointer.
-    pipelineInfo.renderPass = vulkan.render_pass->getHandle();
+    pipelineInfo.renderPass = vulkan.renderPass->getHandle();
     pipelineInfo.subpass = 0;
     // Required for compat
     pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;  // Optional

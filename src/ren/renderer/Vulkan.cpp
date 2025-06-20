@@ -46,48 +46,48 @@ ren::VulkanInstance::VulkanInstance(const std::string &app_name, SDL_Window *win
   this->extent.height = height;
 
   init_instance();
+
+
+
+  // ASAP, create a command pool.
+  init_command_pool();
+
+  // Construct the render passes
+  init_renderpass();
+
+  init_imgui();
+
+  // Then, create the first swapchain.
   init_swapchain();
 
   createUniformBuffers();
-  init_renderpass();
-
-
-  init_command_pool();
-
   createDepthResources();
   init_framebuffers();
-
   init_command_buffer();
   init_sync_objects();
-
-
-  init_imgui();
 }
 
 
 
 
 VkCommandBuffer ren::VulkanInstance::beginFrame(void) {
-  this->imageIndex = (this->frame_number++) % MAX_FRAMES_IN_FLIGHT;
-
-  vkWaitForFences(device, 1, &inFlightFences[imageIndex], VK_TRUE, UINT64_MAX);
-
-
-  // Acquire the next image from the swapchain
-
-  auto result =
-      vkAcquireNextImageKHR(device, swapchain, UINT64_MAX, imageAvailableSemaphores[imageIndex],
-                            VK_NULL_HANDLE, &imageIndex);
-
-  if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || framebuffer_resized) {
+  // If we've resized, recreate and try again later.
+  if (framebuffer_resized) {
     recreate_swapchain();
-    return VK_NULL_HANDLE;
-  } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
-    fmt::print("Failed to acquire swapchain image {}\n", (int)result);
-    abort();
+    return VK_NULL_HANDLE;  // If the swapchain was recreated, we cannot continue with
   }
 
-  auto commandBuffer = commandBuffers[imageIndex];
+  // Acquire the next image from the swapchain
+  FrameData *frameData = swapchain->acquireNextFrame();
+
+  if (frameData == nullptr) {
+    recreate_swapchain();
+    return VK_NULL_HANDLE;
+  }
+
+  // increment the frame number if we are able to start the frame.
+  this->frame_number += 1;
+  auto commandBuffer = frameData->commandBuffer;
 
 
   // imgui new frame
@@ -100,7 +100,6 @@ VkCommandBuffer ren::VulkanInstance::beginFrame(void) {
   // imgui commands
   // ImGui::ShowDemoWindow();
 
-  vkResetCommandBuffer(commandBuffer, 0);
 
 
   VkCommandBufferBeginInfo beginInfo{};
@@ -117,10 +116,10 @@ VkCommandBuffer ren::VulkanInstance::beginFrame(void) {
   // Finally, start the render pass
   VkRenderPassBeginInfo renderPassInfo{};
   renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-  renderPassInfo.renderPass = render_pass->getHandle();
-  renderPassInfo.framebuffer = swapchain_framebuffers[imageIndex];
+  renderPassInfo.renderPass = renderPass->getHandle();
+  renderPassInfo.framebuffer = frameData->renderFramebuffer;
   renderPassInfo.renderArea.offset = {0, 0};
-  renderPassInfo.renderArea.extent = extent;
+  renderPassInfo.renderArea.extent = swapchain->renderExtent;
 
   // setup the clear values
 
@@ -138,15 +137,15 @@ VkCommandBuffer ren::VulkanInstance::beginFrame(void) {
   VkViewport viewport{};
   viewport.x = 0.0f;
   viewport.y = 0.0f;
-  viewport.width = static_cast<float>(extent.width);
-  viewport.height = static_cast<float>(extent.height);
+  viewport.width = static_cast<float>(swapchain->renderExtent.width);
+  viewport.height = static_cast<float>(swapchain->renderExtent.height);
   viewport.minDepth = 0.0f;
   viewport.maxDepth = 1.0f;
   vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
 
   VkRect2D scissor{};
   scissor.offset = {0, 0};
-  scissor.extent = extent;
+  scissor.extent = swapchain->renderExtent;
   vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
 
@@ -154,47 +153,108 @@ VkCommandBuffer ren::VulkanInstance::beginFrame(void) {
   return commandBuffer;
 }
 
-void ren::VulkanInstance::endFrame(void) {
-  auto commandBuffer = commandBuffers[imageIndex];
 
+void ren::VulkanInstance::endFrame(void) {
+  auto &frame = ren::getFrameData();
+  auto cmd = frame.commandBuffer;
+
+  // The render pass can now be ended:
+  vkCmdEndRenderPass(cmd);
+
+  // Set viewport for display
+  VkViewport displayViewport{};
+  displayViewport.x = 0.0f;
+  displayViewport.y = 0.0f;
+  displayViewport.width = static_cast<float>(swapchain->deviceExtent.width);
+  displayViewport.height = static_cast<float>(swapchain->deviceExtent.height);
+  displayViewport.minDepth = 0.0f;
+  displayViewport.maxDepth = 1.0f;
+  vkCmdSetViewport(cmd, 0, 1, &displayViewport);
+
+  VkRect2D displayScissor{};
+  displayScissor.offset = {0, 0};
+  displayScissor.extent = swapchain->deviceExtent;
+  vkCmdSetScissor(cmd, 0, 1, &displayScissor);
+
+  // Finally, display the rendered image on the screen.
+  VkRenderPassBeginInfo renderPassInfo{};
+  renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+  renderPassInfo.renderPass = displayPass->getHandle();
+  renderPassInfo.framebuffer = frame.deviceFramebuffer;
+  renderPassInfo.renderArea.offset = {0, 0};
+  renderPassInfo.renderArea.extent = swapchain->deviceExtent;
+  // setup the clear values
+  std::array<VkClearValue, 1> clearValues{};
+  clearValues[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
+  renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
+  renderPassInfo.pClearValues = clearValues.data();
+
+  vkCmdBeginRenderPass(cmd, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+
+  // Bind fullscreen blit pipeline and run it.
+  ren::bind(cmd, *displayPipeline);
+  vkCmdDraw(cmd, 4, 1, 0, 0);
+
+  ImGui::Begin("debug");
+  ImGui::Image(frame.renderTexture->getImGui(),
+               ImVec2(swapchain->renderExtent.width / 2, swapchain->renderExtent.height / 2));
+  ImGui::End();
 
 
   // Right before we end the render pass, we need to render the ImGui draw data.
   ImGui::Render();
-  ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer);
+  ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
 
-  // The render pass can now be ended:
-  vkCmdEndRenderPass(commandBuffer);
+
+  vkCmdEndRenderPass(cmd);
+
+
+  // Prepare the image for presentation.
+  VkImageMemoryBarrier presentBarrier{};
+  presentBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+  presentBarrier.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+  presentBarrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+  presentBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+  presentBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+  presentBarrier.image = frame.deviceImage->getImage();
+  presentBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+  presentBarrier.subresourceRange.baseMipLevel = 0;
+  presentBarrier.subresourceRange.levelCount = 1;
+  presentBarrier.subresourceRange.baseArrayLayer = 0;
+  presentBarrier.subresourceRange.layerCount = 1;
+  presentBarrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+  presentBarrier.dstAccessMask = 0;  // No further access needed
+
+  vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                       VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, nullptr, 0, nullptr, 1,
+                       &presentBarrier);
+
+
 
   // And we've finished recording the command buffer:
-  if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
+  if (vkEndCommandBuffer(cmd) != VK_SUCCESS) {
     throw std::runtime_error("failed to record command buffer!");
   }
-
-
-
-  // Only reset the fence if we are submitting work
-  vkResetFences(device, 1, &inFlightFences[imageIndex]);
-
 
 
   VkSubmitInfo submitInfo{};
   submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
-  VkSemaphore waitSemaphores[] = {imageAvailableSemaphores[imageIndex]};
+  VkSemaphore waitSemaphores[] = {frame.imageAvailableSemaphore};
   VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
   submitInfo.waitSemaphoreCount = 1;
   submitInfo.pWaitSemaphores = waitSemaphores;
   submitInfo.pWaitDstStageMask = waitStages;
 
   submitInfo.commandBufferCount = 1;
-  submitInfo.pCommandBuffers = &commandBuffers[imageIndex];
+  submitInfo.pCommandBuffers = &frame.commandBuffer;
 
-  VkSemaphore signalSemaphores[] = {renderFinishedSemaphores[imageIndex]};
+  VkSemaphore signalSemaphores[] = {frame.renderFinishedSemaphore};
   submitInfo.signalSemaphoreCount = 1;
   submitInfo.pSignalSemaphores = signalSemaphores;
 
-  if (vkQueueSubmit(graphics_queue, 1, &submitInfo, inFlightFences[imageIndex]) != VK_SUCCESS) {
+  if (vkQueueSubmit(graphics_queue, 1, &submitInfo, frame.inFlightFence) != VK_SUCCESS) {
     throw std::runtime_error("failed to submit draw command buffer!");
   }
 
@@ -205,10 +265,10 @@ void ren::VulkanInstance::endFrame(void) {
   presentInfo.waitSemaphoreCount = 1;
   presentInfo.pWaitSemaphores = signalSemaphores;
 
-  VkSwapchainKHR swapChains[] = {swapchain};
+  VkSwapchainKHR swapChains[] = {swapchain->swapchain};
   presentInfo.swapchainCount = 1;
   presentInfo.pSwapchains = swapChains;
-  uint32_t index = imageIndex;  // we need a u32
+  uint32_t index = frame.frameIndex;  // we need a u32
   presentInfo.pImageIndices = &index;
 
   presentInfo.pResults = nullptr;  // Optional
@@ -294,39 +354,24 @@ void ren::VulkanInstance::init_instance(void) {
   printf("Max samplers per set: %u\n", props.limits.maxDescriptorSetSamplers);
   printf("Max UBOs per stage: %u\n", props.limits.maxPerStageDescriptorUniformBuffers);
   printf("Push constants size: %u bytes\n", props.limits.maxPushConstantsSize);
+
+
+  this->swapchainFormat =
+      findSupportedFormat({VK_FORMAT_B8G8R8A8_SRGB, VK_FORMAT_R8G8B8A8_UNORM},
+                          VK_IMAGE_TILING_OPTIMAL, VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT);
 }
 
 ren::VulkanInstance::~VulkanInstance() {
   ImGui_ImplVulkan_Shutdown();
 
-  for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-    vkDestroySemaphore(device, renderFinishedSemaphores[i], nullptr);
-    vkDestroySemaphore(device, imageAvailableSemaphores[i], nullptr);
-    vkDestroyFence(device, inFlightFences[i], nullptr);
-  }
-
-  // Clear the index/vertex/uniform buffer
-  uniform_buffers.clear();
-
-
   // Command Pool
   vkDestroyCommandPool(device, commandPool, nullptr);
 
+  // Destroy the swapchain
+  swapchain.reset();
 
-  // Framebuffers
-  for (auto framebuffer : swapchain_framebuffers) {
-    vkDestroyFramebuffer(device, framebuffer, nullptr);
-  }
-
-
-  // Destroy the swapchain image views
-  for (auto &image_view : image_views) {
-    vkDestroyImageView(device, image_view, nullptr);
-  }
-  image_views.clear();
-
-  // Destroy the swapchain itself
-  vkDestroySwapchainKHR(device, swapchain, nullptr);
+  renderPass.reset();
+  displayPass.reset();
 
   vkDestroySurfaceKHR(instance, surface, nullptr);
 
@@ -341,69 +386,33 @@ ren::VulkanInstance::~VulkanInstance() {
 
 
 void ren::VulkanInstance::init_swapchain(void) {
-  int width, height;
-  SDL_Vulkan_GetDrawableSize(window, &width, &height);
-  this->extent.width = width;
-  this->extent.height = height;
+  this->swapchain.reset();
 
-
-  fmt::print("Creating Vulkan swapchain for window size: {}x{}\n", extent.width, extent.height);
-
-  printf("Vulkan instance: %p, device: %p, surface: %p\n", this->instance, this->device,
-         this->surface);
-
-  vkb::SwapchainBuilder swapchain_builder(this->physical_device, this->device, this->surface);
-
-
-  vkb::Swapchain vkb_swapchain =
-      swapchain_builder.use_default_format_selection()
-          .set_desired_present_mode(VK_PRESENT_MODE_FIFO_KHR)
-          .set_desired_format(
-              {VK_FORMAT_B8G8R8A8_SRGB, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR})  // SRGB format
-          .set_desired_extent(extent.width, extent.height)                   // Window size
-          .build()
-          .value();
-
-  this->swapchain = vkb_swapchain.swapchain;
-  this->images = vkb_swapchain.get_images().value();
-  this->image_views = vkb_swapchain.get_image_views().value();
-  this->image_format = vkb_swapchain.image_format;
-  fmt::print("Vulkan swapchain created with {} images, extent: {}x{}\n", this->images.size(),
-             this->extent.width, this->extent.height);
+  this->swapchain = makeBox<ren::Swapchain>(this->window);
 }
 
 
 void ren::VulkanInstance::init_renderpass(void) {
-  render_pass = std::make_shared<ren::RenderPass>();
-  render_pass->build();
+  // The default render pass is super easy.
+  this->renderPass = makeRef<ren::RenderPass>();
+  this->renderPass->build();
+
+  this->displayPass = makeRef<ren::RenderPass>();
+  // We only care about color attachments in the display pass.
+  this->displayPass->attachments.clear();
+  this->displayPass->attachments.push_back(displayPass->colorAttachment);
+  this->displayPass->renderPassInfo.pAttachments = displayPass->attachments.data();
+  this->displayPass->subpass.pDepthStencilAttachment = nullptr;
+  this->displayPass->build();
+
+
+  displayPipeline = makeRef<ren::DisplayPipeline>();
 }
 
 
 
 void ren::VulkanInstance::init_framebuffers(void) {
-  swapchain_framebuffers.resize(image_views.size());
-
-  for (size_t i = 0; i < image_views.size(); i++) {
-    if (image_views[i] == VK_NULL_HANDLE) {
-      throw std::runtime_error("Image view is null for swapchain image " + std::to_string(i));
-    }
-    if (depthImageView == VK_NULL_HANDLE) { throw std::runtime_error("Depth image view is null"); }
-    std::array<VkImageView, 2> attachments = {image_views[i], depthImageView};
-
-    VkFramebufferCreateInfo framebufferInfo{};
-    framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-    framebufferInfo.renderPass = render_pass->getHandle();
-    framebufferInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
-    framebufferInfo.pAttachments = attachments.data();
-    framebufferInfo.width = extent.width;
-    framebufferInfo.height = extent.height;
-    framebufferInfo.layers = 1;
-
-    if (vkCreateFramebuffer(device, &framebufferInfo, nullptr, &swapchain_framebuffers[i]) !=
-        VK_SUCCESS) {
-      throw std::runtime_error("failed to create framebuffer!");
-    }
-  }
+  // Not Needed
 }
 
 
@@ -420,49 +429,16 @@ void ren::VulkanInstance::init_command_pool(void) {
 
 
 void ren::VulkanInstance::init_command_buffer(void) {
-  commandBuffers.resize(MAX_FRAMES_IN_FLIGHT);
-  VkCommandBufferAllocateInfo allocInfo{};
-  allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-  allocInfo.commandPool = commandPool;
-  allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-  allocInfo.commandBufferCount = (uint32_t)commandBuffers.size();
-
-  if (vkAllocateCommandBuffers(device, &allocInfo, commandBuffers.data()) != VK_SUCCESS) {
-    throw std::runtime_error("failed to allocate command buffers!");
-  }
+  // Not Needed
 }
 
 
 void ren::VulkanInstance::init_sync_objects(void) {
-  imageAvailableSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
-  renderFinishedSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
-  inFlightFences.resize(MAX_FRAMES_IN_FLIGHT);
-
-  VkSemaphoreCreateInfo semaphoreInfo{};
-  semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-
-  VkFenceCreateInfo fenceInfo{};
-  fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-  fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-
-  for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-    if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &imageAvailableSemaphores[i]) !=
-            VK_SUCCESS ||
-        vkCreateSemaphore(device, &semaphoreInfo, nullptr, &renderFinishedSemaphores[i]) !=
-            VK_SUCCESS ||
-        vkCreateFence(device, &fenceInfo, nullptr, &inFlightFences[i]) != VK_SUCCESS) {
-      throw std::runtime_error("failed to create synchronization objects for a frame!");
-    }
-  }
+  // Not Needed
 }
 
 void ren::VulkanInstance::createUniformBuffers(void) {
-  uniform_buffers.resize(MAX_FRAMES_IN_FLIGHT);
-
-  for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-    // Nice and simple with my API
-    uniform_buffers[i] = std::make_shared<ren::UniformBuffer<ren::UniformBufferObject>>(*this, 1);
-  }
+  // Not Needed
 }
 
 void ren::VulkanInstance::transitionImageLayout(VkImage image, VkFormat format,
@@ -566,14 +542,8 @@ bool hasStencilComponent(VkFormat format) {
 
 
 void ren::VulkanInstance::createDepthResources() {
-  auto depthFormat = findDepthFormat();
-
-  create_image(extent.width, extent.height, depthFormat, VK_IMAGE_TILING_OPTIMAL,
-               VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-               depthImage, depthImageMemory);
-  depthImageView = create_image_view(depthImage, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT);
+  // Not Needed
 }
-
 
 void ren::VulkanInstance::createTextureImage() {
   // Not Needed
@@ -742,19 +712,10 @@ u32 ren::VulkanInstance::find_memory_type(u32 typeFilter, VkMemoryPropertyFlags 
 }
 
 void ren::VulkanInstance::cleanup_swapchain(void) {
-  vkDestroyImageView(device, depthImageView, nullptr);
-  vkDestroyImage(device, depthImage, nullptr);
-  vkFreeMemory(device, depthImageMemory, nullptr);
-
-  for (size_t i = 0; i < swapchain_framebuffers.size(); i++) {
-    vkDestroyFramebuffer(device, swapchain_framebuffers[i], nullptr);
-  }
-
-  for (size_t i = 0; i < image_views.size(); i++) {
-    vkDestroyImageView(device, image_views[i], nullptr);
-  }
-
-  vkDestroySwapchainKHR(device, swapchain, nullptr);
+  // Wait for the device to be idle.
+  vkDeviceWaitIdle(device);
+  // Then simply reset the swapchain reference which should free it.
+  this->swapchain.reset();
 }
 
 
@@ -832,7 +793,11 @@ void ren::VulkanInstance::init_imgui(void) {
   // this initializes the core structures of imgui
   ImGui::CreateContext();
 
-  ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+  auto &io = ImGui::GetIO();
+  io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+
+  ImGui::StyleColorsDark();
+
 
 
 
@@ -849,25 +814,47 @@ void ren::VulkanInstance::init_imgui(void) {
   init_info.MinImageCount = 3;
   init_info.ImageCount = 3;
   init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
-  init_info.RenderPass = render_pass->getHandle();
+  init_info.RenderPass = this->displayPass->getHandle();
 
   ImGui_ImplVulkan_Init(&init_info);
 
 
 
-  ImGuiStyle *style = &ImGui::GetStyle();
+  ImGuiStyle &style = ImGui::GetStyle();
+  if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
+    style.WindowRounding = 0.0f;
+    style.Colors[ImGuiCol_WindowBg].w = 1.0f;
+  }
 
-  style->WindowPadding = ImVec2(5, 5);
-  style->WindowRounding = 5.0f;
-  style->FramePadding = ImVec2(3, 3);
-  style->FrameRounding = 4.0f;
-  style->ItemSpacing = ImVec2(4, 4);
-  style->ItemInnerSpacing = ImVec2(3, 3);
-  style->IndentSpacing = 25.0f;
-  style->ScrollbarSize = 10.0f;
-  style->ScrollbarRounding = 9.0f;
-  style->GrabMinSize = 5.0f;
-  style->GrabRounding = 3.0f;
+  auto &colors = ImGui::GetStyle().Colors;
+  colors[ImGuiCol_WindowBg] = ImVec4{0.1f, 0.105f, 0.11f, 1.0f};
+
+  // Headers
+  colors[ImGuiCol_Header] = ImVec4{0.2f, 0.205f, 0.21f, 1.0f};
+  colors[ImGuiCol_HeaderHovered] = ImVec4{0.3f, 0.305f, 0.31f, 1.0f};
+  colors[ImGuiCol_HeaderActive] = ImVec4{0.15f, 0.1505f, 0.151f, 1.0f};
+
+  // Buttons
+  colors[ImGuiCol_Button] = ImVec4{0.2f, 0.205f, 0.21f, 1.0f};
+  colors[ImGuiCol_ButtonHovered] = ImVec4{0.3f, 0.305f, 0.31f, 1.0f};
+  colors[ImGuiCol_ButtonActive] = ImVec4{0.15f, 0.1505f, 0.151f, 1.0f};
+
+  // Frame BG
+  colors[ImGuiCol_FrameBg] = ImVec4{0.2f, 0.205f, 0.21f, 1.0f};
+  colors[ImGuiCol_FrameBgHovered] = ImVec4{0.3f, 0.305f, 0.31f, 1.0f};
+  colors[ImGuiCol_FrameBgActive] = ImVec4{0.15f, 0.1505f, 0.151f, 1.0f};
+
+  // Tabs
+  colors[ImGuiCol_Tab] = ImVec4{0.15f, 0.1505f, 0.151f, 1.0f};
+  colors[ImGuiCol_TabHovered] = ImVec4{0.38f, 0.3805f, 0.381f, 1.0f};
+  colors[ImGuiCol_TabActive] = ImVec4{0.28f, 0.2805f, 0.281f, 1.0f};
+  colors[ImGuiCol_TabUnfocused] = ImVec4{0.15f, 0.1505f, 0.151f, 1.0f};
+  colors[ImGuiCol_TabUnfocusedActive] = ImVec4{0.2f, 0.205f, 0.21f, 1.0f};
+
+  // Title
+  colors[ImGuiCol_TitleBg] = ImVec4{0.15f, 0.1505f, 0.151f, 1.0f};
+  colors[ImGuiCol_TitleBgActive] = ImVec4{0.15f, 0.1505f, 0.151f, 1.0f};
+  colors[ImGuiCol_TitleBgCollapsed] = ImVec4{0.15f, 0.1505f, 0.151f, 1.0f};
 }
 
 

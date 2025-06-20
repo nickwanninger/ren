@@ -4,6 +4,7 @@
 #include <ren/renderer/pipelines/StandardPipeline.h>
 #include <ren/renderer/pipelines/PointPipeline.h>
 #include <ren/renderer/Texture.h>
+#include <ren/renderer/Swapchain.h>
 #include <ren/Camera.h>
 
 #include <imgui_impl_sdl2.h>
@@ -25,7 +26,7 @@ ren::Engine::Engine(const std::string& app_name, glm::uvec2 window_size)
   // Now, we can get going with Vulkan.
   // First step is to create a Vulkan instance.
 
-  this->vulkan = std::make_unique<ren::VulkanInstance>(app_name, this->window);
+  this->vulkan = makeBox<ren::VulkanInstance>(app_name, this->window);
 }
 
 
@@ -82,7 +83,7 @@ void generate_sphere(std::vector<ren::Vertex>& vertices, std::vector<uint32_t>& 
 
 
 
-std::shared_ptr<ren::PointPipeline> createPointPipeline(void) {
+ren::ref<ren::PointPipeline> createPointPipeline(void) {
   auto& vulkan = ren::getVulkan();
   VkDescriptorSetLayout descriptorSetLayout;
 
@@ -96,7 +97,7 @@ std::shared_ptr<ren::PointPipeline> createPointPipeline(void) {
     throw std::runtime_error("failed to create descriptor set layout!");
   }
 
-  return std::make_shared<ren::PointPipeline>(descriptorSetLayout);
+  return ren::makeRef<ren::PointPipeline>(descriptorSetLayout);
 }
 
 void ren::Engine::run(void) {
@@ -114,9 +115,9 @@ void ren::Engine::run(void) {
   auto pointPipeline = createPointPipeline();
 
   auto vertex_shader =
-      std::make_shared<ren::Shader>("shaders/triangle.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+      makeRef<ren::Shader>("shaders/triangle.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
   auto fragment_shader =
-      std::make_shared<ren::Shader>("shaders/triangle.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+      makeRef<ren::Shader>("shaders/triangle.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 
   auto bindingDesc = ren::Vertex::get_binding_description();
   auto attributeDescs = ren::Vertex::get_attribute_descriptions();
@@ -193,7 +194,7 @@ void ren::Engine::run(void) {
   auto mars_tex = ren::Texture::load("assets/mars.jpg");
   auto moon_tex = ren::Texture::load("assets/moon.jpg");
 
-  auto makeMaterialSet = [&](std::shared_ptr<ren::Texture> texture) {
+  auto makeMaterialSet = [&](ren::ref<ren::Texture> texture) {
     VkDescriptorSet descriptorSet;
     VkDescriptorSetAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -227,7 +228,7 @@ void ren::Engine::run(void) {
 
   struct Body {
     glm::vec3 transform;
-    std::shared_ptr<ren::Texture> texture;
+    ren::ref<ren::Texture> texture;
     VkDescriptorSet materialSet;
   };
 
@@ -240,9 +241,9 @@ void ren::Engine::run(void) {
                         makeMaterialSet(moon_tex)});  // Orbiting body (e.g., Moon)
 
 
-  auto vertex_buffer = std::make_shared<ren::VertexBuffer<ren::Vertex>>(*vulkan, vertices);
+  auto vertex_buffer = makeRef<ren::VertexBuffer<ren::Vertex>>(*vulkan, vertices);
   vertex_buffer->setName("Planet Vertex Buffer");
-  auto index_buffer = std::make_shared<ren::IndexBuffer>(*vulkan, indices);
+  auto index_buffer = makeRef<ren::IndexBuffer>(*vulkan, indices);
   index_buffer->setName("Planet Index Buffer");
 
 
@@ -265,7 +266,7 @@ void ren::Engine::run(void) {
     pointVertices.push_back({location, color, glm::vec2(0.0f, 0.0f)});
   }
 
-  auto pointVertexBuffer = std::make_shared<ren::VertexBuffer<ren::Vertex>>(*vulkan, pointVertices);
+  auto pointVertexBuffer = makeRef<ren::VertexBuffer<ren::Vertex>>(*vulkan, pointVertices);
 
   float fov = 90.0f;
   float fNear = 0.01f;
@@ -306,8 +307,10 @@ void ren::Engine::run(void) {
       continue;
     }
 
+    auto& frame = ren::getFrameData();
 
-    VkDescriptorPool descriptorPool = descriptorPools[vulkan->imageIndex];
+
+    VkDescriptorPool descriptorPool = descriptorPools[frame.frameIndex];
     vkResetDescriptorPool(vulkan->device, descriptorPool, 0);
 
 
@@ -347,38 +350,38 @@ void ren::Engine::run(void) {
     auto matView = camera.view_matrix();
 
 
-    float bx = cos(time * 0.1f) * radius;
-    float by = sin(time * 0.1f) * radius;
-    glm::vec3 bh1 = glm::vec3(bx, by, 0.0f);
-    glm::vec3 bh2 = glm::vec3(-bx, -by, 0.0f);
+    // float bx = cos(time * 0.1f) * radius;
+    // float by = sin(time * 0.1f) * radius;
+    // glm::vec3 bh1 = glm::vec3(bx, by, 0.0f);
+    // glm::vec3 bh2 = glm::vec3(-bx, -by, 0.0f);
 
-    // first draw the points
-    for (size_t i = 0; i < pointVertices.size(); ++i) {
-      auto& v = pointVertices[i];
-      auto& pos = v.pos;
-      auto& vel = v.color;
-      // force from black hole #1
-      auto d = bh1 - pos;
-      float dist = glm::length(d);
-      glm::vec3 force = (gravity / dist) * glm::normalize(d);
+    // // first draw the points
+    // for (size_t i = 0; i < pointVertices.size(); ++i) {
+    //   auto& v = pointVertices[i];
+    //   auto& pos = v.pos;
+    //   auto& vel = v.color;
+    //   // force from black hole #1
+    //   auto d = bh1 - pos;
+    //   float dist = glm::length(d);
+    //   glm::vec3 force = (gravity / dist) * glm::normalize(d);
 
-      // add force from black hole #2
-      d = bh2 - pos;
-      dist = glm::length(d);
-      force += (gravity / dist) * glm::normalize(d);
-      // Apply simple euler integrator
-      glm::vec3 a = force * 0.1f;  // acceleration
-      if (false && dist > 10.0f) {
-        pos = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
-        vel = glm::vec3(0.0f, 0.0f, 0.0f);
-      } else {
-        pos = pos + vel * deltaTime + 0.5f * a * deltaTime * deltaTime;
-        vel = vel + a * deltaTime;
-      }
+    //   // add force from black hole #2
+    //   d = bh2 - pos;
+    //   dist = glm::length(d);
+    //   force += (gravity / dist) * glm::normalize(d);
+    //   // Apply simple euler integrator
+    //   glm::vec3 a = force * 0.1f;  // acceleration
+    //   if (false && dist > 10.0f) {
+    //     pos = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
+    //     vel = glm::vec3(0.0f, 0.0f, 0.0f);
+    //   } else {
+    //     pos = pos + vel * deltaTime + 0.5f * a * deltaTime * deltaTime;
+    //     vel = vel + a * deltaTime;
+    //   }
 
-      pos.z = 0.0f;
-    }
-    pointVertexBuffer->copyFromHost(pointVertices);
+    //   pos.z = 0.0f;
+    // }
+    // pointVertexBuffer->copyFromHost(pointVertices);
 
     ren::bind(cb, *pointPipeline);
     ren::bind(cb, *pointVertexBuffer);

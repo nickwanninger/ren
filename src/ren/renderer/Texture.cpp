@@ -23,7 +23,6 @@ ren::Texture::Texture(const std::string &name, u32 width, u32 height, u8 *pixels
   auto &vulkan = ren::getVulkan();
 
   VkDeviceSize imageSize = getWidth() * getHeight() * 4;
-  printf("image size: %u bytes\n", imageSize);
   ren::Buffer stagingBuffer(
       vulkan, imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
@@ -73,6 +72,44 @@ ren::Texture::Texture(const std::string &name, u32 width, u32 height, u8 *pixels
 
 
 
+ren::Texture::Texture(ren::ImageRef image) {
+  auto &vulkan = ren::getVulkan();
+  this->image = image;
+  this->name = image->getName();
+
+
+  // Texture Sampler
+  VkSamplerCreateInfo samplerInfo{};
+  samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+  samplerInfo.magFilter = samplerInfo.minFilter = VK_FILTER_NEAREST;
+
+  samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+  samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+  samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+
+  samplerInfo.anisotropyEnable = VK_TRUE;
+  samplerInfo.maxAnisotropy = 1.0f;
+
+  samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+  samplerInfo.unnormalizedCoordinates = VK_FALSE;
+  samplerInfo.compareEnable = VK_FALSE;
+  samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
+
+  samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+  samplerInfo.mipLodBias = 0.0f;
+  samplerInfo.minLod = 0.0f;
+  samplerInfo.maxLod = 0.0f;
+
+  if (vkCreateSampler(vulkan.device, &samplerInfo, nullptr, &sampler) != VK_SUCCESS) {
+    throw std::runtime_error("failed to create texture sampler!");
+  }
+
+  // create the imgui texture ID so we can display it in imgui
+  imguiTextureID = ImGui_ImplVulkan_AddTexture(this->getSampler(), this->getImageView(),
+                                               VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+}
+
+
 
 ren::Texture::~Texture(void) {
   auto &vulkan = ren::getVulkan();
@@ -86,12 +123,11 @@ ren::Texture::~Texture(void) {
 }
 
 
-std::shared_ptr<ren::Texture> ren::Texture::load(const std::string &filename) {
+ren::ref<ren::Texture> ren::Texture::load(const std::string &filename) {
   int texWidth, texHeight, texChannels;
   stbi_uc *pixels = stbi_load(filename.data(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
 
-  auto texture =
-      std::make_shared<ren::Texture>(filename, (u32)texWidth, (u32)texHeight, (u8 *)pixels);
+  auto texture = ren::makeRef<ren::Texture>(filename, (u32)texWidth, (u32)texHeight, (u8 *)pixels);
 
   stbi_image_free(pixels);
 

@@ -1,15 +1,20 @@
-#include <ren/renderer/pipelines/PointPipeline.h>
+#include <ren/renderer/pipelines/DisplayPipeline.h>
 #include <ren/renderer/Vulkan.h>
 #include <ren/renderer/Shader.h>
 namespace ren {
 
-  PointPipeline::PointPipeline(VkDescriptorSetLayout descriptorSetLayout) {
+  DisplayPipeline::DisplayPipeline() {
+    // // Create an empty desc
+    // VkDescriptorSetLayout descriptorSetLayout;
+
+
     this->bindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
     auto &vulkan = ren::getVulkan();
 
-    this->vertexShader = makeRef<ren::Shader>("shaders/point.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+    this->vertexShader =
+        makeRef<ren::Shader>("shaders/display.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
     this->fragmentShader =
-        makeRef<ren::Shader>("shaders/point.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+        makeRef<ren::Shader>("shaders/display.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 
     auto bindingDesc = ren::Vertex::get_binding_description();
     auto attributeDescs = ren::Vertex::get_attribute_descriptions();
@@ -24,7 +29,7 @@ namespace ren {
     // ---- Input Assembly Create Info ---- //
     VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
     inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
     inputAssembly.primitiveRestartEnable = VK_FALSE;
 
     // ---- Viewport State Create Info ---- //
@@ -39,9 +44,9 @@ namespace ren {
     rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
     rasterizer.depthClampEnable = VK_FALSE;
     rasterizer.rasterizerDiscardEnable = VK_FALSE;  // Discarding fragments is not allowed
-    rasterizer.polygonMode = VK_POLYGON_MODE_POINT;
+    rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
     rasterizer.lineWidth = 1.0f;
-    rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
+    rasterizer.cullMode = VK_CULL_MODE_NONE;
     rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     rasterizer.depthBiasEnable = VK_FALSE;
     rasterizer.depthBiasConstantFactor = 0.0f;  // Optional
@@ -51,8 +56,8 @@ namespace ren {
     // ---- Depth Stencil State Create Info ---- //
     VkPipelineDepthStencilStateCreateInfo depthStencil{};
     depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-    depthStencil.depthTestEnable = VK_TRUE;
-    depthStencil.depthWriteEnable = VK_TRUE;
+    depthStencil.depthTestEnable = VK_FALSE;
+    depthStencil.depthWriteEnable = VK_FALSE;
     depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
     depthStencil.depthBoundsTestEnable = VK_FALSE;
     depthStencil.minDepthBounds = 0.0f;  // Optional
@@ -114,8 +119,8 @@ namespace ren {
 
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutInfo.setLayoutCount = 1;
-    pipelineLayoutInfo.pSetLayouts = &descriptorSetLayout;
+    pipelineLayoutInfo.setLayoutCount = 0;
+    pipelineLayoutInfo.pSetLayouts = NULL;                    // &descriptorSetLayout;
     pipelineLayoutInfo.pushConstantRangeCount = 1;            // Optional
     pipelineLayoutInfo.pPushConstantRanges = &pushConstants;  // Optional
 
@@ -161,7 +166,7 @@ namespace ren {
     // Then we reference all of the structures describing the fixed-function stage.
     pipelineInfo.layout = pipelineLayout;
     // After that comes the pipeline layout, which is a Vulkan handle rather than a struct pointer.
-    pipelineInfo.renderPass = vulkan.renderPass->getHandle();
+    pipelineInfo.renderPass = vulkan.displayPass->getHandle();
     pipelineInfo.subpass = 0;
     // Required for compat
     pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;  // Optional
@@ -172,7 +177,7 @@ namespace ren {
     // Build the pipeline stages
     pipelineInfo.stageCount = shaderStages.size();
     pipelineInfo.pStages = shaderStages.data();
-    pipelineInfo.pDepthStencilState = &depthStencil;
+    pipelineInfo.pDepthStencilState = NULL;  // &depthStencil;
 
 
     pipelineInfo.pDynamicState = &dynamicState;

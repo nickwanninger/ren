@@ -13,13 +13,14 @@ namespace ren {
     // Construct a texture with CPU side pixel data. Expect R8G8B8A8_SRGB format.
     // Use the load methods to create textures.
     Texture(const std::string &name, u32 width, u32 height, u8 *data = nullptr);
+    Texture(ren::ImageRef image);
 
     ~Texture();
 
     // -- //
 
     // Load a texture from a file path. This will eventually be moved to a resource manager.
-    static std::shared_ptr<Texture> load(const std::string &filename);
+    static ref<Texture> load(const std::string &filename);
 
     // -- //
 
@@ -48,5 +49,7 @@ namespace ren {
 
     VkDescriptorSet imguiTextureID = VK_NULL_HANDLE;
   };
+
+  using TextureRef = ref<Texture>;
 
 }  // namespace ren

@@ -1,16 +1,15 @@
 #pragma once
 
-
 #include <ren/renderer/pipelines/VulkanPipeline.h>
 #include <ren/renderer/Shader.h>
 
 namespace ren {
 
-  class PointPipeline : public VulkanPipeline {
+  class DisplayPipeline : public VulkanPipeline {
    public:
-    PointPipeline(VkDescriptorSetLayout descriptorSetLayout);
+    DisplayPipeline(void);
 
-    ~PointPipeline() override = default;
+    ~DisplayPipeline() override = default;
 
    protected:
     ref<Shader> vertexShader;

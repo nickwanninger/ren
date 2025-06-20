@@ -28,6 +28,10 @@ void ren::RenderPass::cleanup(void) {
 
 void ren::RenderPass::build(void) {
   auto &vulkan = getVulkan();
+
+  renderPassInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
+  renderPassInfo.pAttachments = attachments.data();
+
   if (renderPass != VK_NULL_HANDLE) {
     throw std::runtime_error("RenderPass already built. Cannot build again.");
   }
@@ -42,7 +46,7 @@ void ren::RenderPass::build(void) {
 void ren::RenderPass::populateDefaultCreateInfo(void) {
   auto &vulkan = getVulkan();
   // ---- Color Attachment ---- //
-  colorAttachment.format = vulkan.image_format;
+  colorAttachment.format = vulkan.swapchainFormat;
   colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
   colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
   colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -95,8 +99,6 @@ void ren::RenderPass::populateDefaultCreateInfo(void) {
 
 
   renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-  renderPassInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
-  renderPassInfo.pAttachments = attachments.data();
   renderPassInfo.subpassCount = 1;
   renderPassInfo.pSubpasses = &subpass;
   renderPassInfo.dependencyCount = 1;

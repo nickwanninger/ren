@@ -7,6 +7,8 @@
 #include <ren/types.h>
 #include <ren/renderer/Buffer.h>
 #include <ren/renderer/RenderPass.h>
+#include <ren/renderer/Swapchain.h>
+#include <ren/renderer/pipelines/DisplayPipeline.h>
 
 #include <SDL2/SDL.h>         // for SDL_Window
 #include <SDL2/SDL_vulkan.h>  // for SDL_Vulkan functions
@@ -28,14 +30,6 @@ namespace ren {
   class VulkanInstance;
 
   VulkanInstance &getVulkan(void);
-
-
-  struct UniformBufferObject {
-    glm::mat4 model;
-    glm::mat4 view;
-    glm::mat4 proj;
-  };
-
 
   // TEMPORARY VERTEX TYPE
   struct Vertex {
@@ -115,43 +109,22 @@ namespace ren {
     VkDebugUtilsMessengerEXT debug_messenger = VK_NULL_HANDLE;
 
     // ---- Swapchain ---- //
-
-    // The swapchain is the collection of images that we render to.
-    VkSwapchainKHR swapchain = VK_NULL_HANDLE;
-    // The images in the swapchain.
-    std::vector<VkImage> images;
-    // The image views for the swapchain images.
-    std::vector<VkImageView> image_views;
-    // The format of the swapchain images.
-    VkFormat image_format = VK_FORMAT_UNDEFINED;
-    // The extent of the swapchain images.
-    VkExtent2D extent = {};
+    // Written externally by ren::Engine when the window is resized.
+    bool framebuffer_resized = false;
+    VkExtent2D extent;         // Render target size
+    VkFormat swapchainFormat;  // chosen in init_instance()
+    box<ren::Swapchain> swapchain;
 
     // ---- Render Pass ---- //
-    std::shared_ptr<ren::RenderPass> render_pass;
+    // We break our rendering into two passes. The first is the 'render pass',
+    // which we use to render the 3D scene. The second is the 'display pass',
+    // which we use to display the rendered scene on the screen.
+    ref<ren::RenderPass> renderPass;
+    ref<ren::RenderPass> displayPass;
+    ref<ren::DisplayPipeline> displayPipeline;
 
-
-    std::vector<VkFramebuffer> swapchain_framebuffers;
     // ---- Command Pool ---- //
     VkCommandPool commandPool;
-    std::vector<VkCommandBuffer> commandBuffers;
-
-    // ---- Depth resources ---- //
-    VkImage depthImage;
-    VkDeviceMemory depthImageMemory;
-    VkImageView depthImageView;
-
-    // One for each frame in flight
-    std::vector<std::shared_ptr<ren::UniformBuffer<UniformBufferObject>>> uniform_buffers;
-
-
-    // ---- Semaphores ---- //
-    std::vector<VkSemaphore> imageAvailableSemaphores;
-    std::vector<VkSemaphore> renderFinishedSemaphores;
-    std::vector<VkFence> inFlightFences;
-    bool framebuffer_resized = false;
-
-    u32 imageIndex = 0;
     u64 frame_number = 0;
 
     VkCommandBuffer beginFrame(void);
@@ -160,14 +133,9 @@ namespace ren {
     void draw_frame(void);
 
     void recreate_swapchain(void) {
-      vkDeviceWaitIdle(device);
       cleanup_swapchain();
       init_swapchain();
-      createDepthResources();
-      init_framebuffers();
       framebuffer_resized = false;
-      this->imageIndex = 0;
-      this->frame_number = 0;
     }
 
 
@@ -209,10 +177,13 @@ namespace ren {
           VK_IMAGE_TILING_OPTIMAL, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
     }
 
+    VkFormat findSupportedFormat(const std::vector<VkFormat> &candidates, VkImageTiling tiling,
+                                 VkFormatFeatureFlags features);
+
    private:
     void init_instance(void);
-    void init_swapchain(void);
     void init_renderpass(void);
+    void init_swapchain(void);
     void init_framebuffers(void);
     void init_command_pool(void);
     void init_command_buffer(void);
@@ -229,9 +200,6 @@ namespace ren {
 
 
     u32 find_memory_type(u32 typeFilter, VkMemoryPropertyFlags properties);
-
-    VkFormat findSupportedFormat(const std::vector<VkFormat> &candidates, VkImageTiling tiling,
-                                 VkFormatFeatureFlags features);
   };
 
 

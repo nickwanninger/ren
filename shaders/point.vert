@@ -17,7 +17,7 @@ layout(location = 0) out vec3 fragColor;
 layout(location = 1) out vec2 fragTexCoord;
 
 void main() {
-  float point_size_scale = 10.0f;
+  float point_size_scale = 2.0f;
 
   vec4 view_pos = pc.view * pc.model * vec4(inPosition, 1.0f);
   float distance = length(view_pos.xyz);

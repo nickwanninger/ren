@@ -4,6 +4,7 @@
 #include <memory>
 #include <string>
 #include <vulkan/vulkan_core.h>
+#include <unordered_set>
 
 namespace ren {
 
@@ -11,7 +12,7 @@ namespace ren {
   // (It is effectively a VkImage and VkImageView wrapper.)
   class Image {
    public:
-    using Ref = std::shared_ptr<Image>;
+    using Ref = ref<Image>;
     // Construct an image with the given resources.
     // The resources of these images are owned by this class now.
     // The memory allocation can be NULL, in the event that the image
@@ -20,6 +21,9 @@ namespace ren {
           VkImageCreateInfo &createInfo);
     static Image::Ref create(const std::string &name, VkImage image, VkImageView imageView,
                              VmaAllocation memory, VkImageCreateInfo &createInfo);
+
+
+    static std::unordered_set<Image *> allImages(void);
 
     ~Image(void);
 
@@ -50,7 +54,7 @@ namespace ren {
   };
 
 
-  using ImageRef = std::shared_ptr<Image>;
+  using ImageRef = ref<Image>;
 
 
   class ImageBuilder {

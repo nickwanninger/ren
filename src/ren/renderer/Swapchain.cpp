@@ -17,7 +17,9 @@ namespace ren {
 
   Swapchain::Swapchain(SDL_Window *window)
       : window(window) {
+    this->frameIndex = 0;
     auto &vulkan = ren::getVulkan();
+    vulkan.frame_number = 0;
 
     int width, height;
     SDL_Vulkan_GetDrawableSize(window, &width, &height);
@@ -25,8 +27,8 @@ namespace ren {
     this->deviceExtent.width = width;
     this->deviceExtent.height = height;
 
-    this->renderExtent.height = target_render_height;
     this->renderExtent.width = target_render_width;
+    this->renderExtent.height = target_render_height;
 
 
     fmt::print("Creating ren::Swapchain for window size: {}x{}\n", width, height);
@@ -37,9 +39,11 @@ namespace ren {
     vkb::Swapchain vkb_swapchain =
         swapchain_builder.use_default_format_selection()
             .set_desired_present_mode(VK_PRESENT_MODE_FIFO_KHR)
+            .set_image_usage_flags(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                                   VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT)
             .set_desired_format(
-                {VK_FORMAT_B8G8R8A8_SRGB, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR})  // SRGB format
-            .set_desired_extent(deviceExtent.width, deviceExtent.height)       // Window size
+                {vulkan.swapchainFormat, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR})  // SRGB format
+            .set_desired_extent(deviceExtent.width, deviceExtent.height)      // Window size
             .build()
             .value();
 
@@ -48,50 +52,23 @@ namespace ren {
     auto imageViews = vkb_swapchain.get_image_views().value();
 
     this->swapchain = vkb_swapchain.swapchain;
-    auto imageFormat = vkb_swapchain.image_format;
-    auto depthFormat = vulkan.findDepthFormat();
+    this->imageFormat = vkb_swapchain.image_format;
+    this->depthFormat = vulkan.findDepthFormat();
 
-    fmt::print("Vulkan swapchain created with {} images, extent: {}x{}. Allocating FrameDatas\n",
-               images.size(), deviceExtent.width, deviceExtent.height);
+    fmt::print("Vulkan swapchain created with {} images, extent: {}x{}\n", images.size(),
+               deviceExtent.width, deviceExtent.height);
 
-    for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-      auto &fd = frames[i];
-      // ---- Add the swapchain image to the deviceImage in the framedata ---- //
-      VkImageCreateInfo imageCreateInfo = {};  // Just so the ren::Image class can have it.
-      imageCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-      imageCreateInfo.imageType = VK_IMAGE_TYPE_2D;
-      imageCreateInfo.format = imageFormat;
-      imageCreateInfo.extent.width = deviceExtent.width;
-      imageCreateInfo.extent.height = deviceExtent.height;
-      imageCreateInfo.extent.depth = 1;
-
-      fd.deviceImage = ren::Image::create(fmt::format("device #{}", i), images[i], imageViews[i],
-                                          VK_NULL_HANDLE,  // Null allocation is a little strange.
-                                          imageCreateInfo);
-
-
-      // ---- Allocate render targets ---- //
-      fmt::println("Allocating depth image {}", i);
-      fd.depthImage = ren::ImageBuilder(fmt::format("depth #{}", i))
-                          .setWidth(deviceExtent.width)
-                          .setHeight(deviceExtent.height)
-                          .setFormat(depthFormat)
-                          .setUsage(VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)
-                          .setViewAspectMask(VK_IMAGE_ASPECT_DEPTH_BIT)
-                          .build();
-
-      fmt::println("Allocating render image {}", i);
-      fd.renderImage =
-          ren::ImageBuilder(fmt::format("render #{}", i))
-              .setWidth(renderExtent.width)
-              .setHeight(renderExtent.height)
-              .setFormat(imageFormat)
-              .setUsage(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT)
-              .setViewAspectMask(VK_IMAGE_ASPECT_COLOR_BIT)
-              .build();
-
-      // ---- Allocate the semaphores and fence for this frame ---- //
+    for (u64 i = 0; i < images.size(); i++) {
+      fmt::println("Creating frame data for image {} of swapchain", i);
+      frames.push_back(makeBox<ren::FrameData>(i, *this, images[i], imageViews[i]));
     }
+
+    for (u64 i = 0; i < frames.size(); i++) {
+      auto &frame = *frames[i];
+      fmt::println("Frame {}: frameIndex: {}", i, frame.frameIndex);
+    }
+
+
     fmt::println("\n\n\n\n");
   }
 
@@ -101,16 +78,49 @@ namespace ren {
     // wait for idle.
     vkDeviceWaitIdle(vulkan.device);
     fmt::print("Destroying Swapchain with {} frames\n", frames.size());
-    for (auto &frame : frames) {
-      frame.renderImage.reset();
-      frame.depthImage.reset();
-      frame.deviceImage.reset();
-      vkDestroySemaphore(vulkan.device, frame.imageAvailableSemaphore, nullptr);
-      vkDestroySemaphore(vulkan.device, frame.renderFinishedSemaphore, nullptr);
-      vkDestroyFence(vulkan.device, frame.inFlightFence, nullptr);
+    // Clear the swapchain data.
+    // TODO: make sure nobody is using any of these!
+    frames.clear();
+    vkDestroySwapchainKHR(vulkan.device, swapchain, nullptr);
+  }
+
+
+  ren::FrameData *Swapchain::acquireNextFrame(void) {
+    auto &vulkan = ren::getVulkan();
+    if (frames.empty()) {
+      fmt::print("No frames available in swapchain\n");
+      return nullptr;
+    }
+    frameIndex = vulkan.frame_number % frames.size();
+
+    // Get the current frame data.
+    auto frameData = frames[frameIndex].get();
+    g_frameData = frameData;
+
+    assert(frameData->frameIndex == frameIndex);
+
+    vkWaitForFences(vulkan.device, 1, &frameData->inFlightFence, VK_TRUE, UINT64_MAX);
+    vkResetFences(vulkan.device, 1, &frameData->inFlightFence);
+
+    vkResetCommandBuffer(frameData->commandBuffer, 0);
+
+
+    // fmt::println("Acquiring next image for frame index: {}", frameData->frameIndex);
+
+    auto result = vkAcquireNextImageKHR(vulkan.device, this->swapchain, UINT64_MAX,
+                                        frameData->imageAvailableSemaphore, VK_NULL_HANDLE,
+                                        &frameData->frameIndex);
+
+    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR ||
+        vulkan.framebuffer_resized) {
+      return nullptr;
+    } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+      fmt::print("Failed to acquire swapchain image {}\n", (int)result);
+      // TODO: what does this mean? I usually see -4 here.
+      return nullptr;
     }
 
-    vkDestroySwapchainKHR(vulkan.device, swapchain, nullptr);
+    return frameData;
   }
 
 }  // namespace ren

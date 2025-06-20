@@ -2,6 +2,8 @@
 #include <ren/renderer/Vulkan.h>
 
 namespace ren {
+  static std::unordered_set<Image *> s_images;
+  std::unordered_set<Image *> Image::allImages(void) { return s_images; }
 
   Image::Image(const std::string &name, VkImage image, VkImageView imageView, VmaAllocation memory,
                VkImageCreateInfo &createInfo)
@@ -12,9 +14,11 @@ namespace ren {
       , imageCreateInfo(createInfo) {
     assert(image != VK_NULL_HANDLE && imageView != VK_NULL_HANDLE &&
            "Image resources must be valid. Check the Vulkan instance and image creation.");
+    s_images.insert(this);
   }
 
   Image::~Image(void) {
+    s_images.erase(this);
     auto &vulkan = ren::getVulkan();
 
     // If an Image has no memory, it means it is managed elsewhere and we should not actually
@@ -33,7 +37,7 @@ namespace ren {
 
   Image::Ref Image::create(const std::string &name, VkImage image, VkImageView imageView,
                            VmaAllocation memory, VkImageCreateInfo &createInfo) {
-    return std::make_shared<Image>(name, image, imageView, memory, createInfo);
+    return makeRef<Image>(name, image, imageView, memory, createInfo);
   }
 
 

@@ -6,3 +6,4 @@ build/
 /.direnv/
 .DS_Store
 /.vscode/
+imgui.ini
