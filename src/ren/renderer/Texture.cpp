@@ -1,11 +1,13 @@
 #include <ren/renderer/Texture.h>
 #include <ren/renderer/Vulkan.h>
+#include <ren/core/Instrumentation.h>
 
 #include <stb/stb_image.h>
 #include <imgui_impl_vulkan.h>
 
 ren::Texture::Texture(const std::string &name, u32 width, u32 height, u8 *pixels)
     : name(name) {
+  REN_PROFILE_FUNCTION();
   ren::ImageBuilder ib(name);
 
   ib.setWidth(width).setHeight(height);
@@ -73,6 +75,7 @@ ren::Texture::Texture(const std::string &name, u32 width, u32 height, u8 *pixels
 
 
 ren::Texture::Texture(ren::ImageRef image) {
+  REN_PROFILE_FUNCTION();
   auto &vulkan = ren::getVulkan();
   this->image = image;
   this->name = image->getName();
@@ -124,8 +127,14 @@ ren::Texture::~Texture(void) {
 
 
 ren::ref<ren::Texture> ren::Texture::load(const std::string &filename) {
+  REN_PROFILE_FUNCTION();
   int texWidth, texHeight, texChannels;
-  stbi_uc *pixels = stbi_load(filename.data(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+  stbi_uc *pixels;
+
+  {
+    REN_PROFILE_SCOPE("stbi_load");
+    pixels = stbi_load(filename.data(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+  }
 
   auto texture = ren::makeRef<ren::Texture>(filename, (u32)texWidth, (u32)texHeight, (u8 *)pixels);
 

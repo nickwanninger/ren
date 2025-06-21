@@ -3,6 +3,7 @@
 #include <ren/types.h>
 #include <ren/renderer/Buffer.h>
 #include <ren/renderer/Image.h>
+#include <ren/core/Instrumentation.h>
 
 namespace ren {
 

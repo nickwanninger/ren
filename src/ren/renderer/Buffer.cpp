@@ -1,4 +1,5 @@
 #include <ren/renderer/Vulkan.h>
+#include <ren/core/Instrumentation.h>
 
 ren::Buffer::Buffer(VulkanInstance &vulkan_instance, VkDeviceSize size, VkBufferUsageFlags usage,
                     VkMemoryPropertyFlags properties)
@@ -7,8 +8,9 @@ ren::Buffer::Buffer(VulkanInstance &vulkan_instance, VkDeviceSize size, VkBuffer
     , size(size)
     , usage(usage)
     , properties(properties) {
-  // Allocate the buffer using vma
+  REN_PROFILE_FUNCTION();
 
+  // Allocate the buffer using vma
   switch (usage) {
     case VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT: setName("UniformBuffer"); break;
     case VK_BUFFER_USAGE_STORAGE_BUFFER_BIT: setName("StorageBuffer"); break;

@@ -3,6 +3,7 @@
 #include <ren/types.h>
 #include <ren/renderer/Shader.h>
 #include <vector>
+#include <ren/core/Instrumentation.h>
 
 namespace ren {
 
@@ -68,6 +69,7 @@ namespace ren {
   };
 
   inline void bind(VkCommandBuffer commandBuffer, const VulkanPipeline &pipeline) {
+    REN_PROFILE_FUNCTION();
     pipeline.bind(commandBuffer);
   }
 };  // namespace ren

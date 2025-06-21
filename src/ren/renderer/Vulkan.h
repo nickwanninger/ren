@@ -9,6 +9,7 @@
 #include <ren/renderer/RenderPass.h>
 #include <ren/renderer/Swapchain.h>
 #include <ren/renderer/pipelines/DisplayPipeline.h>
+#include <ren/core/Instrumentation.h>
 
 #include <SDL2/SDL.h>         // for SDL_Window
 #include <SDL2/SDL_vulkan.h>  // for SDL_Vulkan functions
@@ -133,6 +134,7 @@ namespace ren {
     void draw_frame(void);
 
     void recreate_swapchain(void) {
+      REN_PROFILE_FUNCTION();
       cleanup_swapchain();
       init_swapchain();
       framebuffer_resized = false;

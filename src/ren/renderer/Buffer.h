@@ -1,6 +1,7 @@
 #pragma once
 
 #include <ren/types.h>
+#include <ren/core/Instrumentation.h>
 #include <vulkan/vulkan_core.h>
 #include <vector>
 

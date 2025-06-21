@@ -1,5 +1,7 @@
 #include <ren/renderer/Vulkan.h>
 #include <ren/renderer/Shader.h>
+#include <ren/core/Instrumentation.h>
+
 
 #include <vector>
 #include <fmt/core.h>
@@ -71,6 +73,8 @@ ren::VulkanInstance::VulkanInstance(const std::string &app_name, SDL_Window *win
 
 
 VkCommandBuffer ren::VulkanInstance::beginFrame(void) {
+  REN_PROFILE_FUNCTION();
+
   // If we've resized, recreate and try again later.
   if (framebuffer_resized) {
     recreate_swapchain();
@@ -91,10 +95,13 @@ VkCommandBuffer ren::VulkanInstance::beginFrame(void) {
 
 
   // imgui new frame
-  ImGui_ImplVulkan_NewFrame();
-  ImGui_ImplSDL2_NewFrame();
+  {
+    REN_PROFILE_SCOPE("ImGui New Frame");
+    ImGui_ImplVulkan_NewFrame();
+    ImGui_ImplSDL2_NewFrame();
 
-  ImGui::NewFrame();
+    ImGui::NewFrame();
+  }
 
 
   // imgui commands
@@ -102,6 +109,7 @@ VkCommandBuffer ren::VulkanInstance::beginFrame(void) {
 
 
 
+  REN_PROFILE_SCOPE("Begin Frame");
   VkCommandBufferBeginInfo beginInfo{};
   beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
   beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
@@ -155,6 +163,7 @@ VkCommandBuffer ren::VulkanInstance::beginFrame(void) {
 
 
 void ren::VulkanInstance::endFrame(void) {
+  REN_PROFILE_FUNCTION();
   auto &frame = ren::getFrameData();
   auto cmd = frame.commandBuffer;
 
@@ -198,7 +207,7 @@ void ren::VulkanInstance::endFrame(void) {
 
   ImGui::Begin("debug");
   ImGui::Image(frame.renderTexture->getImGui(),
-               ImVec2(swapchain->renderExtent.width / 2, swapchain->renderExtent.height / 2));
+               ImVec2(swapchain->renderExtent.width * 1.5, swapchain->renderExtent.height * 1.5));
   ImGui::End();
 
 
@@ -213,7 +222,7 @@ void ren::VulkanInstance::endFrame(void) {
   // Prepare the image for presentation.
   VkImageMemoryBarrier presentBarrier{};
   presentBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-  presentBarrier.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+  presentBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
   presentBarrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
   presentBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
   presentBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
@@ -238,42 +247,50 @@ void ren::VulkanInstance::endFrame(void) {
   }
 
 
-  VkSubmitInfo submitInfo{};
-  submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-
-  VkSemaphore waitSemaphores[] = {frame.imageAvailableSemaphore};
-  VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
-  submitInfo.waitSemaphoreCount = 1;
-  submitInfo.pWaitSemaphores = waitSemaphores;
-  submitInfo.pWaitDstStageMask = waitStages;
-
-  submitInfo.commandBufferCount = 1;
-  submitInfo.pCommandBuffers = &frame.commandBuffer;
-
   VkSemaphore signalSemaphores[] = {frame.renderFinishedSemaphore};
-  submitInfo.signalSemaphoreCount = 1;
-  submitInfo.pSignalSemaphores = signalSemaphores;
 
-  if (vkQueueSubmit(graphics_queue, 1, &submitInfo, frame.inFlightFence) != VK_SUCCESS) {
-    throw std::runtime_error("failed to submit draw command buffer!");
+  {
+    REN_PROFILE_SCOPE("Submit Graphics Queue");
+    VkSubmitInfo submitInfo{};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+
+    VkSemaphore waitSemaphores[] = {frame.imageAvailableSemaphore};
+    VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+    submitInfo.waitSemaphoreCount = 1;
+    submitInfo.pWaitSemaphores = waitSemaphores;
+    submitInfo.pWaitDstStageMask = waitStages;
+
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &frame.commandBuffer;
+
+    submitInfo.signalSemaphoreCount = 1;
+    submitInfo.pSignalSemaphores = signalSemaphores;
+
+    if (vkQueueSubmit(graphics_queue, 1, &submitInfo, frame.inFlightFence) != VK_SUCCESS) {
+      throw std::runtime_error("failed to submit draw command buffer!");
+    }
   }
 
-  // Presentation
-  VkPresentInfoKHR presentInfo{};
-  presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
 
-  presentInfo.waitSemaphoreCount = 1;
-  presentInfo.pWaitSemaphores = signalSemaphores;
+  {
+    REN_PROFILE_SCOPE("Presentation");
 
-  VkSwapchainKHR swapChains[] = {swapchain->swapchain};
-  presentInfo.swapchainCount = 1;
-  presentInfo.pSwapchains = swapChains;
-  uint32_t index = frame.frameIndex;  // we need a u32
-  presentInfo.pImageIndices = &index;
+    // Presentation
+    VkPresentInfoKHR presentInfo{};
+    presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
 
-  presentInfo.pResults = nullptr;  // Optional
+    presentInfo.waitSemaphoreCount = 1;
+    presentInfo.pWaitSemaphores = signalSemaphores;
 
-  vkQueuePresentKHR(graphics_queue, &presentInfo);
+    VkSwapchainKHR swapChains[] = {swapchain->swapchain};
+    presentInfo.swapchainCount = 1;
+    presentInfo.pSwapchains = swapChains;
+    uint32_t index = frame.frameIndex;  // we need a u32
+    presentInfo.pImageIndices = &index;
+
+    presentInfo.pResults = nullptr;  // Optional
+    vkQueuePresentKHR(graphics_queue, &presentInfo);
+  }
 }
 
 void ren::VulkanInstance::draw_frame(void) {
@@ -281,6 +298,7 @@ void ren::VulkanInstance::draw_frame(void) {
 }
 
 void ren::VulkanInstance::init_instance(void) {
+  REN_PROFILE_FUNCTION();
   vkb::InstanceBuilder builder;
 
   // make the vulkan instance, with basic debug features
@@ -386,6 +404,7 @@ ren::VulkanInstance::~VulkanInstance() {
 
 
 void ren::VulkanInstance::init_swapchain(void) {
+  REN_PROFILE_FUNCTION();
   this->swapchain.reset();
 
   this->swapchain = makeBox<ren::Swapchain>(this->window);
@@ -393,6 +412,7 @@ void ren::VulkanInstance::init_swapchain(void) {
 
 
 void ren::VulkanInstance::init_renderpass(void) {
+  REN_PROFILE_FUNCTION();
   // The default render pass is super easy.
   this->renderPass = makeRef<ren::RenderPass>();
   this->renderPass->build();
@@ -636,6 +656,7 @@ VkCommandBuffer ren::VulkanInstance::beginSingleTimeCommands() {
 void ren::VulkanInstance::endSingleTimeCommands(VkCommandBuffer commandBuffer) {
   vkEndCommandBuffer(commandBuffer);
 
+  VkCommandBufferAllocateInfo allocInfo{};
   VkSubmitInfo submitInfo{};
   submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
   submitInfo.commandBufferCount = 1;

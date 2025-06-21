@@ -3,7 +3,7 @@
 #include <SDL2/SDL_vulkan.h>
 #include <fmt/core.h>
 #include <vkb/VkBootstrap.h>
-
+#include <ren/core/Instrumentation.h>
 static ren::FrameData *g_frameData = nullptr;
 
 namespace ren {
@@ -86,6 +86,7 @@ namespace ren {
 
 
   ren::FrameData *Swapchain::acquireNextFrame(void) {
+    REN_PROFILE_FUNCTION();
     auto &vulkan = ren::getVulkan();
     if (frames.empty()) {
       fmt::print("No frames available in swapchain\n");
@@ -98,11 +99,14 @@ namespace ren {
     g_frameData = frameData;
 
     assert(frameData->frameIndex == frameIndex);
+    {
+      REN_PROFILE_SCOPE("Wait for fences");
+      vkWaitForFences(vulkan.device, 1, &frameData->inFlightFence, VK_TRUE, UINT64_MAX);
+      vkResetFences(vulkan.device, 1, &frameData->inFlightFence);
 
-    vkWaitForFences(vulkan.device, 1, &frameData->inFlightFence, VK_TRUE, UINT64_MAX);
-    vkResetFences(vulkan.device, 1, &frameData->inFlightFence);
+      vkResetCommandBuffer(frameData->commandBuffer, 0);
+    }
 
-    vkResetCommandBuffer(frameData->commandBuffer, 0);
 
 
     // fmt::println("Acquiring next image for frame index: {}", frameData->frameIndex);

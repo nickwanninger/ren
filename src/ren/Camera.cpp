@@ -2,8 +2,11 @@
 #include <imgui/imgui.h>
 #include <ren/Camera.h>
 #include <SDL2/SDL.h>
+#include <ren/core/Instrumentation.h>
 
 void ren::Camera::update(float dt) {
+  REN_PROFILE_FUNCTION();
+
   const Uint8* keys = SDL_GetKeyboardState(NULL);
   int mouse_x, mouse_y;
   u32 mouse = SDL_GetMouseState(NULL, NULL);
