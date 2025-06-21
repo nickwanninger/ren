@@ -7,6 +7,8 @@
 
 namespace ren {
 
+  class Application;
+
   // Get the current frame data from anywhere in the engine.
   FrameData &getFrameData(void);
 

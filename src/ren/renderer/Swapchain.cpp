@@ -4,6 +4,9 @@
 #include <fmt/core.h>
 #include <vkb/VkBootstrap.h>
 #include <ren/core/Instrumentation.h>
+#include <ren/core/Application.h>
+
+
 static ren::FrameData *g_frameData = nullptr;
 
 namespace ren {
@@ -59,17 +62,8 @@ namespace ren {
                deviceExtent.width, deviceExtent.height);
 
     for (u64 i = 0; i < images.size(); i++) {
-      fmt::println("Creating frame data for image {} of swapchain", i);
       frames.push_back(makeBox<ren::FrameData>(i, *this, images[i], imageViews[i]));
     }
-
-    for (u64 i = 0; i < frames.size(); i++) {
-      auto &frame = *frames[i];
-      fmt::println("Frame {}: frameIndex: {}", i, frame.frameIndex);
-    }
-
-
-    fmt::println("\n\n\n\n");
   }
 
 

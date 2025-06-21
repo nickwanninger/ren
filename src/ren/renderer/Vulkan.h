@@ -87,7 +87,7 @@ namespace ren {
   // This class also contains the physical device, device, and surface.
   class VulkanInstance {
    public:
-    VulkanInstance(const std::string &app_name, SDL_Window *window);
+    VulkanInstance(SDL_Window *window);
 
     ~VulkanInstance();
 
@@ -138,6 +138,11 @@ namespace ren {
       cleanup_swapchain();
       init_swapchain();
       framebuffer_resized = false;
+    }
+
+    inline void waitForIdle(void) {
+      REN_PROFILE_SCOPE("Wait For Idle");
+      vkDeviceWaitIdle(device);
     }
 
 

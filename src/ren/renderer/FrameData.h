@@ -23,10 +23,6 @@ namespace ren {
     // These images are used for rendering the scene. They are at "render
     // resolution", which is typically much lower than the device resolution.
     ren::ImageRef renderImage = nullptr;  // The color image used for rendering.
-    ren::ImageRef depthImage = nullptr;   // The depth buffer for rendering.
-
-    ren::TextureRef renderTexture = nullptr;
-    ren::TextureRef depthTexture = nullptr;
 
     // The framebuffer we target when rendering the scene
     VkFramebuffer renderFramebuffer = VK_NULL_HANDLE;
@@ -36,6 +32,8 @@ namespace ren {
     // to the device in the end. We will blit the render image to this
     // with some fancy up scaling and whatnot.
     ren::ImageRef deviceImage = nullptr;
+    ren::ImageRef depthImage = nullptr;  // The depth buffer for rendering.
+
     // The framebuffer we target when rendering the device image.
     VkFramebuffer deviceFramebuffer = VK_NULL_HANDLE;
 

@@ -1,12 +1,14 @@
 #include <ren/renderer/FrameData.h>
 #include <ren/renderer/Vulkan.h>
 #include <ren/renderer/Swapchain.h>
+#include <ren/core/Application.h>
 #include <fmt/core.h>
 
 
 namespace ren {
   FrameData::FrameData(u32 frameIndex, Swapchain &sc, VkImage swapchainImage,
                        VkImageView swapchainImageView) {
+    auto &app = ren::Application::get();
     this->frameIndex = frameIndex;
     auto &vulkan = ren::getVulkan();
     // ---- Add the swapchain image to the deviceImage in the framedata ---- //
@@ -23,13 +25,25 @@ namespace ren {
                                            VK_NULL_HANDLE,  // Null allocation is a little strange.
                                            imageCreateInfo);
 
+    this->depthImage = ren::ImageBuilder(fmt::format("depth #{}", frameIndex))
+                           .setWidth(sc.deviceExtent.width)
+                           .setHeight(sc.deviceExtent.height)
+                           .setFormat(sc.depthFormat)
+                           .setUsage(VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)
+                           .setViewAspectMask(VK_IMAGE_ASPECT_DEPTH_BIT)
+                           .build();
+
     // allocate the framebuffer
     VkFramebufferCreateInfo deviceFramebufferCreate{};
+
+    std::array<VkImageView, 2> attachments = {this->deviceImage->getImageView(),
+                                              this->depthImage->getImageView()};
+
     VkImageView deviceImageView = this->deviceImage->getImageView();
     deviceFramebufferCreate.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-    deviceFramebufferCreate.renderPass = vulkan.displayPass->getHandle();
-    deviceFramebufferCreate.attachmentCount = 1;
-    deviceFramebufferCreate.pAttachments = &deviceImageView;
+    deviceFramebufferCreate.renderPass = ren::Renderer::get().getRenderPass().getHandle();
+    deviceFramebufferCreate.attachmentCount = attachments.size();
+    deviceFramebufferCreate.pAttachments = attachments.data();
     deviceFramebufferCreate.width = sc.deviceExtent.width;
     deviceFramebufferCreate.height = sc.deviceExtent.height;
     deviceFramebufferCreate.layers = 1;
@@ -41,44 +55,38 @@ namespace ren {
     // ---- Allocate render targets ---- //
 
     // Allocate the render image.
-    this->renderImage = ren::ImageBuilder(fmt::format("render #{}", frameIndex))
-                            .setWidth(sc.renderExtent.width)
-                            .setHeight(sc.renderExtent.height)
-                            .setFormat(sc.imageFormat)
-                            .setInitialLayout(VK_IMAGE_LAYOUT_UNDEFINED)
-                            .setUsage(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-                                      VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT)
-                            .setViewAspectMask(VK_IMAGE_ASPECT_COLOR_BIT)
-                            .build();
+    // this->renderImage = ren::ImageBuilder(fmt::format("render #{}", frameIndex))
+    //                         .setWidth(sc.renderExtent.width)
+    //                         .setHeight(sc.renderExtent.height)
+    //                         .setFormat(sc.imageFormat)
+    //                         .setInitialLayout(VK_IMAGE_LAYOUT_UNDEFINED)
+    //                         .setUsage(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+    //                                   VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+    //                                   VK_IMAGE_USAGE_SAMPLED_BIT)
+    //                         .setViewAspectMask(VK_IMAGE_ASPECT_COLOR_BIT)
+    //                         .build();
+
+    // this->renderTexture = makeRef<ren::Texture>(this->renderImage);
+    // this->depthTexture = makeRef<ren::Texture>(this->depthImage);
 
 
-    this->depthImage = ren::ImageBuilder(fmt::format("depth #{}", frameIndex))
-                           .setWidth(sc.renderExtent.width)
-                           .setHeight(sc.renderExtent.height)
-                           .setFormat(sc.depthFormat)
-                           .setUsage(VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)
-                           .setViewAspectMask(VK_IMAGE_ASPECT_DEPTH_BIT)
-                           .build();
-    this->renderTexture = makeRef<ren::Texture>(this->renderImage);
-    this->depthTexture = makeRef<ren::Texture>(this->depthImage);
+    // std::array<VkImageView, 2> attachments = {this->renderImage->getImageView(),
+    //                                           this->depthImage->getImageView()};
 
+    // VkFramebufferCreateInfo framebufferInfo{};
+    // framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+    // framebufferInfo.renderPass = vulkan.renderPass->getHandle();
+    // framebufferInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
+    // framebufferInfo.pAttachments = attachments.data();
+    // framebufferInfo.width = sc.renderExtent.width;
+    // framebufferInfo.height = sc.renderExtent.height;
+    // framebufferInfo.layers = 1;
 
-    std::array<VkImageView, 2> attachments = {this->renderImage->getImageView(),
-                                              this->depthImage->getImageView()};
-
-    VkFramebufferCreateInfo framebufferInfo{};
-    framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-    framebufferInfo.renderPass = vulkan.renderPass->getHandle();
-    framebufferInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
-    framebufferInfo.pAttachments = attachments.data();
-    framebufferInfo.width = sc.renderExtent.width;
-    framebufferInfo.height = sc.renderExtent.height;
-    framebufferInfo.layers = 1;
-
-    if (vkCreateFramebuffer(vulkan.device, &framebufferInfo, nullptr, &this->renderFramebuffer) !=
-        VK_SUCCESS) {
-      throw std::runtime_error("failed to create framebuffer!");
-    }
+    // if (vkCreateFramebuffer(vulkan.device, &framebufferInfo, nullptr, &this->renderFramebuffer)
+    // !=
+    //     VK_SUCCESS) {
+    //   throw std::runtime_error("failed to create framebuffer!");
+    // }
 
     // ---- Allocate the semaphores and fence for this frame ---- //
     VkSemaphoreCreateInfo semaphoreInfo{};
@@ -108,7 +116,9 @@ namespace ren {
 
   FrameData::~FrameData() {
     auto &vulkan = ren::getVulkan();
-    this->renderTexture.reset();
+
+    // This needs to be done because the ImageView is not managed by the Swapchain
+    vkDestroyImageView(vulkan.device, this->deviceImage->getImageView(), nullptr);
     this->renderImage.reset();
     this->depthImage.reset();
     this->deviceImage.reset();

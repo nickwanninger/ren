@@ -60,6 +60,26 @@ namespace ren {
       InternalEndSession();
     }
 
+    template <typename T>
+    inline void writeCounter(const char* name, T value) {
+      if (!m_OutputEnabled) return;
+
+      std::stringstream json;
+      json << std::setprecision(3) << std::fixed;
+      json << ",{";
+      json << "\"name\":\"" << name << "\",";
+      json << "\"ph\":\"C\",";
+      json << "\"pid\":\"0\",";
+      json << "\"tid\":\"" << std::this_thread::get_id() << "\",";
+      json
+          << "\"ts\":"
+          << FloatingPointMicroseconds{std::chrono::steady_clock::now().time_since_epoch()}.count();
+      json << ",\"args\":{\"value\":" << value << "}";
+      json << "}";
+
+      writeEvent(json.str());
+    }
+
 
     inline void writeEvent(const std::string& event) {
       profileBytes += event.size();
@@ -109,7 +129,7 @@ namespace ren {
     ~Instrumentor() { EndSession(); }
 
     void WriteHeader() {
-      m_OutputStream << "{\"otherData\": {},\"traceEvents\":[{}";
+      m_OutputStream << "{\"otherData\": {}, \"traceEvents\":[{}";
       m_OutputStream.flush();
     }
 
@@ -242,6 +262,7 @@ namespace ren {
   #define REN_PROFILE_MARK(name) ::ren::emitInstrumentationMark(name)
   #define REN_PROFILE_OUTPUT(enable) ::ren::Instrumentor::Get().enableOutput(enable)
   #define REN_PROFILE_OUTPUT_ENABLED() ::ren::Instrumentor::Get().isOutputEnabled()
+  #define REN_PROFILE_COUNTER(name, value) ::ren::Instrumentor::Get().writeCounter(name, value)
 #else
   #define REN_PROFILE_BEGIN_SESSION(name, filepath)
   #define REN_PROFILE_END_SESSION()
@@ -250,4 +271,5 @@ namespace ren {
   #define REN_PROFILE_MARK(name)
   #define REN_PROFILE_OUTPUT(enable)
   #define REN_PROFILE_OUTPUT_ENABLED() (false)
+  #define REN_PROFILE_COUNTER(name, value)
 #endif

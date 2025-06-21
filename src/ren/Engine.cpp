@@ -7,6 +7,7 @@
 #include <ren/renderer/Swapchain.h>
 #include <ren/Camera.h>
 #include <ren/core/Instrumentation.h>
+#include <ren/core/FramerateCounter.h>
 
 #include <imgui_impl_sdl2.h>
 #include "imgui.h"
@@ -27,7 +28,7 @@ ren::Engine::Engine(const std::string& app_name, glm::uvec2 window_size)
   // Now, we can get going with Vulkan.
   // First step is to create a Vulkan instance.
 
-  this->vulkan = makeBox<ren::VulkanInstance>(app_name, this->window);
+  this->vulkan = makeBox<ren::VulkanInstance>(this->window);
 }
 
 
@@ -105,6 +106,8 @@ ren::ref<ren::PointPipeline> createPointPipeline(void) {
 
 void ren::Engine::run(void) {
   // REN_PROFILE_FUNCTION();
+
+  ren::FramerateCounter fpsCounter;
 
   SDL_Event e;
   bool bQuit = false;
@@ -282,6 +285,7 @@ void ren::Engine::run(void) {
 
 
 
+
   // main loop
   while (!bQuit) {
     REN_PROFILE_SCOPE("Render Loop");
@@ -310,9 +314,6 @@ void ren::Engine::run(void) {
       }
     }
 
-
-
-    REN_PROFILE_MARK("Begin Frame");
     auto cb = vulkan->beginFrame();
     if (cb == VK_NULL_HANDLE) {
       fmt::print("Failed to begin frame, skipping...\n");
@@ -338,14 +339,20 @@ void ren::Engine::run(void) {
               .count();
       lastTime = currentTime;
 
+      fpsCounter.addFrame(deltaTime);
+
+      float fps = fpsCounter.getAverageFramerate();
+      ren::Instrumentor::Get().writeCounter("fps", fps);
+
       camera.update(deltaTime);
 
 
       ImGui::Begin("Profiler Info");
       bool profilerEnabled = REN_PROFILE_OUTPUT_ENABLED();
       float profilerMegabytes = ren::Instrumentor::Get().profileBytes / (1024.0f * 1024.0f);
-      ImGui::Text("Profile Events: %5zu (%fMB)\n", ren::Instrumentor::Get().profileEvents,
-                  profilerMegabytes);
+      ImGui::Text("FPS: %f\n", fps);
+      // ImGui::Text("Profile Events: %5zu (%fMB)\n", ren::Instrumentor::Get().profileEvents,
+      //             profilerMegabytes);
       if (ImGui::Checkbox("Enable Profiler", &profilerEnabled)) {
         fmt::println("Profiler enabled: {}", profilerEnabled);
         REN_PROFILE_OUTPUT(profilerEnabled);

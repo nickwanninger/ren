@@ -2,6 +2,8 @@
 
 #include <ren/types.h>
 #include <ren/layers/Layer.h>
+#include <ren/core/Event.h>
+#include <ren/core/Instrumentation.h>
 
 namespace ren {
 
@@ -14,6 +16,12 @@ namespace ren {
    public:
     LayerStack() = default;
     ~LayerStack() = default;
+
+    inline void pushLayerBottom(ref<Layer> layer) {
+      // insert the layer at the bottom of the stack.
+      layers.insert(layers.begin(), layer);
+      layer->onAttach();
+    }
 
     inline void pushLayer(ref<Layer> layer) {
       layers.push_back(layer);
@@ -36,6 +44,29 @@ namespace ren {
       layers.clear();
     }
 
+    inline void dispatchEvent(Event &event) {
+      REN_PROFILE_FUNCTION();
+      for (auto it = layers.rbegin(); it != layers.rend(); ++it) {
+        (*it)->onEvent(event);
+        if (event.handled) {
+          break;  // Stop dispatching if the event is handled
+        }
+      }
+    }
+
+
+    inline void onUpdate(float deltaTime) {
+      REN_PROFILE_FUNCTION();
+      for (auto &layer : layers) {
+        layer->onUpdate(deltaTime);
+      }
+    }
+    inline void onImGuiRender(float deltaTime) {
+      REN_PROFILE_FUNCTION();
+      for (auto &layer : layers) {
+        layer->onImguiRender(deltaTime);
+      }
+    }
 
     inline const std::vector<ref<Layer>> &getLayers(void) const { return layers; }
 

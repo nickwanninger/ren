@@ -35,7 +35,7 @@ ren::VulkanInstance &ren::getVulkan(void) {
   return *g_vulkan_instance;
 }
 
-ren::VulkanInstance::VulkanInstance(const std::string &app_name, SDL_Window *window) {
+ren::VulkanInstance::VulkanInstance(SDL_Window *window) {
   this->window = window;
   if (g_vulkan_instance != nullptr) {
     throw std::runtime_error("Vulkan instance already initialized");
@@ -53,6 +53,8 @@ ren::VulkanInstance::VulkanInstance(const std::string &app_name, SDL_Window *win
 
   // ASAP, create a command pool.
   init_command_pool();
+
+  return;
 
   // Construct the render passes
   init_renderpass();
@@ -204,11 +206,6 @@ void ren::VulkanInstance::endFrame(void) {
   // Bind fullscreen blit pipeline and run it.
   ren::bind(cmd, *displayPipeline);
   vkCmdDraw(cmd, 4, 1, 0, 0);
-
-  ImGui::Begin("debug");
-  ImGui::Image(frame.renderTexture->getImGui(),
-               ImVec2(swapchain->renderExtent.width * 1.5, swapchain->renderExtent.height * 1.5));
-  ImGui::End();
 
 
   // Right before we end the render pass, we need to render the ImGui draw data.
@@ -380,16 +377,11 @@ void ren::VulkanInstance::init_instance(void) {
 }
 
 ren::VulkanInstance::~VulkanInstance() {
-  ImGui_ImplVulkan_Shutdown();
+  // ImGui_ImplVulkan_Shutdown();
 
   // Command Pool
   vkDestroyCommandPool(device, commandPool, nullptr);
 
-  // Destroy the swapchain
-  swapchain.reset();
-
-  renderPass.reset();
-  displayPass.reset();
 
   vkDestroySurfaceKHR(instance, surface, nullptr);
 
@@ -404,10 +396,10 @@ ren::VulkanInstance::~VulkanInstance() {
 
 
 void ren::VulkanInstance::init_swapchain(void) {
-  REN_PROFILE_FUNCTION();
-  this->swapchain.reset();
+  // REN_PROFILE_FUNCTION();
+  // this->swapchain.reset();
 
-  this->swapchain = makeBox<ren::Swapchain>(this->window);
+  // this->swapchain = makeBox<ren::Swapchain>(this->window);
 }
 
 
