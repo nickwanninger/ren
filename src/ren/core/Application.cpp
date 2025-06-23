@@ -5,6 +5,7 @@
 #include <imgui.h>
 #include <imgui_impl_vulkan.h>
 #include <imgui_impl_sdl2.h>
+#include <ren/core/Entity.h>
 
 static ren::Application *g_application = nullptr;
 namespace ren {
@@ -24,6 +25,9 @@ namespace ren {
     // Add the ImGuiLayer to the stack.
     auto imguiLayer = makeRef<ImGuiLayer>(*this);
     this->layerStack.pushLayer(imguiLayer);
+
+    scene.createEntity("Camera");
+    scene.createEntity("Cube");
   }
 
   Application::~Application() {
@@ -49,9 +53,11 @@ namespace ren {
     auto lastTime = startTime;
     SDL_Event e;
 
+    auto &vulkan = ren::getVulkan();
+
     while (this->running) {
       int eventsHandled = 0;
-      REN_PROFILE_SCOPE("Render Loop");
+      REN_PROFILE_SCOPE("Frame");
 
 
       auto currentTime = std::chrono::high_resolution_clock::now();
@@ -84,10 +90,6 @@ namespace ren {
 
       if (!running) break;
 
-
-      // Let's begin a frame.
-      REN_PROFILE_SCOPE("Render Frame");
-
       // Get a frame from the swapchain.
 
       renderer->beginFrame();
@@ -111,6 +113,16 @@ namespace ren {
 
 
         layerStack.onImGuiRender(deltaTime);
+
+
+        ImGui::Begin("Entities");
+
+        auto view = scene.getAllWith<comp::ID, comp::Name>();
+        for (auto [entity, id, name] : view.each()) {
+          ImGui::Text("Entity: %s (ID: 0x%llx)", name.name.c_str(), (u64)id.uuid);
+        }
+
+        ImGui::End();
 
         {
           REN_PROFILE_SCOPE("ImGui Render Draw Data");

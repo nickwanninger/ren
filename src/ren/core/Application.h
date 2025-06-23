@@ -5,6 +5,9 @@
 #include <SDL2/SDL.h>
 #include <ren/renderer/RenderPass.h>
 #include <ren/renderer/Renderer.h>
+#include <ren/core/Scene.h>
+#include <ren/core/Entity.h>
+
 namespace ren {
 
 
@@ -17,6 +20,8 @@ namespace ren {
     ren::LayerStack layerStack;
 
     bool running = true;
+
+    ren::Scene scene;
 
    public:
     Application(const std::string &app_name, glm::uvec2 window_size);
