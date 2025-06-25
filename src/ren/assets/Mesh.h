@@ -1,0 +1,46 @@
+#pragma once
+
+#include <ren/types.h>
+#include <ren/renderer/Buffer.h>
+#include <ren/assets/Vertex.h>
+
+
+namespace ren {
+
+  class Mesh {
+   public:
+    Mesh(const std::string &name, const std::vector<Vertex> &vertices,
+         const std::vector<u32> &indices);
+
+    ~Mesh();
+
+    // Get the name of the mesh.
+    const std::string &getName(void) const { return name; }
+
+    // Get the vertex buffer.
+    ref<Buffer> getVertexBuffer(void) const { return vertexBuffer; }
+
+    // Get the index buffer.
+    ref<Buffer> getIndexBuffer(void) const { return indexBuffer; }
+
+    // Get the number of indices.
+    u32 getIndexCount(void) const { return static_cast<u32>(indices.size()); }
+
+   private:
+    std::string name;
+    ref<Buffer> vertexBuffer;
+    ref<Buffer> indexBuffer;
+    std::vector<Vertex> vertices;
+    std::vector<u32> indices;
+  };
+
+  using MeshRef = ref<Mesh>;
+
+
+  MeshRef loadObj(const std::string &filename);
+  MeshRef loadGLTF(const std::string &filename);
+
+  // Temporary:
+  MeshRef createCubeMesh(void);
+
+}  // namespace ren

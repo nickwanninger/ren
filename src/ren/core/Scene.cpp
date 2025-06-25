@@ -3,6 +3,7 @@
 #include <ren/core/Components.h>
 #include <ren/core/Instrumentation.h>
 
+
 namespace ren {
 
 
@@ -37,5 +38,22 @@ namespace ren {
       // Destroy the entity in the registry.
       registry.destroy(entity);
     }
+  }
+
+  std::string Scene::serialize(void) {
+    REN_PROFILE_FUNCTION();
+    json j;
+
+    std::vector<json> serializedEntities;
+    for (auto &[uuid, entity] : this->entities) {
+      json e = Entity(entity, this).serialize();
+      serializedEntities.push_back(e);
+    }
+    j["entities"] = serializedEntities;
+
+
+    // fmt::print("MessagePack: {} bytes\n", json::to_msgpack(j).size());
+    // fmt::print("Json:        {} bytes\n", j.dump().size());
+    return j.dump(2);
   }
 }  // namespace ren

@@ -11,8 +11,8 @@ namespace ren {
     this->fragmentShader =
         makeRef<ren::Shader>("shaders/point.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 
-    auto bindingDesc = ren::Vertex::get_binding_description();
-    auto attributeDescs = ren::Vertex::get_attribute_descriptions();
+    auto bindingDesc = ren::Vertex::getBindingDesc();
+    auto attributeDescs = ren::Vertex::getAttrDescs();
     // ---- Vertex Input Create Info ---- //
     VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
     vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
@@ -161,7 +161,8 @@ namespace ren {
     // Then we reference all of the structures describing the fixed-function stage.
     pipelineInfo.layout = pipelineLayout;
     // After that comes the pipeline layout, which is a Vulkan handle rather than a struct pointer.
-    pipelineInfo.renderPass = vulkan.renderPass->getHandle();
+    abort();
+    // pipelineInfo.renderPass = vulkan.renderPass->getHandle();
     pipelineInfo.subpass = 0;
     // Required for compat
     pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;  // Optional

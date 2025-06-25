@@ -7,6 +7,8 @@
 #include <ren/renderer/Renderer.h>
 #include <ren/core/Scene.h>
 #include <ren/core/Entity.h>
+#include <ren/layers/SceneLayer.h>
+#include <ren/layers/ImGuiLayer.h>
 
 namespace ren {
 
@@ -21,7 +23,8 @@ namespace ren {
 
     bool running = true;
 
-    ren::Scene scene;
+    ref<SceneLayer> sceneLayer = nullptr;
+    ref<ImGuiLayer> imguiLayer = nullptr;
 
    public:
     Application(const std::string &app_name, glm::uvec2 window_size);

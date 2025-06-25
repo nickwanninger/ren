@@ -4,6 +4,7 @@
 #include <ren/renderer/Buffer.h>
 #include <ren/renderer/Image.h>
 #include <ren/renderer/Texture.h>
+#include <ren/renderer/RenderTarget.h>
 
 namespace ren {
 
@@ -20,12 +21,9 @@ namespace ren {
   struct FrameData {
     // Which of the frames in flight this is?
     u32 frameIndex;
-    // These images are used for rendering the scene. They are at "render
-    // resolution", which is typically much lower than the device resolution.
-    ren::ImageRef renderImage = nullptr;  // The color image used for rendering.
 
-    // The framebuffer we target when rendering the scene
-    VkFramebuffer renderFramebuffer = VK_NULL_HANDLE;
+    // The swapchain render target
+    RenderTargetRef renderTarget = nullptr;
 
 
     // We then have a device image, which is the final image that is presented
@@ -33,9 +31,6 @@ namespace ren {
     // with some fancy up scaling and whatnot.
     ren::ImageRef deviceImage = nullptr;
     ren::ImageRef depthImage = nullptr;  // The depth buffer for rendering.
-
-    // The framebuffer we target when rendering the device image.
-    VkFramebuffer deviceFramebuffer = VK_NULL_HANDLE;
 
 
     // Semaphores for synchronizing the rendering process.
@@ -54,8 +49,19 @@ namespace ren {
     // The command buffer that we record the rendering commands into.
     VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
 
+    // Query pool for GPU performance queries.
+    constexpr static u32 query_count = 2;
+    VkQueryPool queryPool = VK_NULL_HANDLE;
+
+
+
+
     FrameData(u32 frameIndex, Swapchain &sc, VkImage swapchainImage,
               VkImageView swapchainImageView);
     ~FrameData();
+
+
+    // timestamp query
+    std::vector<u64> getQueryResults(void);
   };
 }  // namespace ren

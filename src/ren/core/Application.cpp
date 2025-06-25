@@ -6,6 +6,7 @@
 #include <imgui_impl_vulkan.h>
 #include <imgui_impl_sdl2.h>
 #include <ren/core/Entity.h>
+#include <ren/assets/Mesh.h>
 
 static ren::Application *g_application = nullptr;
 namespace ren {
@@ -22,12 +23,25 @@ namespace ren {
 
     this->renderer = makeRef<Renderer>(this->window);
 
+
+    this->sceneLayer = makeRef<SceneLayer>(*this);
+    this->layerStack.pushLayer(sceneLayer);
+
     // Add the ImGuiLayer to the stack.
-    auto imguiLayer = makeRef<ImGuiLayer>(*this);
+    this->imguiLayer = makeRef<ImGuiLayer>(*this);
     this->layerStack.pushLayer(imguiLayer);
 
-    scene.createEntity("Camera");
-    scene.createEntity("Cube");
+
+    // scene.createEntity("Camera");
+    // scene.createEntity("Cube");
+
+
+    // auto s = scene.serialize();
+    // std::cout << "Serialized scene:\n" << s << std::endl;
+    // ren::loadObj("assets/test/meshes/unit_cube.obj");
+    // ren::loadGLTF("assets/test/meshes/unit_cube.glb");
+    // ren::loadGLTF("assets/test/meshes/suzanne.glb");
+    // exit(0);
   }
 
   Application::~Application() {
@@ -93,15 +107,32 @@ namespace ren {
       // Get a frame from the swapchain.
 
       renderer->beginFrame();
+      auto &frame = ren::getFrameData();
+
+      // VkPhysicalDeviceProperties deviceProps;
+      // vkGetPhysicalDeviceProperties(vulkan.physical_device, &deviceProps);
+      // auto timestamps = frame.getQueryResults();
+      // uint64_t ticksDiff = timestamps[1] - timestamps[0];
+
+      // // Convert to nanoseconds
+      // double nanoseconds = (double)ticksDiff * deviceProps.limits.timestampPeriod;
+
+      // // Convert to milliseconds
+      // double milliseconds = nanoseconds / 1000000.0;
+
+      // fmt::println("Frame {}: {} ms", frame.frameIndex, milliseconds);
+      // REN_PROFILE_RECORD_GPUTIME("GPU Pipeline", milliseconds);
+      // REN_PROFILE_COUNTER("Pipeline", milliseconds);
+
+      // vkCmdResetQueryPool(frame.commandBuffer, frame.queryPool, 0, frame.query_count);
+      // vkCmdWriteTimestamp(frame.commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+      // frame.queryPool, 0);
 
       // Render the scene.
 
-      // Called to blit the render target to the swapchain.
-      renderer->finalizeScene();
 
-      // Then, we render imgui.
-
-      {
+      // Render with ImGui.
+      renderer->withPass(renderer->getRenderPass(), *frame.renderTarget, [&]() {
         REN_PROFILE_SCOPE("ImGui Render");
         {
           REN_PROFILE_SCOPE("ImGui New Frame");
@@ -114,23 +145,14 @@ namespace ren {
 
         layerStack.onImGuiRender(deltaTime);
 
-
-        ImGui::Begin("Entities");
-
-        auto view = scene.getAllWith<comp::ID, comp::Name>();
-        for (auto [entity, id, name] : view.each()) {
-          ImGui::Text("Entity: %s (ID: 0x%llx)", name.name.c_str(), (u64)id.uuid);
-        }
-
-        ImGui::End();
-
         {
           REN_PROFILE_SCOPE("ImGui Render Draw Data");
           ImGui::Render();
           // Gross leakage.
           ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), ren::getFrameData().commandBuffer);
         }
-      }
+      });
+
 
       renderer->endFrame();
 

@@ -1,7 +1,6 @@
 #include <iostream>
 #include <vector>
 
-#include <ren/Engine.h>
 #include <ren/core/Instrumentation.h>
 #include <ren/core/Application.h>
 

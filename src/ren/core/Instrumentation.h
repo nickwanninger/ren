@@ -9,6 +9,7 @@
 #include <thread>
 #include <mutex>
 #include <sstream>
+#include <list>
 
 #define REN_PROFILE
 
@@ -33,6 +34,7 @@ namespace ren {
 
   class Instrumentor {
    public:
+    std::list<std::string> m_ProfilePoints;
     uint64_t profileEvents = 0;
     uint64_t profileBytes = 0;
     Instrumentor(const Instrumentor&) = delete;
@@ -49,15 +51,42 @@ namespace ren {
       }
       m_OutputStream.open(filepath);
 
-      if (m_OutputStream.is_open()) {
-        m_CurrentSession = new InstrumentationSession({name});
-        WriteHeader();
-      }
+      if (m_OutputStream.is_open()) { m_CurrentSession = new InstrumentationSession({name}); }
     }
 
     void EndSession() {
       std::lock_guard lock(m_Mutex);
       InternalEndSession();
+    }
+    inline void writeEvent(std::string&& event) {
+      if (m_ProfilePoints.size() > 1'000'000) m_ProfilePoints.pop_front();
+      profileBytes += event.size();
+      profileEvents++;
+      m_ProfilePoints.push_back(std::move(event));
+    }
+
+
+
+    inline void WriteProfile(const ProfileResult& result) {
+      if (!m_OutputEnabled) return;
+
+      std::lock_guard lock(m_Mutex);
+      if (m_CurrentSession) {
+        // m_ProfilePoints.push_back(result);
+        std::stringstream json;
+        json << std::setprecision(3) << std::fixed;
+        json << "{";
+        // json << "\"cat\":\"function\",";
+        json << "\"dur\":" << (result.ElapsedTime.count()) << ',';
+        json << "\"name\":\"" << result.Name << "\",";
+        json << "\"ph\":\"" << result.ph << "\",";
+        json << "\"pid\":\"0\",";
+        json << "\"tid\":\"" << result.ThreadID << "\",";
+        json << "\"ts\":" << result.Start.count();
+        json << "}";
+
+        writeEvent(json.str());
+      }
     }
 
     template <typename T>
@@ -66,7 +95,7 @@ namespace ren {
 
       std::stringstream json;
       json << std::setprecision(3) << std::fixed;
-      json << ",{";
+      json << "{";
       json << "\"name\":\"" << name << "\",";
       json << "\"ph\":\"C\",";
       json << "\"pid\":\"0\",";
@@ -81,33 +110,26 @@ namespace ren {
     }
 
 
-    inline void writeEvent(const std::string& event) {
-      profileBytes += event.size();
-      profileEvents++;
-      m_OutputStream << event;
-    }
-
-    inline void WriteProfile(const ProfileResult& result) {
+    inline void writeGPUTime(const char* name, double duration_ms) {
       if (!m_OutputEnabled) return;
 
-      std::lock_guard lock(m_Mutex);
-      if (m_CurrentSession) {
-        std::stringstream json;
+      std::stringstream json;
+      json << std::setprecision(3) << std::fixed;
+      json << "{";
+      json << "\"name\":\"" << name << "\",";
+      json << "\"ph\":\"X\",";
+      json << "\"pid\":\"0\",";
+      json << "\"tid\":\"GPU\",";
+      json
+          << "\"ts\":"
+          << FloatingPointMicroseconds{std::chrono::steady_clock::now().time_since_epoch()}.count();
+      json << ",\"dur\":" << (duration_ms * 1000.0);
+      json << "}";
 
-        json << std::setprecision(3) << std::fixed;
-        json << ",{";
-        json << "\"cat\":\"function\",";
-        json << "\"dur\":" << (result.ElapsedTime.count()) << ',';
-        json << "\"name\":\"" << result.Name << "\",";
-        json << "\"ph\":\"X\",";
-        json << "\"pid\":\"0\",";
-        json << "\"tid\":\"" << result.ThreadID << "\",";
-        json << "\"ts\":" << result.Start.count();
-        json << "}";
-
-        writeEvent(json.str());
-      }
+      writeEvent(json.str());
     }
+
+
 
     void enableOutput(bool enable) {
       std::lock_guard lock(m_Mutex);
@@ -128,20 +150,21 @@ namespace ren {
 
     ~Instrumentor() { EndSession(); }
 
-    void WriteHeader() {
-      m_OutputStream << "{\"otherData\": {}, \"traceEvents\":[{}";
-      m_OutputStream.flush();
-    }
+    void WriteHeader() { m_OutputStream << "{\"otherData\": {}, \"traceEvents\":["; }
 
-    void WriteFooter() {
-      m_OutputStream << "]}";
-      m_OutputStream.flush();
-    }
+    void WriteFooter() { m_OutputStream << "]}"; }
 
     // Note: you must already own lock on m_Mutex before
     // calling InternalEndSession()
     void InternalEndSession() {
       if (m_CurrentSession) {
+        WriteHeader();
+
+        int index = 0;
+        for (const auto& event : m_ProfilePoints) {
+          if (index++ > 0) m_OutputStream << ',';
+          m_OutputStream << event;
+        }
         WriteFooter();
         m_OutputStream.close();
         delete m_CurrentSession;
@@ -263,6 +286,8 @@ namespace ren {
   #define REN_PROFILE_OUTPUT(enable) ::ren::Instrumentor::Get().enableOutput(enable)
   #define REN_PROFILE_OUTPUT_ENABLED() ::ren::Instrumentor::Get().isOutputEnabled()
   #define REN_PROFILE_COUNTER(name, value) ::ren::Instrumentor::Get().writeCounter(name, value)
+  #define REN_PROFILE_RECORD_GPUTIME(name, duration_ms) \
+    ::ren::Instrumentor::Get().writeGPUTime(name, duration_ms)
 #else
   #define REN_PROFILE_BEGIN_SESSION(name, filepath)
   #define REN_PROFILE_END_SESSION()
@@ -272,4 +297,5 @@ namespace ren {
   #define REN_PROFILE_OUTPUT(enable)
   #define REN_PROFILE_OUTPUT_ENABLED() (false)
   #define REN_PROFILE_COUNTER(name, value)
+  #define REN_PROFILE_RECORD_GPUTIME(name, duration_ms)
 #endif

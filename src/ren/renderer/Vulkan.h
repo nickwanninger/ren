@@ -8,6 +8,7 @@
 #include <ren/renderer/Buffer.h>
 #include <ren/renderer/RenderPass.h>
 #include <ren/renderer/Swapchain.h>
+#include <ren/assets/Vertex.h>
 #include <ren/renderer/pipelines/DisplayPipeline.h>
 #include <ren/core/Instrumentation.h>
 
@@ -31,54 +32,6 @@ namespace ren {
   class VulkanInstance;
 
   VulkanInstance &getVulkan(void);
-
-  // TEMPORARY VERTEX TYPE
-  struct Vertex {
-    glm::vec3 pos;
-    glm::vec3 color;
-    glm::vec2 texCoord;
-
-    static VkVertexInputBindingDescription get_binding_description() {
-      VkVertexInputBindingDescription bindingDescription{};
-      bindingDescription.binding = 0;
-      bindingDescription.stride = sizeof(Vertex);
-      bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-
-      return bindingDescription;
-    }
-    static std::array<VkVertexInputAttributeDescription, 3> get_attribute_descriptions() {
-      std::array<VkVertexInputAttributeDescription, 3> attributeDescriptions{};
-
-
-      // First, we need to describe the vertex input attributes.
-
-      // Position attribute
-      attributeDescriptions[0].binding = 0;
-      attributeDescriptions[0].location = 0;
-      // float: VK_FORMAT_R32_SFLOAT
-      // vec2:  VK_FORMAT_R32G32_SFLOAT
-      // vec3:  VK_FORMAT_R32G32B32_SFLOAT
-      // vec4:  VK_FORMAT_R32G32B32A32_SFLOAT
-      attributeDescriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;  // vec3
-      attributeDescriptions[0].offset = offsetof(Vertex, pos);
-
-
-      // Color
-      attributeDescriptions[1].binding = 0;
-      attributeDescriptions[1].location = 1;
-      attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
-      attributeDescriptions[1].offset = offsetof(Vertex, color);
-
-
-      // Texture
-      attributeDescriptions[2].binding = 0;
-      attributeDescriptions[2].location = 2;
-      attributeDescriptions[2].format = VK_FORMAT_R32G32_SFLOAT;
-      attributeDescriptions[2].offset = offsetof(Vertex, texCoord);
-
-      return attributeDescriptions;
-    }
-  };
 
 
 
@@ -116,13 +69,6 @@ namespace ren {
     VkFormat swapchainFormat;  // chosen in init_instance()
     box<ren::Swapchain> swapchain;
 
-    // ---- Render Pass ---- //
-    // We break our rendering into two passes. The first is the 'render pass',
-    // which we use to render the 3D scene. The second is the 'display pass',
-    // which we use to display the rendered scene on the screen.
-    ref<ren::RenderPass> renderPass;
-    ref<ren::RenderPass> displayPass;
-    ref<ren::DisplayPipeline> displayPipeline;
 
     // ---- Command Pool ---- //
     VkCommandPool commandPool;

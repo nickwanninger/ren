@@ -23,24 +23,37 @@ namespace ren {
 
     // Called at the start of a frame. Sync's with the swapchain and acquires the next frame data.
     void beginFrame(void);
-    // Called when the scene is done being rendered, and it should be blitted to the swapchain.
-    void finalizeScene(void);
     // Called at the end of the frame to submit everything and present the frame.
     void endFrame(void);
 
     void waitForIdle(void);
 
 
+    void beginPass(ren::RenderPass &pass, ren::RenderTarget &target);
+    void endPass(void);
+
+    template <typename Fn>
+    inline void withPass(ren::RenderPass &pass, ren::RenderTarget &target, Fn &&func) {
+      REN_PROFILE_FUNCTION();
+      beginPass(pass, target);
+      func();
+      endPass();
+    }
+
+
+
 
     static Renderer &get(void);
 
     ren::RenderPass &getRenderPass(void) { return *renderPass; }
+    ref<RenderPass> getRenderPassRef(void) { return renderPass; }
 
 
    private:
     void initSwapchain();
 
    private:
+    VkCommandBuffer getCommandBuffer();
     SDL_Window *window;
     ref<VulkanInstance> vulkan = nullptr;
     ref<RenderPass> renderPass;

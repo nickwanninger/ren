@@ -14,9 +14,12 @@ namespace ren {
 
     operator u64() const { return m_UUID; }
 
+    NLOHMANN_DEFINE_TYPE_INTRUSIVE(UUID, m_UUID);
+
    private:
     u64 m_UUID;
   };
+
 
 }  // namespace ren
 

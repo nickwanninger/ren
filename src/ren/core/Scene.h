@@ -24,6 +24,9 @@ namespace ren {
       return registry.view<Component...>();
     }
 
+
+    std::string serialize(void);
+
    protected:
     friend class Entity;
     entt::registry registry;

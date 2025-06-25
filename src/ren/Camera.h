@@ -1,5 +1,6 @@
 #pragma once
 #include <ren/types.h>
+#include <ren/core/Instrumentation.h>
 
 namespace ren {
   struct Camera {
@@ -12,6 +13,7 @@ namespace ren {
 
 
     inline glm::mat4 view_matrix() const {
+      REN_PROFILE_FUNCTION();
       float pitch = angles.x;
       float yaw = angles.y;
 

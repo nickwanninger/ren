@@ -10,6 +10,7 @@
 #include <vector>
 #include <iostream>
 
+#include <ren/core/Instrumentation.h>
 #include <vulkan/vulkan.h>
 #include <vk_mem_alloc.h>
 
@@ -21,6 +22,9 @@
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+
+#include <json/json.hpp>
+using json = nlohmann::json;
 
 
 // How many frames we want to render in flight at once.
@@ -84,7 +88,8 @@ namespace ren {
   using ref = std::shared_ptr<T>;
 
   template <typename T, typename... Args>
-  constexpr ref<T> makeRef(Args&&... args) {
+  ref<T> makeRef(Args&&... args) {
+    REN_PROFILE_FUNCTION();
     return std::make_shared<T>(std::forward<Args>(args)...);
   }
 
@@ -92,7 +97,8 @@ namespace ren {
   using box = std::unique_ptr<T>;
 
   template <typename T, typename... Args>
-  constexpr box<T> makeBox(Args&&... args) {
+  box<T> makeBox(Args&&... args) {
+    REN_PROFILE_FUNCTION();
     return std::make_unique<T>(std::forward<Args>(args)...);
   }
 

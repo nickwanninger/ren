@@ -21,10 +21,15 @@ namespace ren {
 
     // Create the Vulkan instance
     this->vulkan = makeRef<VulkanInstance>(this->window);
-    // Create the render pass.
-    this->renderPass = makeRef<ren::RenderPass>();
-    this->renderPass->build();
 
+
+    RenderPass::Description rpDesc;
+
+    rpDesc.addColor(vulkan->swapchainFormat);
+    rpDesc.addDepth();
+
+    // Create the render pass.
+    this->renderPass = makeRef<ren::RenderPass>(rpDesc);
     fmt::println("Render Pass created with handle: {}", (void *)this->renderPass.get());
 
     initSwapchain();
@@ -44,22 +49,69 @@ namespace ren {
     this->vulkan->waitForIdle();
   }
 
+
+  void Renderer::beginPass(ren::RenderPass &pass, ren::RenderTarget &target) {
+    REN_PROFILE_FUNCTION();
+
+    auto &frame = ren::getFrameData();
+    auto cmd = getCommandBuffer();
+
+    // Begin the render pass.
+    VkRenderPassBeginInfo renderPassInfo{};
+    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    renderPassInfo.renderPass = pass.getHandle();
+    renderPassInfo.framebuffer = target.getHandle();
+    renderPassInfo.renderArea.offset = {0, 0};
+    renderPassInfo.renderArea.extent = {target.getWidth(), target.getHeight()};
+
+    // TODO: figure out if we need to clear the render targets
+    std::array<VkClearValue, 2> clearValues{};
+    clearValues[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
+    clearValues[1].depthStencil = {1.0f, 0};
+
+    renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
+    renderPassInfo.pClearValues = clearValues.data();
+
+    // Issue the command to begin the render pass.
+    vkCmdBeginRenderPass(cmd, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+    // oh.. do this stuff too.
+    VkViewport viewport = {0.0f,
+                           0.0f,  // x, y
+                           (float)target.getWidth(),
+                           (float)target.getHeight(),
+                           0.0f,
+                           1.0f};
+    vkCmdSetViewport(cmd, 0, 1, &viewport);
+
+    VkRect2D scissor = {{0, 0},
+                        {
+                            target.getWidth(),
+                            target.getHeight(),
+                        }};
+    vkCmdSetScissor(cmd, 0, 1, &scissor);
+  }
+
+  void Renderer::endPass(void) {
+    REN_PROFILE_FUNCTION();
+    // End the render pass.
+    vkCmdEndRenderPass(getCommandBuffer());
+  }
+
+  VkCommandBuffer Renderer::getCommandBuffer() { return getFrameData().commandBuffer; }
+
   void Renderer::beginFrame(void) {
     REN_PROFILE_FUNCTION();
 
-
     ren::FrameData *frame = nullptr;
 
-    int resizeRetries = 0;
     do {
       frame = this->swapchain->acquireNextFrame();
       if (frame == nullptr) {
         // The swapchain is out of date, so we need to recreate it.
         this->initSwapchain();
-        resizeRetries++;
       }
     } while (frame == nullptr);
-    REN_PROFILE_COUNTER("Acquire Frame Attempts", resizeRetries);
 
 
     vulkan->frame_number += 1;
@@ -76,58 +128,13 @@ namespace ren {
     if (vkBeginCommandBuffer(cmd, &beginInfo) != VK_SUCCESS) {
       throw std::runtime_error("failed to begin recording command buffer!");
     }
-
-    // ---- Begin the Render Pass ---- //
-    VkRenderPassBeginInfo renderPassInfo{};
-    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    renderPassInfo.renderPass = renderPass->getHandle();
-    renderPassInfo.framebuffer = frame->deviceFramebuffer;
-    renderPassInfo.renderArea.offset = {0, 0};
-    renderPassInfo.renderArea.extent = swapchain->deviceExtent;
-
-    // setup the clear values
-
-    std::array<VkClearValue, 2> clearValues{};
-    clearValues[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
-    clearValues[1].depthStencil = {1.0f, 0};
-
-    renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
-    renderPassInfo.pClearValues = clearValues.data();
-
-    vkCmdBeginRenderPass(cmd, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-
-
-    // oh.. do this stuff too.
-    VkViewport viewport = {0.0f,
-                           0.0f,  // x, y
-                           (float)swapchain->deviceExtent.width,
-                           (float)swapchain->deviceExtent.height,
-                           0.0f,
-                           1.0f};
-    vkCmdSetViewport(cmd, 0, 1, &viewport);
-
-    VkRect2D scissor = {{0, 0}, swapchain->deviceExtent};
-    vkCmdSetScissor(cmd, 0, 1, &scissor);
   }
-
-
-  void Renderer::finalizeScene(void) {
-    // End the scene render pass.
-
-
-    // Begin the display pass
-  }
-
 
   void Renderer::endFrame(void) {
     // End the display pass.
     REN_PROFILE_FUNCTION();
 
     auto &frame = ren::getFrameData();
-
-
-
-    vkCmdEndRenderPass(frame.commandBuffer);
 
     // And we've finished recording the command buffer:
     if (vkEndCommandBuffer(frame.commandBuffer) != VK_SUCCESS) {

@@ -83,6 +83,7 @@ namespace ren {
       style.Colors[ImGuiCol_WindowBg].w = 1.0f;
     }
 
+
     auto &colors = ImGui::GetStyle().Colors;
     colors[ImGuiCol_WindowBg] = ImVec4{0.01f, 0.01f, 0.01f, 1.0f};
 
@@ -160,10 +161,17 @@ namespace ren {
     // ImGui::NewFrame();
 
 
-    ImGui::ShowDemoWindow();
-    // Render the ImGui draw data.
-    // ImGui::Render();
-    // ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(),
-    // ren::getVulkan().getCurrentCommandBuffer());
+    // ImGui::ShowDemoWindow();
+
+
+    // // Make an ImGui window, and add 300 tabs
+    // ImGui::Begin("ImGui Layer");
+    // ImGui::Text("Test1");
+    // ImGui::End();
+
+
+    // ImGui::Begin("ImGui Layer");
+    // ImGui::Text("Test2");
+    // ImGui::End();
   }
 }  // namespace ren

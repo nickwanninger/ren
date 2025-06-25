@@ -8,6 +8,8 @@
 namespace ren {
   FrameData::FrameData(u32 frameIndex, Swapchain &sc, VkImage swapchainImage,
                        VkImageView swapchainImageView) {
+    REN_PROFILE_FUNCTION();
+
     auto &app = ren::Application::get();
     this->frameIndex = frameIndex;
     auto &vulkan = ren::getVulkan();
@@ -33,60 +35,16 @@ namespace ren {
                            .setViewAspectMask(VK_IMAGE_ASPECT_DEPTH_BIT)
                            .build();
 
-    // allocate the framebuffer
-    VkFramebufferCreateInfo deviceFramebufferCreate{};
 
-    std::array<VkImageView, 2> attachments = {this->deviceImage->getImageView(),
-                                              this->depthImage->getImageView()};
-
-    VkImageView deviceImageView = this->deviceImage->getImageView();
-    deviceFramebufferCreate.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-    deviceFramebufferCreate.renderPass = ren::Renderer::get().getRenderPass().getHandle();
-    deviceFramebufferCreate.attachmentCount = attachments.size();
-    deviceFramebufferCreate.pAttachments = attachments.data();
-    deviceFramebufferCreate.width = sc.deviceExtent.width;
-    deviceFramebufferCreate.height = sc.deviceExtent.height;
-    deviceFramebufferCreate.layers = 1;
-    if (vkCreateFramebuffer(vulkan.device, &deviceFramebufferCreate, nullptr,
-                            &this->deviceFramebuffer) != VK_SUCCESS) {
-      throw std::runtime_error("Failed to create device framebuffer");
-    }
-
-    // ---- Allocate render targets ---- //
-
-    // Allocate the render image.
-    // this->renderImage = ren::ImageBuilder(fmt::format("render #{}", frameIndex))
-    //                         .setWidth(sc.renderExtent.width)
-    //                         .setHeight(sc.renderExtent.height)
-    //                         .setFormat(sc.imageFormat)
-    //                         .setInitialLayout(VK_IMAGE_LAYOUT_UNDEFINED)
-    //                         .setUsage(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-    //                                   VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
-    //                                   VK_IMAGE_USAGE_SAMPLED_BIT)
-    //                         .setViewAspectMask(VK_IMAGE_ASPECT_COLOR_BIT)
-    //                         .build();
-
-    // this->renderTexture = makeRef<ren::Texture>(this->renderImage);
-    // this->depthTexture = makeRef<ren::Texture>(this->depthImage);
+    RenderTargetDescription renderTargetDesc;
+    renderTargetDesc.setupColorAndDepth(this->deviceImage, sc.imageFormat, this->depthImage,
+                                        sc.depthFormat);
 
 
-    // std::array<VkImageView, 2> attachments = {this->renderImage->getImageView(),
-    //                                           this->depthImage->getImageView()};
+    this->renderTarget =
+        makeRef<RenderTarget>(renderTargetDesc, Renderer::get().getRenderPassRef());
 
-    // VkFramebufferCreateInfo framebufferInfo{};
-    // framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-    // framebufferInfo.renderPass = vulkan.renderPass->getHandle();
-    // framebufferInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
-    // framebufferInfo.pAttachments = attachments.data();
-    // framebufferInfo.width = sc.renderExtent.width;
-    // framebufferInfo.height = sc.renderExtent.height;
-    // framebufferInfo.layers = 1;
 
-    // if (vkCreateFramebuffer(vulkan.device, &framebufferInfo, nullptr, &this->renderFramebuffer)
-    // !=
-    //     VK_SUCCESS) {
-    //   throw std::runtime_error("failed to create framebuffer!");
-    // }
 
     // ---- Allocate the semaphores and fence for this frame ---- //
     VkSemaphoreCreateInfo semaphoreInfo{};
@@ -111,21 +69,46 @@ namespace ren {
 
     VkCommandBuffer commandBuffer;
     vkAllocateCommandBuffers(vulkan.device, &allocInfo, &this->commandBuffer);
+
+
+    // Create timestamp query pool
+    VkQueryPoolCreateInfo queryPoolInfo = {};
+    queryPoolInfo.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
+    queryPoolInfo.queryType = VK_QUERY_TYPE_TIMESTAMP;
+    queryPoolInfo.queryCount = this->query_count;
+
+    VK_CHECK(vkCreateQueryPool(vulkan.device, &queryPoolInfo, nullptr, &queryPool));
+
+    auto cmd = vulkan.beginSingleTimeCommands();
+    vkCmdResetQueryPool(cmd, queryPool, 0, query_count);
+    vulkan.endSingleTimeCommands(cmd);
   }
 
 
   FrameData::~FrameData() {
     auto &vulkan = ren::getVulkan();
 
+    vkDestroyQueryPool(vulkan.device, this->queryPool, nullptr);
+
     // This needs to be done because the ImageView is not managed by the Swapchain
     vkDestroyImageView(vulkan.device, this->deviceImage->getImageView(), nullptr);
-    this->renderImage.reset();
     this->depthImage.reset();
     this->deviceImage.reset();
-    vkDestroyFramebuffer(vulkan.device, this->renderFramebuffer, nullptr);
-    vkDestroyFramebuffer(vulkan.device, this->deviceFramebuffer, nullptr);
+    this->renderTarget.reset();
     vkDestroySemaphore(vulkan.device, this->imageAvailableSemaphore, nullptr);
     vkDestroySemaphore(vulkan.device, this->renderFinishedSemaphore, nullptr);
     vkDestroyFence(vulkan.device, this->inFlightFence, nullptr);
+  }
+
+  std::vector<u64> FrameData::getQueryResults(void) {
+    std::vector<u64> results = {};
+    results.resize(query_count, 0);
+    if (query_count > 0) {
+      auto &vulkan = ren::getVulkan();
+      vkGetQueryPoolResults(vulkan.device, this->queryPool, 0, query_count,
+                            sizeof(u64) * query_count, results.data(), sizeof(u64),
+                            VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT);
+    }
+    return results;
   }
 }  // namespace ren

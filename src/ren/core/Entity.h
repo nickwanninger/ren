@@ -42,6 +42,10 @@ namespace ren {
       assert(has<T>() && "Entity does not have component!");
       return scene->registry.get<T>(handle);
     }
+    template <typename T>
+    T* tryGet() {
+      return scene->registry.try_get<T>(handle);
+    }
 
     template <typename... T>
     bool has() {
@@ -59,13 +63,19 @@ namespace ren {
     operator u32() const { return (u32)handle; }
 
     UUID getUUID() { return get<comp::ID>().uuid; }
-    const std::string& GetName() { return get<comp::Name>().name; }
+    const std::string& getName() { return get<comp::Name>().name; }
 
     bool operator==(const Entity& other) const {
       return handle == other.handle && scene == other.scene;
     }
 
     bool operator!=(const Entity& other) const { return !(*this == other); }
+
+    json serialize(void);
+
+    glm::vec3& translation() { return get<comp::Transform>().translation; }
+    glm::vec3& rotation() { return get<comp::Transform>().rotation; }
+    glm::vec3& scale() { return get<comp::Transform>().scale; }
 
    private:
     entt::entity handle = entt::null;

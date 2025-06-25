@@ -51,6 +51,8 @@ add_executable(ren
   lib/spirv_reflect/output_stream.cpp
   lib/vkb/VkBootstrap.cpp
   lib/stb/stb_image.c
+  lib/tinyobjloader/tiny_obj_loader.cc
+  lib/tinygltf/tiny_gltf.cc
 
   ${IMGUI_SOURCES}
 )
