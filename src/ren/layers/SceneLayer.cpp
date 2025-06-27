@@ -18,7 +18,7 @@ namespace ren {
 
   void SceneLayer::onAttach(void) {
     REN_PROFILE_FUNCTION();
-    fmt::println("Scene Layer Attached");
+    fmt::print("Scene Layer Attached\n");
 
     Entity cube = scene.createEntity("Cube 1");
     cube.add<comp::Mesh>(ren::loadGLTF("assets/test/meshes/unit_cube.glb"));
@@ -45,7 +45,7 @@ namespace ren {
   void SceneLayer::onDetach(void) {
     REN_PROFILE_FUNCTION();
 
-    fmt::println("Scene Layer Detached");
+    fmt::print("Scene Layer Detached\n");
     // Cleanup the render target for the current scene.
   }
 

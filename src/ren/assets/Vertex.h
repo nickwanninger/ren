@@ -29,8 +29,8 @@ namespace ren {
 
       // Vertex::pos
       attrs.push_back(VkVertexInputAttributeDescription{
-          .binding = 0,
           .location = (u32)attrs.size(),
+          .binding = 0,
           .format = VK_FORMAT_R32G32B32_SFLOAT,
           .offset = offsetof(Vertex, pos),
       });
@@ -46,16 +46,16 @@ namespace ren {
 
       // Vertex::normal
       attrs.push_back(VkVertexInputAttributeDescription{
-          .binding = 0,
           .location = (u32)attrs.size(),
+          .binding = 0,
           .format = VK_FORMAT_R32G32B32_SFLOAT,
           .offset = offsetof(Vertex, normal),
       });
 
       // Vertex::texCoord
       attrs.push_back(VkVertexInputAttributeDescription{
-          .binding = 0,
           .location = (u32)attrs.size(),
+          .binding = 0,
           .format = VK_FORMAT_R32G32_SFLOAT,
           .offset = offsetof(Vertex, texCoord),
       });
