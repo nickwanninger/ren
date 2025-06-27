@@ -3,7 +3,8 @@
 #include <ren/assets/Vertex.h>
 
 
-VkAttachmentDescription &ren::RenderPass::Description::addColor(VkFormat format) {
+VkAttachmentDescription &ren::RenderPass::Description::addColorAttachment(const std::string &name,
+                                                                          VkFormat format) {
   VkAttachmentDescription attachment{};
   attachment.format = format;
   attachment.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -15,10 +16,11 @@ VkAttachmentDescription &ren::RenderPass::Description::addColor(VkFormat format)
   attachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
   attachments.push_back(attachment);
+  attachmentNames.push_back(name);
   return attachments.back();
 }
 
-VkAttachmentDescription &ren::RenderPass::Description::addDepth() {
+VkAttachmentDescription &ren::RenderPass::Description::addDepthAttachment(const std::string &name) {
   VkAttachmentDescription attachment{};
   attachment.format = getVulkan().findDepthFormat();
   attachment.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -30,6 +32,7 @@ VkAttachmentDescription &ren::RenderPass::Description::addDepth() {
   attachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
   attachments.push_back(attachment);
+  attachmentNames.push_back(name);
   return attachments.back();
 }
 
@@ -55,6 +58,54 @@ void ren::RenderPass::cleanup(void) {
   }
 }
 
+
+ren::ref<ren::RenderTarget> ren::RenderPass::createRenderTarget(u32 width, u32 height) {
+  // Create a render target with the given width and height.
+  RenderTargetDescription rtDesc;
+  rtDesc.attachments.clear();
+
+
+  // Add all the attachments from the render pass description.
+  for (int i = 0; i < this->desc.attachments.size(); ++i) {
+    auto &attachment = this->desc.attachments[i];
+    auto &name = this->desc.attachmentNames[i];
+
+    // Allocate a image view for this attachment.
+    // We will use the same format as the attachment.
+
+
+    if (attachment.finalLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
+      // This is a depth attachment.
+      auto image = ren::ImageBuilder(name)
+                       .setWidth(width)
+                       .setHeight(height)
+                       .setFormat(attachment.format)
+                       .setViewAspectMask(VK_IMAGE_ASPECT_DEPTH_BIT)
+                       .setUsage(VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
+                                 VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT)
+                       .build();
+
+      rtDesc.attachments.push_back(
+          RenderTargetAttachment(RenderTargetAttachmentTypeDepth, image, attachment.format, name));
+    } else {
+      // This is a color attachment.
+      auto image = ren::ImageBuilder(name)
+                       .setWidth(width)
+                       .setHeight(height)
+                       .setFormat(attachment.format)
+                       .setViewAspectMask(VK_IMAGE_ASPECT_COLOR_BIT)
+                       .setUsage(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
+                                 VK_IMAGE_USAGE_TRANSFER_SRC_BIT)
+                       .build();
+
+      rtDesc.attachments.push_back(
+          RenderTargetAttachment(RenderTargetAttachmentTypeColor, image, attachment.format, name));
+    }
+  }
+
+  // Create the render target with the render pass reference.
+  return makeRef<RenderTarget>(rtDesc, shared_from_this());
+}
 
 void ren::RenderPass::build(void) {
   auto &vulkan = getVulkan();
@@ -121,54 +172,3 @@ void ren::RenderPass::build(void) {
     throw std::runtime_error("failed to create render pass!");
   }
 }
-
-#if 0
-void ren::RenderPass::populateDefaultCreateInfo(void) {
-
-
-  // ---- Depth Attachment ---- //
-  depthAttachment.format = vulkan.findDepthFormat();
-  depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-  depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-  depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-  depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-  depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-  depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-  depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-  depthAttachmentRef.attachment = 1;
-  depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-  // ---- Subpass Dependency ---- //
-  //   TODO: What is this?
-  subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-  subpass.colorAttachmentCount = 1;
-  subpass.pColorAttachments = &colorAttachmentRef;
-  subpass.pDepthStencilAttachment = &depthAttachmentRef;
-
-  dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
-  dependency.dstSubpass = 0;
-  dependency.srcAccessMask = 0;
-  dependency.srcStageMask =
-      VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-  dependency.dstStageMask =
-      VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-  dependency.dstAccessMask =
-      VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-
-
-  // ---- Attachments ---- //
-
-  attachments.clear();
-
-  attachments.push_back(colorAttachment);
-  attachments.push_back(depthAttachment);
-
-
-  renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-  renderPassInfo.subpassCount = 1;
-  renderPassInfo.pSubpasses = &subpass;
-  renderPassInfo.dependencyCount = 1;
-  renderPassInfo.pDependencies = &dependency;
-}
-#endif

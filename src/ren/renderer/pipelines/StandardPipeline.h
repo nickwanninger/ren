@@ -5,10 +5,11 @@
 #include <ren/renderer/Shader.h>
 
 namespace ren {
+  class RenderPass;
 
   class StandardPipeline : public VulkanPipeline {
    public:
-    StandardPipeline(ref<Shader> vertexShader, ref<Shader> fragmentShader,
+    StandardPipeline(ref<RenderPass> renderpass, ref<Shader> vertexShader, ref<Shader> fragmentShader,
                      VkDescriptorSetLayout descriptorSetLayout);
 
     ~StandardPipeline() override = default;

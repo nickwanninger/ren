@@ -1,7 +1,7 @@
 
 #include <ren/core/Application.h>
 #include <ren/layers/ImGuiLayer.h>
-
+#include <ren/renderer/pipelines/StandardPipeline.h>
 #include <imgui.h>
 #include <imgui_impl_vulkan.h>
 #include <imgui_impl_sdl2.h>
@@ -71,6 +71,86 @@ namespace ren {
 
     auto &vulkan = ren::getVulkan();
 
+    // ---------------------------------------------------
+
+    // Okay. lets make a simple g buffer opaque pass.
+    RenderPass::Description renderPassDesc;
+    // Add a few attachments to the render pass for the gbuffer.
+
+    // HDR emissive data.
+    renderPassDesc.addColorAttachment("emissive", VK_FORMAT_R8G8B8A8_UNORM);
+    // Albedo/diffuse color data.
+    renderPassDesc.addColorAttachment("albedo", VK_FORMAT_R8G8B8A8_UNORM);
+    // World space normal data.
+    renderPassDesc.addColorAttachment("normal", VK_FORMAT_R16G16B16A16_SNORM);
+    // PBR data (R= metallic, G=roughness, B=?).
+    renderPassDesc.addColorAttachment("pbr", VK_FORMAT_R8G8B8A8_UNORM);
+    renderPassDesc.addDepthAttachment("depthStencil");
+    auto renderPass = makeRef<RenderPass>(renderPassDesc);
+
+    // now make a render target for the gbuffer.
+    auto target = renderPass->createRenderTarget(512, 512);
+    fmt::println("Created render target {}", (u64)target->getHandle());
+    // Make an empty descriptor set layout for the gbuffer because for now we don't have any textures or samplers.
+
+    // TODO: abstract this crap. (Maybe reflect it from the shaders.)
+    VkDescriptorSetLayout gbufferLayout = VK_NULL_HANDLE;
+    {
+      REN_PROFILE_SCOPE("Create GBuffer Descriptor Set Layout");
+
+      VkDescriptorSetLayoutCreateInfo layoutInfo{};
+      layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+      layoutInfo.bindingCount = 0;
+      layoutInfo.pBindings = nullptr;
+
+      if (vkCreateDescriptorSetLayout(vulkan.device, &layoutInfo, nullptr,
+                                      &gbufferLayout) != VK_SUCCESS) {
+        throw std::runtime_error("failed to create descriptor set layout!");
+      }
+    }
+
+    // but, to make those buffers, we need to make a render pipeline!
+    auto gbufferPipeline = StandardPipeline(
+      renderPass,
+      makeRef<VertexShader>("shaders/opaque.vert.spv"),
+      makeRef<FragmentShader>("shaders/opaque.frag.spv"),
+      gbufferLayout
+    );
+
+    // Now we have a deferred rendering pipeline.
+
+
+    // Make a simple triangle to render in screen space.
+    std::vector<Vertex> vertices = {
+        Vertex(glm::vec3(-0.5f, -0.5f, 0.0f)),
+        Vertex(glm::vec3(-0.5f,  0.5f, 0.0f)),
+        Vertex(glm::vec3( 0.5f,  0.5f, 0.0f)),
+    };
+    std::vector<u32> indices = {0, 1, 2};
+
+    auto vertexBuffer = VertexBuffer(vertices);
+    auto indexBuffer = IndexBuffer(indices);
+
+    auto render_test = [&]() {
+      REN_PROFILE_SCOPE("My Render Test");
+
+
+      renderer->withPass(*renderPass, *target, [&]() {
+        REN_PROFILE_SCOPE("Render Test Pass");
+        auto cmd = ren::getFrameData().commandBuffer;
+        gbufferPipeline.bind(cmd);
+
+        ren::bind(cmd, vertexBuffer);
+        ren::bind(cmd, indexBuffer);
+        // draw a single triangle on the screen.
+        vkCmdDrawIndexed(cmd, indices.size(), 1, 0, 0, 0);
+      });
+    };
+
+    // ---------------------------------------------------
+
+
+
     while (this->running) {
       int eventsHandled = 0;
       REN_PROFILE_SCOPE("Frame");
@@ -112,7 +192,7 @@ namespace ren {
       auto &frame = ren::getFrameData();
 
 
-      {
+      if (0) {
         REN_PROFILE_SCOPE("Render Graph Setup");
         ren::RenderGraph graph;
         auto shadowMap = graph.addNode("ShadowMap");
@@ -153,6 +233,8 @@ namespace ren {
         // exit(0);
       }
 
+
+      render_test();
       // VkPhysicalDeviceProperties deviceProps;
       // vkGetPhysicalDeviceProperties(vulkan.physical_device, &deviceProps);
       // auto timestamps = frame.getQueryResults();
@@ -185,6 +267,7 @@ namespace ren {
           ImGui::NewFrame();
         }
 
+        
 
         layerStack.onImGuiRender(deltaTime);
 

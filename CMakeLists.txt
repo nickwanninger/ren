@@ -11,7 +11,8 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(SDL2 REQUIRED sdl2)
 find_package(Vulkan REQUIRED)
-find_package(fmt REQUIRED)
+
+add_subdirectory(lib/fmt)
 
 
 # Add some of the libraries we vendor

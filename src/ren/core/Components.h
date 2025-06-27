@@ -66,6 +66,22 @@ namespace ren {
     };
 
 
+    // The Relationship component is used to define parent-child relationships
+    // between entities.  It is used to create a transformation hierarchy, where
+    // a parent entity's transformation affects its children.
+    // This is meant to be used through the Entity abstraction, not directly.
+    struct Relationship {
+      // This is the parent entity of this entity.
+      entt::entity parent = entt::null;
+      size_t children = 0; // how many children this entity has.
+      entt::entity firstChild = entt::null; // The first child of this entity.
+
+      // We represent the siblings of an entity as a linked list.
+      entt::entity prevSibling = entt::null; // The previous sibling of this entity.
+      entt::entity nextSibling = entt::null; // The next sibling of this entity
+    };
+
+
     class Mesh {
       ref<ren::Mesh> mesh;
 

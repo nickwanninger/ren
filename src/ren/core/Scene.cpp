@@ -23,6 +23,9 @@ namespace ren {
     entity.add<comp::Name>(name);
     // This places it at 0,0,0 by default.
     entity.add<comp::Transform>();
+    // Add a default relationship component.
+    entity.add<comp::Relationship>();
+
     // Then register the entity with the scene.
     entities[uuid] = entity;
     return entity;

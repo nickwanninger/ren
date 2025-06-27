@@ -24,8 +24,8 @@ namespace ren {
 
 
     RenderPass::Description rpDesc;
-    rpDesc.addColor(vulkan->swapchainFormat);
-    rpDesc.addDepth();
+    rpDesc.addColorAttachment("backbuffer", vulkan->swapchainFormat);
+    rpDesc.addDepthAttachment("backbuffer_depth");
 
     // Create the render pass.
     this->renderPass = makeRef<ren::RenderPass>(rpDesc);
@@ -63,10 +63,23 @@ namespace ren {
     renderPassInfo.renderArea.offset = {0, 0};
     renderPassInfo.renderArea.extent = {target.getWidth(), target.getHeight()};
 
-    // TODO: figure out if we need to clear the render targets
-    std::array<VkClearValue, 2> clearValues{};
-    clearValues[0].color = {{1.0f, 1.0f, 1.0f, 1.0f}};
-    clearValues[1].depthStencil = {1.0f, 0};
+    std::vector<VkClearValue> clearValues;
+
+    for (const auto &attachment : pass.getDescription().attachments) {
+      if (attachment.loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR) {
+        // If the attachment is a color attachment, clear it to white.
+        if (attachment.format != VK_FORMAT_D32_SFLOAT && attachment.format != VK_FORMAT_D24_UNORM_S8_UINT) {
+          clearValues.push_back({.color = {{0.0f, 0.0f, 0.0f, 0.0f}}});
+        } else {
+          // Otherwise, it's a depth attachment, clear it to 1.0f.
+          clearValues.push_back({.depthStencil = {1.0f, 0}});
+        }
+      } else {
+        // If the attachment is not cleared, we don't need to specify a clear value.
+        clearValues.push_back({});
+      }
+    }
+
 
     renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
     renderPassInfo.pClearValues = clearValues.data();
@@ -127,6 +140,9 @@ namespace ren {
     if (vkBeginCommandBuffer(cmd, &beginInfo) != VK_SUCCESS) {
       throw std::runtime_error("failed to begin recording command buffer!");
     }
+
+    // Clear the descriptor pool for this frame to make space for new descriptor sets.
+    vkResetDescriptorPool(vulkan->device, frame->descriptorPool, 0);
   }
 
   void Renderer::endFrame(void) {

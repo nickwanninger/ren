@@ -19,7 +19,7 @@ namespace ren {
     auto &vulkan = ren::getVulkan();
 
     // 1: create descriptor pool for IMGUI
-    // the size of the pool is very oversize, but it's copied from imgui demo itself.
+    // the size of the pool is very oversized, but it's copied from imgui demo itself.
     VkDescriptorPoolSize pool_sizes[] = {
         //
         {VK_DESCRIPTOR_TYPE_SAMPLER, 1000},

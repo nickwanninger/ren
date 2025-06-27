@@ -58,8 +58,8 @@ namespace ren {
     this->imageFormat = vkb_swapchain.image_format;
     this->depthFormat = vulkan.findDepthFormat();
 
-    fmt::print("Vulkan swapchain created with {} images, extent: {}x{}\n", images.size(),
-               deviceExtent.width, deviceExtent.height);
+    fmt::print("Vulkan swapchain created with {} images, extent: {}x{}. format={}\n", images.size(),
+               deviceExtent.width, deviceExtent.height, (u32)imageFormat);
 
     for (u64 i = 0; i < images.size(); i++) {
       frames.push_back(makeBox<ren::FrameData>(i, *this, images[i], imageViews[i]));

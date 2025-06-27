@@ -3,7 +3,8 @@
 #include <ren/renderer/Shader.h>
 namespace ren {
 
-  StandardPipeline::StandardPipeline(ref<Shader> vertexShader, ref<Shader> fragmentShader,
+  StandardPipeline::StandardPipeline(ref<RenderPass> renderpass, ref<Shader> vertexShader,
+                                     ref<Shader> fragmentShader,
                                      VkDescriptorSetLayout descriptorSetLayout) {
     this->bindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
     auto &vulkan = ren::getVulkan();
@@ -73,17 +74,30 @@ namespace ren {
     multisampling.alphaToOneEnable = VK_FALSE;       // Optional
 
 
-    // ---- Color Blend Attachment State ---- //
-    VkPipelineColorBlendAttachmentState colorBlendAttachment{};
-    colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
-                                          VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-    colorBlendAttachment.blendEnable = VK_FALSE;
-    colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;   // Optional
-    colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ZERO;  // Optional
-    colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;              // Optional
-    colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;   // Optional
-    colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;  // Optional
-    colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;              // Optional
+    int colorAttachmentCount = 4;
+    for (auto &attachment : renderpass->getDescription().attachments) {
+      if (attachment.finalLayout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL) {
+        colorAttachmentCount++;
+      }
+    }
+
+    std::vector<VkPipelineColorBlendAttachmentState> colorBlendAttachments;
+
+    for (int i = 0; i < colorAttachmentCount; ++i) {
+      // ---- Color Blend Attachment State ---- //
+      VkPipelineColorBlendAttachmentState colorBlendAttachment{};
+      colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                                            VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+      colorBlendAttachment.blendEnable = VK_FALSE;
+      colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;   // Optional
+      colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ZERO;  // Optional
+      colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;              // Optional
+      colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;   // Optional
+      colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;  // Optional
+      colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;              // Optional
+      colorBlendAttachments.push_back(colorBlendAttachment);
+    }
+
 
 
     // ---- Color Blending Create Info ---- //
@@ -91,8 +105,8 @@ namespace ren {
     colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
     colorBlending.logicOpEnable = VK_FALSE;
     colorBlending.logicOp = VK_LOGIC_OP_COPY;  // Optional
-    colorBlending.attachmentCount = 1;
-    colorBlending.pAttachments = &colorBlendAttachment;
+    colorBlending.attachmentCount = colorAttachmentCount;
+    colorBlending.pAttachments = colorBlendAttachments.data();
     colorBlending.blendConstants[0] = 0.0f;  // Optional
     colorBlending.blendConstants[1] = 0.0f;  // Optional
     colorBlending.blendConstants[2] = 0.0f;  // Optional
@@ -161,8 +175,7 @@ namespace ren {
     // Then we reference all of the structures describing the fixed-function stage.
     pipelineInfo.layout = pipelineLayout;
     // After that comes the pipeline layout, which is a Vulkan handle rather than a struct pointer.
-    abort();
-    // pipelineInfo.renderPass = vulkan.renderPass->getHandle();
+    pipelineInfo.renderPass = renderpass->getHandle();
     pipelineInfo.subpass = 0;
     // Required for compat
     pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;  // Optional

@@ -77,8 +77,51 @@ namespace ren {
     glm::vec3& rotation() { return get<comp::Transform>().rotation; }
     glm::vec3& scale() { return get<comp::Transform>().scale; }
 
+
+
+    // ---- Scene Graph Relationships ---- //
+    size_t getChildrenCount() { return get<comp::Relationship>().children; }
+    Entity getParent() { return Entity(get<comp::Relationship>().parent, scene); }
+
+    template <typename T>
+    void eachChild(T&& callback) {
+      auto& registry = scene->registry;
+      auto& comp = registry.get<comp::Relationship>(handle);
+      auto curr = comp.firstChild;
+
+      for (std::size_t i{}; i < comp.children; ++i) {
+        Entity child(curr, scene);
+
+        callback(child);
+
+        curr = registry.get<comp::Relationship>(curr).nextSibling;
+      }
+    }
+
+    void addChild(Entity child);
+    void removeChild(Entity child);
+
+    json serializeRelationships(void);
+
    private:
     entt::entity handle = entt::null;
     Scene* scene = nullptr;
+
+
+   private:
+    // Private methods to adjust relationships.
+    inline void setNextSibling(Entity sibling) { get<comp::Relationship>().nextSibling = sibling; }
+    inline void setPrevSibling(Entity sibling) { get<comp::Relationship>().prevSibling = sibling; }
+    inline void setFirstChild(Entity child) { get<comp::Relationship>().firstChild = child; }
+
+    inline auto getNextSibling(void) { return Entity(get<comp::Relationship>().nextSibling, scene); }
+    inline auto getPrevSibling(void) { return Entity(get<comp::Relationship>().prevSibling, scene); }
+    inline auto getFirstChild(void) { return Entity(get<comp::Relationship>().firstChild, scene); }
+
+
+    void setParent(Entity parent) {
+      get<comp::Relationship>().parent = parent.handle;
+      if (parent.handle != entt::null) { parent.get<comp::Relationship>().children++; }
+    }
   };
 }  // namespace ren

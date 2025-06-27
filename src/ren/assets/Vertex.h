@@ -12,9 +12,15 @@ namespace ren {
     glm::vec3 normal;
     glm::vec2 texCoord;
 
-
-
     JSON_SERIALIZE(Vertex, pos, normal, texCoord);
+
+    Vertex(glm::vec3 pos = glm::vec3(0,0,0),  glm::vec3 normal = glm::vec3(0.0f, 0.0f, 1.0f),
+           glm::vec2 texCoord = glm::vec2(0.0f, 0.0f))
+        : pos(pos), normal(normal), texCoord(texCoord) {
+    }
+
+
+
 
     static VkVertexInputBindingDescription getBindingDesc() {
       VkVertexInputBindingDescription bindingDescription{};

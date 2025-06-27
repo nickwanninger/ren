@@ -6,6 +6,7 @@ namespace ren {
   class RenderPass;
 
 
+
   enum RenderTargetAttachmentType {
     RenderTargetAttachmentTypeColor,
     RenderTargetAttachmentTypeDepth,
@@ -15,16 +16,21 @@ namespace ren {
     RenderTargetAttachmentType type = RenderTargetAttachmentTypeColor;
 
 
+
     // The texture to render into.
     ren::ImageRef texture = nullptr;
 
     // The format of the image attachment.
     VkFormat format = VK_FORMAT_UNDEFINED;
 
-    RenderTargetAttachment(RenderTargetAttachmentType type, ImageRef texture, VkFormat format)
+    std::string name;
+
+    RenderTargetAttachment(RenderTargetAttachmentType type, ImageRef texture, VkFormat format,
+                           const std::string name = "attachment")
         : type(type)
         , texture(texture)
-        , format(format) {}
+        , format(format)
+        , name(name) {}
   };
 
 
@@ -48,6 +54,7 @@ namespace ren {
 
     u32 getWidth(void) const { return width; }
     u32 getHeight(void) const { return height; }
+    auto &getAttachments(void) { return attachments; }
 
    private:
     u32 width, height;

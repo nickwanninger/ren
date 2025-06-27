@@ -33,6 +33,8 @@ namespace ren {
     ren::ImageRef depthImage = nullptr;  // The depth buffer for rendering.
 
 
+    // Per-frame descriptor set pool
+
     // Semaphores for synchronizing the rendering process.
 
     // Signals when the image is ready to be rendered to.
@@ -46,8 +48,11 @@ namespace ren {
     // The uniform buffer to render this frame's scene.
     ref<UniformBuffer<UniformBufferObject>> uniformBuffer = nullptr;
 
+
+    // ---- Per frame data, reset at the start of each frame ---- //
     // The command buffer that we record the rendering commands into.
     VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
+    VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
 
     // Query pool for GPU performance queries.
     constexpr static u32 query_count = 2;

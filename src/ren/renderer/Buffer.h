@@ -11,8 +11,7 @@ namespace ren {
   // Represents a buffer in Vulkan memory.
   class Buffer {
    public:
-    Buffer(VulkanInstance &vulkan_instance, VkDeviceSize size, VkBufferUsageFlags usage,
-           VkMemoryPropertyFlags properties);
+    Buffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties);
 
     virtual ~Buffer();
 
@@ -42,7 +41,6 @@ namespace ren {
 
 
    protected:
-    VulkanInstance &vulkan;
     std::string name = "UnnamedBuffer";
 
     VmaAllocation allocation = VK_NULL_HANDLE;
@@ -60,9 +58,8 @@ namespace ren {
   class TypedBuffer : public Buffer {
    public:
     using EntryType = T;
-    TypedBuffer(VulkanInstance &vulkan, size_t count, VkBufferUsageFlags usage,
-                VkMemoryPropertyFlags properties)
-        : Buffer(vulkan, count * sizeof(T), usage, properties) {}
+    TypedBuffer(size_t count, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties)
+        : Buffer(count * sizeof(T), usage, properties) {}
     virtual ~TypedBuffer() = default;
 
 
@@ -84,17 +81,17 @@ namespace ren {
                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT>
   class FixedUsageTypedBuffer : public TypedBuffer<T> {
    public:
-    FixedUsageTypedBuffer(VulkanInstance &vulkan, size_t count)
-        : TypedBuffer<T>(vulkan, count, usage, properties) {}
+    FixedUsageTypedBuffer(size_t count)
+        : TypedBuffer<T>(count, usage, properties) {}
 
 
-    FixedUsageTypedBuffer(VulkanInstance &vulkan, T *initial, size_t count)
-        : TypedBuffer<T>(vulkan, count, usage, properties) {
+    FixedUsageTypedBuffer(T *initial, size_t count)
+        : TypedBuffer<T>(count, usage, properties) {
       this->copyFromHost(initial, count);
     }
 
-    FixedUsageTypedBuffer(VulkanInstance &vulkan, const std::vector<T> &initial)
-        : TypedBuffer<T>(vulkan, initial.size(), usage, properties) {
+    FixedUsageTypedBuffer(const std::vector<T> &initial)
+        : TypedBuffer<T>(initial.size(), usage, properties) {
       this->copyFromHost(initial.data(), initial.size());
     }
 

@@ -26,7 +26,7 @@ ren::Texture::Texture(const std::string &name, u32 width, u32 height, u8 *pixels
 
   VkDeviceSize imageSize = getWidth() * getHeight() * 4;
   ren::Buffer stagingBuffer(
-      vulkan, imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+      imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
   if (pixels != nullptr) stagingBuffer.copyFromHost(pixels, imageSize);

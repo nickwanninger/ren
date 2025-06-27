@@ -1,11 +1,9 @@
 #include <ren/renderer/Vulkan.h>
 #include <ren/core/Instrumentation.h>
 
-ren::Buffer::Buffer(VulkanInstance &vulkan_instance, VkDeviceSize size, VkBufferUsageFlags usage,
-                    VkMemoryPropertyFlags properties)
-
-    : vulkan(vulkan_instance)
-    , size(size)
+ren::Buffer::Buffer( VkDeviceSize size, VkBufferUsageFlags usage,
+                    VkMemoryPropertyFlags properties) 
+    : size(size)
     , usage(usage)
     , properties(properties) {
   REN_PROFILE_FUNCTION();
@@ -25,7 +23,7 @@ ren::Buffer::Buffer(VulkanInstance &vulkan_instance, VkDeviceSize size, VkBuffer
 ren::Buffer::~Buffer() {
   unmap();
 
-  vmaDestroyBuffer(vulkan.allocator, buffer, allocation);
+  vmaDestroyBuffer(getVulkan().allocator, buffer, allocation);
 }
 
 void ren::Buffer::resize(size_t new_bytes) {
@@ -44,14 +42,14 @@ void ren::Buffer::resize(size_t new_bytes) {
                     VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
 
 
-  vmaCreateBuffer(vulkan.allocator, &bufferInfo, &allocInfo, &buffer, &allocation, nullptr);
+  vmaCreateBuffer(getVulkan().allocator, &bufferInfo, &allocInfo, &buffer, &allocation, nullptr);
 }
 
 
 void *ren::Buffer::map(void) {
   if (this->mapped == nullptr) {
     // Map the memory
-    vmaMapMemory(vulkan.allocator, this->allocation, &this->mapped);
+    vmaMapMemory(getVulkan().allocator, this->allocation, &this->mapped);
   }
   return this->mapped;
 }
@@ -60,7 +58,7 @@ void *ren::Buffer::map(void) {
 void ren::Buffer::unmap(void) {
   if (this->mapped != nullptr) {
     // Unmap the memory
-    vmaUnmapMemory(vulkan.allocator, this->allocation);
+    vmaUnmapMemory(getVulkan().allocator, this->allocation);
     this->mapped = nullptr;
   }
 }
@@ -68,7 +66,7 @@ void ren::Buffer::unmap(void) {
 
 void ren::Buffer::copyFrom(const Buffer &src, VkDeviceSize size, VkDeviceSize srcOffset,
                            VkDeviceSize dstOffset) {
-  this->vulkan.copy_buffer(src.buffer, this->buffer, size);
+  getVulkan().copy_buffer(src.buffer, this->buffer, size);
 }
 
 
