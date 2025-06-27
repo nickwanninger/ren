@@ -1,6 +1,9 @@
 #include <imgui.h>
 #include <imgui_impl_sdl2.h>
 #include <imgui_impl_vulkan.h>
+#include <imgui_internal.h>
+
+
 #include <glm/gtc/type_ptr.hpp>
 
 #include <ren/layers/SceneLayer.h>
@@ -21,11 +24,12 @@ namespace ren {
     fmt::print("Scene Layer Attached\n");
 
     Entity cube = scene.createEntity("Cube 1");
-    cube.add<comp::Mesh>(ren::loadGLTF("assets/test/meshes/unit_cube.glb"));
+    auto mesh = ren::loadGLTF("assets/test/meshes/unit_cube.glb");
+    cube.add<comp::Mesh>(mesh);
 
 
     Entity cube2 = scene.createEntity("Cube 2");
-    cube2.add<comp::Mesh>(ren::loadGLTF("assets/test/meshes/unit_cube.glb"));
+    cube2.add<comp::Mesh>(mesh);
     cube2.translation().y = 1.0f;
 
 
@@ -55,6 +59,66 @@ namespace ren {
   }
 
 
+  static void drawVec3Control(const std::string &label, glm::vec3 &values, float resetValue = 0.0f,
+                              float columnWidth = 100.0f) {
+    ImGui::PushID(&values);
+    ImGui::Columns(2);
+
+    ImGui::SetColumnWidth(0, columnWidth);
+    ImGui::Text("%s", label.c_str());
+    ImGui::NextColumn();
+
+
+    ImGui::PushMultiItemsWidths(3, ImGui::CalcItemWidth());
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2{0, 0});
+
+    float lineheight = ImGui::GetFrameHeightWithSpacing();
+    ImVec2 buttonSize = ImVec2{lineheight + 3, lineheight};
+
+
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{0.8f, 0.1f, 0.15f, 1.0f});
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4{0.9f, 0.2f, 0.2f, 1.0f});
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4{0.8f, 0.1f, 0.15f, 1.0f});
+    if (ImGui::Button("X", buttonSize)) { values.x = resetValue; }
+    ImGui::PopStyleColor(3);
+
+    ImGui::SameLine();
+    ImGui::DragFloat("##X", &values.x, 0.1f);
+    ImGui::PopItemWidth();
+    ImGui::SameLine();
+
+
+
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{0.2f, 0.7f, 0.3f, 1.0f});
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4{0.2f, 0.9f, 0.3f, 1.0f});
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4{0.2f, 0.7f, 0.3f, 1.0f});
+    if (ImGui::Button("Y", buttonSize)) { values.y = resetValue; }
+    ImGui::PopStyleColor(3);
+
+    ImGui::SameLine();
+    ImGui::DragFloat("##Y", &values.y, 0.1f);
+    ImGui::PopItemWidth();
+    ImGui::SameLine();
+
+
+
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{0.1f, 0.25f, 0.8f, 1.0f});
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4{0.2f, 0.35f, 0.9f, 1.0f});
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4{0.1f, 0.25f, 0.8f, 1.0f});
+    if (ImGui::Button("Z", buttonSize)) { values.z = resetValue; }
+    ImGui::PopStyleColor(3);
+
+    ImGui::SameLine();
+    ImGui::DragFloat("##Z", &values.z, 0.1f);
+    ImGui::PopItemWidth();
+
+
+    ImGui::PopStyleVar();
+    ImGui::Columns(1);
+    ImGui::PopID();
+  }
+
+
   void SceneLayer::onImguiRender(float deltaTime) {
     REN_PROFILE_FUNCTION();
 
@@ -63,9 +127,9 @@ namespace ren {
 
 
     if (ImGui::CollapsingHeader("Scene Information")) {
-      ImGui::DragFloat3("Camera Position", glm::value_ptr(camera.position), 0.1f);
-      ImGui::DragFloat3("Camera Rotation", glm::value_ptr(camera.angles), 0.1f);
-      ImGui::DragFloat3("Camera Velocity", glm::value_ptr(camera.velocity), 0.1f);
+      drawVec3Control("Position", camera.position, 0.0f, 100.0f);
+      drawVec3Control("Rotation", camera.angles, 0.0f, 100.0f);
+      drawVec3Control("Velocity", camera.velocity, 0.0f, 100.0f);
     }
 
 
@@ -80,9 +144,9 @@ namespace ren {
     for (auto [entity, id, name, transform] : view.each()) {
       ImGui::PushID((u32)entity);
       ImGui::Text("Entity: %s (ID: 0x%llx)", name.name.c_str(), (u64)id.uuid);
-      ImGui::DragFloat3("Position", glm::value_ptr(transform.translation), 0.1f);
-      ImGui::DragFloat3("Rotation", glm::value_ptr(transform.rotation), 0.1f);
-      ImGui::DragFloat3("Scale   ", glm::value_ptr(transform.scale), 0.1f);
+      drawVec3Control("Position", transform.translation, 0.0f, 100.0f);
+      drawVec3Control("Rotation", transform.rotation, 0.0f, 100.0f);
+      drawVec3Control("Scale", transform.scale, 1.0f, 100.0f);
       ImGui::PopID();
     }
 

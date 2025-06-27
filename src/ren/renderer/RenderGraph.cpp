@@ -39,37 +39,76 @@ namespace ren {
     auto node = makeRef<GraphNode>(desc);
     nodes[uuid] = node;
 
-    fmt::println("Added GraphNode '{}' with ID: {}", name, (u64)uuid);
+    // fmt::println("Added GraphNode '{}' with ID: {}", name, (u64)uuid);
 
     return node;
   }
 
   void RenderGraph::dump() {
-    fmt::println("RenderGraph Dump:");
+    fmt::println("// https://dreampuf.github.io/GraphvizOnline/?engine=dot");
+    fmt::println("digraph RenderGraph {{");
+    // fmt::println("  rankdir=LR;");
+    fmt::println("  node [shape=box];");
+
+
     for (const auto &[uuid, node] : nodes) {
-      fmt::println("Node ID: {}, Name: {}", (u64)uuid, node->desc.name);
-      fmt::println("  Inputs:");
+      fmt::println("  subgraph cluster_{} {{", node->desc.name);
+      fmt::println("     style=filled; color=lightgrey; label=\"{}\"", node->desc.name);
+      fmt::println("     rp_{} [label=\"Pass\"];", (u64)uuid, node->desc.name, (u64)uuid);
+
+      // draw the inputs
       for (const auto &input : node->inputs) {
-        fmt::println("    - {} (Access: {})", input.resourceName, (u32)input.access);
+        // the inputs are nodes which point to this node.
+        fmt::println("     input_{}_{} [label=\"{}\"];", input.resourceName, (u64)uuid,
+                     input.resourceName);
+        fmt::println("     input_{}_{} -> rp_{};", input.resourceName, (u64)uuid, (u64)uuid);
       }
-      fmt::println("  Outputs:");
+
+
       for (const auto &output : node->outputs) {
-        fmt::println("    - {} (Access: {})", output.resourceName, (u32)output.access);
+        // the outputs are nodes which point to this node.
+        fmt::println("     output_{} [label=\"{}\"];", output.resourceName, output.resourceName);
+        fmt::println("     rp_{} -> output_{};", (u64)uuid, output.resourceName);
+      }
+      fmt::println("  }}");
+    }
+
+    // Now draw the dependencies between nodes.
+
+    for (auto &[name, uuids] : resourceDependants) {
+      // fmt::println("  // Resource: {}", name);
+      for (const auto &uuid : uuids) {
+        // fmt::println("  {} -> rp_{};", name, (u64)uuid);
+        fmt::println("  output_{} -> input_{}_{} [label=FOOO];", name, name, (u64)uuid);
       }
     }
 
-    fmt::println("Resource Dependants:");
-    for (const auto &[resourceName, dependants] : resourceDependants) {
-      fmt::println("Resource '{}':", resourceName);
-      for (const auto &depUUID : dependants) {
-        fmt::println("  - Node ID: {}", (u64)depUUID);
-      }
-    }
+    fmt::println("}}");
+    // json j;
 
-    fmt::println("Resource Producers:");
-    for (const auto &[resourceName, producerUUID] : resourceProducers) {
-      fmt::println("Resource '{}': Node ID: {}", resourceName, (u64)producerUUID);
-    }
+    // j["nodes"] = json::array();
+    // for (const auto &[uuid, node] : nodes) {
+    //   json nodeJson;
+    //   nodeJson["id"] = (u64)uuid;
+    //   nodeJson["name"] = node->desc.name;
+    //   nodeJson["inputs"] = json::array();
+    //   for (const auto &input : node->inputs) {
+    //     json inputJson;
+    //     inputJson["resourceName"] = input.resourceName;
+    //     inputJson["access"] = (u32)input.access;
+    //     nodeJson["inputs"].push_back(inputJson);
+    //   }
+    //   nodeJson["outputs"] = json::array();
+    //   for (const auto &output : node->outputs) {
+    //     json outputJson;
+    //     outputJson["resourceName"] = output.resourceName;
+    //     outputJson["access"] = (u32)output.access;
+    //     nodeJson["outputs"].push_back(outputJson);
+    //   }
+    //   j["nodes"].push_back(nodeJson);
+    // }
+
+    // std::cout << j.dump(2) << std::endl;
   }
 
   void RenderGraph::run() {
@@ -100,8 +139,8 @@ namespace ren {
 
     // Go through the deps map and find nodes with no dependencies.
     while (!readyNodes.empty()) {
-      REN_PROFILE_SCOPE("Process Ready Node");
       auto node = readyNodes.front();
+      REN_PROFILE_SCOPE(node->desc.name.data());
       readyNodes.pop();
 
       // If the node has already run, skip it.
@@ -110,7 +149,7 @@ namespace ren {
       // Mark the node as ran.
       node->ran = true;
 
-      fmt::println("Running node: {} (ID: {})", node->desc.name, (u64)node->getNodeID());
+      // fmt::println("Running node: {} (ID: {})", node->desc.name, (u64)node->getNodeID());
 
       // Execute the node's logic here.
       // This is where you would call the node's execute function or similar.

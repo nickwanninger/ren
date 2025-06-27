@@ -8,6 +8,8 @@
 #include <ren/core/Entity.h>
 #include <ren/assets/Mesh.h>
 
+#include <ren/renderer/RenderGraph.h>
+
 static ren::Application *g_application = nullptr;
 namespace ren {
 
@@ -30,7 +32,6 @@ namespace ren {
     // Add the ImGuiLayer to the stack.
     this->imguiLayer = makeRef<ImGuiLayer>(*this);
     this->layerStack.pushLayer(imguiLayer);
-
 
     // scene.createEntity("Camera");
     // scene.createEntity("Cube");
@@ -66,6 +67,7 @@ namespace ren {
     auto startTime = std::chrono::high_resolution_clock::now();
     auto lastTime = startTime;
     SDL_Event e;
+
 
     auto &vulkan = ren::getVulkan();
 
@@ -109,6 +111,48 @@ namespace ren {
       renderer->beginFrame();
       auto &frame = ren::getFrameData();
 
+
+      {
+        REN_PROFILE_SCOPE("Render Graph Setup");
+        ren::RenderGraph graph;
+        auto shadowMap = graph.addNode("ShadowMap");
+        shadowMap->addOutput("shadowMap");
+
+
+        auto gbuffer = graph.addNode("Gbuffer");
+        gbuffer->addOutput("emissive");
+        gbuffer->addOutput("albedo");
+        gbuffer->addOutput("normal");
+        gbuffer->addOutput("pbr");
+        gbuffer->addOutput("depthStencil");
+
+        auto lighting = graph.addNode("Lighting");
+        lighting->addInput("emissive");
+        lighting->addInput("albedo");
+        lighting->addInput("normal");
+        lighting->addInput("pbr");
+        lighting->addInput("depthStencil");
+        lighting->addInput("shadowMap");
+        lighting->addOutput("HDR");
+
+        auto tonemap = graph.addNode("Tonemap");
+        tonemap->addInput("HDR");
+        tonemap->addInput("shadowMap");
+        tonemap->addOutput("LDR");
+
+        auto present = graph.addNode("PresentAndUI");
+        present->addInput("LDR");
+        present->addOutput("SwapchainImage");
+
+        {
+          REN_PROFILE_SCOPE("Graph Run");
+          graph.run();
+        }
+
+        // graph.dump();
+        // exit(0);
+      }
+
       // VkPhysicalDeviceProperties deviceProps;
       // vkGetPhysicalDeviceProperties(vulkan.physical_device, &deviceProps);
       // auto timestamps = frame.getQueryResults();
@@ -130,7 +174,6 @@ namespace ren {
 
       // Render the scene.
 
-
       // Render with ImGui.
       renderer->withPass(renderer->getRenderPass(), *frame.renderTarget, [&]() {
         REN_PROFILE_SCOPE("ImGui Render");
@@ -148,6 +191,8 @@ namespace ren {
         {
           REN_PROFILE_SCOPE("ImGui Render Draw Data");
           ImGui::Render();
+          ImGui::UpdatePlatformWindows();
+          ImGui::RenderPlatformWindowsDefault();
           // Gross leakage.
           ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), ren::getFrameData().commandBuffer);
         }

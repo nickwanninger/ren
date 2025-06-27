@@ -51,7 +51,7 @@ namespace ren {
     ImGui::CreateContext();
 
     auto &io = ImGui::GetIO();
-    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable | ImGuiConfigFlags_ViewportsEnable;
 
     ImGui::StyleColorsDark();
 
@@ -78,16 +78,16 @@ namespace ren {
 
 
     ImGuiStyle &style = ImGui::GetStyle();
-    if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
-      style.WindowRounding = 0.0f;
-      style.Colors[ImGuiCol_WindowBg].w = 1.0f;
-    }
+    // if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
+    //   style.WindowRounding = 0.0f;
+    //   style.Colors[ImGuiCol_WindowBg].w = 1.0f;
+    // }
 
 
     auto &colors = ImGui::GetStyle().Colors;
-    colors[ImGuiCol_WindowBg] = ImVec4{0.01f, 0.01f, 0.01f, 1.0f};
+    colors[ImGuiCol_WindowBg] = ImVec4{0.0f, 0.0f, 0.0f, 1.0f};
 
-    auto border = ImVec4{0.05f, 0.05f, 0.05f, 1.0f};
+    auto border = ImVec4{0.01f, 0.01f, 0.01f, 1.0f};
     auto themeColor = ImVec4{0.2f, 0.205f, 0.21f, 1.0f};
     auto themeColorHovered = ImVec4{0.3f, 0.305f, 0.31f, 1.0f};
 
@@ -153,25 +153,25 @@ namespace ren {
   }
 
 
+
   void ImGuiLayer::onImguiRender(float deltaTime) {
-    REN_PROFILE_FUNCTION();
-    // This is where we would render ImGui stuff.
-    // ImGui_ImplVulkan_NewFrame();
-    // ImGui_ImplSDL2_NewFrame();
-    // ImGui::NewFrame();
+    if (ImGui::BeginMainMenuBar()) {
+      if (ImGui::BeginMenu("File")) {
+        // if (ImGui::MenuItem("Exit")) {
+        //   ren::Application::get().close();
+        // }
+        ImGui::EndMenu();
+      }
+      if (ImGui::BeginMenu("View")) {
+        bool dockspace = ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_DockingEnable;
+        if (ImGui::MenuItem("Dockspace", nullptr, &dockspace)) {
+          ImGui::GetIO().ConfigFlags ^= ImGuiConfigFlags_DockingEnable;
+        }
+        ImGui::EndMenu();
+      }
 
-
-    // ImGui::ShowDemoWindow();
-
-
-    // // Make an ImGui window, and add 300 tabs
-    // ImGui::Begin("ImGui Layer");
-    // ImGui::Text("Test1");
-    // ImGui::End();
-
-
-    // ImGui::Begin("ImGui Layer");
-    // ImGui::Text("Test2");
-    // ImGui::End();
+      // end
+      ImGui::EndMainMenuBar();
+    }
   }
 }  // namespace ren

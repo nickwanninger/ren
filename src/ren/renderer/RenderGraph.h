@@ -71,6 +71,7 @@ namespace ren {
     ref<GraphNode> addNode(const std::string &name);
 
     void dump();
+    bool locked = false;  // Once the graph is locked, no more nodes can be added.
 
     std::map<UUID, ref<GraphNode>> nodes;
 

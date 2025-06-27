@@ -275,10 +275,7 @@ namespace ren {
   #define REN_PROFILE_BEGIN_SESSION(name, filepath) \
     ::ren::Instrumentor::Get().BeginSession(name, filepath)
   #define REN_PROFILE_END_SESSION() ::ren::Instrumentor::Get().EndSession()
-  #define REN_PROFILE_SCOPE_LINE2(name, line)                            \
-    constexpr auto fixedName##line =                                     \
-        ::ren::InstrumentorUtils::CleanupOutputString(name, "__cdecl "); \
-    ::ren::InstrumentationTimer timer##line(fixedName##line.Data)
+  #define REN_PROFILE_SCOPE_LINE2(name, line) ::ren::InstrumentationTimer timer##line(name)
   #define REN_PROFILE_SCOPE_LINE(name, line) REN_PROFILE_SCOPE_LINE2(name, line)
   #define REN_PROFILE_SCOPE(name) REN_PROFILE_SCOPE_LINE(name, __LINE__)
   #define REN_PROFILE_FUNCTION() REN_PROFILE_SCOPE(REN_FUNC_SIG)
