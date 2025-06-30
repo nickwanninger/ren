@@ -109,12 +109,12 @@ namespace ren {
 
     dumpDot();
 
-    // ----------------------
+    // // ----------------------
 
-    exit(0);
+    // exit(0);
 
-    std::cout << a.serializeRelationships().dump(3) << std::endl;
-    exit(0);
+    // std::cout << a.serializeRelationships().dump(3) << std::endl;
+    // exit(0);
 
 
     //
