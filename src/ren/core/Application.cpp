@@ -9,6 +9,7 @@
 #include <ren/assets/Mesh.h>
 
 #include <ren/renderer/RenderGraph.h>
+#include <ren/misc/resource_usage.h>
 
 static ren::Application *g_application = nullptr;
 namespace ren {
@@ -32,6 +33,7 @@ namespace ren {
     // Add the ImGuiLayer to the stack.
     this->imguiLayer = makeRef<ImGuiLayer>(*this);
     this->layerStack.pushLayer(imguiLayer);
+
 
     // scene.createEntity("Camera");
     // scene.createEntity("Cube");
@@ -122,9 +124,9 @@ namespace ren {
 
     // Make a simple triangle to render in screen space.
     std::vector<Vertex> vertices = {
-        Vertex(glm::vec3(-0.5f, -0.5f, 0.0f)),
-        Vertex(glm::vec3(-0.5f,  0.5f, 0.0f)),
-        Vertex(glm::vec3( 0.5f,  0.5f, 0.0f)),
+        Vertex(glm::vec3(-0.5f, -0.5f, 0.0f), glm::vec3(1.0f, 0.0f, 0.0f)),
+        Vertex(glm::vec3(-0.5f,  0.5f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f)),
+        Vertex(glm::vec3( 0.5f,  0.5f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f)),
     };
     std::vector<u32> indices = {0, 1, 2};
 
@@ -133,7 +135,6 @@ namespace ren {
 
     auto render_test = [&]() {
       REN_PROFILE_SCOPE("My Render Test");
-
 
       renderer->withPass(*renderPass, *target, [&]() {
         REN_PROFILE_SCOPE("Render Test Pass");
@@ -232,6 +233,8 @@ namespace ren {
         // graph.dump();
         // exit(0);
       }
+
+      REN_PROFILE_COUNTER("Memory Usage MB", ren::getCurrentProcessRSS() / (1024.0 * 1024.0));
 
 
       render_test();

@@ -23,17 +23,98 @@ namespace ren {
     REN_PROFILE_FUNCTION();
     fmt::print("Scene Layer Attached\n");
 
-    Entity cube = scene.createEntity("Cube 1");
-    auto mesh = ren::loadGLTF("assets/test/meshes/unit_cube.glb");
-    cube.add<comp::Mesh>(mesh);
+    // Entity cube = scene.createEntity("Cube 1");
+    // auto mesh = ren::loadGLTF("assets/test/meshes/unit_cube.glb");
+    // cube.add<comp::Mesh>(mesh);
 
 
-    Entity cube2 = scene.createEntity("Cube 2");
-    cube2.add<comp::Mesh>(mesh);
-    cube2.translation().y = 1.0f;
+    // Entity cube2 = scene.createEntity("Cube 2");
+    // cube2.add<comp::Mesh>(mesh);
+    // cube2.translation().y = 1.0f;
 
 
     ren::PipelineStateDesc desc;
+
+
+    auto dumpDot = [&](void) {
+      fmt::print("digraph G {{\n");
+      // define all the nodes.
+      fmt::print("  node [shape=box];\n");
+      fmt::print("  edge [arrowhead=vee, arrowsize=0.5, fontsize=4];\n");
+      fmt::print("  rankdir=LR;\n");
+
+      auto view = scene.getAllWith<comp::Relationship, comp::Name>();
+
+
+      view.each([&](entt::entity entity, const comp::Relationship &rel, const comp::Name &name) {
+        fmt::print("  e{} [label=\"{}\"];\n", (u32)entity, name.name);
+
+        if (rel.parent != entt::null) {
+          fmt::print("  e{} -> e{} [label=P];\n", (u32)entity, (u32)rel.parent);
+        }
+        else {
+          fmt::println("  {{ rank=min; e{}; }};", (u32)entity);
+        }
+
+
+        // siblings are the same rank.
+        if (rel.nextSibling != entt::null) {
+          fmt::println("  e{} -> e{} [label=\"{}.n\"];", (u32)entity, (u32)rel.nextSibling, name.name);
+          fmt::println("  {{ rank=same; e{}; e{} }};\n", (u32)entity, (u32)rel.nextSibling);
+        }
+
+        if (rel.prevSibling != entt::null) {
+          fmt::println("  e{} -> e{} [label=\"{}.p\"];",  (u32)entity, (u32)rel.prevSibling, name.name);
+        }
+
+        if (rel.firstChild != entt::null) {
+          fmt::print("  e{} -> e{} [style=dotted];\n", (u32)entity, (u32)rel.firstChild);
+        }
+      });
+
+
+      fmt::print("}}\n");
+    };
+
+
+    auto a = scene.createEntity("a");
+    auto b = scene.createEntity("b");
+    auto c = scene.createEntity("c");
+    auto d = scene.createEntity("d");
+
+    auto e = scene.createEntity("e");
+    auto f = scene.createEntity("f");
+    // auto g = scene.createEntity("g");
+
+    a.addChild(b);
+    a.addChild(c);
+    a.addChild(d);
+
+    d.addChild(e);
+    d.addChild(f);
+
+    // a.removeChild(d);
+    // a.addChild(d);
+
+
+
+    // a.removeChild(c);
+
+    // b.addChild(e);
+    // b.addChild(f);
+
+    // c.addChild(g);
+
+    // c.addChild(e);
+
+    dumpDot();
+
+    // ----------------------
+
+    exit(0);
+
+    std::cout << a.serializeRelationships().dump(3) << std::endl;
+    exit(0);
 
 
     //

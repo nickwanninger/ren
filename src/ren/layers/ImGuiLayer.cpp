@@ -6,6 +6,7 @@
 #include <ren/core/Instrumentation.h>
 #include <ren/core/Application.h>
 #include <ren/types.h>
+#include <ren/misc/resource_usage.h>
 
 namespace ren {
 
@@ -51,7 +52,7 @@ namespace ren {
     ImGui::CreateContext();
 
     auto &io = ImGui::GetIO();
-    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable | ImGuiConfigFlags_ViewportsEnable;
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable; //  | ImGuiConfigFlags_ViewportsEnable;
 
     ImGui::StyleColorsDark();
 
@@ -155,6 +156,18 @@ namespace ren {
 
 
   void ImGuiLayer::onImguiRender(float deltaTime) {
+
+
+    ImGui::Begin("Debug State");
+    ImGui::Text("Delta Time: %.3f ms", deltaTime * 1000.0f);
+    ImGui::Text("FPS: %.1f", 1.0f / deltaTime);
+    ImGui::Text("RSS: %.2f MB", ren::getCurrentProcessRSS() / (1024.0f * 1024.0f));
+    auto &instr = ren::Instrumentor::Get();
+    ImGui::Text("Instrument: %zu, %.2f MB", (size_t)instr.profileEvents, instr.profileBytes / (1024.0f * 1024.0f));
+    ImGui::End();
+
+
+
     if (ImGui::BeginMainMenuBar()) {
       if (ImGui::BeginMenu("File")) {
         // if (ImGui::MenuItem("Exit")) {

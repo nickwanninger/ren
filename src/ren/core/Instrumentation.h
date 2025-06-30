@@ -59,7 +59,12 @@ namespace ren {
       InternalEndSession();
     }
     inline void writeEvent(std::string&& event) {
-      if (m_ProfilePoints.size() > 1'000'000) m_ProfilePoints.pop_front();
+      if (m_ProfilePoints.size() >= 100'000) {
+        auto& front = m_ProfilePoints.front();
+        profileBytes -= front.size();
+        profileEvents--;
+        m_ProfilePoints.pop_front();
+      }
       profileBytes += event.size();
       profileEvents++;
       m_ProfilePoints.push_back(std::move(event));
