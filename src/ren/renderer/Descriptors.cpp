@@ -162,6 +162,21 @@ namespace ren {
 
 
 
+  void DescriptorLayoutInfo::addBinding(uint32_t binding, VkDescriptorType type, uint32_t count,
+                                        VkShaderStageFlags stageFlags,
+                                        const VkSampler* imSampler) {
+    REN_PROFILE_FUNCTION();
+    // create the descriptor binding for the layout
+    VkDescriptorSetLayoutBinding newBinding{};
+    newBinding.descriptorCount = count;
+    newBinding.descriptorType = type;
+    newBinding.pImmutableSamplers = imSampler;
+    newBinding.stageFlags = stageFlags;
+    newBinding.binding = binding;
+    // add the binding to the list
+    bindings.push_back(newBinding);
+  }
+
 
   // ------------------------------------------------------ //
 
@@ -175,11 +190,38 @@ namespace ren {
       vkDestroyDescriptorSetLayout(device, pair.second, nullptr);
     }
   }
-
-  VkDescriptorSetLayout DescriptorLayoutCache::create_layout(
-      VkDescriptorSetLayoutCreateInfo* info) {
-    REN_PROFILE_FUNCTION();
+  VkDescriptorSetLayout DescriptorLayoutCache::createLayout(DescriptorLayoutInfo& info) {
     auto device = ren::getVulkan().device;
+    // sort the bindings if they aren't in order
+    std::sort(info.bindings.begin(), info.bindings.end(),
+              [](VkDescriptorSetLayoutBinding& a, VkDescriptorSetLayoutBinding& b) {
+                return a.binding < b.binding;
+              });
+
+    VkDescriptorSetLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfo.bindingCount = (uint32_t)info.bindings.size();
+    layoutInfo.pBindings = info.bindings.data();
+
+    // try to grab from cache
+    auto it = layoutCache.find(info);
+    if (it != layoutCache.end()) {
+      cacheHits++;
+      return (*it).second;
+    } else {
+      // create a new one (not found)
+      VkDescriptorSetLayout layout;
+      vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &layout);
+
+      // add to cache
+      layoutCache[info] = layout;
+      cacheMisses++;
+      return layout;
+    }
+  }
+
+  VkDescriptorSetLayout DescriptorLayoutCache::createLayout(VkDescriptorSetLayoutCreateInfo* info) {
+    REN_PROFILE_FUNCTION();
 
     DescriptorLayoutInfo layoutinfo;
     layoutinfo.bindings.reserve(info->bindingCount);
@@ -191,35 +233,10 @@ namespace ren {
       layoutinfo.bindings.push_back(info->pBindings[i]);
 
       // check that the bindings are in strict increasing order
-      if (info->pBindings[i].binding > lastBinding) {
-        lastBinding = info->pBindings[i].binding;
-      } else {
-        isSorted = false;
-      }
-    }
-    // sort the bindings if they aren't in order
-    if (!isSorted) {
-      std::sort(layoutinfo.bindings.begin(), layoutinfo.bindings.end(),
-                [](VkDescriptorSetLayoutBinding& a, VkDescriptorSetLayoutBinding& b) {
-                  return a.binding < b.binding;
-                });
+      if (info->pBindings[i].binding > lastBinding) { lastBinding = info->pBindings[i].binding; }
     }
 
-    // try to grab from cache
-    auto it = layoutCache.find(layoutinfo);
-    if (it != layoutCache.end()) {
-      cacheHits++;
-      return (*it).second;
-    } else {
-      // create a new one (not found)
-      VkDescriptorSetLayout layout;
-      vkCreateDescriptorSetLayout(device, info, nullptr, &layout);
-
-      // add to cache
-      layoutCache[layoutinfo] = layout;
-      cacheMisses++;
-      return layout;
-    }
+    return createLayout(layoutinfo);
   }
 
 
@@ -299,7 +316,7 @@ namespace ren {
     layoutInfo.pBindings = bindings.data();
     layoutInfo.bindingCount = bindings.size();
 
-    layout = cache.create_layout(&layoutInfo);
+    layout = cache.createLayout(&layoutInfo);
 
     // allocate descriptor
     bool success = alloc.allocate(&set, layout);
@@ -313,6 +330,11 @@ namespace ren {
     vkUpdateDescriptorSets(getVulkan().device, writes.size(), writes.data(), 0, nullptr);
 
     return true;
+  }
+
+  bool DescriptorBuilder::build(VkDescriptorSet& set) {
+    VkDescriptorSetLayout layout;
+    return build(set, layout);
   }
 
 }  // namespace ren

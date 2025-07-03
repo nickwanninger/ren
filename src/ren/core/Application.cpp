@@ -2,13 +2,16 @@
 #include <ren/core/Application.h>
 #include <ren/layers/ImGuiLayer.h>
 #include <ren/renderer/pipelines/StandardPipeline.h>
+#include <ren/renderer/pipelines/DisplayPipeline.h>
 #include <imgui.h>
 #include <imgui_impl_vulkan.h>
 #include <imgui_impl_sdl2.h>
 #include <ren/core/Entity.h>
 #include <ren/assets/Mesh.h>
 
+#include <ren/renderer/Descriptors.h>
 #include <ren/renderer/RenderGraph.h>
+#include <ren/renderer/Sampler.h>
 #include <ren/misc/resource_usage.h>
 
 static ren::Application *g_application = nullptr;
@@ -18,7 +21,7 @@ namespace ren {
   Application::Application(const std::string &app_name, glm::uvec2 window_size) {
     g_application = this;
     // Initialize the SDL window
-    SDL_Init(SDL_INIT_VIDEO);
+    SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER);
     SDL_WindowFlags window_flags = (SDL_WindowFlags)(SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
     this->window =
         SDL_CreateWindow(app_name.c_str(), SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
@@ -33,6 +36,22 @@ namespace ren {
     // Add the ImGuiLayer to the stack.
     this->imguiLayer = makeRef<ImGuiLayer>(*this);
     this->layerStack.pushLayer(imguiLayer);
+
+
+
+    // Find and open first PS5 controller
+    for (int i = 0; i < SDL_NumJoysticks(); i++) {
+      if (SDL_IsGameController(i)) {
+        SDL_Joystick *joystick = SDL_JoystickOpen(i);
+        if (SDL_JoystickGetVendor(joystick) == 0x054C &&
+            SDL_JoystickGetProduct(joystick) == 0x0CE6) {
+          sceneLayer->camera.controller = SDL_GameControllerOpen(i);
+          SDL_JoystickClose(joystick);
+          break;
+        }
+        SDL_JoystickClose(joystick);
+      }
+    }
 
 
     // scene.createEntity("Camera");
@@ -63,6 +82,22 @@ namespace ren {
   }
 
 
+  // Method 1: Using GLM's built-in functions (recommended)
+  static glm::mat4 createModelMatrix(const glm::vec3 &translation,
+                                     const glm::vec3 &rotation,  // Euler angles in radians
+                                     const glm::vec3 &scale) {
+    glm::mat4 T = glm::translate(glm::mat4(1.0f), translation);
+
+    // Rotation order: Y * X * Z (common convention)
+    glm::mat4 R = glm::rotate(glm::mat4(1.0f), rotation.y, glm::vec3(0, 1, 0)) *
+                  glm::rotate(glm::mat4(1.0f), rotation.x, glm::vec3(1, 0, 0)) *
+                  glm::rotate(glm::mat4(1.0f), rotation.z, glm::vec3(0, 0, 1));
+
+    glm::mat4 S = glm::scale(glm::mat4(1.0f), scale);
+
+    return T * R * S;  // Order: Scale, then Rotate, then Translate
+  }
+
 
 
   void Application::run() {
@@ -72,6 +107,10 @@ namespace ren {
 
 
     auto &vulkan = ren::getVulkan();
+
+    ren::DescriptorLayoutCache descriptorLayoutCache;
+
+
 
     // ---------------------------------------------------
 
@@ -90,13 +129,23 @@ namespace ren {
     renderPassDesc.addDepthAttachment("depthStencil");
     auto renderPass = makeRef<RenderPass>(renderPassDesc);
 
+    float pixelScale = 5.0f;
+    float fov = 90.0f;
+
+
     // now make a render target for the gbuffer.
-    auto target = renderPass->createRenderTarget(512, 512);
-    fmt::println("Created render target {}", (u64)target->getHandle());
-    // Make an empty descriptor set layout for the gbuffer because for now we don't have any textures or samplers.
+    float renderAspect = 0.0f;
+    bool targetValid = false;
+    ref<RenderTarget> gbufferTarget = nullptr;
+    // renderPass->createRenderTarget(ren::target_render_width, ren::target_render_height);
+    // fmt::println("Created render target {}", (u64)gbufferTarget->getHandle());
+    // Make an empty descriptor set layout for the gbuffer because for now we don't have any
+    // textures or samplers.
 
     // TODO: abstract this crap. (Maybe reflect it from the shaders.)
-    VkDescriptorSetLayout gbufferLayout = VK_NULL_HANDLE;
+
+    DescriptorLayoutInfo gbufferLayoutInfo;
+    auto gbufferLayout = descriptorLayoutCache.createLayout(gbufferLayoutInfo);
     {
       REN_PROFILE_SCOPE("Create GBuffer Descriptor Set Layout");
 
@@ -105,48 +154,132 @@ namespace ren {
       layoutInfo.bindingCount = 0;
       layoutInfo.pBindings = nullptr;
 
-      if (vkCreateDescriptorSetLayout(vulkan.device, &layoutInfo, nullptr,
-                                      &gbufferLayout) != VK_SUCCESS) {
+      if (vkCreateDescriptorSetLayout(vulkan.device, &layoutInfo, nullptr, &gbufferLayout) !=
+          VK_SUCCESS) {
         throw std::runtime_error("failed to create descriptor set layout!");
       }
     }
 
     // but, to make those buffers, we need to make a render pipeline!
-    auto gbufferPipeline = StandardPipeline(
-      renderPass,
-      makeRef<VertexShader>("shaders/opaque.vert.spv"),
-      makeRef<FragmentShader>("shaders/opaque.frag.spv"),
-      gbufferLayout
-    );
+    auto gbufferPipeline =
+        StandardPipeline(renderPass, makeRef<VertexShader>("shaders/opaque.vert.spv"),
+                         makeRef<FragmentShader>("shaders/opaque.frag.spv"), gbufferLayout);
 
     // Now we have a deferred rendering pipeline.
 
 
-    // Make a simple triangle to render in screen space.
-    std::vector<Vertex> vertices = {
-        Vertex(glm::vec3(-0.5f, -0.5f, 0.0f), glm::vec3(1.0f, 0.0f, 0.0f)),
-        Vertex(glm::vec3(-0.5f,  0.5f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f)),
-        Vertex(glm::vec3( 0.5f,  0.5f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f)),
-    };
-    std::vector<u32> indices = {0, 1, 2};
 
-    auto vertexBuffer = VertexBuffer(vertices);
-    auto indexBuffer = IndexBuffer(indices);
+    DescriptorLayoutInfo blitLayoutInfo;
+    // For now, we will simply put all the gbuffer textures in a single descriptor set
+    // Albedo, normal, pbr, and depth
+    blitLayoutInfo.addBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1,
+                              VK_SHADER_STAGE_FRAGMENT_BIT);  // Albedo
+    blitLayoutInfo.addBinding(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1,
+                              VK_SHADER_STAGE_FRAGMENT_BIT);  // Normal
+    blitLayoutInfo.addBinding(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1,
+                              VK_SHADER_STAGE_FRAGMENT_BIT);  // PBR
+    blitLayoutInfo.addBinding(3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1,
+                              VK_SHADER_STAGE_FRAGMENT_BIT);  // Emissive
+    blitLayoutInfo.addBinding(4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1,
+                              VK_SHADER_STAGE_FRAGMENT_BIT);  // Depth
+
+    auto blitLayout = descriptorLayoutCache.createLayout(blitLayoutInfo);
+    // Lets make a blit pipeline.
+    // This will be used to blit the gbuffer to the screen.
+    // We will use a simple fullscreen quad to do this.
+    auto blitPipeline = DisplayPipeline(
+        renderer->getRenderPassRef(),  // use the main render pass for full screen rendering
+        makeRef<VertexShader>("shaders/display.vert.spv"),
+        makeRef<FragmentShader>("shaders/display.frag.spv"), blitLayout);
+
+
+
+    float modelScale = 0.03f;
+    glm::vec3 modelRotation(0.0f);
+    glm::vec3 modelPosition(0.0f);
+
+    // auto mesh = ren::loadObj("assets/test/meshes/unit_cube.obj");
+    // auto meshScene = ren::loadGLTFScene("assets/test/meshes/suzanne.glb");
+    // auto meshScene = ren::loadGLTFScene("assets/test/meshes/dragon.glb");
+    // auto meshScene = ren::loadGLTFScene("/Users/nick/Desktop/enrico.glb");
+    auto meshScene = ren::loadGLTFScene("/Users/nick/Desktop/sponza.glb");
+
+
+    // Let's make a sampler for the gbuffers
+    ren::Sampler gbufferSampler(VK_FILTER_NEAREST);
+
+    std::vector<VkDescriptorSet> imguiTextures;
+
+    auto refreshImGuiTextures = [&]() {
+      // Update the ImGui textures with the new gbuffer textures.
+      imguiTextures.clear();
+      for (auto &attachment : gbufferTarget->getAttachments()) {
+        imguiTextures.push_back(ImGui_ImplVulkan_AddTexture(
+            gbufferSampler.getHandle(), attachment.texture->getImageView(),
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL));
+      }
+    };
+
+
+    // exit(0);
+
+    long trianglesRendered = 0;
 
     auto render_test = [&]() {
       REN_PROFILE_SCOPE("My Render Test");
+      auto &vulkan = ren::getVulkan();
+      auto &frame = ren::getFrameData();
 
-      renderer->withPass(*renderPass, *target, [&]() {
+      // ---------------------- //
+      int w, h;
+      SDL_GetWindowSize(this->window, &w, &h);
+      // grab the aspect ratio
+      float windowAspect = (float)w / (float)h;
+      // ---------------------- //
+
+      if (windowAspect != renderAspect || targetValid == false) {
+        renderer->waitForIdle();
+        fmt::println("Window aspect ratio changed from {} to {}", renderAspect, windowAspect);
+        // resize the gbuffer target.
+        gbufferTarget = renderPass->createRenderTarget(w / pixelScale, h / pixelScale);
+        renderAspect = windowAspect;
+        refreshImGuiTextures();
+        renderer->waitForIdle();
+        targetValid = true;
+      }
+
+
+      auto cmd = ren::getFrameData().commandBuffer;
+      frame.perf.begin(cmd, "test pass");
+      renderer->withPass(*renderPass, *gbufferTarget, [&]() {
+        trianglesRendered = 0;
         REN_PROFILE_SCOPE("Render Test Pass");
-        auto cmd = ren::getFrameData().commandBuffer;
         gbufferPipeline.bind(cmd);
 
-        ren::bind(cmd, vertexBuffer);
-        ren::bind(cmd, indexBuffer);
-        // draw a single triangle on the screen.
-        vkCmdDrawIndexed(cmd, indices.size(), 1, 0, 0, 0);
+        ren::MeshPushConstants pc;
+        glm::vec3 scale(modelScale);
+        pc.model = createModelMatrix(modelPosition, modelRotation, scale);
+        pc.view = this->sceneLayer->camera.view_matrix();
+
+        pc.proj = glm::perspective(glm::radians(fov), renderAspect, 0.01f, 1000.0f);
+        pc.proj[1][1] *= -1;  // vulkan things...
+
+        vkCmdPushConstants(cmd, gbufferPipeline.getLayout(), VK_SHADER_STAGE_VERTEX_BIT, 0,
+                           sizeof(ren::MeshPushConstants), &pc);
+
+
+        for (auto &mesh : meshScene) {
+          REN_PROFILE_SCOPE("Render Mesh");
+          trianglesRendered += mesh->getIndexCount() / 3;
+          ren::bind(cmd, *mesh->getIndexBuffer());
+          ren::bind(cmd, *mesh->getVertexBuffer());
+          // draw a single triangle on the screen.
+          vkCmdDrawIndexed(cmd, mesh->getIndexCount(), 1, 0, 0, 0);
+        }
       });
+      frame.perf.end(cmd, "test pass");
     };
+
 
     // ---------------------------------------------------
 
@@ -192,6 +325,8 @@ namespace ren {
       renderer->beginFrame();
       auto &frame = ren::getFrameData();
 
+      auto frameStats = frame.perf.nextFrame(frame.commandBuffer);
+
 
       if (0) {
         REN_PROFILE_SCOPE("Render Graph Setup");
@@ -214,6 +349,7 @@ namespace ren {
         lighting->addInput("pbr");
         lighting->addInput("depthStencil");
         lighting->addInput("shadowMap");
+
         lighting->addOutput("HDR");
 
         auto tonemap = graph.addNode("Tonemap");
@@ -225,12 +361,12 @@ namespace ren {
         present->addInput("LDR");
         present->addOutput("SwapchainImage");
 
+        graph.dump();
         {
           REN_PROFILE_SCOPE("Graph Run");
           graph.run();
         }
 
-        // graph.dump();
         // exit(0);
       }
 
@@ -238,6 +374,32 @@ namespace ren {
 
 
       render_test();
+      {
+        REN_PROFILE_SCOPE("Transition Images");
+        auto attachments = gbufferTarget->getAttachments();
+        for (int i = 0; i < attachments.size(); i++) {
+          auto &attachment = attachments[i];
+          if (attachment.type == RenderTargetAttachmentTypeColor) {
+            // fmt::println("transitioning color attachment {} to READ_ONLY_OPTIMAL",
+            // attachment.name);
+            vulkan.transitionImageLayout(frame.commandBuffer, attachment.texture->getImage(),
+                                         attachment.format, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                                         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                         VK_IMAGE_ASPECT_COLOR_BIT);
+          } else if (attachment.type == RenderTargetAttachmentTypeDepth) {
+            // fmt::println("transitioning depth attachment {} to READ_ONLY_OPTIMAL",
+            // attachment.name);
+            vulkan.transitionImageLayout(
+                frame.commandBuffer, attachment.texture->getImage(), attachment.format,
+                VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_ASPECT_DEPTH_BIT);
+          }
+        }
+      }
+
+
+
+
       // VkPhysicalDeviceProperties deviceProps;
       // vkGetPhysicalDeviceProperties(vulkan.physical_device, &deviceProps);
       // auto timestamps = frame.getQueryResults();
@@ -257,10 +419,44 @@ namespace ren {
       // vkCmdWriteTimestamp(frame.commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
       // frame.queryPool, 0);
 
-      // Render the scene.
 
-      // Render with ImGui.
       renderer->withPass(renderer->getRenderPass(), *frame.renderTarget, [&]() {
+        auto cmd = ren::getFrameData().commandBuffer;
+        // Blit the gbuffer to the screen temporarily.
+        {
+          REN_PROFILE_SCOPE("Blit GBuffer");
+
+          ren::DescriptorBuilder builder(descriptorLayoutCache, frame.descriptorAllocator);
+          std::vector<VkDescriptorImageInfo> imageInfos;
+          auto attachments = gbufferTarget->getAttachments();
+          for (int i = 0; i < attachments.size(); i++) {
+            auto &attachment = attachments[i];
+            // printf("Binding attachment %d: %s\n", i, attachment.name.c_str());
+            imageInfos.push_back({gbufferSampler.getHandle(), attachment.texture->getImageView(),
+                                  VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL});
+          }
+
+          for (int i = 0; i < attachments.size(); i++) {
+            builder.bindImage(i, &imageInfos[i], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                              VK_SHADER_STAGE_FRAGMENT_BIT);
+          }
+
+          VkDescriptorSet gbufferSet;
+          builder.build(gbufferSet);
+          // now bind that set.
+          vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, blitPipeline.getLayout(), 0,
+                                  1, &gbufferSet, 0, nullptr);
+
+          frame.perf.begin(cmd, "Blit GBuffer");
+          // bind the pipeline
+          blitPipeline.bind(cmd);
+          vkCmdDraw(cmd, 3, 1, 0, 0);
+          frame.perf.end(cmd, "Blit GBuffer");
+        }
+
+
+
+        // Render IMGUI
         REN_PROFILE_SCOPE("ImGui Render");
         {
           REN_PROFILE_SCOPE("ImGui New Frame");
@@ -270,17 +466,53 @@ namespace ren {
           ImGui::NewFrame();
         }
 
-        
+        ImGui::Begin("G-Buffer Viewer");
+        ImGui::DragFloat3("Position", &modelPosition.x, 0.01f);
+        ImGui::DragFloat3("Rotation", &modelRotation.x, 0.01f);
+        ImGui::DragFloat("Scale", &modelScale, 0.01f);
+
+        if (ImGui::DragFloat("Pixel Scale", &pixelScale, 0.1f, 1.0f, 64.0f)) {
+          targetValid = false;
+        }
+        ImGui::Text("Triangles Rendered: %ld", trianglesRendered);
+
+        ImGui::Separator();
+
+        for (auto &[name, value] : frameStats) {
+          ImGui::Text("%15s: %9.2fms", name.c_str(), value);
+        }
+
+        ImGui::Separator();
+
+
+        auto attachments = gbufferTarget->getAttachments();
+        for (int i = 0; i < attachments.size(); i++) {
+          if (i != 2) continue;
+          auto &attachment = attachments[i];
+          ImGui::Text("Attachment: %s", attachment.name.c_str());
+          float width = ImGui::GetContentRegionAvail().x;
+          float height = width / renderAspect;
+          ImGui::Image((ImTextureID)imguiTextures[i], ImVec2(width, height));
+          ImGui::Separator();
+        }
+
+
+
+        ImGui::End();
+
+
 
         layerStack.onImGuiRender(deltaTime);
 
         {
+          frame.perf.begin(cmd, "ImGui");
           REN_PROFILE_SCOPE("ImGui Render Draw Data");
           ImGui::Render();
           ImGui::UpdatePlatformWindows();
           ImGui::RenderPlatformWindowsDefault();
           // Gross leakage.
           ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), ren::getFrameData().commandBuffer);
+          frame.perf.end(cmd, "ImGui");
         }
       });
 
@@ -292,6 +524,7 @@ namespace ren {
       // Update the layers.
       layerStack.onUpdate(deltaTime);
     }
+    renderer->waitForIdle();
   }
 
 

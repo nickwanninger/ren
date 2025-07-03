@@ -6,7 +6,20 @@ namespace ren {
 
 
   Mesh::Mesh(const std::string &name, const std::vector<Vertex> &vertices,
-             const std::vector<u32> &indices) {}
+             const std::vector<u32> &indices)
+      : name(name)
+      , vertices(vertices)
+      , indices(indices) {
+    REN_PROFILE_FUNCTION();
+
+    // Create the vertex buffer.
+    vertexBuffer = makeRef<VertexBuffer<Vertex>>(vertices);
+    vertexBuffer->setName(fmt::format("Mesh: {} Vertex Buffer", name));
+
+    // Create the index buffer.
+    indexBuffer = makeRef<IndexBuffer>(indices);
+    indexBuffer->setName(fmt::format("Mesh: {} Index Buffer", name));
+  }
 
   Mesh::~Mesh() {}
 
@@ -183,17 +196,43 @@ namespace ren {
 
           // Read indices if available
           if (primitive.indices >= 0) {
-            const tinygltf::Accessor &indexAccessor = model.accessors[primitive.indices];
-            const tinygltf::BufferView &indexBufferView =
-                model.bufferViews[indexAccessor.bufferView];
-            const tinygltf::Buffer &indexBuffer = model.buffers[indexBufferView.buffer];
+            const auto &indexAccessor = model.accessors[primitive.indices];
+            const auto &bufferView = model.bufferViews[indexAccessor.bufferView];
+            const auto &buffer = model.buffers[bufferView.buffer];
 
-            const u32 *indexDataPtr =
-                reinterpret_cast<const u32 *>(indexBuffer.data.data() + indexBufferView.byteOffset);
-            for (size_t i = 0; i < indexAccessor.count; ++i) {
-              indices.push_back(indexDataPtr[i]);
+            indices.reserve(indexAccessor.count);
+
+            const uint8_t *bufferData =
+                buffer.data.data() + bufferView.byteOffset + indexAccessor.byteOffset;
+
+            // Handle different index formats
+            switch (indexAccessor.componentType) {
+              case TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE: {
+                const uint8_t *data = reinterpret_cast<const uint8_t *>(bufferData);
+                for (size_t i = 0; i < indexAccessor.count; ++i) {
+                  indices.push_back(static_cast<uint32_t>(data[i]));
+                }
+                break;
+              }
+              case TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT: {
+                const uint16_t *data = reinterpret_cast<const uint16_t *>(bufferData);
+                for (size_t i = 0; i < indexAccessor.count; ++i) {
+                  indices.push_back(static_cast<uint32_t>(data[i]));
+                }
+                break;
+              }
+              case TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT: {
+                const uint32_t *data = reinterpret_cast<const uint32_t *>(bufferData);
+                indices.assign(data, data + indexAccessor.count);
+                break;
+              }
+              default:
+                // Invalid or unsupported index type
+                throw std::runtime_error("Unsupported index component type: " +
+                                         std::to_string(indexAccessor.componentType));
             }
           }
+
         } else {
           fmt::print("Skipping primitive with mode {} (not triangles)\n", primitive.mode);
         }
@@ -205,5 +244,238 @@ namespace ren {
 
 
     return makeRef<Mesh>(filename, vertices, indices);
+  }
+
+
+  static void convertMesh(std::vector<MeshRef> &outMeshes, const tinygltf::Model &model,
+                          const tinygltf::Mesh &mesh) {
+    for (const auto &primitive : mesh.primitives) {
+      REN_PROFILE_SCOPE("Read Primitive");
+      std::vector<Vertex> vertices;
+      std::vector<u32> indices;
+
+      // dump the primitive material
+      if (primitive.material >= 0) {
+        const tinygltf::Material &material = model.materials[primitive.material];
+        // You can also dump the material properties here if needed
+      } else {
+        fmt::print("  No material assigned to this primitive\n");
+      }
+
+      // if the mesh is triangles, loop over the vertices
+      if (primitive.mode == TINYGLTF_MODE_TRIANGLES) {
+        REN_PROFILE_SCOPE("Read triangle primitive");
+        // Assuming the position attribute is present
+        auto posIt = primitive.attributes.find("POSITION");
+        if (posIt != primitive.attributes.end()) {
+          REN_PROFILE_SCOPE("Read Positions");
+          int accessorIndex = posIt->second;
+          const tinygltf::Accessor &accessor = model.accessors[accessorIndex];
+          const tinygltf::BufferView &bufferView = model.bufferViews[accessor.bufferView];
+          const tinygltf::Buffer &buffer = model.buffers[bufferView.buffer];
+
+          // Read the vertex positions
+          const float *dataPtr =
+              reinterpret_cast<const float *>(buffer.data.data() + bufferView.byteOffset);
+          for (size_t i = 0; i < accessor.count; ++i) {
+            Vertex vertex;
+            vertex.pos.x = dataPtr[i * 3 + 0];
+            vertex.pos.y = dataPtr[i * 3 + 1];
+            vertex.pos.z = dataPtr[i * 3 + 2];
+            vertices.push_back(vertex);
+          }
+        }
+
+
+        // Get normals
+        auto normalIt = primitive.attributes.find("NORMAL");
+        if (normalIt != primitive.attributes.end()) {
+          REN_PROFILE_SCOPE("Read Normals");
+          int accessorIndex = normalIt->second;
+          const tinygltf::Accessor &accessor = model.accessors[accessorIndex];
+          const tinygltf::BufferView &bufferView = model.bufferViews[accessor.bufferView];
+          const tinygltf::Buffer &buffer = model.buffers[bufferView.buffer];
+          const float *dataPtr =
+              reinterpret_cast<const float *>(buffer.data.data() + bufferView.byteOffset);
+          for (size_t i = 0; i < accessor.count; ++i) {
+            if (i < vertices.size()) {
+              vertices[i].normal.x = dataPtr[i * 3 + 0];
+              vertices[i].normal.y = dataPtr[i * 3 + 1];
+              vertices[i].normal.z = dataPtr[i * 3 + 2];
+            } else {
+              fmt::print("Warning: More normals than vertices in GLTF file\n");
+            }
+          }
+        }
+
+        // Get texture coordinates
+        auto texCoordIt = primitive.attributes.find("TEXCOORD_0");
+        if (texCoordIt != primitive.attributes.end()) {
+          REN_PROFILE_SCOPE("Read Texture Coordinates");
+          int accessorIndex = texCoordIt->second;
+          const tinygltf::Accessor &accessor = model.accessors[accessorIndex];
+          const tinygltf::BufferView &bufferView = model.bufferViews[accessor.bufferView];
+          const tinygltf::Buffer &buffer = model.buffers[bufferView.buffer];
+          const float *dataPtr =
+              reinterpret_cast<const float *>(buffer.data.data() + bufferView.byteOffset);
+          for (size_t i = 0; i < accessor.count; ++i) {
+            if (i < vertices.size()) {
+              vertices[i].texCoord.x = dataPtr[i * 2 + 0];
+              vertices[i].texCoord.y = dataPtr[i * 2 + 1];
+            } else {
+              fmt::print("Warning: More texture coordinates than vertices in GLTF file\n");
+            }
+          }
+        }
+
+        // Read indices if available
+        if (primitive.indices >= 0) {
+          REN_PROFILE_SCOPE("Read Indices");
+          const auto &indexAccessor = model.accessors[primitive.indices];
+          const auto &bufferView = model.bufferViews[indexAccessor.bufferView];
+          const auto &buffer = model.buffers[bufferView.buffer];
+
+          indices.reserve(indexAccessor.count);
+
+          const uint8_t *bufferData =
+              buffer.data.data() + bufferView.byteOffset + indexAccessor.byteOffset;
+
+          // Handle different index formats
+          switch (indexAccessor.componentType) {
+            case TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE: {
+              const uint8_t *data = reinterpret_cast<const uint8_t *>(bufferData);
+              for (size_t i = 0; i < indexAccessor.count; ++i) {
+                indices.push_back(static_cast<uint32_t>(data[i]));
+              }
+              break;
+            }
+            case TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT: {
+              const uint16_t *data = reinterpret_cast<const uint16_t *>(bufferData);
+              for (size_t i = 0; i < indexAccessor.count; ++i) {
+                indices.push_back(static_cast<uint32_t>(data[i]));
+              }
+              break;
+            }
+            case TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT: {
+              const uint32_t *data = reinterpret_cast<const uint32_t *>(bufferData);
+              indices.assign(data, data + indexAccessor.count);
+              break;
+            }
+            default:
+              // Invalid or unsupported index type
+              throw std::runtime_error("Unsupported index component type: " +
+                                       std::to_string(indexAccessor.componentType));
+          }
+        }
+
+      } else {
+        fmt::print("Skipping primitive with mode {} (not triangles)\n", primitive.mode);
+      }
+      outMeshes.push_back(makeRef<Mesh>(mesh.name, vertices, indices));
+    }
+  }
+
+
+
+  std::vector<MeshRef> loadGLTFScene(const std::string &filename) {
+    REN_PROFILE_FUNCTION();
+    std::vector<MeshRef> meshes;
+
+
+    fmt::print("loading GLTF file: {}\n", filename);
+
+    // Load the GLTF file using tinygltf.
+    tinygltf::Model model;
+    tinygltf::TinyGLTF loader;
+    loader.SetParseStrictness(tinygltf::ParseStrictness::Permissive);
+
+
+    std::string err, warn;
+
+    {
+      REN_PROFILE_SCOPE("Load GLTF Binary");
+      bool ret = loader.LoadBinaryFromFile(&model, &err, &warn, filename);
+      if (!ret) {
+        // try to load from text format instead.
+        fmt::print("Failed to load GLTF file as binary: {}\n", err);
+        fmt::print("Trying to load as text format...\n");
+        ret = loader.LoadASCIIFromFile(&model, &err, &warn, filename);
+        if (ret) {
+          fmt::print("Loaded GLTF file as text format: {}\n", filename);
+        } else {
+          return {};
+        }
+        // return nullptr;
+      }
+    }
+#if 0
+
+    // first, dump out the material definitions
+    fmt::print("Loaded GLTF model: {}\n", filename);
+    fmt::print("Number of materials: {}\n", model.materials.size());
+    for (const auto &material : model.materials) {
+      fmt::print("Material name: {}\n", material.name);
+      fmt::print("  PBR Metallic-Roughness:\n");
+      fmt::print("    Base Color Factor: {}\n",
+                 json(material.pbrMetallicRoughness.baseColorFactor).dump());
+      fmt::print("    Metallic Factor: {}\n",
+                 json(material.pbrMetallicRoughness.metallicFactor).dump());
+      fmt::print("    Roughness Factor: {}\n",
+                 json(material.pbrMetallicRoughness.roughnessFactor).dump());
+      fmt::print("  Normal Texture: {}\n", material.normalTexture.index);
+      fmt::print("  Occlusion Texture: {}\n", material.occlusionTexture.index);
+      fmt::print("  Emissive Factor: {}\n", json(material.emissiveFactor).dump());
+      fmt::print("  Emissive Texture: {}\n", material.emissiveTexture.index);
+      fmt::print("  Alpha Mode: {}\n", material.alphaMode);
+      fmt::print("  Alpha Cutoff: {}\n", material.alphaCutoff);
+      fmt::print("  Double Sided: {}\n", material.doubleSided);
+
+      // fmt::print("  Extensions: {}\n", (json)material.extensions.size());
+      // fmt::print("  Extras: {}\n", material.extras.size());
+    }
+
+    // dump mesh information
+    fmt::print("Number of meshes: {}\n", model.meshes.size());
+    for (const auto &mesh : model.meshes) {
+      fmt::print("Mesh name: {}\n", mesh.name);
+      fmt::print("  Number of primitives: {}\n", mesh.primitives.size());
+      for (const auto &primitive : mesh.primitives) {
+        fmt::print("    Primitive mode: {}\n", primitive.mode);
+        fmt::print("    Number of attributes: {}\n", primitive.attributes.size());
+        for (const auto &attr : primitive.attributes) {
+          fmt::print("      Attribute: {}, {}\n", attr.first, attr.second);
+        }
+        if (primitive.indices >= 0) {
+          fmt::print("    Indices: {}\n", primitive.indices);
+        } else {
+          fmt::print("    No indices for this primitive\n");
+        }
+      }
+    }
+
+    // Dump nodes.
+    fmt::print("Number of nodes: {}\n", model.nodes.size());
+    for (const auto &node : model.nodes) {
+      fmt::print("Node name: {}\n", node.name);
+      fmt::print("  Mesh: {}\n", node.mesh);
+      fmt::print("  Translation: {}\n", json(node.translation).dump());
+      fmt::print("  Rotation: {}\n", json(node.rotation).dump());
+      fmt::print("  Scale: {}\n", json(node.scale).dump());
+      fmt::print("  Children: {}\n", json(node.children).dump());
+      // fmt::print("  Extensions: {}\n", json(node.extensions).dump());
+      // fmt::print("  Extras: {}\n", json(node.extras).dump());
+    }
+#endif
+
+
+    for (const auto &mesh : model.meshes) {
+      REN_PROFILE_SCOPE("Convert Mesh");
+      convertMesh(meshes, model, mesh);
+    }
+
+    // exit(0);
+
+
+    return meshes;
   }
 }  // namespace ren

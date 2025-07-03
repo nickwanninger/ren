@@ -13,7 +13,7 @@ namespace ren {
   FrameData &getFrameData(void);
 
   constexpr u32 target_render_width = 320;
-  constexpr u32 target_render_height = 180;
+  constexpr u32 target_render_height = 240;
 
 
   // This class implements a swapchain for rendering multiple frames at once.

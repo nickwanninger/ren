@@ -59,7 +59,7 @@ namespace ren {
     VkRenderPassBeginInfo renderPassInfo{};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     renderPassInfo.renderPass = pass.getHandle();
-    renderPassInfo.framebuffer = target.getHandle();
+    renderPassInfo.framebuffer = target.getHandle(pass); // grab the framebuffer for this pass.
     renderPassInfo.renderArea.offset = {0, 0};
     renderPassInfo.renderArea.extent = {target.getWidth(), target.getHeight()};
 
@@ -68,7 +68,8 @@ namespace ren {
     for (const auto &attachment : pass.getDescription().attachments) {
       if (attachment.loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR) {
         // If the attachment is a color attachment, clear it to white.
-        if (attachment.format != VK_FORMAT_D32_SFLOAT && attachment.format != VK_FORMAT_D24_UNORM_S8_UINT) {
+        if (attachment.format != VK_FORMAT_D32_SFLOAT &&
+            attachment.format != VK_FORMAT_D24_UNORM_S8_UINT) {
           clearValues.push_back({.color = {{0.0f, 0.0f, 0.0f, 0.0f}}});
         } else {
           // Otherwise, it's a depth attachment, clear it to 1.0f.
@@ -141,8 +142,9 @@ namespace ren {
       throw std::runtime_error("failed to begin recording command buffer!");
     }
 
+
     // Clear the descriptor pool for this frame to make space for new descriptor sets.
-    vkResetDescriptorPool(vulkan->device, frame->descriptorPool, 0);
+    frame->descriptorAllocator.reset_pools();
   }
 
   void Renderer::endFrame(void) {

@@ -28,6 +28,73 @@ void ren::Camera::update(float dt) {
 
 
 
+  Sint16 left_x = SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_LEFTX);
+  Sint16 left_y = SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_LEFTY);
+  Sint16 right_x = SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_RIGHTX);
+  Sint16 right_y = SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_RIGHTY);
+
+  glm::vec3 left_stick(0.0f);
+  glm::vec3 right_stick(0.0f);
+
+  // Deadzone threshold for analog sticks
+  const Sint16 deadzone = 5000;  // Adjust as needed
+
+  if (abs(left_x) > deadzone || abs(left_y) > deadzone) {
+    left_stick.x = static_cast<float>(left_x) / SDL_JOYSTICK_AXIS_MAX;
+    left_stick.y = static_cast<float>(left_y) / SDL_JOYSTICK_AXIS_MAX;
+  }
+
+  if (abs(right_x) > deadzone || abs(right_y) > deadzone) {
+    right_stick.x = static_cast<float>(right_x) / SDL_JOYSTICK_AXIS_MAX;
+    right_stick.y = static_cast<float>(right_y) / SDL_JOYSTICK_AXIS_MAX;
+  }
+  // update camera angles based on controller input unconditionally
+  {
+    angles.y += right_stick.x * 0.01f;  // yaw
+    angles.x -= right_stick.y * 0.01f;  // pitch
+
+
+    // update impulse based on controller input
+    float speed = cameraSpeed * dt;
+
+    glm::vec3 impulse(0.0f);
+
+    left_stick.y = -left_stick.y;  // Invert Y-axis for forward/backward movement
+
+    // impulse.x += speed * left_stick.y;  // Forward
+    // impulse.z += speed * left_stick.y;
+
+    // impulse.x -= speed * -left_stick.y;  // Backward
+    // impulse.z -= speed * -left_stick.y;
+
+
+    // Movement vectors
+    float cos_yaw = cosf(angles.y);
+    float sin_yaw = sinf(angles.y);
+    glm::vec3 forward = {sin_yaw, 0.0f, -cos_yaw};
+    glm::vec3 right = {cos_yaw, 0.0f, sin_yaw};
+
+    impulse.x += right.x * speed * left_stick.x;
+    impulse.z += right.z * speed * left_stick.x;
+
+    impulse.x += forward.x * speed * left_stick.y;
+    impulse.z += forward.z * speed * left_stick.y;
+
+
+
+    // move up if the user is pressing the x button
+    if (SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_A)) { impulse.y += speed; }
+
+    // move down if the user is pressing the circle button
+    if (SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_B)) { impulse.y -= speed; }
+
+
+
+    velocity += impulse;
+  }
+
+
+
   if (mouse_captured and !io.WantCaptureKeyboard) {
     // Mouse look
     angles.y += mouse_x * 0.002f;  // yaw

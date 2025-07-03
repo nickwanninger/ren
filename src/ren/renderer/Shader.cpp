@@ -42,7 +42,7 @@ std::vector<u8> ren::Shader::loadShaderCode(const std::string& filename) {
   return code;
 }
 
-#if 0
+#if 1
 static void print_push_constant_block(std::ostream& os, const SpvReflectBlockVariable& block,
                                       int depth = 0) {
   std::string indent(depth * 2, ' ');
@@ -65,7 +65,7 @@ static void print_push_constant_block(std::ostream& os, const SpvReflectBlockVar
 #endif
 
 void ren::Shader::initShader(const std::vector<u8>& code) {
-#if 0
+#if 1
   // Generate reflection data for a shader
   SpvReflectShaderModule module;
   SpvReflectResult result = spvReflectCreateShaderModule(code.size(), code.data(), &module);
@@ -109,24 +109,24 @@ void ren::Shader::initShader(const std::vector<u8>& code) {
 
     print_push_constant_block(os, obj, 1);
 
-    // os << tt << "name:     : " << obj.name << "\n";
-    // os << tt << "offset    : " << obj.offset << "\n";
-    // os << tt << "size      : " << obj.size  << "\n";
-    // os << tt << "qualifier : ";
-    // if (obj.decoration_flags & SPV_REFLECT_DECORATION_FLAT) {
-    //   os << "flat";
-    // } else if (obj.decoration_flags & SPV_REFLECT_DECORATION_NOPERSPECTIVE) {
-    //   os << "noperspective";
-    // } else if (obj.decoration_flags & SPV_REFLECT_DECORATION_PATCH) {
-    //   os << "patch";
-    // } else if (obj.decoration_flags & SPV_REFLECT_DECORATION_PER_VERTEX) {
-    //   os << "pervertex";
-    // } else if (obj.decoration_flags & SPV_REFLECT_DECORATION_PER_TASK) {
-    //   os << "pertask";
-    // } else {
-    //   os << "unknown";
-    // }
-    // os << "\n";
+    os << tt << "name:     : " << obj.name << "\n";
+    os << tt << "offset    : " << obj.offset << "\n";
+    os << tt << "size      : " << obj.size  << "\n";
+    os << tt << "qualifier : ";
+    if (obj.decoration_flags & SPV_REFLECT_DECORATION_FLAT) {
+      os << "flat";
+    } else if (obj.decoration_flags & SPV_REFLECT_DECORATION_NOPERSPECTIVE) {
+      os << "noperspective";
+    } else if (obj.decoration_flags & SPV_REFLECT_DECORATION_PATCH) {
+      os << "patch";
+    } else if (obj.decoration_flags & SPV_REFLECT_DECORATION_PER_VERTEX) {
+      os << "pervertex";
+    } else if (obj.decoration_flags & SPV_REFLECT_DECORATION_PER_TASK) {
+      os << "pertask";
+    } else {
+      os << "unknown";
+    }
+    os << "\n";
 
 
     std::cout << "\n";

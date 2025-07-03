@@ -11,7 +11,7 @@
 #include <sstream>
 #include <list>
 
-#define REN_PROFILE
+// #define REN_PROFILE
 
 namespace ren {
 
@@ -298,6 +298,6 @@ namespace ren {
   #define REN_PROFILE_MARK(name)
   #define REN_PROFILE_OUTPUT(enable)
   #define REN_PROFILE_OUTPUT_ENABLED() (false)
-  #define REN_PROFILE_COUNTER(name, value)
-  #define REN_PROFILE_RECORD_GPUTIME(name, duration_ms)
+  #define REN_PROFILE_COUNTER(name, value) ((void)(value))
+  #define REN_PROFILE_RECORD_GPUTIME(name, duration_ms) ((void)(duration_ms))
 #endif

@@ -7,7 +7,7 @@
 #include <ren/types.h>
 #include <ren/renderer/Buffer.h>
 #include <ren/renderer/RenderPass.h>
-#include <ren/renderer/Swapchain.h>
+// #include <ren/renderer/Swapchain.h>
 #include <ren/assets/Vertex.h>
 #include <ren/renderer/pipelines/DisplayPipeline.h>
 #include <ren/core/Instrumentation.h>
@@ -32,6 +32,7 @@ namespace ren {
   class VulkanInstance;
 
   VulkanInstance &getVulkan(void);
+
 
 
 
@@ -67,7 +68,7 @@ namespace ren {
     bool framebuffer_resized = false;
     VkExtent2D extent;         // Render target size
     VkFormat swapchainFormat;  // chosen in init_instance()
-    box<ren::Swapchain> swapchain;
+    // box<ren::Swapchain> swapchain;
 
 
     // ---- Command Pool ---- //
@@ -80,10 +81,10 @@ namespace ren {
     void draw_frame(void);
 
     void recreate_swapchain(void) {
-      REN_PROFILE_FUNCTION();
-      cleanup_swapchain();
-      init_swapchain();
-      framebuffer_resized = false;
+      // REN_PROFILE_FUNCTION();
+      // cleanup_swapchain();
+      // init_swapchain();
+      // framebuffer_resized = false;
     }
 
     inline void waitForIdle(void) {
@@ -123,6 +124,8 @@ namespace ren {
     void update_uniform_buffer(u32 current_image);
     void transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout,
                                VkImageLayout newLayout);
+    void transitionImageLayout(VkCommandBuffer buf, VkImage image, VkFormat format, VkImageLayout oldLayout,
+                               VkImageLayout newLayout, VkImageAspectFlags aspect = VK_IMAGE_ASPECT_COLOR_BIT);
 
     inline auto findDepthFormat(void) {
       return findSupportedFormat(
@@ -154,6 +157,5 @@ namespace ren {
 
     u32 find_memory_type(u32 typeFilter, VkMemoryPropertyFlags properties);
   };
-
 
 };  // namespace ren

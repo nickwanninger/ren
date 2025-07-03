@@ -18,18 +18,18 @@ namespace ren {
     const std::string &getName(void) const { return name; }
 
     // Get the vertex buffer.
-    ref<Buffer> getVertexBuffer(void) const { return vertexBuffer; }
+    ref<VertexBuffer<ren::Vertex>> getVertexBuffer(void) const { return vertexBuffer; }
 
     // Get the index buffer.
-    ref<Buffer> getIndexBuffer(void) const { return indexBuffer; }
+    ref<IndexBuffer> getIndexBuffer(void) const { return indexBuffer; }
 
     // Get the number of indices.
     u32 getIndexCount(void) const { return static_cast<u32>(indices.size()); }
 
    private:
     std::string name;
-    ref<Buffer> vertexBuffer;
-    ref<Buffer> indexBuffer;
+    ref<VertexBuffer<ren::Vertex>> vertexBuffer;
+    ref<IndexBuffer> indexBuffer;
     std::vector<Vertex> vertices;
     std::vector<u32> indices;
   };
@@ -39,6 +39,8 @@ namespace ren {
 
   MeshRef loadObj(const std::string &filename);
   MeshRef loadGLTF(const std::string &filename);
+
+  std::vector<MeshRef> loadGLTFScene(const std::string &filename);
 
   // Temporary:
   MeshRef createCubeMesh(void);

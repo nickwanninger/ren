@@ -2,6 +2,7 @@
 
 
 #include <ren/renderer/pipelines/VulkanPipeline.h>
+#include <ren/renderer/RenderPass.h>
 #include <ren/renderer/Shader.h>
 
 namespace ren {

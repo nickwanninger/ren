@@ -52,6 +52,10 @@ namespace ren {
     std::vector<VkDescriptorSetLayoutBinding> bindings;
     bool operator==(const DescriptorLayoutInfo& other) const;
     size_t hash() const;
+
+    // Add bindings to a specific slot
+    void addBinding(uint32_t binding, VkDescriptorType type, uint32_t count,
+                    VkShaderStageFlags stageFlags, const VkSampler* immutableSampler = nullptr);
   };
 
 
@@ -64,7 +68,8 @@ namespace ren {
    public:
     ~DescriptorLayoutCache();
 
-    VkDescriptorSetLayout create_layout(VkDescriptorSetLayoutCreateInfo* info);
+    VkDescriptorSetLayout createLayout(VkDescriptorSetLayoutCreateInfo* info);
+    VkDescriptorSetLayout createLayout(DescriptorLayoutInfo& info);
 
     float hitrate(void) const { return (float)cacheHits / (cacheHits + cacheMisses); }
 
@@ -84,12 +89,12 @@ namespace ren {
 
   class DescriptorBuilder {
    public:
-    DescriptorBuilder(DescriptorLayoutCache &layoutCache, DescriptorAllocator& allocator);
+    DescriptorBuilder(DescriptorLayoutCache& layoutCache, DescriptorAllocator& allocator);
 
     DescriptorBuilder& bindBuffer(uint32_t binding, VkDescriptorBufferInfo* bufferInfo,
-                                   VkDescriptorType type, VkShaderStageFlags stageFlags);
-    DescriptorBuilder& bindImage(uint32_t binding, VkDescriptorImageInfo* imageInfo,
                                   VkDescriptorType type, VkShaderStageFlags stageFlags);
+    DescriptorBuilder& bindImage(uint32_t binding, VkDescriptorImageInfo* imageInfo,
+                                 VkDescriptorType type, VkShaderStageFlags stageFlags);
 
     bool build(VkDescriptorSet& set, VkDescriptorSetLayout& layout);
     bool build(VkDescriptorSet& set);
@@ -98,8 +103,8 @@ namespace ren {
     std::vector<VkWriteDescriptorSet> writes;
     std::vector<VkDescriptorSetLayoutBinding> bindings;
 
-    DescriptorLayoutCache &cache;
-    DescriptorAllocator &alloc;
+    DescriptorLayoutCache& cache;
+    DescriptorAllocator& alloc;
   };
 
 }  // namespace ren

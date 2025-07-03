@@ -26,7 +26,7 @@ namespace ren {
 
   struct GraphNodeDesc {
     UUID node_id;
-    const std::string &name;
+    const std::string name;
     RenderGraph &graph;
   };
 

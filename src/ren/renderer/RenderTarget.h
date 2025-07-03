@@ -1,6 +1,7 @@
 #pragma once
 
 #include <ren/renderer/Image.h>
+#include <ren/core/UUID.h>
 
 namespace ren {
   class RenderPass;
@@ -47,20 +48,21 @@ namespace ren {
   // In ren parlance, these attachments are images.
   class RenderTarget {
    public:
-    RenderTarget(const RenderTargetDescription &desc, ref<RenderPass> renderPass);
+    RenderTarget(const RenderTargetDescription &desc);
     ~RenderTarget();
-
-    VkFramebuffer getHandle(void) const { return framebuffer; }
 
     u32 getWidth(void) const { return width; }
     u32 getHeight(void) const { return height; }
     auto &getAttachments(void) { return attachments; }
 
+    VkFramebuffer getHandle(RenderPass &pass);
+
    private:
     u32 width, height;
     std::vector<RenderTargetAttachment> attachments;
-    ref<RenderPass> renderPass;
-    VkFramebuffer framebuffer = VK_NULL_HANDLE;
+
+    // Map of RenderPass UUID to vulkan framebuffer handles.
+    std::unordered_map<UUID, VkFramebuffer> m_cache;
     //
   };
 

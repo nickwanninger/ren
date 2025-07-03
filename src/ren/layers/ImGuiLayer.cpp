@@ -158,9 +158,11 @@ namespace ren {
   void ImGuiLayer::onImguiRender(float deltaTime) {
 
 
+    framerateCounter.addFrame(deltaTime);
+    float fps = framerateCounter.getAverageFramerate();
     ImGui::Begin("Debug State");
     ImGui::Text("Delta Time: %.3f ms", deltaTime * 1000.0f);
-    ImGui::Text("FPS: %.1f", 1.0f / deltaTime);
+    ImGui::Text("FPS: %.1f", fps);
     ImGui::Text("RSS: %.2f MB", ren::getCurrentProcessRSS() / (1024.0f * 1024.0f));
     auto &instr = ren::Instrumentor::Get();
     ImGui::Text("Instrument: %zu, %.2f MB", (size_t)instr.profileEvents, instr.profileBytes / (1024.0f * 1024.0f));

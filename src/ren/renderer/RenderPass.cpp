@@ -104,7 +104,7 @@ ren::ref<ren::RenderTarget> ren::RenderPass::createRenderTarget(u32 width, u32 h
   }
 
   // Create the render target with the render pass reference.
-  return makeRef<RenderTarget>(rtDesc, shared_from_this());
+  return makeRef<RenderTarget>(rtDesc);
 }
 
 void ren::RenderPass::build(void) {

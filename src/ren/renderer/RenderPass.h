@@ -6,6 +6,7 @@
 
 namespace ren {
 
+
   // A RenderPass is a description of how render passes should be ordered
   // and what attachments they should use.
   class RenderPass : public std::enable_shared_from_this<RenderPass> {
@@ -29,6 +30,7 @@ namespace ren {
 
 
 
+    UUID getUUID(void) const { return uuid; }
     VkRenderPass getHandle(void) const { return renderPass; }
 
     const Description &getDescription(void) const { return desc; }
@@ -40,6 +42,8 @@ namespace ren {
     void build(void);    // Internal: build the render pass.
     void cleanup(void);  // Internal: cleanup the render pass.
     VkRenderPass renderPass = VK_NULL_HANDLE;
+
+    UUID uuid;
 
     Description desc;
   };

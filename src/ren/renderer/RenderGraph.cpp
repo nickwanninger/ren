@@ -50,11 +50,14 @@ namespace ren {
     // fmt::println("  rankdir=LR;");
     fmt::println("  node [shape=box];");
 
+    for (const auto &[uuid, node] : nodes) {
+      fmt::println("  // {} {}", (u64)uuid, node->desc.name);
+    }
 
     for (const auto &[uuid, node] : nodes) {
-      fmt::println("  subgraph cluster_{} {{", node->desc.name);
+      fmt::println("  subgraph cluster_{} {{ // {}", node->desc.name, (u64)uuid);
       fmt::println("     style=filled; color=lightgrey; label=\"{}\"", node->desc.name);
-      fmt::println("     rp_{} [label=\"Pass\"];", (u64)uuid, node->desc.name, (u64)uuid);
+      fmt::println("     rp_{} [label=\"Pass\"];", (u64)uuid);
 
       // draw the inputs
       for (const auto &input : node->inputs) {
@@ -84,31 +87,6 @@ namespace ren {
     }
 
     fmt::println("}}");
-    // json j;
-
-    // j["nodes"] = json::array();
-    // for (const auto &[uuid, node] : nodes) {
-    //   json nodeJson;
-    //   nodeJson["id"] = (u64)uuid;
-    //   nodeJson["name"] = node->desc.name;
-    //   nodeJson["inputs"] = json::array();
-    //   for (const auto &input : node->inputs) {
-    //     json inputJson;
-    //     inputJson["resourceName"] = input.resourceName;
-    //     inputJson["access"] = (u32)input.access;
-    //     nodeJson["inputs"].push_back(inputJson);
-    //   }
-    //   nodeJson["outputs"] = json::array();
-    //   for (const auto &output : node->outputs) {
-    //     json outputJson;
-    //     outputJson["resourceName"] = output.resourceName;
-    //     outputJson["access"] = (u32)output.access;
-    //     nodeJson["outputs"].push_back(outputJson);
-    //   }
-    //   j["nodes"].push_back(nodeJson);
-    // }
-
-    // std::cout << j.dump(2) << std::endl;
   }
 
   void RenderGraph::run() {
@@ -149,7 +127,7 @@ namespace ren {
       // Mark the node as ran.
       node->ran = true;
 
-      // fmt::println("Running node: {} (ID: {})", node->desc.name, (u64)node->getNodeID());
+      fmt::println("Running node: {} (ID: {})", node->desc.name, (u64)node->getNodeID());
 
       // Execute the node's logic here.
       // This is where you would call the node's execute function or similar.

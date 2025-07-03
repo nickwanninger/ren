@@ -8,7 +8,7 @@ namespace ren {
   // it uses a fixed sized array to store the frame times and implements it using
   // a circular buffer.
 
-  constexpr int FRAMERATE_TRACKER_SIZE = 10;
+  constexpr int FRAMERATE_TRACKER_SIZE = 60;
   class FramerateCounter {
    private:
     float deltaTimes[FRAMERATE_TRACKER_SIZE];

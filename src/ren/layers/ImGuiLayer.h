@@ -3,9 +3,10 @@
 
 #include <ren/types.h>
 #include <ren/layers/Layer.h>
-
+#include <ren/core/FramerateCounter.h>
 namespace ren {
   class ImGuiLayer : public Layer {
+    FramerateCounter framerateCounter;            // Framerate counter for ImGui
     VkDescriptorPool imguiPool = VK_NULL_HANDLE;  // Descriptor pool for ImGui
 
    public:

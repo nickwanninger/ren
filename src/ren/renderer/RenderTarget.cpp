@@ -20,52 +20,72 @@ namespace ren {
   }
 
 
-  RenderTarget::RenderTarget(const RenderTargetDescription &desc, ref<RenderPass> renderPass)
-      : attachments(desc.attachments)
-      , renderPass(renderPass)  // copy attachments
-  {
-    // Construct the Framebuffer from the attachments.
-    auto &vulkan = getVulkan();
-    std::vector<VkImageView> attachmentViews;
-    attachmentViews.reserve(attachments.size());
-    this->width = 0;
-    this->height = 0;
-    for (const auto &attachment : attachments) {
-      auto twidth = attachment.texture->getWidth();
-      auto theight = attachment.texture->getHeight();
-
-      // Validate that all attachments have the same dimensions
-      if (this->width == 0 && this->height == 0) {
-        this->width = twidth;
-        this->height = theight;
-      } else if (this->width != twidth || this->height != theight) {
-        fmt::print("RenderTarget: All attachments must have the same dimensions.\n");
-        abort();
-      }
-      attachmentViews.push_back(attachment.texture->getImageView());
-    }
-
-    VkFramebufferCreateInfo framebufferInfo = {};
-    framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-    // TODO: I really don't like pulling the render pass from the renderer like this.
-    framebufferInfo.renderPass = renderPass->getHandle();
-    framebufferInfo.attachmentCount = static_cast<u32>(attachmentViews.size());
-    framebufferInfo.pAttachments = attachmentViews.data();
-    framebufferInfo.width = width;
-    framebufferInfo.height = height;
-    framebufferInfo.layers = 1;
-
-    // Create the framebuffer.
-    if (vkCreateFramebuffer(vulkan.device, &framebufferInfo, nullptr, &framebuffer) != VK_SUCCESS) {
-      fmt::print("Failed to create framebuffer.\n");
-      abort();
-    }
-  }
+  RenderTarget::RenderTarget(const RenderTargetDescription &desc)
+      : attachments(desc.attachments) {}
 
 
   RenderTarget::~RenderTarget() {
-    // Destroy the framebuffer.
-    vkDestroyFramebuffer(getVulkan().device, framebuffer, nullptr);
+    auto &vulkan = getVulkan();
+    // Destroy the framebuffers in the cache
+    for (auto &pair : m_cache) {
+      vkDestroyFramebuffer(vulkan.device, pair.second, nullptr);
+    }
+  }
+
+  VkFramebuffer RenderTarget::getHandle(RenderPass &pass) {
+    auto uuid = pass.getUUID();
+
+
+    // Check if the framebuffer is already cached.
+    auto it = m_cache.find(uuid);
+    if (it != m_cache.end()) {
+      // If it is cached, return the cached framebuffer.
+      return it->second;
+    } else {
+      // Otherwise, create a new framebuffer and cache it.
+      auto &vulkan = getVulkan();
+      std::vector<VkImageView> attachmentViews;
+      attachmentViews.reserve(attachments.size());
+      this->width = 0;
+      this->height = 0;
+      for (const auto &attachment : attachments) {
+        auto twidth = attachment.texture->getWidth();
+        auto theight = attachment.texture->getHeight();
+
+        // Validate that all attachments have the same dimensions
+        if (this->width == 0 && this->height == 0) {
+          this->width = twidth;
+          this->height = theight;
+        } else if (this->width != twidth || this->height != theight) {
+          fmt::print("RenderTarget: All attachments must have the same dimensions.\n");
+          abort();
+        }
+        attachmentViews.push_back(attachment.texture->getImageView());
+      }
+
+      VkFramebuffer framebuffer = VK_NULL_HANDLE;
+
+      VkFramebufferCreateInfo framebufferInfo = {};
+      framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+      // TODO: I really don't like pulling the render pass from the renderer like this.
+      framebufferInfo.renderPass = pass.getHandle();
+      framebufferInfo.attachmentCount = static_cast<u32>(attachmentViews.size());
+      framebufferInfo.pAttachments = attachmentViews.data();
+      framebufferInfo.width = width;
+      framebufferInfo.height = height;
+      framebufferInfo.layers = 1;
+
+      // Create the framebuffer.
+      if (vkCreateFramebuffer(vulkan.device, &framebufferInfo, nullptr, &framebuffer) !=
+          VK_SUCCESS) {
+        fmt::print("Failed to create framebuffer.\n");
+        abort();
+      }
+
+      // Cache the framebuffer.
+      m_cache[uuid] = framebuffer;
+      return framebuffer;
+    }
   }
 
 

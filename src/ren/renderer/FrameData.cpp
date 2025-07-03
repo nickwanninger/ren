@@ -41,9 +41,7 @@ namespace ren {
                                         sc.depthFormat);
 
 
-    this->renderTarget =
-        makeRef<RenderTarget>(renderTargetDesc, Renderer::get().getRenderPassRef());
-
+    this->renderTarget = makeRef<RenderTarget>(renderTargetDesc);
 
 
     // ---- Allocate the semaphores and fence for this frame ---- //
@@ -70,34 +68,6 @@ namespace ren {
     VkCommandBuffer commandBuffer;
     vkAllocateCommandBuffers(vulkan.device, &allocInfo, &this->commandBuffer);
 
-    // Allocate the descriptor pool for this frame
-    // the size of the pool is very oversized.
-    // TODO: Make this dynamic somehow.
-    VkDescriptorPoolSize pool_sizes[] = {
-        //
-        {VK_DESCRIPTOR_TYPE_SAMPLER, 1000},
-        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000},
-        {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1000},
-        {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1000},
-        {VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1000},
-        {VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 1000},
-        {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000},
-        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000},
-        {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1000},
-        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 1000},
-        {VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1000},
-    };
-
-    VkDescriptorPoolCreateInfo pool_info = {};
-    pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
-    pool_info.maxSets = 1000;
-    pool_info.poolSizeCount = 11;  // size of pool_sizes
-    pool_info.pPoolSizes = pool_sizes;
-
-    VK_CHECK(vkCreateDescriptorPool(vulkan.device, &pool_info, nullptr, &descriptorPool));
-
-
     // Create timestamp query pool
     VkQueryPoolCreateInfo queryPoolInfo = {};
     queryPoolInfo.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
@@ -122,7 +92,7 @@ namespace ren {
     this->depthImage.reset();
     this->deviceImage.reset();
     this->renderTarget.reset();
-    vkDestroyDescriptorPool(vulkan.device, this->descriptorPool, nullptr);
+    // vkDestroyDescriptorPool(vulkan.device, this->descriptorPool, nullptr);
     vkDestroySemaphore(vulkan.device, this->imageAvailableSemaphore, nullptr);
     vkDestroySemaphore(vulkan.device, this->renderFinishedSemaphore, nullptr);
     vkDestroyFence(vulkan.device, this->inFlightFence, nullptr);

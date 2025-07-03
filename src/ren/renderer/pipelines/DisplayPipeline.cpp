@@ -1,20 +1,17 @@
 #include <ren/renderer/pipelines/DisplayPipeline.h>
 #include <ren/renderer/Vulkan.h>
 #include <ren/renderer/Shader.h>
+
 namespace ren {
 
-  DisplayPipeline::DisplayPipeline() {
-    // // Create an empty desc
-    // VkDescriptorSetLayout descriptorSetLayout;
-
-
+  DisplayPipeline::DisplayPipeline(ref<RenderPass> renderpass, ref<Shader> vertexShader,
+                                     ref<Shader> fragmentShader,
+                                     VkDescriptorSetLayout descriptorSetLayout) {
     this->bindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
     auto &vulkan = ren::getVulkan();
 
-    this->vertexShader =
-        makeRef<ren::Shader>("shaders/display.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
-    this->fragmentShader =
-        makeRef<ren::Shader>("shaders/display.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+    this->vertexShader = vertexShader;
+    this->fragmentShader = fragmentShader;
 
     auto bindingDesc = ren::Vertex::getBindingDesc();
     auto attributeDescs = ren::Vertex::getAttrDescs();
@@ -29,7 +26,7 @@ namespace ren {
     // ---- Input Assembly Create Info ---- //
     VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
     inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
+    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     inputAssembly.primitiveRestartEnable = VK_FALSE;
 
     // ---- Viewport State Create Info ---- //
@@ -78,17 +75,30 @@ namespace ren {
     multisampling.alphaToOneEnable = VK_FALSE;       // Optional
 
 
-    // ---- Color Blend Attachment State ---- //
-    VkPipelineColorBlendAttachmentState colorBlendAttachment{};
-    colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
-                                          VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-    colorBlendAttachment.blendEnable = VK_FALSE;
-    colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;   // Optional
-    colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ZERO;  // Optional
-    colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;              // Optional
-    colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;   // Optional
-    colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;  // Optional
-    colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;              // Optional
+    int colorAttachmentCount = 1;
+    for (auto &attachment : renderpass->getDescription().attachments) {
+      if (attachment.finalLayout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL) {
+        colorAttachmentCount++;
+      }
+    }
+
+    std::vector<VkPipelineColorBlendAttachmentState> colorBlendAttachments;
+
+    for (int i = 0; i < colorAttachmentCount; ++i) {
+      // ---- Color Blend Attachment State ---- //
+      VkPipelineColorBlendAttachmentState colorBlendAttachment{};
+      colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                                            VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+      colorBlendAttachment.blendEnable = VK_FALSE;
+      colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;   // Optional
+      colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ZERO;  // Optional
+      colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;              // Optional
+      colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;   // Optional
+      colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;  // Optional
+      colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;              // Optional
+      colorBlendAttachments.push_back(colorBlendAttachment);
+    }
+
 
 
     // ---- Color Blending Create Info ---- //
@@ -96,8 +106,8 @@ namespace ren {
     colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
     colorBlending.logicOpEnable = VK_FALSE;
     colorBlending.logicOp = VK_LOGIC_OP_COPY;  // Optional
-    colorBlending.attachmentCount = 1;
-    colorBlending.pAttachments = &colorBlendAttachment;
+    colorBlending.attachmentCount = colorAttachmentCount;
+    colorBlending.pAttachments = colorBlendAttachments.data();
     colorBlending.blendConstants[0] = 0.0f;  // Optional
     colorBlending.blendConstants[1] = 0.0f;  // Optional
     colorBlending.blendConstants[2] = 0.0f;  // Optional
@@ -119,8 +129,8 @@ namespace ren {
 
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutInfo.setLayoutCount = 0;
-    pipelineLayoutInfo.pSetLayouts = NULL;                    // &descriptorSetLayout;
+    pipelineLayoutInfo.setLayoutCount = 1;
+    pipelineLayoutInfo.pSetLayouts = &descriptorSetLayout;
     pipelineLayoutInfo.pushConstantRangeCount = 1;            // Optional
     pipelineLayoutInfo.pPushConstantRanges = &pushConstants;  // Optional
 
@@ -166,8 +176,7 @@ namespace ren {
     // Then we reference all of the structures describing the fixed-function stage.
     pipelineInfo.layout = pipelineLayout;
     // After that comes the pipeline layout, which is a Vulkan handle rather than a struct pointer.
-    abort();
-    // pipelineInfo.renderPass = vulkan.displayPass->getHandle();
+    pipelineInfo.renderPass = renderpass->getHandle();
     pipelineInfo.subpass = 0;
     // Required for compat
     pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;  // Optional
@@ -178,7 +187,7 @@ namespace ren {
     // Build the pipeline stages
     pipelineInfo.stageCount = shaderStages.size();
     pipelineInfo.pStages = shaderStages.data();
-    pipelineInfo.pDepthStencilState = NULL;  // &depthStencil;
+    pipelineInfo.pDepthStencilState = &depthStencil;
 
 
     pipelineInfo.pDynamicState = &dynamicState;

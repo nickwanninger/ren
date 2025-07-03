@@ -1,6 +1,7 @@
 #pragma once
 #include <ren/types.h>
 #include <ren/core/Instrumentation.h>
+#include <SDL2/SDL.h>
 
 namespace ren {
   struct Camera {
@@ -10,6 +11,8 @@ namespace ren {
     bool mouse_captured = false;
     bool first_update = true;
     float cameraSpeed = 32.0f;
+
+    SDL_GameController *controller = nullptr;
 
 
     inline glm::mat4 view_matrix() const {

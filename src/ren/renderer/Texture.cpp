@@ -33,6 +33,7 @@ ren::Texture::Texture(const std::string &name, u32 width, u32 height, u8 *pixels
 
   vulkan.transitionImageLayout(image->getImage(), VK_FORMAT_R8G8B8A8_SRGB,
                                VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+
   vulkan.copyBufferToImage(stagingBuffer.getHandle(), image->getImage(),
                            static_cast<uint32_t>(width), static_cast<uint32_t>(height));
 
