@@ -50,8 +50,10 @@ void ren::Camera::update(float dt) {
   }
   // update camera angles based on controller input unconditionally
   {
-    angles.y += right_stick.x * 0.01f;  // yaw
-    angles.x -= right_stick.y * 0.01f;  // pitch
+    float sensitivity = 3.0f;
+    angles.y += right_stick.x * sensitivity * dt;  // yaw
+    angles.x -= right_stick.y * sensitivity * dt;  // pitch
+
 
 
     // update impulse based on controller input
