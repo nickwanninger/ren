@@ -70,7 +70,6 @@ namespace ren {
     VkFormat swapchainFormat;  // chosen in init_instance()
     // box<ren::Swapchain> swapchain;
 
-
     // ---- Command Pool ---- //
     VkCommandPool commandPool;
     u64 frame_number = 0;

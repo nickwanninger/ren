@@ -3,6 +3,7 @@
 #include <ren/types.h>
 #include <vulkan/vulkan_core.h>
 #include <ren/renderer/RenderTarget.h>
+#include <ren/renderer/RenderPass.h>
 
 namespace ren {
 
@@ -13,17 +14,17 @@ namespace ren {
   // collect those old passes which sit around for a while.
 
 
-  // The thinking behind this structure is to allow for a mutable configuration
-  // of a render pass, which can be used to create or fetch a render pass as needed.
-  struct RenderPassConfiguration {
-    ref<RenderTarget> target; // The render target this pass will use.
 
-  };
-
-  // This class roughly follows the singleton pattern. We allocate this on the Vulkan instance,
-  // and you can access it through static methods mainly.
   class RenderPassCache {
+   public:
+    ~RenderPassCache(void);
+    ref<RenderPass> get(RenderPass::Description &desc);
 
+    void clearCache(void) { m_cache.clear(); }
+
+
+   private:
+    std::unordered_map<u64, ref<RenderPass>> m_cache;
   };
 
-}
+}  // namespace ren

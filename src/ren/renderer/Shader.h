@@ -4,6 +4,8 @@
 #include <string>
 #include <vector>
 #include <ren/types.h>
+#include <ren/core/UUID.h>
+
 
 namespace ren {
   class VulkanInstance;
@@ -14,7 +16,7 @@ namespace ren {
   // and providing the shader stage so the pipeline can use it.
   // They should be obtained from a ShaderCache or similar system instead of
   // being created directly.
-  class Shader {
+  class Shader : public ren::HasUUID {
    public:
     Shader(const std::string &filename, VkShaderStageFlagBits stage);
     virtual ~Shader();

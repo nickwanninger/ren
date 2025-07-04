@@ -7,6 +7,7 @@
 #include <ren/renderer/Image.h>
 #include <ren/renderer/Texture.h>
 #include <ren/renderer/Vulkan.h>
+#include <ren/renderer/RenderPassCache.h>
 #include <SDL2/SDL.h>
 
 namespace ren {
@@ -45,9 +46,19 @@ namespace ren {
 
     static Renderer &get(void);
 
-    ren::RenderPass &getRenderPass(void) { return *renderPass; }
-    ref<RenderPass> getRenderPassRef(void) { return renderPass; }
+    auto &getRenderPassCache() { return renderPassCache; }
 
+    inline auto getDisplayPass() {
+      if (displayPass == nullptr) {
+        // If the display pass is not initialized, create it.
+        RenderPass::Description displayPassDesc;
+        displayPassDesc.name = "Backbuffer Pass";
+        displayPassDesc.addColorAttachment("backbuffer", ren::getVulkan().swapchainFormat);
+        displayPassDesc.addDepthAttachment("backbuffer_depth");
+        displayPass = renderPassCache.get(displayPassDesc);
+      }
+      return displayPass;
+    }
 
    private:
     void initSwapchain();
@@ -55,8 +66,9 @@ namespace ren {
    private:
     VkCommandBuffer getCommandBuffer();
     SDL_Window *window;
+    ren::RenderPassCache renderPassCache;
     ref<VulkanInstance> vulkan = nullptr;
-    ref<RenderPass> renderPass;
     ref<Swapchain> swapchain = nullptr;
+    ref<RenderPass> displayPass = nullptr;
   };
 }  // namespace ren

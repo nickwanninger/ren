@@ -4,6 +4,7 @@
 
 #include <ren/layers/ImGuiLayer.h>
 #include <ren/core/Instrumentation.h>
+#include <ren/renderer/RenderPass.h>
 #include <ren/core/Application.h>
 #include <ren/types.h>
 #include <ren/misc/resource_usage.h>
@@ -52,7 +53,7 @@ namespace ren {
     ImGui::CreateContext();
 
     auto &io = ImGui::GetIO();
-    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable; //  | ImGuiConfigFlags_ViewportsEnable;
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;  //  | ImGuiConfigFlags_ViewportsEnable;
 
     ImGui::StyleColorsDark();
 
@@ -72,7 +73,7 @@ namespace ren {
     init_info.MinImageCount = 3;
     init_info.ImageCount = 3;
     init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
-    init_info.RenderPass = Renderer::get().getRenderPass().getHandle();
+    init_info.RenderPass = Renderer::get().getDisplayPass()->getHandle();
 
     ImGui_ImplVulkan_Init(&init_info);
 
@@ -156,8 +157,6 @@ namespace ren {
 
 
   void ImGuiLayer::onImguiRender(float deltaTime) {
-
-
     framerateCounter.addFrame(deltaTime);
     float fps = framerateCounter.getAverageFramerate();
     ImGui::Begin("Debug State");
@@ -165,10 +164,41 @@ namespace ren {
     ImGui::Text("FPS: %.1f", fps);
     ImGui::Text("RSS: %.2f MB", ren::getCurrentProcessRSS() / (1024.0f * 1024.0f));
     auto &instr = ren::Instrumentor::Get();
-    ImGui::Text("Instrument: %zu, %.2f MB", (size_t)instr.profileEvents, instr.profileBytes / (1024.0f * 1024.0f));
+    ImGui::Text("Instrument: %zu, %.2f MB", (size_t)instr.profileEvents,
+                instr.profileBytes / (1024.0f * 1024.0f));
     ImGui::End();
 
 
+    // ImGui::ShowDemoWindow();
+
+
+    {
+      ImGui::Begin("Render Passes");
+      auto &renderPasses = ren::RenderPass::allPasses();
+
+      for (auto &pass : renderPasses) {
+        ImGui::PushID(pass->getUUID());
+
+        if (ImGui::CollapsingHeader(pass->getName().c_str())) {
+          ImGui::Text("%s | %llu", pass->getName().c_str(), (u64)pass->getUUID());
+          ImGui::Text("Hash: %zx", pass->getDescription().hash());
+          ImGui::Text("Attachments: %zu", pass->getDescription().attachments.size());
+
+          for (size_t i = 0; i < pass->getDescription().attachments.size(); ++i) {
+            auto &attachment = pass->getDescription().attachments[i];
+            ImGui::Text("Attachment %zu: %s", i, pass->getDescription().attachmentNames[i].c_str());
+
+          }
+
+          auto &desc = pass->getDescription();
+          ImGui::Text("description: %s", desc.serialize().dump(2).c_str());
+        }
+
+        ImGui::PopID();
+      }
+
+      ImGui::End();
+    }
 
     if (ImGui::BeginMainMenuBar()) {
       if (ImGui::BeginMenu("File")) {

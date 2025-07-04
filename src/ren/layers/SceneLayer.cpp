@@ -9,6 +9,9 @@
 #include <ren/layers/SceneLayer.h>
 #include <ren/core/Instrumentation.h>
 #include <ren/core/Application.h>
+
+#include <ren/assets/MeshScene.hpp>
+
 #include <ren/types.h>
 
 #include <ren/renderer/pipelines/PipelineStateDesc.h>
@@ -23,17 +26,17 @@ namespace ren {
     REN_PROFILE_FUNCTION();
     fmt::print("Scene Layer Attached\n");
 
-    // Entity cube = scene.createEntity("Cube 1");
-    // auto mesh = ren::loadGLTF("assets/test/meshes/unit_cube.glb");
-    // cube.add<comp::Mesh>(mesh);
+    // auto meshScene = ren::loadGLTFScene("assets/test/meshes/simple_scene.glb");
+    // for (auto mesh : meshScene) {
+    //   Entity e = scene.createEntity("Mesh Entity");
+    //   e.add<comp::Mesh>(mesh);
+    // }
 
 
-    // Entity cube2 = scene.createEntity("Cube 2");
-    // cube2.add<comp::Mesh>(mesh);
-    // cube2.translation().y = 1.0f;
+    this->meshScene = MeshScene::loadGLTF("assets/test/meshes/simple_scene.glb");
 
 
-    ren::PipelineStateDesc desc;
+    this->meshScene->instantiate(scene);
 
 
     auto dumpDot = [&](void) {
@@ -51,20 +54,21 @@ namespace ren {
 
         if (rel.parent != entt::null) {
           fmt::print("  e{} -> e{} [label=P];\n", (u32)entity, (u32)rel.parent);
-        }
-        else {
+        } else {
           fmt::println("  {{ rank=min; e{}; }};", (u32)entity);
         }
 
 
         // siblings are the same rank.
         if (rel.nextSibling != entt::null) {
-          fmt::println("  e{} -> e{} [label=\"{}.n\"];", (u32)entity, (u32)rel.nextSibling, name.name);
+          fmt::println("  e{} -> e{} [label=\"{}.n\"];", (u32)entity, (u32)rel.nextSibling,
+                       name.name);
           fmt::println("  {{ rank=same; e{}; e{} }};\n", (u32)entity, (u32)rel.nextSibling);
         }
 
         if (rel.prevSibling != entt::null) {
-          fmt::println("  e{} -> e{} [label=\"{}.p\"];",  (u32)entity, (u32)rel.prevSibling, name.name);
+          fmt::println("  e{} -> e{} [label=\"{}.p\"];", (u32)entity, (u32)rel.prevSibling,
+                       name.name);
         }
 
         if (rel.firstChild != entt::null) {
@@ -77,47 +81,18 @@ namespace ren {
     };
 
 
-    auto a = scene.createEntity("a");
-    auto b = scene.createEntity("b");
-    auto c = scene.createEntity("c");
-    auto d = scene.createEntity("d");
+    // auto a = scene.createEntity("a");
+    // auto b = scene.createEntity("b");
+    // auto c = scene.createEntity("c");
+    // auto d = scene.createEntity("d");
 
-    auto e = scene.createEntity("e");
-    auto f = scene.createEntity("f");
-    // auto g = scene.createEntity("g");
-
-    a.addChild(b);
-    a.addChild(c);
-    a.addChild(d);
-
-    d.addChild(e);
-    d.addChild(f);
-
-    // a.removeChild(d);
+    // auto e = scene.createEntity("e");
+    // auto f = scene.createEntity("f");
+    // a.addChild(b);
+    // a.addChild(c);
     // a.addChild(d);
-
-
-
-    // a.removeChild(c);
-
-    // b.addChild(e);
-    // b.addChild(f);
-
-    // c.addChild(g);
-
-    // c.addChild(e);
-
-    dumpDot();
-
-    // // ----------------------
-
-    // exit(0);
-
-    // std::cout << a.serializeRelationships().dump(3) << std::endl;
-    // exit(0);
-
-
-    //
+    // d.addChild(e);
+    // d.addChild(f);
   }
 
   void SceneLayer::onUpdate(float deltaTime) {
@@ -211,6 +186,11 @@ namespace ren {
       drawVec3Control("Position", camera.position, 0.0f, 100.0f);
       drawVec3Control("Rotation", camera.angles, 0.0f, 100.0f);
       drawVec3Control("Velocity", camera.velocity, 0.0f, 100.0f);
+    }
+
+
+    if (ImGui::CollapsingHeader("Mesh Scene")) {
+      meshScene->onImguiRender();
     }
 
 

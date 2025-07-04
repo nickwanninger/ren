@@ -111,11 +111,11 @@ namespace ren {
     ren::DescriptorLayoutCache descriptorLayoutCache;
 
 
-
     // ---------------------------------------------------
 
     // Okay. lets make a simple g buffer opaque pass.
     RenderPass::Description renderPassDesc;
+    renderPassDesc.name = "GBuffer Pass";
     // Add a few attachments to the render pass for the gbuffer.
 
     // HDR emissive data.
@@ -127,9 +127,14 @@ namespace ren {
     // PBR data (R= metallic, G=roughness, B=?).
     renderPassDesc.addColorAttachment("pbr", VK_FORMAT_R8G8B8A8_UNORM);
     renderPassDesc.addDepthAttachment("depthStencil");
-    auto renderPass = makeRef<RenderPass>(renderPassDesc);
 
-    float pixelScale = 5.0f;
+
+    auto renderPass = renderer->getRenderPassCache().get(renderPassDesc);
+
+
+
+
+    float pixelScale = 3.0f;
     float fov = 90.0f;
 
 
@@ -188,21 +193,33 @@ namespace ren {
     // This will be used to blit the gbuffer to the screen.
     // We will use a simple fullscreen quad to do this.
     auto blitPipeline = DisplayPipeline(
-        renderer->getRenderPassRef(),  // use the main render pass for full screen rendering
+        renderer->getDisplayPass(),  // use the main render pass for full screen rendering
         makeRef<VertexShader>("shaders/display.vert.spv"),
         makeRef<FragmentShader>("shaders/display.frag.spv"), blitLayout);
 
 
 
-    float modelScale = 0.03f;
+    float modelScale = 1.0f;
     glm::vec3 modelRotation(0.0f);
     glm::vec3 modelPosition(0.0f);
 
     // auto mesh = ren::loadObj("assets/test/meshes/unit_cube.obj");
+
+
+    auto meshScene = ren::loadGLTFScene("assets/test/meshes/simple_scene.glb");
+    modelScale = 1.0f;
+
     // auto meshScene = ren::loadGLTFScene("assets/test/meshes/suzanne.glb");
+    // modelScale = 1.0f;
+
+
     // auto meshScene = ren::loadGLTFScene("assets/test/meshes/dragon.glb");
+    // modelScale = 15.0f;
+
     // auto meshScene = ren::loadGLTFScene("/Users/nick/Desktop/enrico.glb");
-    auto meshScene = ren::loadGLTFScene("/Users/nick/Desktop/sponza.glb");
+
+    // auto meshScene = ren::loadGLTFScene("/Users/nick/Desktop/sponza.glb");
+    // modelScale = 0.03f;
 
 
     // Let's make a sampler for the gbuffers
@@ -251,31 +268,37 @@ namespace ren {
 
       auto cmd = ren::getFrameData().commandBuffer;
       frame.perf.begin(cmd, "test pass");
+
       renderer->withPass(*renderPass, *gbufferTarget, [&]() {
         trianglesRendered = 0;
         REN_PROFILE_SCOPE("Render Test Pass");
+        
+
+        // We'll just iterate over the meshes in the scene and render them with their transforms.
+        auto view = sceneLayer->scene.getAllWith<comp::Mesh, comp::Transform>();
         gbufferPipeline.bind(cmd);
 
-        ren::MeshPushConstants pc;
-        glm::vec3 scale(modelScale);
-        pc.model = createModelMatrix(modelPosition, modelRotation, scale);
-        pc.view = this->sceneLayer->camera.view_matrix();
+        view.each([&](entt::entity id, const comp::Mesh &mesh, const comp::Transform &transform) {
+          fmt::println("rendering {}", (u32)id);
 
-        pc.proj = glm::perspective(glm::radians(fov), renderAspect, 0.01f, 1000.0f);
-        pc.proj[1][1] *= -1;  // vulkan things...
-
-        vkCmdPushConstants(cmd, gbufferPipeline.getLayout(), VK_SHADER_STAGE_VERTEX_BIT, 0,
-                           sizeof(ren::MeshPushConstants), &pc);
-
-
-        for (auto &mesh : meshScene) {
           REN_PROFILE_SCOPE("Render Mesh");
-          trianglesRendered += mesh->getIndexCount() / 3;
-          ren::bind(cmd, *mesh->getIndexBuffer());
-          ren::bind(cmd, *mesh->getVertexBuffer());
+          // fmt::println("Rendering mesh {} with transform {}", id, transform.getTransform());
+          trianglesRendered += mesh.mesh->getIndexCount() / 3;
+          ren::bind(cmd, *mesh.mesh->getIndexBuffer());
+          ren::bind(cmd, *mesh.mesh->getVertexBuffer());
+
+          ren::MeshPushConstants pc;
+          pc.model = createModelMatrix(transform.translation, transform.rotation, transform.scale);
+          pc.view = this->sceneLayer->camera.view_matrix();
+          pc.proj = glm::perspective(glm::radians(fov), renderAspect, 0.01f, 1000.0f);
+          pc.proj[1][1] *= -1;  // vulkan things...
+
+          vkCmdPushConstants(cmd, gbufferPipeline.getLayout(), VK_SHADER_STAGE_VERTEX_BIT, 0,
+                             sizeof(ren::MeshPushConstants), &pc);
+
           // draw a single triangle on the screen.
-          vkCmdDrawIndexed(cmd, mesh->getIndexCount(), 1, 0, 0, 0);
-        }
+          vkCmdDrawIndexed(cmd, mesh.mesh->getIndexCount(), 1, 0, 0, 0);
+        });
       });
       frame.perf.end(cmd, "test pass");
     };
@@ -397,30 +420,7 @@ namespace ren {
         }
       }
 
-
-
-
-      // VkPhysicalDeviceProperties deviceProps;
-      // vkGetPhysicalDeviceProperties(vulkan.physical_device, &deviceProps);
-      // auto timestamps = frame.getQueryResults();
-      // uint64_t ticksDiff = timestamps[1] - timestamps[0];
-
-      // // Convert to nanoseconds
-      // double nanoseconds = (double)ticksDiff * deviceProps.limits.timestampPeriod;
-
-      // // Convert to milliseconds
-      // double milliseconds = nanoseconds / 1000000.0;
-
-      // fmt::println("Frame {}: {} ms", frame.frameIndex, milliseconds);
-      // REN_PROFILE_RECORD_GPUTIME("GPU Pipeline", milliseconds);
-      // REN_PROFILE_COUNTER("Pipeline", milliseconds);
-
-      // vkCmdResetQueryPool(frame.commandBuffer, frame.queryPool, 0, frame.query_count);
-      // vkCmdWriteTimestamp(frame.commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-      // frame.queryPool, 0);
-
-
-      renderer->withPass(renderer->getRenderPass(), *frame.renderTarget, [&]() {
+      renderer->withPass(*renderer->getDisplayPass(), *frame.renderTarget, [&]() {
         auto cmd = ren::getFrameData().commandBuffer;
         // Blit the gbuffer to the screen temporarily.
         {

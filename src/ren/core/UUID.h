@@ -21,6 +21,17 @@ namespace ren {
   };
 
 
+
+  // Inherit from this class to get a UUID for a given class.
+  class HasUUID {
+   public:
+    auto getUUID() const { return m_uuid; }
+
+   private:
+    UUID m_uuid;
+  };
+
+
 }  // namespace ren
 
 

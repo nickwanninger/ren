@@ -23,14 +23,6 @@ namespace ren {
     this->vulkan = makeRef<VulkanInstance>(this->window);
 
 
-    RenderPass::Description rpDesc;
-    rpDesc.addColorAttachment("backbuffer", vulkan->swapchainFormat);
-    rpDesc.addDepthAttachment("backbuffer_depth");
-
-    // Create the render pass.
-    this->renderPass = makeRef<ren::RenderPass>(rpDesc);
-    fmt::println("Render Pass created with handle: {}", (void *)this->renderPass.get());
-
     initSwapchain();
   }
 
@@ -38,8 +30,11 @@ namespace ren {
     REN_PROFILE_FUNCTION();
     waitForIdle();
 
+    // For various reasons, we want to explicitly clear the render pass cache
+    // before destroying the vulkan instance or anything else.
+    this->renderPassCache.clearCache();
+
     this->swapchain.reset();
-    this->renderPass.reset();
     this->vulkan.reset();
   }
 

@@ -42,7 +42,7 @@ std::vector<u8> ren::Shader::loadShaderCode(const std::string& filename) {
   return code;
 }
 
-#if 1
+#if 0
 static void print_push_constant_block(std::ostream& os, const SpvReflectBlockVariable& block,
                                       int depth = 0) {
   std::string indent(depth * 2, ' ');
@@ -65,7 +65,7 @@ static void print_push_constant_block(std::ostream& os, const SpvReflectBlockVar
 #endif
 
 void ren::Shader::initShader(const std::vector<u8>& code) {
-#if 1
+#if 0
   // Generate reflection data for a shader
   SpvReflectShaderModule module;
   SpvReflectResult result = spvReflectCreateShaderModule(code.size(), code.data(), &module);

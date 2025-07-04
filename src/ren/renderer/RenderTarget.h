@@ -46,7 +46,7 @@ namespace ren {
   // In Vulkan, a render target is a VkFramebuffer, which is
   // a collection of attachments and dimensions.
   // In ren parlance, these attachments are images.
-  class RenderTarget {
+  class RenderTarget : public ren::HasUUID {
    public:
     RenderTarget(const RenderTargetDescription &desc);
     ~RenderTarget();

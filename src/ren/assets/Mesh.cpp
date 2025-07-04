@@ -408,7 +408,7 @@ namespace ren {
         // return nullptr;
       }
     }
-#if 0
+#if 1
 
     // first, dump out the material definitions
     fmt::print("Loaded GLTF model: {}\n", filename);
@@ -464,6 +464,16 @@ namespace ren {
       fmt::print("  Children: {}\n", json(node.children).dump());
       // fmt::print("  Extensions: {}\n", json(node.extensions).dump());
       // fmt::print("  Extras: {}\n", json(node.extras).dump());
+    }
+
+
+
+
+    // Dump scenes.
+    fmt::print("Number of scenes: {}\n", model.scenes.size());
+    for (const auto &scene : model.scenes) {
+      fmt::print("Scene name: {}\n", scene.name);
+      fmt::print("  Nodes: {}\n", json(scene.nodes).dump());
     }
 #endif
 

@@ -7,11 +7,13 @@
 namespace ren {
 
 
+
   // A RenderPass is a description of how render passes should be ordered
   // and what attachments they should use.
-  class RenderPass : public std::enable_shared_from_this<RenderPass> {
+  class RenderPass : public std::enable_shared_from_this<RenderPass>, public ren::HasUUID {
    public:
     struct Description {
+      std::string name = "pass";
       // The attachments used in this render pass.
       // You can either manually specify the attachments,
       // or add them with the below method:
@@ -22,7 +24,16 @@ namespace ren {
       VkAttachmentDescription &addColorAttachment(const std::string &name,
                                                   VkFormat format = VK_FORMAT_B8G8R8A8_SRGB);
       VkAttachmentDescription &addDepthAttachment(const std::string &name = "depth");
+
+      // a hash function for this description
+      size_t hash(void) const;
+
+
+      json serialize(void) const;
     };
+
+
+    static const std::unordered_set<RenderPass *> allPasses(void);
 
 
     RenderPass(Description &desc);
@@ -30,7 +41,7 @@ namespace ren {
 
 
 
-    UUID getUUID(void) const { return uuid; }
+    const std::string &getName() const { return desc.name; }
     VkRenderPass getHandle(void) const { return renderPass; }
 
     const Description &getDescription(void) const { return desc; }
@@ -42,8 +53,6 @@ namespace ren {
     void build(void);    // Internal: build the render pass.
     void cleanup(void);  // Internal: cleanup the render pass.
     VkRenderPass renderPass = VK_NULL_HANDLE;
-
-    UUID uuid;
 
     Description desc;
   };

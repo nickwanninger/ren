@@ -5,6 +5,7 @@
 #include <ren/layers/Layer.h>
 #include <ren/core/Scene.h>
 #include <ren/Camera.h>
+#include <ren/assets/MeshScene.hpp>
 
 namespace ren {
   class SceneLayer : public Layer {
@@ -13,6 +14,8 @@ namespace ren {
     ren::Camera camera;
 
     // TODO: SceneRenderer
+
+    ref<MeshScene> meshScene;
 
 
     SceneLayer(Application &app);

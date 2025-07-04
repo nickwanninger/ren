@@ -2,6 +2,7 @@
 
 #include <ren/types.h>
 #include <ren/core/UUID.h>
+#include <entt/entt.hpp>
 #include <ren/misc/json_serialize.h>
 
 #include <glm/glm.hpp>
@@ -82,10 +83,10 @@ namespace ren {
     };
 
 
-    class Mesh {
+    struct Mesh {
       ref<ren::Mesh> mesh;
 
-     public:
+
       Mesh() = default;
       Mesh(ref<ren::Mesh> mesh)
           : mesh(mesh) {}

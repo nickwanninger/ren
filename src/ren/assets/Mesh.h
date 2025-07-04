@@ -3,11 +3,11 @@
 #include <ren/types.h>
 #include <ren/renderer/Buffer.h>
 #include <ren/assets/Vertex.h>
-
+#include <ren/core/UUID.h>
 
 namespace ren {
 
-  class Mesh {
+  class Mesh : public ren::HasUUID {
    public:
     Mesh(const std::string &name, const std::vector<Vertex> &vertices,
          const std::vector<u32> &indices);
@@ -25,6 +25,7 @@ namespace ren {
 
     // Get the number of indices.
     u32 getIndexCount(void) const { return static_cast<u32>(indices.size()); }
+    u32 getVertexCount(void) const { return static_cast<u32>(vertices.size()); }
 
    private:
     std::string name;
