@@ -55,6 +55,15 @@ add_executable(ren
   lib/tinyobjloader/tiny_obj_loader.cc
   lib/tinygltf/tiny_gltf.cc
 
+
+  # Imguizmo
+  lib/ImGuizmo/GraphEditor.cpp
+  lib/ImGuizmo/ImCurveEdit.cpp
+  lib/ImGuizmo/ImGradient.cpp
+  lib/ImGuizmo/ImGuizmo.cpp
+  lib/ImGuizmo/ImSequencer.cpp
+
+
   ${IMGUI_SOURCES}
 )
 
