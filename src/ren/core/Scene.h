@@ -6,7 +6,7 @@
 
 namespace ren {
 
-  class Entity;
+  class Entity;  // fwd declaration.
 
   // A scene is a collection of entities with components that can be rendered.
   class Scene {
@@ -26,6 +26,9 @@ namespace ren {
 
 
     std::string serialize(void);
+
+    // Grab an entity by its UUID.
+    Entity getEntity(UUID uuid);
 
    protected:
     friend class Entity;

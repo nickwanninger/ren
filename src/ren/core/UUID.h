@@ -8,18 +8,35 @@ namespace ren {
 
   class UUID {
    public:
+    static constexpr u64 null = 0x0;
     UUID();
     UUID(u64 uuid);
     UUID(const UUID&) = default;
 
     operator u64() const { return m_UUID; }
 
-    NLOHMANN_DEFINE_TYPE_INTRUSIVE(UUID, m_UUID);
+    // NLOHMANN_DEFINE_TYPE_INTRUSIVE(UUID, m_UUID);
+
+    // define a custom json serializer
+    friend void to_json(json& j, const UUID& uuid) {
+      if (uuid.m_UUID == UUID::null) {
+        j = "null";
+      } else {
+        j = uuid.m_UUID;
+      }
+    }
+
+    friend void from_json(const json& j, UUID& uuid) {
+      if (j == "null") {
+        uuid.m_UUID = UUID::null;
+      } else {
+        uuid.m_UUID = j.get<u64>();
+      }
+    }
 
    private:
     u64 m_UUID;
   };
-
 
 
   // Inherit from this class to get a UUID for a given class.

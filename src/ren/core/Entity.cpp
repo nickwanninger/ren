@@ -6,9 +6,9 @@ namespace ren {
 
 
 
-#define SERIALIZE_TYPE(type)                                                          \
-  {                                                                                   \
-    if (auto comp = tryGet<comp::type>()) { j["components"][#type] = (json) * comp; } \
+#define SERIALIZE_TYPE(type)                                                           \
+  {                                                                                    \
+    if (auto *comp = tryGet<comp::type>()) { j["components"][#type] = (json)(*comp); } \
   }
 
   json Entity::serialize(void) {
@@ -16,9 +16,11 @@ namespace ren {
     j["uuid"] = fmt::format("{}", (u64)get<comp::ID>().uuid);
     j["name"] = get<comp::Name>();
 
-    // SERIALIZE_TYPE(ID);
-    // SERIALIZE_TYPE(Name);
-    SERIALIZE_TYPE(Transform);
+    j["components"] = json::object();
+
+#define COMP(c) \
+  if (auto *comp = tryGet<c>()) { j["components"][#c] = (json)(*comp); }
+#include <ren/core/Components.inc>
 
     return j;
   }
@@ -58,7 +60,7 @@ namespace ren {
 
     // If the child is the first child, we need to update the firstChild pointer to be the next
     // sibling.
-    if (rel.firstChild == child) { setFirstChild(child.getNextSibling()); }
+    if (rel.firstChild == child.getUUID()) { setFirstChild(child.getNextSibling()); }
 
     // now, update the linked list of the child's siblings.
     auto next = child.getNextSibling();
@@ -67,10 +69,9 @@ namespace ren {
     if (next) { next.setPrevSibling(prev); }
 
     auto &crel = child.get<comp::Relationship>();
-    crel.parent = entt::null;
-    crel.nextSibling = entt::null;
-    crel.prevSibling = entt::null;
-
+    crel.parent = UUID::null;
+    crel.nextSibling = UUID::null;
+    crel.prevSibling = UUID::null;
   }
 
 

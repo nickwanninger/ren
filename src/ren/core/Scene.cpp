@@ -59,4 +59,12 @@ namespace ren {
     // fmt::print("Json:        {} bytes\n", j.dump().size());
     return j.dump(2);
   }
+
+
+  Entity Scene::getEntity(UUID uuid) {
+    REN_PROFILE_FUNCTION();
+    auto it = entities.find(uuid);
+    if (it != entities.end()) return Entity(it->second, this);
+    return Entity();
+  }
 }  // namespace ren

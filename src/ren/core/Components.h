@@ -13,7 +13,9 @@ namespace ren {
 
   namespace comp {
 
+
     // Entity components are simple PoD structs.
+    // Whenever you make a new component, make sure to add it to the X macro in Components.inc
 
 
     struct ID {
@@ -48,8 +50,12 @@ namespace ren {
 
     struct Transform {
       glm::vec3 translation = {0.0f, 0.0f, 0.0f};
-      glm::vec3 rotation = {0.0f, 0.0f, 0.0f};
+      glm::quat rotation = {1.0f, 0.0f, 0.0f, 0.0f};
       glm::vec3 scale = {1.0f, 1.0f, 1.0f};
+
+
+      // --- //
+      glm::mat4 transformMatrix = glm::mat4(1.0f);
 
       NLOHMANN_DEFINE_TYPE_INTRUSIVE(Transform, translation, rotation, scale);
 
@@ -59,10 +65,8 @@ namespace ren {
           : translation(translation) {}
 
       glm::mat4 getTransform() const {
-        glm::mat4 rotation = glm::toMat4(glm::quat(rotation));
-
-        return glm::translate(glm::mat4(1.0f), translation) * rotation *
-               glm::scale(glm::mat4(1.0f), scale);
+        return glm::translate(glm::mat4(1.0f), translation) *
+               glm::mat4_cast(glm::normalize(rotation)) * glm::scale(glm::mat4(1.0f), scale);
       }
     };
 
@@ -73,13 +77,17 @@ namespace ren {
     // This is meant to be used through the Entity abstraction, not directly.
     struct Relationship {
       // This is the parent entity of this entity.
-      entt::entity parent = entt::null;
-      size_t children = 0; // how many children this entity has.
-      entt::entity firstChild = entt::null; // The first child of this entity.
+      UUID parent = UUID::null;
+      size_t children = 0;           // how many children this entity has.
+      UUID firstChild = UUID::null;  // The first child of this entity.
 
       // We represent the siblings of an entity as a linked list.
-      entt::entity prevSibling = entt::null; // The previous sibling of this entity.
-      entt::entity nextSibling = entt::null; // The next sibling of this entity
+      UUID prevSibling = UUID::null;  // The previous sibling of this entity.
+      UUID nextSibling = UUID::null;  // The next sibling of this entity
+
+
+      NLOHMANN_DEFINE_TYPE_INTRUSIVE(Relationship, parent, children, firstChild, prevSibling,
+                                     nextSibling);
     };
 
 

@@ -42,6 +42,7 @@ namespace ren {
       assert(has<T>() && "Entity does not have component!");
       return scene->registry.get<T>(handle);
     }
+
     template <typename T>
     T* tryGet() {
       return scene->registry.try_get<T>(handle);
@@ -63,6 +64,8 @@ namespace ren {
     operator u32() const { return (u32)handle; }
 
     UUID getUUID() { return get<comp::ID>().uuid; }
+    operator UUID() { return getUUID(); }
+
     const std::string& getName() { return get<comp::Name>().name; }
 
     bool operator==(const Entity& other) const {
@@ -74,27 +77,25 @@ namespace ren {
     json serialize(void);
 
     glm::vec3& translation() { return get<comp::Transform>().translation; }
-    glm::vec3& rotation() { return get<comp::Transform>().rotation; }
+    glm::quat& rotation() { return get<comp::Transform>().rotation; }
+    glm::vec3 rotationEuler() { return glm::eulerAngles(get<comp::Transform>().rotation); }
     glm::vec3& scale() { return get<comp::Transform>().scale; }
 
 
 
     // ---- Scene Graph Relationships ---- //
     size_t getChildrenCount() { return get<comp::Relationship>().children; }
-    Entity getParent() { return Entity(get<comp::Relationship>().parent, scene); }
+    Entity getParent() { return scene->getEntity(get<comp::Relationship>().parent); }
 
     template <typename T>
     void eachChild(T&& callback) {
       auto& registry = scene->registry;
       auto& comp = registry.get<comp::Relationship>(handle);
-      auto curr = comp.firstChild;
+      Entity curr = scene->getEntity(comp.firstChild);
 
       for (std::size_t i{}; i < comp.children; ++i) {
-        Entity child(curr, scene);
-
-        callback(child);
-
-        curr = registry.get<comp::Relationship>(curr).nextSibling;
+        callback(curr);
+        curr = scene->getEntity(registry.get<comp::Relationship>(curr).nextSibling);
       }
     }
 
@@ -114,14 +115,24 @@ namespace ren {
     inline void setPrevSibling(Entity sibling) { get<comp::Relationship>().prevSibling = sibling; }
     inline void setFirstChild(Entity child) { get<comp::Relationship>().firstChild = child; }
 
-    inline auto getNextSibling(void) { return Entity(get<comp::Relationship>().nextSibling, scene); }
-    inline auto getPrevSibling(void) { return Entity(get<comp::Relationship>().prevSibling, scene); }
-    inline auto getFirstChild(void) { return Entity(get<comp::Relationship>().firstChild, scene); }
+    inline Entity getNextSibling(void) {
+      return scene->getEntity(get<comp::Relationship>().nextSibling);
+    }
+    inline Entity getPrevSibling(void) {
+      return scene->getEntity(get<comp::Relationship>().prevSibling);
+    }
+    inline Entity getFirstChild(void) {
+      return scene->getEntity(get<comp::Relationship>().firstChild);
+    }
 
 
     void setParent(Entity parent) {
-      get<comp::Relationship>().parent = parent.handle;
-      if (parent.handle != entt::null) { parent.get<comp::Relationship>().children++; }
+      if (parent) {
+        get<comp::Relationship>().parent = parent.getUUID();
+        parent.get<comp::Relationship>().children++;
+      } else {
+        get<comp::Relationship>().parent = UUID::null;
+      }
     }
   };
 }  // namespace ren
