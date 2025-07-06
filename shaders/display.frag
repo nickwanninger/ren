@@ -30,7 +30,7 @@ void main() {
     normal = normalize(normal * 2.0 - 1.0);
 
 
-    vec3 lightDirection = normalize(vec3(0.5, 0.5, 0.5)); // Example light direction
+    vec3 lightDirection = normalize(vec3(0.5, 1.0, 0.5)); // Example light direction
 
     // Calculate the diffuse lighting based on the normal and light direction
     float diffuse = max(dot(normal, lightDirection), 0.0);
