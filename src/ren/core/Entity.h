@@ -91,11 +91,8 @@ namespace ren {
     void eachChild(T&& callback) {
       auto& registry = scene->registry;
       auto& comp = registry.get<comp::Relationship>(handle);
-      Entity curr = scene->getEntity(comp.firstChild);
-
-      for (std::size_t i{}; i < comp.children; ++i) {
-        callback(curr);
-        curr = scene->getEntity(registry.get<comp::Relationship>(curr).nextSibling);
+      for (auto cur = scene->getEntity(comp.firstChild); cur; cur = cur.getNextSibling()) {
+        callback(cur);
       }
     }
 
