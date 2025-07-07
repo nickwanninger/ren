@@ -1,17 +1,40 @@
-#include <ren/renderer/pipelines/StandardPipeline.h>
+#include <ren/renderer/pipelines/PipelineCache.h>
+#include <ren/misc/hash.h>
 #include <ren/renderer/Vulkan.h>
-#include <ren/renderer/Shader.h>
+
 namespace ren {
 
-  StandardPipeline::StandardPipeline(ref<RenderPass> renderpass, ref<Shader> vertexShader,
-                                     ref<Shader> fragmentShader,
-                                     VkDescriptorSetLayout descriptorSetLayout) {
-    this->bindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+
+
+  ref<CachedPipeline> PipelineCache::get(ren::RenderPass &renderPass,
+                                         const PipelineStateObject &pso,
+                                         VkDescriptorSetLayout descriptorSetLayout) {
+    u64 hash = renderPass.getUUID();  // seed the hash with the render pass UUID.
+    ren::hash(hash, pso);
+
+    // Check if we already have this pipeline in the cache.
+    auto it = pipelines.find(hash);
+    if (it != pipelines.end()) {
+      // If we found it, return the cached pipeline.
+      return it->second;
+    }
+
+
+    fmt::println("Creating new pipeline for render pass '{}'", renderPass.getName());
+
+
+    // Otherwise, we gotta create a new pipeline!
+
+    // Grab a reference to the Vulkan instance.
     auto &vulkan = ren::getVulkan();
+    VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
+    VkPipeline pipeline = VK_NULL_HANDLE;
 
-    this->vertexShader = vertexShader;
-    this->fragmentShader = fragmentShader;
+    // We're gonna convert the abstractions of the PipelineStateObject into the
+    // vulkan specifics needed to create a VkPipeline.
 
+
+    // TODO: add this to the PSO instead.
     auto bindingDesc = ren::Vertex::getBindingDesc();
     auto attributeDescs = ren::Vertex::getAttrDescs();
     // ---- Vertex Input Create Info ---- //
@@ -22,11 +45,19 @@ namespace ren {
     vertexInputInfo.vertexAttributeDescriptionCount = attributeDescs.size();
     vertexInputInfo.pVertexAttributeDescriptions = attributeDescs.data();
 
+
     // ---- Input Assembly Create Info ---- //
     VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
     inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    // Pull the topology from the PSO.
+    switch (pso.topology) {
+      case Topology::TriangleList:
+        inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+        break;
+      case Topology::LineList: inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST; break;
+    }
     inputAssembly.primitiveRestartEnable = VK_FALSE;
+
 
     // ---- Viewport State Create Info ---- //
     VkPipelineViewportStateCreateInfo viewportState{};
@@ -35,26 +66,36 @@ namespace ren {
     viewportState.scissorCount = 1;
 
 
+
+
     // ---- Rasterizer Create Info ---- //
     VkPipelineRasterizationStateCreateInfo rasterizer{};
     rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
     rasterizer.depthClampEnable = VK_FALSE;
     rasterizer.rasterizerDiscardEnable = VK_FALSE;  // Discarding fragments is not allowed
-    rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
-    // rasterizer.polygonMode = VK_POLYGON_MODE_LINE;
+    switch (pso.fillMode) {
+      case FillMode::Solid: rasterizer.polygonMode = VK_POLYGON_MODE_FILL; break;
+      case FillMode::Wireframe: rasterizer.polygonMode = VK_POLYGON_MODE_LINE; break;
+    }
     rasterizer.lineWidth = 1.0f;
-    rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
+    switch (pso.cullMode) {
+      case CullMode::None: rasterizer.cullMode = VK_CULL_MODE_NONE; break;
+      case CullMode::Back: rasterizer.cullMode = VK_CULL_MODE_BACK_BIT; break;
+      case CullMode::Front: rasterizer.cullMode = VK_CULL_MODE_FRONT_BIT; break;
+    }
     rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
-    rasterizer.depthBiasEnable = VK_FALSE;
-    rasterizer.depthBiasConstantFactor = 0.0f;  // Optional
-    rasterizer.depthBiasClamp = 0.0f;           // Optional
-    rasterizer.depthBiasSlopeFactor = 0.0f;     // Optional
+    rasterizer.depthBiasEnable = pso.depthBias != 0.0f;      // Enable depth bias if it's non-zero.
+    rasterizer.depthBiasConstantFactor = pso.depthBias;      // Optional
+    rasterizer.depthBiasClamp = pso.depthBiasClamp;          // Optional
+    rasterizer.depthBiasSlopeFactor = pso.depthSlopeFactor;  // Optional
+
+
 
     // ---- Depth Stencil State Create Info ---- //
     VkPipelineDepthStencilStateCreateInfo depthStencil{};
     depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-    depthStencil.depthTestEnable = VK_TRUE;
-    depthStencil.depthWriteEnable = VK_TRUE;
+    depthStencil.depthTestEnable = pso.depthTest;
+    depthStencil.depthWriteEnable = pso.depthWrite;
     depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
     depthStencil.depthBoundsTestEnable = VK_FALSE;
     depthStencil.minDepthBounds = 0.0f;  // Optional
@@ -75,13 +116,8 @@ namespace ren {
     multisampling.alphaToOneEnable = VK_FALSE;       // Optional
 
 
-    int colorAttachmentCount = 4;
-    for (auto &attachment : renderpass->getDescription().attachments) {
-      if (attachment.finalLayout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL) {
-        colorAttachmentCount++;
-      }
-    }
 
+    int colorAttachmentCount = renderPass.getDescription().colorAttachments;
     std::vector<VkPipelineColorBlendAttachmentState> colorBlendAttachments;
 
     for (int i = 0; i < colorAttachmentCount; ++i) {
@@ -100,7 +136,6 @@ namespace ren {
     }
 
 
-
     // ---- Color Blending Create Info ---- //
     VkPipelineColorBlendStateCreateInfo colorBlending{};
     colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
@@ -113,6 +148,7 @@ namespace ren {
     colorBlending.blendConstants[2] = 0.0f;  // Optional
     colorBlending.blendConstants[3] = 0.0f;  // Optional
 
+
     // ---- Push Constants ---- //
     VkPushConstantRange pushConstants{};
     // this push constant range starts at the beginning
@@ -123,10 +159,6 @@ namespace ren {
     pushConstants.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
 
-
-
-    // Create the pipeline layout
-
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     pipelineLayoutInfo.setLayoutCount = 1;
@@ -134,8 +166,8 @@ namespace ren {
     pipelineLayoutInfo.pushConstantRangeCount = 1;            // Optional
     pipelineLayoutInfo.pPushConstantRanges = &pushConstants;  // Optional
 
-    if (vkCreatePipelineLayout(vulkan.device, &pipelineLayoutInfo, nullptr,
-                               &this->pipelineLayout) != VK_SUCCESS) {
+    if (vkCreatePipelineLayout(vulkan.device, &pipelineLayoutInfo, nullptr, &pipelineLayout) !=
+        VK_SUCCESS) {
       throw std::runtime_error("failed to create pipeline layout!");
     }
 
@@ -148,7 +180,7 @@ namespace ren {
 
 
     std::vector<VkPipelineShaderStageCreateInfo> shaderStages;
-    std::vector<ref<Shader>> shaders = {vertexShader, fragmentShader};
+    std::vector<ref<Shader>> shaders = {pso.vertexShader, pso.fragmentShader};
 
     for (auto &shader : shaders) {
       VkPipelineShaderStageCreateInfo stageInfo{};
@@ -176,7 +208,7 @@ namespace ren {
     // Then we reference all of the structures describing the fixed-function stage.
     pipelineInfo.layout = pipelineLayout;
     // After that comes the pipeline layout, which is a Vulkan handle rather than a struct pointer.
-    pipelineInfo.renderPass = renderpass->getHandle();
+    pipelineInfo.renderPass = renderPass.getHandle();
     pipelineInfo.subpass = 0;
     // Required for compat
     pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;  // Optional
@@ -196,8 +228,13 @@ namespace ren {
 
 
     if (vkCreateGraphicsPipelines(vulkan.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr,
-                                  &this->pipeline) != VK_SUCCESS) {
+                                  &pipeline) != VK_SUCCESS) {
       throw std::runtime_error("failed to create graphics pipeline!");
     }
+
+    auto cachedPipeline = makeRef<CachedPipeline>(pipeline, pipelineLayout, descriptorSetLayout);
+    pipelines[hash] = cachedPipeline;
+    return cachedPipeline;
   }
+
 }  // namespace ren

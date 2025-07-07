@@ -21,6 +21,9 @@ namespace ren {
       std::vector<VkAttachmentDescription> attachments;
       std::vector<std::string> attachmentNames;  // Names of the attachments for debugging.
 
+      u32 colorAttachments = 0;
+      u32 depthAttachments = 0;  // We can only have one depth attachment, but we'll just count it.
+
       VkAttachmentDescription &addColorAttachment(const std::string &name,
                                                   VkFormat format = VK_FORMAT_B8G8R8A8_SRGB);
       VkAttachmentDescription &addDepthAttachment(const std::string &name = "depth");

@@ -76,11 +76,13 @@ namespace ren {
     float depthBias = 0.0f;
     float depthBiasClamp = 0.0f;
     float depthSlopeFactor = 0.0f;
-    // Color blending mode.
-    BlendMode blendMode = BlendMode::None;  // Color blending mode.
 
-    void bake(void);
+    // Color blending mode. Currently does nothing.
+    BlendMode blendMode = BlendMode::None;
 
+    // TODO: include more state here, such as:
+    // - Binding descriptions
+    // - Attribute descriptions
 
     void renderInspector();
     friend void to_json(json& j, const PipelineStateObject& pso);

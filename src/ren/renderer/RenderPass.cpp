@@ -20,6 +20,7 @@ namespace ren {
 
     attachments.push_back(attachment);
     attachmentNames.push_back(name);
+    colorAttachments++;
     return attachments.back();
   }
 
@@ -36,6 +37,7 @@ namespace ren {
 
     attachments.push_back(attachment);
     attachmentNames.push_back(name);
+    depthAttachments++;
     return attachments.back();
   }
 
