@@ -26,5 +26,8 @@ namespace ren {
     void onDetach(void) override;
     void onEvent(Event &event) override;
     void onImguiRender(float deltaTime) override;
+
+    private:
+    void renderEntityHeirarchy(Entity entity);
   };
 }  // namespace ren

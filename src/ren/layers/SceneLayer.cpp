@@ -2,19 +2,17 @@
 #include <imgui_impl_sdl2.h>
 #include <imgui_impl_vulkan.h>
 #include <imgui_internal.h>
+#include <ImGuizmo/ImGuizmo.h>
 
 
-#include <glm/gtc/type_ptr.hpp>
 
 #include <ren/layers/SceneLayer.h>
+#include <ren/layers/inspector/Inspector.h>
 #include <ren/core/Instrumentation.h>
 #include <ren/core/Application.h>
-
 #include <ren/assets/MeshScene.hpp>
 
 #include <ren/types.h>
-
-#include <ren/renderer/pipelines/PipelineStateDesc.h>
 
 namespace ren {
 
@@ -34,9 +32,13 @@ namespace ren {
 
 
     this->meshScene = MeshScene::loadGLTF("assets/test/meshes/simple_scene.glb");
+    // this->meshScene = MeshScene::loadGLTF("assets/test/meshes/unit_cube.glb");
 
 
     this->meshScene->instantiate(scene);
+
+
+    // MeshScene::loadGLTF("assets/test/meshes/cat.glb")->instantiate(scene);
 
 
     auto dumpDot = [&](void) {
@@ -52,7 +54,7 @@ namespace ren {
       view.each([&](entt::entity entity, const comp::Relationship &rel, const comp::Name &name) {
         fmt::print("  e{} [label=\"{}\"];\n", (u32)entity, name.name);
 
-        if (rel.parent != entt::null) {
+        if (rel.parent != UUID::null) {
           fmt::print("  e{} -> e{} [label=P];\n", (u32)entity, (u32)rel.parent);
         } else {
           fmt::println("  {{ rank=min; e{}; }};", (u32)entity);
@@ -60,18 +62,18 @@ namespace ren {
 
 
         // siblings are the same rank.
-        if (rel.nextSibling != entt::null) {
+        if (rel.nextSibling != UUID::null) {
           fmt::println("  e{} -> e{} [label=\"{}.n\"];", (u32)entity, (u32)rel.nextSibling,
                        name.name);
           fmt::println("  {{ rank=same; e{}; e{} }};\n", (u32)entity, (u32)rel.nextSibling);
         }
 
-        if (rel.prevSibling != entt::null) {
+        if (rel.prevSibling != UUID::null) {
           fmt::println("  e{} -> e{} [label=\"{}.p\"];", (u32)entity, (u32)rel.prevSibling,
                        name.name);
         }
 
-        if (rel.firstChild != entt::null) {
+        if (rel.firstChild != UUID::null) {
           fmt::print("  e{} -> e{} [style=dotted];\n", (u32)entity, (u32)rel.firstChild);
         }
       });
@@ -115,12 +117,14 @@ namespace ren {
   }
 
 
-  static void drawVec3Control(const std::string &label, glm::vec3 &values, float resetValue = 0.0f,
+  static bool drawVec3Control(const std::string &label, glm::vec3 &values, float resetValue = 0.0f,
                               float columnWidth = 100.0f) {
+    bool changed = false;
     ImGui::PushID(&values);
     ImGui::Columns(2);
 
     ImGui::SetColumnWidth(0, columnWidth);
+    // set the next column to the full width
     ImGui::Text("%s", label.c_str());
     ImGui::NextColumn();
 
@@ -132,45 +136,77 @@ namespace ren {
     ImVec2 buttonSize = ImVec2{lineheight + 3, lineheight};
 
 
-    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{0.8f, 0.1f, 0.15f, 1.0f});
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4{0.9f, 0.2f, 0.2f, 1.0f});
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4{0.8f, 0.1f, 0.15f, 1.0f});
-    if (ImGui::Button("X", buttonSize)) { values.x = resetValue; }
-    ImGui::PopStyleColor(3);
+    // ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{0.8f, 0.1f, 0.15f, 1.0f});
+    // ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4{0.9f, 0.2f, 0.2f, 1.0f});
+    // ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4{0.8f, 0.1f, 0.15f, 1.0f});
+    if (ImGui::Button("X", buttonSize)) {
+      values.x = resetValue;
+      changed = true;
+    }
+    // ImGui::PopStyleColor(3);
 
     ImGui::SameLine();
-    ImGui::DragFloat("##X", &values.x, 0.1f);
+    changed |= ImGui::DragFloat("##X", &values.x, 0.1f);
     ImGui::PopItemWidth();
     ImGui::SameLine();
 
 
 
-    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{0.2f, 0.7f, 0.3f, 1.0f});
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4{0.2f, 0.9f, 0.3f, 1.0f});
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4{0.2f, 0.7f, 0.3f, 1.0f});
-    if (ImGui::Button("Y", buttonSize)) { values.y = resetValue; }
-    ImGui::PopStyleColor(3);
+    // ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{0.2f, 0.7f, 0.3f, 1.0f});
+    // ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4{0.2f, 0.9f, 0.3f, 1.0f});
+    // ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4{0.2f, 0.7f, 0.3f, 1.0f});
+    if (ImGui::Button("Y", buttonSize)) {
+      values.y = resetValue;
+      changed = true;
+    }
+    // ImGui::PopStyleColor(3);
 
     ImGui::SameLine();
-    ImGui::DragFloat("##Y", &values.y, 0.1f);
+    changed |= ImGui::DragFloat("##Y", &values.y, 0.1f);
     ImGui::PopItemWidth();
     ImGui::SameLine();
 
 
 
-    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{0.1f, 0.25f, 0.8f, 1.0f});
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4{0.2f, 0.35f, 0.9f, 1.0f});
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4{0.1f, 0.25f, 0.8f, 1.0f});
-    if (ImGui::Button("Z", buttonSize)) { values.z = resetValue; }
-    ImGui::PopStyleColor(3);
+    // ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{0.1f, 0.25f, 0.8f, 1.0f});
+    // ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4{0.2f, 0.35f, 0.9f, 1.0f});
+    // ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4{0.1f, 0.25f, 0.8f, 1.0f});
+    if (ImGui::Button("Z", buttonSize)) {
+      values.z = resetValue;
+      changed = true;
+    }
+    // ImGui::PopStyleColor(3);
 
     ImGui::SameLine();
-    ImGui::DragFloat("##Z", &values.z, 0.1f);
+    changed |= ImGui::DragFloat("##Z", &values.z, 0.1f);
     ImGui::PopItemWidth();
 
 
     ImGui::PopStyleVar();
     ImGui::Columns(1);
+    ImGui::PopID();
+    return changed;
+  }
+
+
+
+  void SceneLayer::renderEntityHeirarchy(Entity entity) {
+    REN_PROFILE_FUNCTION();
+
+    auto eid = entity.getUUID();
+    ImGui::PushID((u64)eid);
+
+    if (ImGui::TreeNode(entity.getName().c_str())) {
+      ren::renderEntityInspector(entity);
+
+      entity.eachChild([this](Entity child) {
+        // fmt::print("Child: {}\n", child.getName());
+        renderEntityHeirarchy(child);
+      });
+
+      ImGui::TreePop();
+    }
+
     ImGui::PopID();
   }
 
@@ -178,9 +214,20 @@ namespace ren {
   void SceneLayer::onImguiRender(float deltaTime) {
     REN_PROFILE_FUNCTION();
 
+    auto viewMatrix = this->camera.view_matrix();
+    auto projMatrix = this->camera.projection;
+    projMatrix[1][1] *= -1;  // Vulkan thing, flip the Y axis.
+    auto identityMatrix = glm::mat4(1.0f);
+
+    ImGuizmo::SetOrthographic(false);
+    // ImGuizmo::SetDrawlist();
+    // int windowWidth, windowHeight;
+    // SDL_GetWindowSize(app.getWindow(), &windowWidth, &windowHeight);
+
+
+
 
     ImGui::Begin("Scene Layer");
-
 
     if (ImGui::CollapsingHeader("Scene Information")) {
       drawVec3Control("Position", camera.position, 0.0f, 100.0f);
@@ -188,11 +235,7 @@ namespace ren {
       drawVec3Control("Velocity", camera.velocity, 0.0f, 100.0f);
     }
 
-
-    if (ImGui::CollapsingHeader("Mesh Scene")) {
-      meshScene->onImguiRender();
-    }
-
+    if (ImGui::CollapsingHeader("Mesh Scene")) { meshScene->onImguiRender(); }
 
     ImGui::Separator();
 
@@ -201,15 +244,17 @@ namespace ren {
       cube.add<comp::Mesh>(ren::loadGLTF("assets/test/meshes/unit_cube.glb"));
     }
 
-    auto view = scene.getAllWith<comp::ID, comp::Name, comp::Transform>();
-    for (auto [entity, id, name, transform] : view.each()) {
-      ImGui::PushID((u32)entity);
-      ImGui::Text("Entity: %s (ID: 0x%llx)", name.name.c_str(), (u64)id.uuid);
-      drawVec3Control("Position", transform.translation, 0.0f, 100.0f);
-      drawVec3Control("Rotation", transform.rotation, 0.0f, 100.0f);
-      drawVec3Control("Scale", transform.scale, 1.0f, 100.0f);
-      ImGui::PopID();
+
+    // render the root nodes, and their children.
+    auto view = scene.getAllWith<comp::Relationship>();
+    for (auto [eid, rel] : view.each()) {
+      if (rel.parent == UUID::null) {
+        Entity e(eid, &this->scene);
+        renderEntityHeirarchy(e);
+      }
     }
+
+
 
     ImGui::End();
   }

@@ -172,7 +172,7 @@ namespace ren {
     // ImGui::ShowDemoWindow();
 
 
-    {
+    if (0) {
       ImGui::Begin("Render Passes");
       auto &renderPasses = ren::RenderPass::allPasses();
 
@@ -187,7 +187,6 @@ namespace ren {
           for (size_t i = 0; i < pass->getDescription().attachments.size(); ++i) {
             auto &attachment = pass->getDescription().attachments[i];
             ImGui::Text("Attachment %zu: %s", i, pass->getDescription().attachmentNames[i].c_str());
-
           }
 
           auto &desc = pass->getDescription();
@@ -200,23 +199,25 @@ namespace ren {
       ImGui::End();
     }
 
-    if (ImGui::BeginMainMenuBar()) {
-      if (ImGui::BeginMenu("File")) {
-        // if (ImGui::MenuItem("Exit")) {
-        //   ren::Application::get().close();
-        // }
-        ImGui::EndMenu();
-      }
-      if (ImGui::BeginMenu("View")) {
-        bool dockspace = ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_DockingEnable;
-        if (ImGui::MenuItem("Dockspace", nullptr, &dockspace)) {
-          ImGui::GetIO().ConfigFlags ^= ImGuiConfigFlags_DockingEnable;
+    if (0) {
+      if (ImGui::BeginMainMenuBar()) {
+        if (ImGui::BeginMenu("File")) {
+          // if (ImGui::MenuItem("Exit")) {
+          //   ren::Application::get().close();
+          // }
+          ImGui::EndMenu();
         }
-        ImGui::EndMenu();
-      }
+        if (ImGui::BeginMenu("View")) {
+          bool dockspace = ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_DockingEnable;
+          if (ImGui::MenuItem("Dockspace", nullptr, &dockspace)) {
+            ImGui::GetIO().ConfigFlags ^= ImGuiConfigFlags_DockingEnable;
+          }
+          ImGui::EndMenu();
+        }
 
-      // end
-      ImGui::EndMainMenuBar();
+        // end
+        ImGui::EndMainMenuBar();
+      }
     }
   }
 }  // namespace ren
