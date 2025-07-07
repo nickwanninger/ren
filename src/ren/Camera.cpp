@@ -17,11 +17,11 @@ void ren::Camera::update(float dt) {
   bool right_pressed = mouse & SDL_BUTTON(SDL_BUTTON_RIGHT);
 
   if (right_pressed && !mouse_captured && not io.WantCaptureMouse) {
-    SDL_SetRelativeMouseMode(SDL_TRUE);
+    // SDL_SetRelativeMouseMode(SDL_TRUE);
     printf("Mouse captured, relative mode enabled\n");
     mouse_captured = true;
   } else if (!right_pressed && mouse_captured) {
-    SDL_SetRelativeMouseMode(SDL_FALSE);
+    // SDL_SetRelativeMouseMode(SDL_FALSE);
     printf("Mouse released, capturing disabled\n");
     mouse_captured = false;
   }
