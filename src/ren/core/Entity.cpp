@@ -34,7 +34,6 @@ namespace ren {
 
     // add at the head of the children linked list.
     auto &rel = get<comp::Relationship>();
-    rel.children++;
 
     child.setParent(*this);  // Set the parent relationship of the child.
     auto front = getFirstChild();
@@ -55,7 +54,6 @@ namespace ren {
     }
 
     auto &rel = get<comp::Relationship>();
-    rel.children--;
 
 
     // If the child is the first child, we need to update the firstChild pointer to be the next

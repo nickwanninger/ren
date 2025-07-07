@@ -84,7 +84,6 @@ namespace ren {
 
 
     // ---- Scene Graph Relationships ---- //
-    size_t getChildrenCount() { return get<comp::Relationship>().children; }
     Entity getParent() { return scene->getEntity(get<comp::Relationship>().parent); }
 
     template <typename T>
@@ -126,7 +125,6 @@ namespace ren {
     void setParent(Entity parent) {
       if (parent) {
         get<comp::Relationship>().parent = parent.getUUID();
-        parent.get<comp::Relationship>().children++;
       } else {
         get<comp::Relationship>().parent = UUID::null;
       }
