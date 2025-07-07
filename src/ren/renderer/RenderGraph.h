@@ -78,5 +78,7 @@ namespace ren {
     // Given a resource name, return the list of nodes which depend on it.
     std::map<std::string, std::vector<UUID>> resourceDependants;
     std::map<std::string, UUID> resourceProducers;
+
+    void renderImGui();
   };
 }  // namespace ren

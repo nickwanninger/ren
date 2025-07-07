@@ -1,4 +1,8 @@
 #include <ren/renderer/RenderGraph.h>
+
+#include <imgui/imgui.h>
+#include <ImGuizmo/ImGuizmo.h>
+#include <ImGuizmo/GraphEditor.h>
 #include <unordered_map>
 
 namespace ren {
@@ -139,6 +143,37 @@ namespace ren {
         outputDone(output.resourceName);
       }
     }
+  }
+
+
+
+  void RenderGraph::renderImGui() {
+    // draw the render graph using imgui and imguizmo
+    ImGui::Begin("Render Graph");
+
+    ImGui::Text("Render Graph Nodes: %zu", nodes.size());
+    ImGui::Text("Resource Dependants: %zu", resourceDependants.size());
+    ImGui::Text("Resource Producers: %zu", resourceProducers.size());
+    ImGui::Separator();
+    ImGui::Text("Nodes:");
+
+    for (const auto &[uuid, node] : nodes) {
+      ImGui::PushID((u64)uuid);
+      ImGui::Text("Node: %s (ID: %llu)", node->desc.name.c_str(), (u64)uuid);
+      ImGui::Text("Inputs:");
+      for (const auto &input : node->inputs) {
+        ImGui::Text("  - %s (Access: %d)", input.resourceName.c_str(), (int)input.access);
+      }
+      ImGui::Text("Outputs:");
+      for (const auto &output : node->outputs) {
+        ImGui::Text("  - %s (Access: %d)", output.resourceName.c_str(), (int)output.access);
+      }
+      ImGui::PopID();
+    }
+
+
+
+    ImGui::End();
   }
 
 }  // namespace ren
