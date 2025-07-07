@@ -78,7 +78,6 @@ namespace ren {
     struct Relationship {
       // This is the parent entity of this entity.
       UUID parent = UUID::null;
-      size_t children = 0;           // how many children this entity has.
       UUID firstChild = UUID::null;  // The first child of this entity.
 
       // We represent the siblings of an entity as a linked list.
@@ -86,7 +85,7 @@ namespace ren {
       UUID nextSibling = UUID::null;  // The next sibling of this entity
 
 
-      NLOHMANN_DEFINE_TYPE_INTRUSIVE(Relationship, parent, children, firstChild, prevSibling,
+      NLOHMANN_DEFINE_TYPE_INTRUSIVE(Relationship, parent, firstChild, prevSibling,
                                      nextSibling);
     };
 
@@ -98,6 +97,13 @@ namespace ren {
       Mesh() = default;
       Mesh(ref<ren::Mesh> mesh)
           : mesh(mesh) {}
+      friend void to_json(json& j, const Mesh& m) {
+        j = m.mesh->getName();
+      }
+
+      friend void from_json(const json& j, UUID& uuid) {
+        abort();
+      }
     };
 
 
