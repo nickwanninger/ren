@@ -3,9 +3,15 @@
 #include <ren/layers/ImGuiLayer.h>
 #include <ren/renderer/pipelines/StandardPipeline.h>
 #include <ren/renderer/pipelines/DisplayPipeline.h>
+#include <ren/renderer/pipelines/PipelineStateObject.h>
+#include <ren/renderer/pipelines/PipelineCache.h>
+#include <ren/misc/hash.h>
+
 #include <imgui.h>
 #include <imgui_impl_vulkan.h>
 #include <imgui_impl_sdl2.h>
+#include <ImGuizmo/ImGuizmo.h>
+
 #include <ren/core/Entity.h>
 #include <ren/assets/Mesh.h>
 
@@ -73,6 +79,9 @@ namespace ren {
     // Clear the layer stack
     this->layerStack.clear();
 
+    this->sceneLayer.reset();
+    this->imguiLayer.reset();
+
     // Nuke the renderer.
     this->renderer.reset();
 
@@ -82,30 +91,13 @@ namespace ren {
   }
 
 
-  // Method 1: Using GLM's built-in functions (recommended)
-  static glm::mat4 createModelMatrix(const glm::vec3 &translation,
-                                     const glm::vec3 &rotation,  // Euler angles in radians
-                                     const glm::vec3 &scale) {
-    glm::mat4 T = glm::translate(glm::mat4(1.0f), translation);
-
-    // Rotation order: Y * X * Z (common convention)
-    glm::mat4 R = glm::rotate(glm::mat4(1.0f), rotation.y, glm::vec3(0, 1, 0)) *
-                  glm::rotate(glm::mat4(1.0f), rotation.x, glm::vec3(1, 0, 0)) *
-                  glm::rotate(glm::mat4(1.0f), rotation.z, glm::vec3(0, 0, 1));
-
-    glm::mat4 S = glm::scale(glm::mat4(1.0f), scale);
-
-    return T * R * S;  // Order: Scale, then Rotate, then Translate
-  }
-
-
-
   void Application::run() {
     auto startTime = std::chrono::high_resolution_clock::now();
     auto lastTime = startTime;
     SDL_Event e;
 
 
+    ren::PipelineCache pipelineCache;
     auto &vulkan = ren::getVulkan();
 
     ren::DescriptorLayoutCache descriptorLayoutCache;
@@ -165,10 +157,14 @@ namespace ren {
       }
     }
 
+
     // but, to make those buffers, we need to make a render pipeline!
-    auto gbufferPipeline =
-        StandardPipeline(renderPass, makeRef<VertexShader>("shaders/opaque.vert.spv"),
-                         makeRef<FragmentShader>("shaders/opaque.frag.spv"), gbufferLayout);
+    // auto gbufferPipeline =
+    //     StandardPipeline(renderPass, makeRef<VertexShader>("shaders/opaque.vert.spv"),
+    //                      makeRef<FragmentShader>("shaders/opaque.frag.spv"), gbufferLayout);
+    ren::PipelineStateObject gbufferPso;
+    gbufferPso.vertexShader = makeRef<VertexShader>("shaders/opaque.vert.spv");
+    gbufferPso.fragmentShader = makeRef<FragmentShader>("shaders/opaque.frag.spv");
 
     // Now we have a deferred rendering pipeline.
 
@@ -272,28 +268,31 @@ namespace ren {
       renderer->withPass(*renderPass, *gbufferTarget, [&]() {
         trianglesRendered = 0;
         REN_PROFILE_SCOPE("Render Test Pass");
-        
+
 
         // We'll just iterate over the meshes in the scene and render them with their transforms.
         auto view = sceneLayer->scene.getAllWith<comp::Mesh, comp::Transform>();
-        gbufferPipeline.bind(cmd);
+        auto cPSO = pipelineCache.get(*renderPass, gbufferPso, gbufferLayout);
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, cPSO->getHandle());
+        // gbufferPipeline.bind(cmd);
+
+        this->sceneLayer->camera.projection =
+            glm::perspective(glm::radians(fov), renderAspect, 0.01f, 1000.0f);
+        this->sceneLayer->camera.projection[1][1] *= -1;  // Vulkan thing.
+
+        ren::MeshPushConstants pc;
+        pc.view = this->sceneLayer->camera.view_matrix();
+        pc.proj = this->sceneLayer->camera.projection;
 
         view.each([&](entt::entity id, const comp::Mesh &mesh, const comp::Transform &transform) {
-          fmt::println("rendering {}", (u32)id);
-
           REN_PROFILE_SCOPE("Render Mesh");
           // fmt::println("Rendering mesh {} with transform {}", id, transform.getTransform());
           trianglesRendered += mesh.mesh->getIndexCount() / 3;
           ren::bind(cmd, *mesh.mesh->getIndexBuffer());
           ren::bind(cmd, *mesh.mesh->getVertexBuffer());
 
-          ren::MeshPushConstants pc;
-          pc.model = createModelMatrix(transform.translation, transform.rotation, transform.scale);
-          pc.view = this->sceneLayer->camera.view_matrix();
-          pc.proj = glm::perspective(glm::radians(fov), renderAspect, 0.01f, 1000.0f);
-          pc.proj[1][1] *= -1;  // vulkan things...
-
-          vkCmdPushConstants(cmd, gbufferPipeline.getLayout(), VK_SHADER_STAGE_VERTEX_BIT, 0,
+          pc.model = transform.getTransform();
+          vkCmdPushConstants(cmd, cPSO->getLayout(), VK_SHADER_STAGE_VERTEX_BIT, 0,
                              sizeof(ren::MeshPushConstants), &pc);
 
           // draw a single triangle on the screen.
@@ -307,6 +306,48 @@ namespace ren {
     // ---------------------------------------------------
 
 
+    ren::RenderGraph graph;
+    {
+      REN_PROFILE_SCOPE("Render Graph Setup");
+
+      auto shadowMap = graph.addNode("ShadowMap");
+      shadowMap->addOutput("shadowMap");
+
+
+      auto gbuffer = graph.addNode("Gbuffer");
+      gbuffer->addOutput("emissive");
+      gbuffer->addOutput("albedo");
+      gbuffer->addOutput("normal");
+      gbuffer->addOutput("pbr");
+      gbuffer->addOutput("depthStencil");
+
+      auto lighting = graph.addNode("Lighting");
+      lighting->addInput("emissive");
+      lighting->addInput("albedo");
+      lighting->addInput("normal");
+      lighting->addInput("pbr");
+      lighting->addInput("depthStencil");
+      lighting->addInput("shadowMap");
+
+      lighting->addOutput("HDR");
+
+      auto tonemap = graph.addNode("Tonemap");
+      tonemap->addInput("HDR");
+      tonemap->addInput("shadowMap");
+      tonemap->addOutput("LDR");
+
+      auto present = graph.addNode("PresentAndUI");
+      present->addInput("LDR");
+      present->addOutput("SwapchainImage");
+
+      // graph.dump();
+      // {
+      //   REN_PROFILE_SCOPE("Graph Run");
+      //   graph.run();
+      // }
+
+      // exit(0);
+    }
 
     while (this->running) {
       int eventsHandled = 0;
@@ -351,47 +392,6 @@ namespace ren {
       auto frameStats = frame.perf.nextFrame(frame.commandBuffer);
 
 
-      if (0) {
-        REN_PROFILE_SCOPE("Render Graph Setup");
-        ren::RenderGraph graph;
-        auto shadowMap = graph.addNode("ShadowMap");
-        shadowMap->addOutput("shadowMap");
-
-
-        auto gbuffer = graph.addNode("Gbuffer");
-        gbuffer->addOutput("emissive");
-        gbuffer->addOutput("albedo");
-        gbuffer->addOutput("normal");
-        gbuffer->addOutput("pbr");
-        gbuffer->addOutput("depthStencil");
-
-        auto lighting = graph.addNode("Lighting");
-        lighting->addInput("emissive");
-        lighting->addInput("albedo");
-        lighting->addInput("normal");
-        lighting->addInput("pbr");
-        lighting->addInput("depthStencil");
-        lighting->addInput("shadowMap");
-
-        lighting->addOutput("HDR");
-
-        auto tonemap = graph.addNode("Tonemap");
-        tonemap->addInput("HDR");
-        tonemap->addInput("shadowMap");
-        tonemap->addOutput("LDR");
-
-        auto present = graph.addNode("PresentAndUI");
-        present->addInput("LDR");
-        present->addOutput("SwapchainImage");
-
-        graph.dump();
-        {
-          REN_PROFILE_SCOPE("Graph Run");
-          graph.run();
-        }
-
-        // exit(0);
-      }
 
       REN_PROFILE_COUNTER("Memory Usage MB", ren::getCurrentProcessRSS() / (1024.0 * 1024.0));
 
@@ -464,6 +464,15 @@ namespace ren {
           ImGui_ImplSDL2_NewFrame();
 
           ImGui::NewFrame();
+          ImGuizmo::BeginFrame();
+          ImGuizmo::SetDrawlist(ImGui::GetBackgroundDrawList());
+
+          int windowWidth, windowHeight;
+          SDL_GetWindowSize(getWindow(), &windowWidth, &windowHeight);
+          // float windowWidth = (float)ImGui::GetWindowWidth();
+          // float windowHeight = (float)ImGui::GetWindowHeight();
+
+          ImGuizmo::SetRect(0.0f, 0.0f, windowWidth, windowHeight);
         }
 
         ImGui::Begin("G-Buffer Viewer");
@@ -487,7 +496,7 @@ namespace ren {
 
         auto attachments = gbufferTarget->getAttachments();
         for (int i = 0; i < attachments.size(); i++) {
-          if (i != 2) continue;
+          // if (i != 2) continue;
           auto &attachment = attachments[i];
           ImGui::Text("Attachment: %s", attachment.name.c_str());
           float width = ImGui::GetContentRegionAvail().x;
@@ -500,7 +509,20 @@ namespace ren {
 
         ImGui::End();
 
+        ImGui::Begin("PSO");
+        ImGui::Text("Pipeline cache size: %zu", pipelineCache.size());
 
+        json j = gbufferPso;
+        ImGui::Text("Pipeline State Object: %s", j.dump(2).c_str());
+        // hash of that object:
+        ImGui::Text("Hash: %llu", ren::hash(gbufferPso));
+
+        gbufferPso.renderInspector();
+        ImGui::End();
+
+
+
+        graph.renderImGui();
 
         layerStack.onImGuiRender(deltaTime);
 
