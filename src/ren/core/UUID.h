@@ -15,9 +15,6 @@ namespace ren {
 
     operator u64() const { return m_UUID; }
 
-    // NLOHMANN_DEFINE_TYPE_INTRUSIVE(UUID, m_UUID);
-
-    // define a custom json serializer
     friend void to_json(json& j, const UUID& uuid) {
       if (uuid.m_UUID == UUID::null) {
         j = "null";
