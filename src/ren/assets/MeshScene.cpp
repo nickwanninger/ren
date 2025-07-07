@@ -2,6 +2,7 @@
 
 #include <imgui.h>
 #include <tinygltf/tiny_gltf.h>
+#include <math.h>
 
 namespace ren {
 
@@ -192,14 +193,11 @@ namespace ren {
         sceneNode->transform.translation.y = node.translation[1];
         sceneNode->transform.translation.z = node.translation[2];
       }
-      if (node.rotation.size() > 3) {
-        sceneNode->transform.rotation.x = node.rotation[0];
-        sceneNode->transform.rotation.y = node.rotation[1];
-        sceneNode->transform.rotation.z = node.rotation[2];
-        if (node.rotation.size() > 4) {
-          fmt::println(
-              "Warning: Node rotation has more than 4 components, using only the first 3.");
-        }
+
+      if (node.rotation.size() == 4) {
+        glm::quat rotation(node.rotation[3], node.rotation[0], node.rotation[1], node.rotation[2]);
+
+        sceneNode->transform.rotation = rotation;
       }
 
       if (node.scale.size() == 3) {
@@ -207,6 +205,8 @@ namespace ren {
         sceneNode->transform.scale.y = node.scale[1];
         sceneNode->transform.scale.z = node.scale[2];
       }
+
+      sceneNode->transform.transformMatrix = sceneNode->transform.getTransform();  // Update the transform matrix
 
       // Add the node to the scene
       scene->nodes.push_back(sceneNode);
@@ -252,6 +252,29 @@ namespace ren {
   }
 
 
+  glm::vec3 toEuler(const glm::quat &quaternion) {
+    auto q = glm::normalize(quaternion);
+    glm::vec3 res;
+
+    double sinr_cosp = +2.0 * (q.w * q.x + q.y * q.z);
+    double cosr_cosp = +1.0 - 2.0 * (q.x * q.x + q.y * q.y);
+    res.x = atan2(sinr_cosp, cosr_cosp);
+
+    double sinp = +2.0 * (q.w * q.y - q.z * q.x);
+    if (abs(sinp) >= 1) {
+      float sign = sinp < 0 ? -1.0f : 1.0f;
+      res.y = M_PI / 2 * sign;
+    } else {
+      res.y = asin(sinp);
+    }
+
+    double siny_cosp = +2.0 * (q.w * q.z + q.x * q.y);
+    double cosy_cosp = +1.0 - 2.0 * (q.y * q.y + q.z * q.z);
+    res.z = atan2(siny_cosp, cosy_cosp);
+
+    return res;
+  }
+
   static void renderNodeTreeImGui(const MeshScene::Node &node) {
     ImGui::PushID(&node);
 
@@ -260,8 +283,44 @@ namespace ren {
       ImGui::Text("Transform: ");
       ImGui::Text("  Translation: (%f, %f, %f)", node.transform.translation.x,
                   node.transform.translation.y, node.transform.translation.z);
-      ImGui::Text("  Rotation: (%f, %f, %f)", node.transform.rotation.x, node.transform.rotation.y,
-                  node.transform.rotation.z);
+      ImGui::Text("  Rotation: (x:%f, y:%f, z:%f, w:%f)", node.transform.rotation.x,
+                  node.transform.rotation.y, node.transform.rotation.z, node.transform.rotation.w);
+      auto euler = glm::eulerAngles(node.transform.rotation);
+
+      auto printAngles = [&](const char *order, glm::vec3 angles) {
+        ImGui::Text("  Euler (%s): (x:%7.2f, y:%7.2f, z:%7.2f)", order, glm::degrees(angles.x),
+                    glm::degrees(angles.y), glm::degrees(angles.z));
+
+        // turn that angle back into a quaternion and print it
+        glm::quat quat = glm::normalize(glm::quat(angles));
+        ImGui::Text("               (x:%7.2f, y:%7.2f, z:%7.2f, w:%7.2f)", quat.x, quat.y, quat.z,
+                    quat.w);
+      };
+
+      printAngles("RAW", euler);
+
+      glm::mat4 rotMatrix = glm::mat4_cast(node.transform.rotation);
+
+#define TEST(order)                                                      \
+  {                                                                      \
+    glm::extractEulerAngle##order(rotMatrix, euler.x, euler.y, euler.z); \
+    printAngles(#order, euler);                                          \
+  }
+      TEST(XYZ)
+      TEST(YXZ)
+      TEST(XZX)
+      TEST(XYX)
+      TEST(YXY)
+      TEST(YZY)
+      TEST(ZYZ)
+      TEST(ZXZ)
+      TEST(XZY)
+      TEST(YZX)
+      TEST(ZYX)
+      TEST(ZXY)
+#undef TEST
+
+
       ImGui::Text("  Scale: (%f, %f, %f)", node.transform.scale.x, node.transform.scale.y,
                   node.transform.scale.z);
 
@@ -291,8 +350,10 @@ namespace ren {
           ImGui::Text("Transform: ");
           ImGui::Text("  Translation: (%f, %f, %f)", node->transform.translation.x,
                       node->transform.translation.y, node->transform.translation.z);
-          ImGui::Text("  Rotation: (%f, %f, %f)", node->transform.rotation.x,
-                      node->transform.rotation.y, node->transform.rotation.z);
+          // rotation quaternion
+          ImGui::Text("  Rotation: (%f, %f, %f, %f)", node->transform.rotation.w,
+                      node->transform.rotation.x, node->transform.rotation.y,
+                      node->transform.rotation.z);
           ImGui::Text("  Scale: (%f, %f, %f)", node->transform.scale.x, node->transform.scale.y,
                       node->transform.scale.z);
 
@@ -309,8 +370,8 @@ namespace ren {
       ImGui::PushID(&meshes);
       for (const auto &mesh : meshes) {
         if (ImGui::TreeNode(mesh->getName().c_str())) {
-          ImGui::Text("Vertices: %zu", mesh->getVertexCount());
-          ImGui::Text("Indices: %zu", mesh->getIndexCount());
+          ImGui::Text("Vertices: %u", mesh->getVertexCount());
+          ImGui::Text("Indices: %u", mesh->getIndexCount());
           ImGui::TreePop();
         }
       }
@@ -336,7 +397,7 @@ namespace ren {
   static void instantiateNode(ren::Scene &scene, const MeshScene::Node &node, Entity parentEntity) {
     // Create an entity for this node.
     Entity entity = scene.createEntity(node.name);
-    entity.add<comp::Transform>(node.transform);
+    entity.get<comp::Transform>() = node.transform;  // Set the transform component.
 
     // If the node has a mesh, add it to the entity.
     if (node.mesh) { entity.add<comp::Mesh>(node.mesh); }
@@ -353,7 +414,6 @@ namespace ren {
   Entity MeshScene::instantiate(ren::Scene &scene) {
     // Create an entity for each root node in the scene.
     Entity rootEntity = scene.createEntity();
-    rootEntity.add<comp::Transform>();
 
     // Add the root nodes as children of the root entity.
     for (const auto &node : rootNodes) {
