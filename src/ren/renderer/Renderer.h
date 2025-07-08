@@ -10,6 +10,7 @@
 #include <ren/renderer/RenderPassCache.h>
 #include <ren/renderer/pipelines/PipelineCache.h>
 #include <ren/renderer/pipelines/PipelineStateObject.h>
+#include <ren/renderer/ShaderBinder.h>
 #include <SDL2/SDL.h>
 
 namespace ren {
@@ -87,6 +88,22 @@ namespace ren {
       return displayPass;
     }
 
+
+    ShaderBinder startBinding(u32 set);
+
+
+    // TODO: move me to .cpp
+    inline Sampler &getSampler(VkFilter filter = VK_FILTER_NEAREST) {
+      // Get or create a sampler with the given filter.
+      auto it = samplers.find(filter);
+      if (it != samplers.end()) {
+        return *it->second;
+      } else {
+        samplers.insert({filter, makeRef<Sampler>(filter)});
+        return *samplers[filter];
+      }
+    }
+
    private:
     void initSwapchain();
     inline const PipelineStateObject &getCurrentPSO() const {
@@ -95,6 +112,8 @@ namespace ren {
       }
       return currentPipeline->getPSO();
     }
+
+    inline auto getCurrentProgram() const { return getCurrentPSO().program; }
 
    private:
     ren::PipelineCache pipelineCache;
@@ -107,5 +126,7 @@ namespace ren {
     ref<VulkanInstance> vulkan = nullptr;
     ref<Swapchain> swapchain = nullptr;
     ref<RenderPass> displayPass = nullptr;
+
+    std::unordered_map<VkFilter, ref<Sampler>> samplers;
   };
 }  // namespace ren

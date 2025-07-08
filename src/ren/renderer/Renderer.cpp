@@ -131,6 +131,19 @@ namespace ren {
 
 
 
+  ShaderBinder Renderer::startBinding(u32 set) {
+    REN_PROFILE_FUNCTION();
+
+    // Start binding the shader program.
+    if (this->currentPipeline == nullptr) {
+      throw std::runtime_error("Cannot start binding without a current pipeline set. Call bind() first.");
+    }
+
+    // Create a shader binder for the current program.
+    return ShaderBinder(*getCurrentProgram(), set);
+  }
+
+
   void Renderer::bind(ref<ShaderProgram> program) {
     REN_PROFILE_FUNCTION();
 

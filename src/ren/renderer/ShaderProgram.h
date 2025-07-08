@@ -19,8 +19,6 @@ namespace ren {
     VkShaderStageFlags stages;
   };
 
-
-
   // A ShaderProgram is a collection of shaders that can be used to describe a
   // pipeline.  For now, we just have a vertex and fragment shader, but we can
   // extend this later if we want compute shaders.
@@ -43,6 +41,8 @@ namespace ren {
     ref<Shader> getFragmentShader() const { return fragmentShader; }
     // TODO: abstract me! We want to also handle compute shaders perhaps!
     std::vector<ref<Shader>> getShaders() const { return {vertexShader, fragmentShader}; }
+    const std::vector<ShaderBinding>& getBindings() const { return bindings; }
+    const ShaderBinding* getBinding(const std::string_view& name) const;
 
     const std::vector<VkDescriptorSetLayout>& getDescriptorSetLayouts() const { return setLayouts; }
 

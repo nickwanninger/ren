@@ -83,7 +83,6 @@ namespace ren {
     // Color blending mode. Currently does nothing.
     BlendMode blendMode = BlendMode::None;
 
-
     // TODO: abstract me!
     VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
 

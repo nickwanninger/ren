@@ -14,7 +14,7 @@ namespace ren {
     // Construct a texture with CPU side pixel data. Expect R8G8B8A8_SRGB format.
     // Use the load methods to create textures.
     Texture(const std::string &name, u32 width, u32 height, u8 *data = nullptr);
-    Texture(ren::ImageRef image);
+    explicit Texture(ren::ImageRef image);
 
     ~Texture();
 

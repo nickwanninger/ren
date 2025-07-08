@@ -186,7 +186,7 @@ namespace ren {
       vkCreateDescriptorSetLayout(vulkan.device, &layoutInfo, nullptr, &setLayouts[setIndex]);
     }
 
-    
+
     // TODO: also parse this!
     // ---- Push Constants ---- //
     VkPushConstantRange pushConstants{};
@@ -205,6 +205,18 @@ namespace ren {
     pipelineLayoutInfo.pushConstantRangeCount = 1;
     pipelineLayoutInfo.pPushConstantRanges = &pushConstants;
     vkCreatePipelineLayout(vulkan.device, &pipelineLayoutInfo, nullptr, &this->pipelineLayout);
+
+    
+  }
+
+
+
+  const ShaderBinding* ShaderProgram::getBinding(const std::string_view& name) const {
+    // TODO: as we grow, we need a faster lookup mechanism!
+    for (const auto& binding : bindings) {
+      if (binding.name == name) { return &binding; }
+    }
+    return nullptr;  // Not found
   }
 
 

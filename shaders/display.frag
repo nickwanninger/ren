@@ -3,28 +3,28 @@
 layout(location = 0) in vec2 uv;
 layout(location = 0) out vec4 outColor;
 
-layout(set = 0, binding = 0) uniform sampler2D gbufferEmissive;
-layout(set = 0, binding = 1) uniform sampler2D gbufferAlbedo;
-layout(set = 0, binding = 2) uniform sampler2D gbufferNormal;
-layout(set = 0, binding = 3) uniform sampler2D gbufferPBR;
-layout(set = 0, binding = 4) uniform sampler2D gbufferDepth;
+layout(set = 0, binding = 0) uniform sampler2D emissive;
+layout(set = 0, binding = 1) uniform sampler2D albedo;
+layout(set = 0, binding = 2) uniform sampler2D normal;
+layout(set = 0, binding = 3) uniform sampler2D pbr;
+layout(set = 0, binding = 4) uniform sampler2D depthStencil;
 
 void main() {
     
     // this is a simple gbuffer shader.
 
     // sample the albedo
-    vec4 albedo = texture(gbufferAlbedo, uv);
+    vec4 albedo = texture(albedo, uv);
 
     // If the albedo is fully transparent, we can skip rendering this pixel.
     if (albedo.a < 0.01) {
         discard;
     }
     // Sample all the textures
-    vec4 emissive = texture(gbufferEmissive, uv);
-    vec4 pbr = texture(gbufferPBR, uv);
-    vec4 depth = texture(gbufferDepth, uv);
-    vec3 normal = texture(gbufferNormal, uv).xyz;
+    vec4 emissive = texture(emissive, uv);
+    vec4 pbr = texture(pbr, uv);
+    vec4 depth = texture(depthStencil, uv);
+    vec3 normal = texture(normal, uv).xyz;
 
     // correct the normal to be in the range [-1, 1]
     normal = normalize(normal * 2.0 - 1.0);

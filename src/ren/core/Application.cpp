@@ -125,12 +125,9 @@ namespace ren {
     float renderAspect = 0.0f;
     bool targetValid = false;
     ref<RenderTarget> gbufferTarget = nullptr;
-    // renderPass->createRenderTarget(ren::target_render_width, ren::target_render_height);
-    // fmt::println("Created render target {}", (u64)gbufferTarget->getHandle());
-    // Make an empty descriptor set layout for the gbuffer because for now we don't have any
-    // textures or samplers.
 
-    // TODO: abstract this crap. (Maybe reflect it from the shaders.)
+
+
 
     DescriptorLayoutInfo gbufferLayoutInfo;
     auto gbufferLayout = descriptorLayoutCache.createLayout(gbufferLayoutInfo);
@@ -153,37 +150,14 @@ namespace ren {
     // auto gbufferPipeline =
     //     StandardPipeline(renderPass, makeRef<VertexShader>("shaders/opaque.vert.spv"),
     //                      makeRef<FragmentShader>("shaders/opaque.frag.spv"), gbufferLayout);
-    ren::PipelineStateObject gbufferPso;
-    gbufferPso.debugName = "GBuffer PSO";
-    gbufferPso.program = makeRef<ShaderProgram>("shaders/opaque");
-    gbufferPso.descriptorSetLayout = gbufferLayout;  // TODO: extract this from the shaders!
+    ren::PipelineStateObject opaquePSO;
+    opaquePSO.debugName = "GBuffer PSO";
+    opaquePSO.program = makeRef<ShaderProgram>("shaders/opaque");
 
-    // Now we have a deferred rendering pipeline.
-
-
-
-    DescriptorLayoutInfo blitLayoutInfo;
-    // For now, we will simply put all the gbuffer textures in a single descriptor set
-    // Albedo, normal, pbr, and depth
-    blitLayoutInfo.addBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1,
-                              VK_SHADER_STAGE_FRAGMENT_BIT);  // Albedo
-    blitLayoutInfo.addBinding(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1,
-                              VK_SHADER_STAGE_FRAGMENT_BIT);  // Normal
-    blitLayoutInfo.addBinding(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1,
-                              VK_SHADER_STAGE_FRAGMENT_BIT);  // PBR
-    blitLayoutInfo.addBinding(3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1,
-                              VK_SHADER_STAGE_FRAGMENT_BIT);  // Emissive
-    blitLayoutInfo.addBinding(4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1,
-                              VK_SHADER_STAGE_FRAGMENT_BIT);  // Depth
-
-    auto blitLayout = descriptorLayoutCache.createLayout(blitLayoutInfo);
-    // Lets make a blit pipeline.
-    // This will be used to blit the gbuffer to the screen.
-    // We will use a simple fullscreen quad to do this.
-    auto blitPipeline = DisplayPipeline(
-        renderer->getDisplayPass(),  // use the main render pass for full screen rendering
-        makeRef<VertexShader>("shaders/display.vert.spv"),
-        makeRef<FragmentShader>("shaders/display.frag.spv"), blitLayout);
+    ren::PipelineStateObject blitPSO;
+    blitPSO.debugName = "GBuffer Blit PSO";
+    blitPSO.program = makeRef<ShaderProgram>("shaders/display");
+    blitPSO.cullMode = ren::CullMode::None;
 
 
 
@@ -246,10 +220,7 @@ namespace ren {
         // We'll just iterate over the meshes in the scene and render them with their transforms.
         auto view = sceneLayer->scene.getAllWith<comp::Mesh, comp::Transform>();
 
-
-        renderer->bind(gbufferPso.program);
-        // gbufferPipeline.bind(cmd);
-
+        renderer->bind(opaquePSO);
 
         this->sceneLayer->camera.projection =
             glm::perspective(glm::radians(fov), renderAspect, 0.01f, 1000.0f);
@@ -325,11 +296,9 @@ namespace ren {
 
 
       render_test();
-
-      printf("%p\n", gbufferTarget.get());
       gbufferTarget->transitionToShaderReadonly(frame.commandBuffer);
 
-    
+
 
       renderer->withPass(*renderer->getDisplayPass(), *frame.renderTarget, [&]() {
         auto cmd = ren::getFrameData().commandBuffer;
@@ -337,30 +306,17 @@ namespace ren {
         {
           REN_PROFILE_SCOPE("Blit GBuffer");
 
-          ren::DescriptorBuilder builder(descriptorLayoutCache, frame.descriptorAllocator);
-          std::vector<VkDescriptorImageInfo> imageInfos;
+          renderer->bind(blitPSO);
+          // begin binding set zero, which is the gbuffer textures.
+          auto textureBinder = renderer->startBinding(0);
           auto &attachments = gbufferTarget->getAttachments();
-          for (int i = 0; i < attachments.size(); i++) {
-            auto &attachment = attachments[i];
-            // printf("Binding attachment %d: %s\n", i, attachment.name.c_str());
-            imageInfos.push_back({gbufferSampler.getHandle(), attachment.texture->getImageView(),
-                                  VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL});
+          for (auto &attachment : attachments) {
+            textureBinder.bind(attachment.name, *attachment.texture);
           }
-
-          for (int i = 0; i < attachments.size(); i++) {
-            builder.bindImage(i, &imageInfos[i], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-                              VK_SHADER_STAGE_FRAGMENT_BIT);
-          }
-
-          VkDescriptorSet gbufferSet;
-          builder.build(gbufferSet);
-          // now bind that set.
-          vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, blitPipeline.getLayout(), 0,
-                                  1, &gbufferSet, 0, nullptr);
+          textureBinder.apply();
 
           frame.perf.begin(cmd, "Blit GBuffer");
-          // bind the pipeline
-          blitPipeline.bind(cmd);
+
           vkCmdDraw(cmd, 3, 1, 0, 0);
           frame.perf.end(cmd, "Blit GBuffer");
         }
@@ -428,11 +384,11 @@ namespace ren {
 
         ImGui::Begin("PSO");
         ImGui::Text("Pipeline cache size: %zu", renderer->getPipelineCache().size());
-        json j = gbufferPso;
+        json j = opaquePSO;
         ImGui::Text("Pipeline State Object: %s", j.dump(2).c_str());
         // hash of that object:
-        ImGui::Text("Hash: %llu", ren::hash(gbufferPso));
-        gbufferPso.renderInspector();
+        ImGui::Text("Hash: %llu", ren::hash(opaquePSO));
+        opaquePSO.renderInspector();
         ImGui::End();
 
         // graph.renderImGui();
