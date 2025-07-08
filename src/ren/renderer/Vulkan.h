@@ -35,8 +35,14 @@ namespace ren {
   class VulkanInstance : public std::enable_shared_from_this<VulkanInstance> {
    public:
     VulkanInstance(SDL_Window *window);
-
     ~VulkanInstance();
+
+    // No copy, no move
+    VulkanInstance(const VulkanInstance &) = delete;
+    VulkanInstance &operator=(const VulkanInstance &) = delete;
+    VulkanInstance(VulkanInstance &&) = delete;
+    VulkanInstance &operator=(VulkanInstance &&) = delete;
+
 
     SDL_Window *window = nullptr;
 

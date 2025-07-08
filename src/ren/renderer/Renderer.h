@@ -23,18 +23,30 @@ namespace ren {
 
     Renderer(SDL_Window *window);
     ~Renderer(void);
+    // Non-copyable, non-movable
+    Renderer(const Renderer &) = delete;
+    Renderer &operator=(const Renderer &) = delete;
+    Renderer(Renderer &&) = delete;
+    Renderer &operator=(Renderer &&) = delete;
 
-    // Called at the start of a frame. Sync's with the swapchain and acquires the next frame data.
+
+
+    // Begin a new frame. This will drive the swapchain and prepare the frame data for drawing.
     void beginFrame(void);
-    // Called at the end of the frame to submit everything and present the frame.
+    // End the current frame. This will submit the command buffer to the GPU and
+    // present the swapchain image to the screen.
+
     void endFrame(void);
 
+    // Wait for the GPU to finish all commands before proceeding.
+    // Avoid using this as much as you can!
     void waitForIdle(void);
 
-
+    // Given a render pass and a render target, begin a new render pass.
     void beginPass(ren::RenderPass &pass, ren::RenderTarget &target);
     void endPass(void);
 
+    // Given a render pass and render target, execute a function within that pass.
     template <typename Fn>
     inline void withPass(ren::RenderPass &pass, ren::RenderTarget &target, Fn &&func) {
       REN_PROFILE_FUNCTION();
@@ -43,15 +55,25 @@ namespace ren {
       endPass();
     }
 
-
-
+    // Once you have a render pass set, you can bind a pipeline state object to
+    // it to begin rasterizing geometry however the PSO + Program describes.
     void bind(const ren::PipelineStateObject &pso);
+    void bind(ref<ShaderProgram> program);
+
+    // Push constants to the current state.
+    template <typename T>
+    void setPushConstants(const T &data) {
+      vkCmdPushConstants(getCommandBuffer(), currentPipeline->getLayout(),
+                         VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(T), (void *)&data);
+    }
 
 
-
+    // Get the current renderer instance.
     static Renderer &get(void);
 
+    // Get a handle to the render pass cache.
     auto &getRenderPassCache() { return renderPassCache; }
+    auto &getPipelineCache() { return pipelineCache; }
 
     inline auto getDisplayPass() {
       if (displayPass == nullptr) {
@@ -67,11 +89,17 @@ namespace ren {
 
    private:
     void initSwapchain();
+    inline const PipelineStateObject &getCurrentPSO() const {
+      if (currentPipeline == nullptr) {
+        throw std::runtime_error("No current pipeline set. Call bind() first.");
+      }
+      return currentPipeline->getPSO();
+    }
 
    private:
-
     ren::PipelineCache pipelineCache;
     ref<RenderPass> currentPass = nullptr;
+    ref<CachedPipeline> currentPipeline = nullptr;
 
     VkCommandBuffer getCommandBuffer();
     SDL_Window *window;

@@ -24,7 +24,7 @@ namespace ren {
   // A ShaderProgram is a collection of shaders that can be used to describe a
   // pipeline.  For now, we just have a vertex and fragment shader, but we can
   // extend this later if we want compute shaders.
-  class ShaderProgram : public ren::VulkanResource {
+  class ShaderProgram : public ren::VulkanResource, public ren::HasUUID {
    public:
     ShaderProgram(const std::string& shaderPrefix);
     ShaderProgram(const std::string& vertexShader, const std::string& fragmentShader);
@@ -43,6 +43,8 @@ namespace ren {
     ref<Shader> getFragmentShader() const { return fragmentShader; }
     // TODO: abstract me! We want to also handle compute shaders perhaps!
     std::vector<ref<Shader>> getShaders() const { return {vertexShader, fragmentShader}; }
+
+    const std::vector<VkDescriptorSetLayout>& getDescriptorSetLayouts() const { return setLayouts; }
 
 
     // Serialization is currently simple. We need to be smarter about reading this back out, though.

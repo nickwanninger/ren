@@ -27,9 +27,30 @@ namespace ren {
 
   RenderTarget::~RenderTarget() {
     auto &vulkan = getVulkan();
-  // Destroy the framebuffers in the cache
+    // Destroy the framebuffers in the cache
     for (auto &pair : m_cache) {
       vkDestroyFramebuffer(vulkan.device, pair.second, nullptr);
+    }
+  }
+
+  void RenderTarget::transitionToShaderReadonly(VkCommandBuffer cmd) {
+    REN_PROFILE_SCOPE("Transition Images");
+
+    auto &vulkan = getVulkan();
+    // We should really batch these up!
+    for (auto &attachment : attachments) {
+      if (attachment.type == RenderTargetAttachmentTypeColor) {
+        fmt::println("transitioning color attachment {} to READ_ONLY_OPTIMAL", attachment.name);
+        vulkan.transitionImageLayout(
+            cmd, attachment.texture->getImage(), attachment.format, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
+      } else if (attachment.type == RenderTargetAttachmentTypeDepth) {
+        fmt::println("transitioning depth attachment {} to READ_ONLY_OPTIMAL", attachment.name);
+        vulkan.transitionImageLayout(cmd, attachment.texture->getImage(), attachment.format,
+                                     VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                                     VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                     VK_IMAGE_ASPECT_DEPTH_BIT);
+      }
     }
   }
 
@@ -68,7 +89,6 @@ namespace ren {
 
       VkFramebufferCreateInfo framebufferInfo = {};
       framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-      // TODO: I really don't like pulling the render pass from the renderer like this.
       framebufferInfo.renderPass = pass.getHandle();
       framebufferInfo.attachmentCount = static_cast<u32>(attachmentViews.size());
       framebufferInfo.pAttachments = attachmentViews.data();

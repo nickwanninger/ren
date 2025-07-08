@@ -16,8 +16,6 @@ namespace ren {
   struct RenderTargetAttachment {
     RenderTargetAttachmentType type = RenderTargetAttachmentTypeColor;
 
-
-
     // The texture to render into.
     ren::ImageRef texture = nullptr;
 
@@ -46,7 +44,7 @@ namespace ren {
   // In Vulkan, a render target is a VkFramebuffer, which is
   // a collection of attachments and dimensions.
   // In ren parlance, these attachments are images.
-  class RenderTarget : public ren::HasUUID {
+  class RenderTarget : public ren::HasUUID, public ren::VulkanResource {
    public:
     RenderTarget(const RenderTargetDescription &desc);
     ~RenderTarget();
@@ -56,6 +54,9 @@ namespace ren {
     auto &getAttachments(void) { return attachments; }
 
     VkFramebuffer getHandle(RenderPass &pass);
+
+
+    void transitionToShaderReadonly(VkCommandBuffer cmd);
 
    private:
     u32 width, height;

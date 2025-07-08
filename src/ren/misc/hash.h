@@ -30,7 +30,19 @@ namespace ren {
   template <typename T>
   inline u64 hash(const T &value) {
     u64 state = 0;
-    hash(state, value);
+    hash_impl(state, value, typename std::is_member_function_pointer<decltype(&T::hash)>::type());
     return state;
+  }
+
+  // Implementation for types that have a hash() method
+  template <typename T>
+  inline void hash_impl(u64 &state, const T &value, std::true_type) {
+    hashCombine(state, value.hash());
+  }
+
+  // Fallback implementation for types without hash() method
+  template <typename T>
+  inline void hash_impl(u64 &state, const T &value, std::false_type) {
+    hash(state, value);
   }
 }  // namespace ren

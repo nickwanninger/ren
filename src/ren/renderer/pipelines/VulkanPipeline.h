@@ -14,7 +14,7 @@ namespace ren {
   // This is the base class for all Vulkan pipelines.
   // It is intentionally designed to be generic, and requires
   // subclasses actually construct the pipeline.
-  class VulkanPipeline : public ren::HasUUID {
+  class VulkanPipeline : public ren::HasUUID, public ren::VulkanResource {
    public:
     VulkanPipeline() = default;
     virtual ~VulkanPipeline();

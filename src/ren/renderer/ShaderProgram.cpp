@@ -172,11 +172,6 @@ namespace ren {
       setBindings[binding.set].push_back(layoutBinding);
     }
 
-
-    for (auto& [set, bindings] : setBindings) {
-      printf(" set %d, %zu bindings\n", set, bindings.size());
-    }
-
     // Create descriptor set layouts
     setLayouts.clear();
     setLayouts.resize(setBindings.rbegin()->first + 1, VK_NULL_HANDLE);
@@ -191,13 +186,24 @@ namespace ren {
       vkCreateDescriptorSetLayout(vulkan.device, &layoutInfo, nullptr, &setLayouts[setIndex]);
     }
 
+    
+    // TODO: also parse this!
+    // ---- Push Constants ---- //
+    VkPushConstantRange pushConstants{};
+    // this push constant range starts at the beginning
+    pushConstants.offset = 0;
+    // this push constant range takes up the size of a MeshPushConstants struct
+    pushConstants.size = sizeof(ren::MeshPushConstants);
+    // this push constant range is accessible only in the vertex shader
+    pushConstants.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
     // Create pipeline layout
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     pipelineLayoutInfo.setLayoutCount = static_cast<u32>(setLayouts.size());
     pipelineLayoutInfo.pSetLayouts = setLayouts.data();
-    pipelineLayoutInfo.pushConstantRangeCount = 0;
-    pipelineLayoutInfo.pPushConstantRanges = nullptr;
+    pipelineLayoutInfo.pushConstantRangeCount = 1;
+    pipelineLayoutInfo.pPushConstantRanges = &pushConstants;
     vkCreatePipelineLayout(vulkan.device, &pipelineLayoutInfo, nullptr, &this->pipelineLayout);
   }
 

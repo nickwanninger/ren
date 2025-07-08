@@ -10,15 +10,17 @@ namespace ren {
 
   class CachedPipeline : public ren::VulkanPipeline {
    public:
-    inline CachedPipeline(VkPipeline pipeline, VkPipelineLayout pipelineLayout,
-                          PipelineStateObject pso)
+    inline CachedPipeline(VkPipeline pipeline, PipelineStateObject pso)
         : ren::VulkanPipeline()
         , pso(pso) {
       this->pipeline = pipeline;
-      this->pipelineLayout = pipelineLayout;
     }
 
-    const auto &getDescriptorSetLayout(void) const { return pso.descriptorSetLayout; }
+    const auto &getDescriptorSetLayouts(void) const { return pso.program->getDescriptorSetLayouts(); }
+
+    auto getLayout(void) const { return pso.program->getPipelineLayout(); }
+
+    const auto &getPSO(void) const { return pso; }
 
    private:
     PipelineStateObject pso;

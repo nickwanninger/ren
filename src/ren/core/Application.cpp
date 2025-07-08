@@ -245,8 +245,9 @@ namespace ren {
 
         // We'll just iterate over the meshes in the scene and render them with their transforms.
         auto view = sceneLayer->scene.getAllWith<comp::Mesh, comp::Transform>();
-        auto cPSO = pipelineCache.get(*renderPass, gbufferPso);
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, cPSO->getHandle());
+
+
+        renderer->bind(gbufferPso.program);
         // gbufferPipeline.bind(cmd);
 
 
@@ -266,8 +267,7 @@ namespace ren {
           ren::bind(cmd, *mesh.mesh->getVertexBuffer());
 
           pc.model = transform.getTransform();
-          vkCmdPushConstants(cmd, cPSO->getLayout(), VK_SHADER_STAGE_VERTEX_BIT, 0,
-                             sizeof(ren::MeshPushConstants), &pc);
+          renderer->setPushConstants(pc);
 
           // draw a single triangle on the screen.
           vkCmdDrawIndexed(cmd, mesh.mesh->getIndexCount(), 1, 0, 0, 0);
@@ -276,52 +276,6 @@ namespace ren {
       frame.perf.end(cmd, "test pass");
     };
 
-
-    // ---------------------------------------------------
-
-
-    // ren::RenderGraph graph;
-    // {
-    //   REN_PROFILE_SCOPE("Render Graph Setup");
-
-    //   auto shadowMap = graph.addNode("ShadowMap");
-    //   shadowMap->addOutput("shadowMap");
-
-
-    //   auto gbuffer = graph.addNode("Gbuffer");
-    //   gbuffer->addOutput("emissive");
-    //   gbuffer->addOutput("albedo");
-    //   gbuffer->addOutput("normal");
-    //   gbuffer->addOutput("pbr");
-    //   gbuffer->addOutput("depthStencil");
-
-    //   auto lighting = graph.addNode("Lighting");
-    //   lighting->addInput("emissive");
-    //   lighting->addInput("albedo");
-    //   lighting->addInput("normal");
-    //   lighting->addInput("pbr");
-    //   lighting->addInput("depthStencil");
-    //   lighting->addInput("shadowMap");
-
-    //   lighting->addOutput("HDR");
-
-    //   auto tonemap = graph.addNode("Tonemap");
-    //   tonemap->addInput("HDR");
-    //   tonemap->addInput("shadowMap");
-    //   tonemap->addOutput("LDR");
-
-    //   auto present = graph.addNode("PresentAndUI");
-    //   present->addInput("LDR");
-    //   present->addOutput("SwapchainImage");
-
-    //   // graph.dump();
-    //   // {
-    //   //   REN_PROFILE_SCOPE("Graph Run");
-    //   //   graph.run();
-    //   // }
-
-    //   // exit(0);
-    // }
 
     while (this->running) {
       int eventsHandled = 0;
@@ -371,28 +325,11 @@ namespace ren {
 
 
       render_test();
-      {
-        REN_PROFILE_SCOPE("Transition Images");
-        auto attachments = gbufferTarget->getAttachments();
-        for (int i = 0; i < attachments.size(); i++) {
-          auto &attachment = attachments[i];
-          if (attachment.type == RenderTargetAttachmentTypeColor) {
-            // fmt::println("transitioning color attachment {} to READ_ONLY_OPTIMAL",
-            // attachment.name);
-            vulkan.transitionImageLayout(frame.commandBuffer, attachment.texture->getImage(),
-                                         attachment.format, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-                                         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                                         VK_IMAGE_ASPECT_COLOR_BIT);
-          } else if (attachment.type == RenderTargetAttachmentTypeDepth) {
-            // fmt::println("transitioning depth attachment {} to READ_ONLY_OPTIMAL",
-            // attachment.name);
-            vulkan.transitionImageLayout(
-                frame.commandBuffer, attachment.texture->getImage(), attachment.format,
-                VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_ASPECT_DEPTH_BIT);
-          }
-        }
-      }
+
+      printf("%p\n", gbufferTarget.get());
+      gbufferTarget->transitionToShaderReadonly(frame.commandBuffer);
+
+    
 
       renderer->withPass(*renderer->getDisplayPass(), *frame.renderTarget, [&]() {
         auto cmd = ren::getFrameData().commandBuffer;
@@ -402,7 +339,7 @@ namespace ren {
 
           ren::DescriptorBuilder builder(descriptorLayoutCache, frame.descriptorAllocator);
           std::vector<VkDescriptorImageInfo> imageInfos;
-          auto attachments = gbufferTarget->getAttachments();
+          auto &attachments = gbufferTarget->getAttachments();
           for (int i = 0; i < attachments.size(); i++) {
             auto &attachment = attachments[i];
             // printf("Binding attachment %d: %s\n", i, attachment.name.c_str());
@@ -490,7 +427,7 @@ namespace ren {
 
 
         ImGui::Begin("PSO");
-        ImGui::Text("Pipeline cache size: %zu", pipelineCache.size());
+        ImGui::Text("Pipeline cache size: %zu", renderer->getPipelineCache().size());
         json j = gbufferPso;
         ImGui::Text("Pipeline State Object: %s", j.dump(2).c_str());
         // hash of that object:

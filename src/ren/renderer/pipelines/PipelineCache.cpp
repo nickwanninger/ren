@@ -10,8 +10,7 @@ namespace ren {
 
   ref<CachedPipeline> PipelineCache::get(ren::RenderPass &renderPass,
                                          const PipelineStateObject &pso) {
-    u64 hash = renderPass.getUUID();  // seed the hash with the render pass UUID.
-    ren::hash(hash, pso);
+    u64 hash = pso.hash();
 
     // Check if we already have this pipeline in the cache.
     auto it = pipelines.find(hash);
@@ -150,28 +149,6 @@ namespace ren {
     colorBlending.blendConstants[3] = 0.0f;  // Optional
 
 
-    // ---- Push Constants ---- //
-    VkPushConstantRange pushConstants{};
-    // this push constant range starts at the beginning
-    pushConstants.offset = 0;
-    // this push constant range takes up the size of a MeshPushConstants struct
-    pushConstants.size = sizeof(ren::MeshPushConstants);
-    // this push constant range is accessible only in the vertex shader
-    pushConstants.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-
-
-    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
-    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutInfo.setLayoutCount = 1;
-    pipelineLayoutInfo.pSetLayouts = &pso.descriptorSetLayout;
-    pipelineLayoutInfo.pushConstantRangeCount = 1;            // Optional
-    pipelineLayoutInfo.pPushConstantRanges = &pushConstants;  // Optional
-
-    if (vkCreatePipelineLayout(vulkan.device, &pipelineLayoutInfo, nullptr, &pipelineLayout) !=
-        VK_SUCCESS) {
-      throw std::runtime_error("failed to create pipeline layout!");
-    }
-
     std::vector<VkDynamicState> dynamicStates = {VK_DYNAMIC_STATE_VIEWPORT,
                                                  VK_DYNAMIC_STATE_SCISSOR};
     VkPipelineDynamicStateCreateInfo dynamicState{};
@@ -206,8 +183,7 @@ namespace ren {
     pipelineInfo.pDepthStencilState = nullptr;  // Optional
     pipelineInfo.pColorBlendState = &colorBlending;
     pipelineInfo.pDynamicState = &dynamicState;
-    // Then we reference all of the structures describing the fixed-function stage.
-    pipelineInfo.layout = pipelineLayout;
+    pipelineInfo.layout = pso.program->getPipelineLayout();
     // After that comes the pipeline layout, which is a Vulkan handle rather than a struct pointer.
     pipelineInfo.renderPass = renderPass.getHandle();
     pipelineInfo.subpass = 0;
@@ -215,17 +191,9 @@ namespace ren {
     pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;  // Optional
     pipelineInfo.basePipelineIndex = -1;               // Optional
 
-
-    pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-    // Build the pipeline stages
     pipelineInfo.stageCount = shaderStages.size();
     pipelineInfo.pStages = shaderStages.data();
     pipelineInfo.pDepthStencilState = &depthStencil;
-
-
-    pipelineInfo.pDynamicState = &dynamicState;
-    // Then we reference all of the structures describing the fixed-function stage.
-    pipelineInfo.layout = pipelineLayout;
 
 
     if (vkCreateGraphicsPipelines(vulkan.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr,
@@ -233,7 +201,7 @@ namespace ren {
       throw std::runtime_error("failed to create graphics pipeline!");
     }
 
-    auto cachedPipeline = makeRef<CachedPipeline>(pipeline, pipelineLayout, pso);
+    auto cachedPipeline = makeRef<CachedPipeline>(pipeline, pso);
     pipelines[hash] = cachedPipeline;
     return cachedPipeline;
   }

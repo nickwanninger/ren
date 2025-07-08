@@ -120,13 +120,27 @@ namespace ren {
            "Cannot bind a pipeline without a current render pass set. Call beginPass first.");
 
     // Get the cached pipeline for this render pass and PSO.
-    auto cachedPipeline = this->pipelineCache.get(*this->currentPass, pso);
+    currentPipeline = this->pipelineCache.get(*this->currentPass, pso);
 
-    if (cachedPipeline == nullptr) {
+    if (currentPipeline == nullptr) {
       throw std::runtime_error("Failed to get cached pipeline for PSO: " + pso.debugName);
     }
 
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, cachedPipeline->getHandle());
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, currentPipeline->getHandle());
+  }
+
+
+
+  void Renderer::bind(ref<ShaderProgram> program) {
+    REN_PROFILE_FUNCTION();
+
+    // Bind the shader program.
+    if (program == nullptr) { throw std::runtime_error("Cannot bind a null shader program."); }
+
+    // allocate a temporary pso.
+    PipelineStateObject pso;
+    pso.program = program;
+    bind(pso);
   }
 
   VkCommandBuffer Renderer::getCommandBuffer() { return getFrameData().commandBuffer; }
@@ -135,6 +149,7 @@ namespace ren {
     REN_PROFILE_FUNCTION();
 
     this->currentPass = nullptr;
+    this->currentPipeline = nullptr;
 
     ren::FrameData *frame = nullptr;
 

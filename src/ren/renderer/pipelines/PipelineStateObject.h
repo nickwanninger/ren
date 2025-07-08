@@ -51,7 +51,7 @@ namespace ren {
   // away the details of the vulkan api enough that the user can simply construct
   // a PSO with desired shaders and state, and pass *just it* to the renderer which
   // will handle the rest through the PipelineCache.
-  struct PipelineStateObject : public HasUUID {
+  struct PipelineStateObject {
     // The debug name of this pipeline state object.
     std::string debugName;
     // Perhaps the most important part of a pipeline state object is the shader
@@ -91,6 +91,9 @@ namespace ren {
     // TODO: include more state here, such as:
     // - Binding descriptions
     // - Attribute descriptions
+
+
+    u64 hash(void) const;
 
     void renderInspector();
     friend void to_json(json& j, const PipelineStateObject& pso);

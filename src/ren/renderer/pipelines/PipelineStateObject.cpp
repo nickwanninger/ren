@@ -1,6 +1,8 @@
 #include <ren/renderer/pipelines/PipelineStateObject.h>
 
 #include <imgui/imgui.h>
+#include <ren/misc/hash.h>
+
 
 namespace ren {
 
@@ -19,6 +21,25 @@ namespace ren {
       }
       ImGui::EndCombo();
     }
+  }
+
+
+  u64 PipelineStateObject::hash(void) const  {
+    // Generate a hash for this PSO based on its properties.
+    u64 state = 0;
+    ren::hash(state, (u64)program->getUUID());
+    ren::hash(state, topology);
+    ren::hash(state, depthTest);
+    ren::hash(state, depthWrite);
+    ren::hash(state, depthClip);
+    ren::hash(state, fillMode);
+    ren::hash(state, cullMode);
+    ren::hash(state, frontCCW);
+    ren::hash(state, depthBias);
+    ren::hash(state, depthBiasClamp);
+    ren::hash(state, depthSlopeFactor);
+    ren::hash(state, blendMode);
+    return state;
   }
 
   void PipelineStateObject::renderInspector() {
