@@ -6,11 +6,13 @@
 #include <vulkan/vulkan_core.h>
 #include <unordered_set>
 
+#include <ren/renderer/Vulkan.h>
+
 namespace ren {
 
   // This class represents the image resources in the rendering engine.
   // (It is effectively a VkImage and VkImageView wrapper.)
-  class Image {
+  class Image : public ren::VulkanResource {
    public:
     using Ref = ref<Image>;
     // Construct an image with the given resources.

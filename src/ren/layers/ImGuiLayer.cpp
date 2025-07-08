@@ -87,7 +87,7 @@ namespace ren {
 
 
     auto &colors = ImGui::GetStyle().Colors;
-    colors[ImGuiCol_WindowBg] = ImVec4{0.0f, 0.0f, 0.0f, 1.0f};
+    colors[ImGuiCol_WindowBg] = ImVec4{0.0f, 0.0f, 0.0f, 0.8f};
 
     auto border = ImVec4{0.01f, 0.01f, 0.01f, 1.0f};
     auto themeColor = ImVec4{0.2f, 0.205f, 0.21f, 1.0f};
@@ -158,6 +158,7 @@ namespace ren {
 
   void ImGuiLayer::onImguiRender(float deltaTime) {
     framerateCounter.addFrame(deltaTime);
+
     float fps = framerateCounter.getAverageFramerate();
     ImGui::Begin("Debug State");
     ImGui::Text("Delta Time: %.3f ms", deltaTime * 1000.0f);
@@ -172,7 +173,7 @@ namespace ren {
     // ImGui::ShowDemoWindow();
 
 
-    if (0) {
+    if (1) {
       ImGui::Begin("Render Passes");
       auto &renderPasses = ren::RenderPass::allPasses();
 
@@ -199,25 +200,5 @@ namespace ren {
       ImGui::End();
     }
 
-    if (0) {
-      if (ImGui::BeginMainMenuBar()) {
-        if (ImGui::BeginMenu("File")) {
-          // if (ImGui::MenuItem("Exit")) {
-          //   ren::Application::get().close();
-          // }
-          ImGui::EndMenu();
-        }
-        if (ImGui::BeginMenu("View")) {
-          bool dockspace = ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_DockingEnable;
-          if (ImGui::MenuItem("Dockspace", nullptr, &dockspace)) {
-            ImGui::GetIO().ConfigFlags ^= ImGuiConfigFlags_DockingEnable;
-          }
-          ImGui::EndMenu();
-        }
-
-        // end
-        ImGui::EndMainMenuBar();
-      }
-    }
   }
 }  // namespace ren

@@ -16,7 +16,7 @@ layout(location = 3) out vec4 pbr;
 
 
 void main() {
-    emissive = vec4(0.1, 0.0, 0.1, 1.0);
+    emissive = vec4(0.0, 0.0, 0.0, 1.0);
     albedo   = vec4(fragAlbedo, 1.0);
     normal   = vec4(fragNormal, 1.0);
     pbr      = vec4(0.0, 0.0, 1.0, 1.0);

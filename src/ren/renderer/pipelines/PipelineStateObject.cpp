@@ -49,6 +49,7 @@ namespace ren {
   void to_json(json& j, const PipelineStateObject& pso) {
     // j["vertexShader"] = pso.vertexShader->getUUID();
     // j["fragmentShader"] = pso.fragmentShader->getUUID();
+    j["program"] = *pso.program;
     j["topology"] = pso.topology;
     j["depthTest"] = pso.depthTest;
     j["depthWrite"] = pso.depthWrite;

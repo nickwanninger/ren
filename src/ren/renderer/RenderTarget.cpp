@@ -1,5 +1,6 @@
 #include <ren/renderer/RenderTarget.h>
 #include <ren/renderer/Vulkan.h>
+#include <ren/renderer/RenderPass.h>
 
 namespace ren {
 
@@ -26,7 +27,7 @@ namespace ren {
 
   RenderTarget::~RenderTarget() {
     auto &vulkan = getVulkan();
-    // Destroy the framebuffers in the cache
+  // Destroy the framebuffers in the cache
     for (auto &pair : m_cache) {
       vkDestroyFramebuffer(vulkan.device, pair.second, nullptr);
     }

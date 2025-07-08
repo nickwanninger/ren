@@ -47,6 +47,8 @@ namespace ren {
   void Renderer::beginPass(ren::RenderPass &pass, ren::RenderTarget &target) {
     REN_PROFILE_FUNCTION();
 
+    this->currentPass = pass.shared_from_this();
+
     auto &frame = ren::getFrameData();
     auto cmd = getCommandBuffer();
 
@@ -54,7 +56,7 @@ namespace ren {
     VkRenderPassBeginInfo renderPassInfo{};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     renderPassInfo.renderPass = pass.getHandle();
-    renderPassInfo.framebuffer = target.getHandle(pass); // grab the framebuffer for this pass.
+    renderPassInfo.framebuffer = target.getHandle(pass);  // grab the framebuffer for this pass.
     renderPassInfo.renderArea.offset = {0, 0};
     renderPassInfo.renderArea.extent = {target.getWidth(), target.getHeight()};
 
@@ -106,10 +108,33 @@ namespace ren {
     vkCmdEndRenderPass(getCommandBuffer());
   }
 
+
+  void Renderer::bind(const ren::PipelineStateObject &pso) {
+    REN_PROFILE_FUNCTION();
+
+    // Bind the pipeline state object.
+    auto &frame = ren::getFrameData();
+    auto cmd = getCommandBuffer();
+
+    assert(this->currentPass != nullptr &&
+           "Cannot bind a pipeline without a current render pass set. Call beginPass first.");
+
+    // Get the cached pipeline for this render pass and PSO.
+    auto cachedPipeline = this->pipelineCache.get(*this->currentPass, pso);
+
+    if (cachedPipeline == nullptr) {
+      throw std::runtime_error("Failed to get cached pipeline for PSO: " + pso.debugName);
+    }
+
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, cachedPipeline->getHandle());
+  }
+
   VkCommandBuffer Renderer::getCommandBuffer() { return getFrameData().commandBuffer; }
 
   void Renderer::beginFrame(void) {
     REN_PROFILE_FUNCTION();
+
+    this->currentPass = nullptr;
 
     ren::FrameData *frame = nullptr;
 

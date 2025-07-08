@@ -8,6 +8,8 @@
 #include <ren/renderer/Texture.h>
 #include <ren/renderer/Vulkan.h>
 #include <ren/renderer/RenderPassCache.h>
+#include <ren/renderer/pipelines/PipelineCache.h>
+#include <ren/renderer/pipelines/PipelineStateObject.h>
 #include <SDL2/SDL.h>
 
 namespace ren {
@@ -43,6 +45,9 @@ namespace ren {
 
 
 
+    void bind(const ren::PipelineStateObject &pso);
+
+
 
     static Renderer &get(void);
 
@@ -64,6 +69,10 @@ namespace ren {
     void initSwapchain();
 
    private:
+
+    ren::PipelineCache pipelineCache;
+    ref<RenderPass> currentPass = nullptr;
+
     VkCommandBuffer getCommandBuffer();
     SDL_Window *window;
     ren::RenderPassCache renderPassCache;

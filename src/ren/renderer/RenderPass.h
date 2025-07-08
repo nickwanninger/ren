@@ -10,7 +10,7 @@ namespace ren {
 
   // A RenderPass is a description of how render passes should be ordered
   // and what attachments they should use.
-  class RenderPass : public std::enable_shared_from_this<RenderPass>, public ren::HasUUID {
+  class RenderPass : public std::enable_shared_from_this<RenderPass>, public ren::HasUUID, public ren::VulkanResource {
    public:
     struct Description {
       std::string name = "pass";

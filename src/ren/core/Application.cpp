@@ -20,6 +20,9 @@
 #include <ren/renderer/Sampler.h>
 #include <ren/misc/resource_usage.h>
 
+
+#include <ren/renderer/ShaderProgram.h>
+
 static ren::Application *g_application = nullptr;
 namespace ren {
 
@@ -58,18 +61,6 @@ namespace ren {
         SDL_JoystickClose(joystick);
       }
     }
-
-
-    // scene.createEntity("Camera");
-    // scene.createEntity("Cube");
-
-
-    // auto s = scene.serialize();
-    // std::cout << "Serialized scene:\n" << s << std::endl;
-    // ren::loadObj("assets/test/meshes/unit_cube.obj");
-    // ren::loadGLTF("assets/test/meshes/unit_cube.glb");
-    // ren::loadGLTF("assets/test/meshes/suzanne.glb");
-    // exit(0);
   }
 
   Application::~Application() {
@@ -163,8 +154,9 @@ namespace ren {
     //     StandardPipeline(renderPass, makeRef<VertexShader>("shaders/opaque.vert.spv"),
     //                      makeRef<FragmentShader>("shaders/opaque.frag.spv"), gbufferLayout);
     ren::PipelineStateObject gbufferPso;
-    gbufferPso.vertexShader = makeRef<VertexShader>("shaders/opaque.vert.spv");
-    gbufferPso.fragmentShader = makeRef<FragmentShader>("shaders/opaque.frag.spv");
+    gbufferPso.debugName = "GBuffer PSO";
+    gbufferPso.program = makeRef<ShaderProgram>("shaders/opaque");
+    gbufferPso.descriptorSetLayout = gbufferLayout;  // TODO: extract this from the shaders!
 
     // Now we have a deferred rendering pipeline.
 
@@ -198,24 +190,6 @@ namespace ren {
     float modelScale = 1.0f;
     glm::vec3 modelRotation(0.0f);
     glm::vec3 modelPosition(0.0f);
-
-    // auto mesh = ren::loadObj("assets/test/meshes/unit_cube.obj");
-
-
-    auto meshScene = ren::loadGLTFScene("assets/test/meshes/simple_scene.glb");
-    modelScale = 1.0f;
-
-    // auto meshScene = ren::loadGLTFScene("assets/test/meshes/suzanne.glb");
-    // modelScale = 1.0f;
-
-
-    // auto meshScene = ren::loadGLTFScene("assets/test/meshes/dragon.glb");
-    // modelScale = 15.0f;
-
-    // auto meshScene = ren::loadGLTFScene("/Users/nick/Desktop/enrico.glb");
-
-    // auto meshScene = ren::loadGLTFScene("/Users/nick/Desktop/sponza.glb");
-    // modelScale = 0.03f;
 
 
     // Let's make a sampler for the gbuffers
@@ -269,12 +243,12 @@ namespace ren {
         trianglesRendered = 0;
         REN_PROFILE_SCOPE("Render Test Pass");
 
-
         // We'll just iterate over the meshes in the scene and render them with their transforms.
         auto view = sceneLayer->scene.getAllWith<comp::Mesh, comp::Transform>();
-        auto cPSO = pipelineCache.get(*renderPass, gbufferPso, gbufferLayout);
+        auto cPSO = pipelineCache.get(*renderPass, gbufferPso);
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, cPSO->getHandle());
         // gbufferPipeline.bind(cmd);
+
 
         this->sceneLayer->camera.projection =
             glm::perspective(glm::radians(fov), renderAspect, 0.01f, 1000.0f);
@@ -306,48 +280,48 @@ namespace ren {
     // ---------------------------------------------------
 
 
-    ren::RenderGraph graph;
-    {
-      REN_PROFILE_SCOPE("Render Graph Setup");
+    // ren::RenderGraph graph;
+    // {
+    //   REN_PROFILE_SCOPE("Render Graph Setup");
 
-      auto shadowMap = graph.addNode("ShadowMap");
-      shadowMap->addOutput("shadowMap");
+    //   auto shadowMap = graph.addNode("ShadowMap");
+    //   shadowMap->addOutput("shadowMap");
 
 
-      auto gbuffer = graph.addNode("Gbuffer");
-      gbuffer->addOutput("emissive");
-      gbuffer->addOutput("albedo");
-      gbuffer->addOutput("normal");
-      gbuffer->addOutput("pbr");
-      gbuffer->addOutput("depthStencil");
+    //   auto gbuffer = graph.addNode("Gbuffer");
+    //   gbuffer->addOutput("emissive");
+    //   gbuffer->addOutput("albedo");
+    //   gbuffer->addOutput("normal");
+    //   gbuffer->addOutput("pbr");
+    //   gbuffer->addOutput("depthStencil");
 
-      auto lighting = graph.addNode("Lighting");
-      lighting->addInput("emissive");
-      lighting->addInput("albedo");
-      lighting->addInput("normal");
-      lighting->addInput("pbr");
-      lighting->addInput("depthStencil");
-      lighting->addInput("shadowMap");
+    //   auto lighting = graph.addNode("Lighting");
+    //   lighting->addInput("emissive");
+    //   lighting->addInput("albedo");
+    //   lighting->addInput("normal");
+    //   lighting->addInput("pbr");
+    //   lighting->addInput("depthStencil");
+    //   lighting->addInput("shadowMap");
 
-      lighting->addOutput("HDR");
+    //   lighting->addOutput("HDR");
 
-      auto tonemap = graph.addNode("Tonemap");
-      tonemap->addInput("HDR");
-      tonemap->addInput("shadowMap");
-      tonemap->addOutput("LDR");
+    //   auto tonemap = graph.addNode("Tonemap");
+    //   tonemap->addInput("HDR");
+    //   tonemap->addInput("shadowMap");
+    //   tonemap->addOutput("LDR");
 
-      auto present = graph.addNode("PresentAndUI");
-      present->addInput("LDR");
-      present->addOutput("SwapchainImage");
+    //   auto present = graph.addNode("PresentAndUI");
+    //   present->addInput("LDR");
+    //   present->addOutput("SwapchainImage");
 
-      // graph.dump();
-      // {
-      //   REN_PROFILE_SCOPE("Graph Run");
-      //   graph.run();
-      // }
+    //   // graph.dump();
+    //   // {
+    //   //   REN_PROFILE_SCOPE("Graph Run");
+    //   //   graph.run();
+    //   // }
 
-      // exit(0);
-    }
+    //   // exit(0);
+    // }
 
     while (this->running) {
       int eventsHandled = 0;
@@ -473,12 +447,20 @@ namespace ren {
           // float windowHeight = (float)ImGui::GetWindowHeight();
 
           ImGuizmo::SetRect(0.0f, 0.0f, windowWidth, windowHeight);
+
+
+          // Before rendering, lets create a dockspace
+          ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport(),
+                                       ImGuiDockNodeFlags_PassthruCentralNode);
         }
 
+
         ImGui::Begin("G-Buffer Viewer");
+        ImGui::Text("vulkan references: %zu", getVulkanRef().use_count());
         ImGui::DragFloat3("Position", &modelPosition.x, 0.01f);
         ImGui::DragFloat3("Rotation", &modelRotation.x, 0.01f);
         ImGui::DragFloat("Scale", &modelScale, 0.01f);
+        ImGui::DragFloat("FOV", &fov, 0.1f, 30.0f, 360.0f);
 
         if (ImGui::DragFloat("Pixel Scale", &pixelScale, 0.1f, 1.0f, 64.0f)) {
           targetValid = false;
@@ -504,25 +486,19 @@ namespace ren {
           ImGui::Image((ImTextureID)imguiTextures[i], ImVec2(width, height));
           ImGui::Separator();
         }
-
-
-
         ImGui::End();
+
 
         ImGui::Begin("PSO");
         ImGui::Text("Pipeline cache size: %zu", pipelineCache.size());
-
         json j = gbufferPso;
         ImGui::Text("Pipeline State Object: %s", j.dump(2).c_str());
         // hash of that object:
         ImGui::Text("Hash: %llu", ren::hash(gbufferPso));
-
         gbufferPso.renderInspector();
         ImGui::End();
 
-
-
-        graph.renderImGui();
+        // graph.renderImGui();
 
         layerStack.onImGuiRender(deltaTime);
 

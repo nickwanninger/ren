@@ -3,6 +3,7 @@
 #include <ren/renderer/pipelines/PipelineStateObject.h>
 #include <ren/renderer/pipelines/VulkanPipeline.h>
 #include <ren/renderer/RenderPass.h>
+#include <ren/assets/Vertex.h>
 #include <ren/types.h>
 
 namespace ren {
@@ -10,23 +11,22 @@ namespace ren {
   class CachedPipeline : public ren::VulkanPipeline {
    public:
     inline CachedPipeline(VkPipeline pipeline, VkPipelineLayout pipelineLayout,
-                          VkDescriptorSetLayout descriptorSetLayout)
+                          PipelineStateObject pso)
         : ren::VulkanPipeline()
-        , descriptorSetLayout(descriptorSetLayout) {
+        , pso(pso) {
       this->pipeline = pipeline;
       this->pipelineLayout = pipelineLayout;
     }
 
-    const auto &getDescriptorSetLayout(void) const { return descriptorSetLayout; }
+    const auto &getDescriptorSetLayout(void) const { return pso.descriptorSetLayout; }
 
    private:
-    VkDescriptorSetLayout descriptorSetLayout;
+    PipelineStateObject pso;
   };
 
   class PipelineCache {
    public:
-    ref<CachedPipeline> get(ren::RenderPass &renderPass, const PipelineStateObject &pso,
-                            VkDescriptorSetLayout descriptorSetLayout);
+    ref<CachedPipeline> get(ren::RenderPass &renderPass, const PipelineStateObject &pso);
 
     size_t size(void) const { return pipelines.size(); }
 

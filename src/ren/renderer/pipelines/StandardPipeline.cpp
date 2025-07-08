@@ -1,6 +1,7 @@
 #include <ren/renderer/pipelines/StandardPipeline.h>
 #include <ren/renderer/Vulkan.h>
 #include <ren/renderer/Shader.h>
+
 namespace ren {
 
   StandardPipeline::StandardPipeline(ref<RenderPass> renderpass, ref<Shader> vertexShader,

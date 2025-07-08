@@ -9,7 +9,7 @@ namespace ren {
 
 
   // A texture is just a 2D image with a sampler.
-  class Texture {
+  class Texture{
    public:
     // Construct a texture with CPU side pixel data. Expect R8G8B8A8_SRGB format.
     // Use the load methods to create textures.

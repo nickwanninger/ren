@@ -1,3 +1,4 @@
+#include <ren/renderer/Buffer.h>
 #include <ren/renderer/Vulkan.h>
 #include <ren/core/Instrumentation.h>
 

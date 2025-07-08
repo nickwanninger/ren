@@ -1,14 +1,15 @@
 #include <ren/renderer/pipelines/PipelineCache.h>
 #include <ren/misc/hash.h>
 #include <ren/renderer/Vulkan.h>
+#include <ren/renderer/ShaderProgram.h>
+
 
 namespace ren {
 
 
 
   ref<CachedPipeline> PipelineCache::get(ren::RenderPass &renderPass,
-                                         const PipelineStateObject &pso,
-                                         VkDescriptorSetLayout descriptorSetLayout) {
+                                         const PipelineStateObject &pso) {
     u64 hash = renderPass.getUUID();  // seed the hash with the render pass UUID.
     ren::hash(hash, pso);
 
@@ -162,7 +163,7 @@ namespace ren {
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     pipelineLayoutInfo.setLayoutCount = 1;
-    pipelineLayoutInfo.pSetLayouts = &descriptorSetLayout;
+    pipelineLayoutInfo.pSetLayouts = &pso.descriptorSetLayout;
     pipelineLayoutInfo.pushConstantRangeCount = 1;            // Optional
     pipelineLayoutInfo.pPushConstantRanges = &pushConstants;  // Optional
 
@@ -180,7 +181,7 @@ namespace ren {
 
 
     std::vector<VkPipelineShaderStageCreateInfo> shaderStages;
-    std::vector<ref<Shader>> shaders = {pso.vertexShader, pso.fragmentShader};
+    std::vector<ref<Shader>> shaders = pso.program->getShaders();
 
     for (auto &shader : shaders) {
       VkPipelineShaderStageCreateInfo stageInfo{};
@@ -232,7 +233,7 @@ namespace ren {
       throw std::runtime_error("failed to create graphics pipeline!");
     }
 
-    auto cachedPipeline = makeRef<CachedPipeline>(pipeline, pipelineLayout, descriptorSetLayout);
+    auto cachedPipeline = makeRef<CachedPipeline>(pipeline, pipelineLayout, pso);
     pipelines[hash] = cachedPipeline;
     return cachedPipeline;
   }

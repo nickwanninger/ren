@@ -3,6 +3,7 @@
 #include <vector>
 
 #include <ren/renderer/Shader.h>
+#include <ren/renderer/ShaderProgram.h>
 #include <ren/misc/json_serialize.h>
 
 namespace ren {
@@ -51,9 +52,11 @@ namespace ren {
   // a PSO with desired shaders and state, and pass *just it* to the renderer which
   // will handle the rest through the PipelineCache.
   struct PipelineStateObject : public HasUUID {
-    // For now, we will just use a single vertex and fragment shader.
-    ref<Shader> vertexShader;
-    ref<Shader> fragmentShader;
+    // The debug name of this pipeline state object.
+    std::string debugName;
+    // Perhaps the most important part of a pipeline state object is the shader
+    // program that defines the bindings, layout, and functionality of the PSO.
+    ref<ShaderProgram> program;
 
     // The topology of the geometry to be rendered.
     Topology topology = Topology::TriangleList;
@@ -79,6 +82,11 @@ namespace ren {
 
     // Color blending mode. Currently does nothing.
     BlendMode blendMode = BlendMode::None;
+
+
+    // TODO: abstract me!
+    VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
+
 
     // TODO: include more state here, such as:
     // - Binding descriptions

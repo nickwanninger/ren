@@ -24,12 +24,6 @@ namespace ren {
     REN_PROFILE_FUNCTION();
     fmt::print("Scene Layer Attached\n");
 
-    // auto meshScene = ren::loadGLTFScene("assets/test/meshes/simple_scene.glb");
-    // for (auto mesh : meshScene) {
-    //   Entity e = scene.createEntity("Mesh Entity");
-    //   e.add<comp::Mesh>(mesh);
-    // }
-
 
     this->meshScene = MeshScene::loadGLTF("assets/test/meshes/simple_scene.glb");
     // this->meshScene = MeshScene::loadGLTF("assets/test/meshes/unit_cube.glb");
@@ -238,12 +232,6 @@ namespace ren {
     if (ImGui::CollapsingHeader("Mesh Scene")) { meshScene->onImguiRender(); }
 
     ImGui::Separator();
-
-    if (ImGui::Button("Add Cube")) {
-      Entity cube = scene.createEntity("Added Cube");
-      cube.add<comp::Mesh>(ren::loadGLTF("assets/test/meshes/unit_cube.glb"));
-    }
-
 
     // render the root nodes, and their children.
     auto view = scene.getAllWith<comp::Relationship>();

@@ -35,6 +35,11 @@ ren::VulkanInstance &ren::getVulkan(void) {
   return *g_vulkan_instance;
 }
 
+ren::ref<ren::VulkanInstance> ren::getVulkanRef(void) {
+  if (g_vulkan_instance == nullptr) { throw std::runtime_error("Vulkan instance not initialized"); }
+  return g_vulkan_instance->shared_from_this();
+}
+
 ren::VulkanInstance::VulkanInstance(SDL_Window *window) {
   this->window = window;
   if (g_vulkan_instance != nullptr) {

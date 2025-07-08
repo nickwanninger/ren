@@ -5,11 +5,6 @@
 #include <memory>
 
 #include <ren/types.h>
-#include <ren/renderer/Buffer.h>
-#include <ren/renderer/RenderPass.h>
-// #include <ren/renderer/Swapchain.h>
-#include <ren/assets/Vertex.h>
-#include <ren/renderer/pipelines/DisplayPipeline.h>
 #include <ren/core/Instrumentation.h>
 
 #include <SDL2/SDL.h>         // for SDL_Window
@@ -32,14 +27,12 @@ namespace ren {
   class VulkanInstance;
 
   VulkanInstance &getVulkan(void);
-
-
-
+  ref<VulkanInstance> getVulkanRef(void);
 
 
   // Every vulkan application needs at least one Vulkan instance.
   // This class also contains the physical device, device, and surface.
-  class VulkanInstance {
+  class VulkanInstance : public std::enable_shared_from_this<VulkanInstance> {
    public:
     VulkanInstance(SDL_Window *window);
 
@@ -123,8 +116,9 @@ namespace ren {
     void update_uniform_buffer(u32 current_image);
     void transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout,
                                VkImageLayout newLayout);
-    void transitionImageLayout(VkCommandBuffer buf, VkImage image, VkFormat format, VkImageLayout oldLayout,
-                               VkImageLayout newLayout, VkImageAspectFlags aspect = VK_IMAGE_ASPECT_COLOR_BIT);
+    void transitionImageLayout(VkCommandBuffer buf, VkImage image, VkFormat format,
+                               VkImageLayout oldLayout, VkImageLayout newLayout,
+                               VkImageAspectFlags aspect = VK_IMAGE_ASPECT_COLOR_BIT);
 
     inline auto findDepthFormat(void) {
       return findSupportedFormat(
@@ -155,6 +149,15 @@ namespace ren {
 
 
     u32 find_memory_type(u32 typeFilter, VkMemoryPropertyFlags properties);
+  };
+
+
+  // This is a simple class that holds a reference to the vulkan instance.
+  // This ensures that any vulkan resources are destroyed *after* the vulkan
+  // instance is destroyed.
+  class VulkanResource {
+   private:
+    ref<VulkanInstance> vulkanInstance = getVulkanRef();
   };
 
 };  // namespace ren

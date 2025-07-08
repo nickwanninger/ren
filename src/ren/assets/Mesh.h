@@ -37,13 +37,4 @@ namespace ren {
 
   using MeshRef = ref<Mesh>;
 
-
-  MeshRef loadObj(const std::string &filename);
-  MeshRef loadGLTF(const std::string &filename);
-
-  std::vector<MeshRef> loadGLTFScene(const std::string &filename);
-
-  // Temporary:
-  MeshRef createCubeMesh(void);
-
 }  // namespace ren

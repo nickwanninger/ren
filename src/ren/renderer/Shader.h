@@ -3,6 +3,7 @@
 #include <vulkan/vulkan.h>
 #include <string>
 #include <vector>
+#include <ren/renderer/Vulkan.h>
 #include <ren/types.h>
 #include <ren/core/UUID.h>
 
@@ -10,13 +11,12 @@
 namespace ren {
   class VulkanInstance;
 
-
   // This class is the base class for all Vulkan shaders in the engine.
   // It's mainly responsible for manging the lifetime of teh VkShaderModule
   // and providing the shader stage so the pipeline can use it.
   // They should be obtained from a ShaderCache or similar system instead of
   // being created directly.
-  class Shader : public ren::HasUUID {
+  class Shader : public ren::HasUUID, public ren::VulkanResource {
    public:
     Shader(const std::string &filename, VkShaderStageFlagBits stage);
     virtual ~Shader();
@@ -24,13 +24,14 @@ namespace ren {
     const std::string &getFilename() const { return filename; }
     VkShaderModule getHandle() const { return shaderModule; }
     VkShaderStageFlagBits getStage() const { return stage; }
+    auto &getCode() const { return code; }
 
    private:
     std::vector<u8> loadShaderCode(const std::string &file_name);
 
     void initShader(const std::vector<u8> &code);
 
-
+    std::vector<u8> code;
     std::string filename;
     VkShaderModule shaderModule = VK_NULL_HANDLE;
     VkShaderStageFlagBits stage;

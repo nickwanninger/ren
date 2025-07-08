@@ -4,6 +4,7 @@
 #include <ren/renderer/Shader.h>
 #include <vector>
 #include <ren/core/Instrumentation.h>
+#include <ren/assets/Vertex.h>
 
 namespace ren {
 

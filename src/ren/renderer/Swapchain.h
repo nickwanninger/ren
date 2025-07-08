@@ -1,5 +1,7 @@
 #pragma once
+
 #include <ren/types.h>
+#include <ren/renderer/Vulkan.h>
 #include <ren/renderer/Image.h>
 #include <SDL2/SDL.h>
 #include <ren/renderer/Buffer.h>
@@ -20,7 +22,7 @@ namespace ren {
   // This engine defaults to triple buffering. We also have a lower resolution
   // render target for game assets, and we blit that to the device resolution
   // surface.
-  class Swapchain {
+  class Swapchain : public ren::VulkanResource {
    public:
     // We have one frame for each frame in flight.
     // In a triple buffering setup, this is 3.

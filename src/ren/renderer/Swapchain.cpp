@@ -41,7 +41,7 @@ namespace ren {
 
     vkb::Swapchain vkb_swapchain =
         swapchain_builder.use_default_format_selection()
-            .set_desired_present_mode(VK_PRESENT_MODE_FIFO_KHR)
+            .set_desired_present_mode(VK_PRESENT_MODE_IMMEDIATE_KHR)
             .set_image_usage_flags(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
                                    VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT)
             .set_desired_format(
