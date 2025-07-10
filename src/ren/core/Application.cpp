@@ -211,7 +211,6 @@ namespace ren {
 
 
       auto cmd = ren::getFrameData().commandBuffer;
-      frame.perf.begin(cmd, "test pass");
 
       renderer->withPass(*renderPass, *gbufferTarget, [&]() {
         trianglesRendered = 0;
@@ -220,6 +219,7 @@ namespace ren {
         // We'll just iterate over the meshes in the scene and render them with their transforms.
         auto view = sceneLayer->scene.getAllWith<comp::Mesh, comp::Transform>();
 
+        frame.perf.begin(cmd, "test pass");
         renderer->bind(opaquePSO);
 
         this->sceneLayer->camera.projection =
@@ -243,8 +243,8 @@ namespace ren {
           // draw a single triangle on the screen.
           vkCmdDrawIndexed(cmd, mesh.mesh->getIndexCount(), 1, 0, 0, 0);
         });
+        frame.perf.end(cmd, "test pass");
       });
-      frame.perf.end(cmd, "test pass");
     };
 
 
@@ -306,6 +306,7 @@ namespace ren {
         {
           REN_PROFILE_SCOPE("Blit GBuffer");
 
+          frame.perf.begin(cmd, "Blit GBuffer");
           renderer->bind(blitPSO);
           // begin binding set zero, which is the gbuffer textures.
           auto textureBinder = renderer->startBinding(0);
@@ -314,8 +315,6 @@ namespace ren {
             textureBinder.bind(attachment.name, *attachment.texture);
           }
           textureBinder.apply();
-
-          frame.perf.begin(cmd, "Blit GBuffer");
 
           vkCmdDraw(cmd, 3, 1, 0, 0);
           frame.perf.end(cmd, "Blit GBuffer");
@@ -363,7 +362,7 @@ namespace ren {
         ImGui::Separator();
 
         for (auto &[name, value] : frameStats) {
-          ImGui::Text("%15s: %9.2fms", name.c_str(), value);
+          ImGui::Text("%15s: %10.5fms", name.c_str(), value);
         }
 
         ImGui::Separator();
