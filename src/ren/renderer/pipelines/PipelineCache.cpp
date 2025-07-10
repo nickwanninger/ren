@@ -125,13 +125,51 @@ namespace ren {
       VkPipelineColorBlendAttachmentState colorBlendAttachment{};
       colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
                                             VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-      colorBlendAttachment.blendEnable = VK_FALSE;
-      colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;   // Optional
-      colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ZERO;  // Optional
-      colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;              // Optional
-      colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;   // Optional
-      colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;  // Optional
-      colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;              // Optional
+
+
+      if (pso.blendMode == BlendMode::None) {
+        colorBlendAttachment.blendEnable = VK_FALSE;
+        colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;   // Optional
+        colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ZERO;  // Optional
+        colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;              // Optional
+        colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;   // Optional
+        colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;  // Optional
+        colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;              // Optional
+      } else {
+        colorBlendAttachment.blendEnable = VK_TRUE;
+        colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;   // Optional
+        colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ZERO;  // Optional
+        colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;              // Optional
+        colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;   // Optional
+        colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;  // Optional
+        colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;              // Optional
+
+        switch (pso.blendMode) {
+          case BlendMode::Alpha:
+            colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;                   // Optional
+            colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;  // Optional
+            colorBlendAttachment.dstAlphaBlendFactor =
+                VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;  // Optional
+            break;
+          case BlendMode::Additive:
+            colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;             // Optional
+            colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;  // Optional
+            colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;  // Optional
+            break;
+          case BlendMode::Subtractive:
+            colorBlendAttachment.colorBlendOp = VK_BLEND_OP_SUBTRACT;         // Optional
+            colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;   // Optional
+            colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;  // Optional
+            break;
+          case BlendMode::Multiplicative:
+            // ??
+            // colorBlendAttachment.colorBlendOp = VK_BLEND_OP_MULTIPLY;  // Optional
+            colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_DST_COLOR;  // Optional
+            colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;       // Optional
+            break;
+          default: break;
+        }
+      }
       colorBlendAttachments.push_back(colorBlendAttachment);
     }
 
@@ -139,7 +177,7 @@ namespace ren {
     // ---- Color Blending Create Info ---- //
     VkPipelineColorBlendStateCreateInfo colorBlending{};
     colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-    colorBlending.logicOpEnable = VK_FALSE;
+    colorBlending.logicOpEnable = VK_TRUE;
     colorBlending.logicOp = VK_LOGIC_OP_COPY;  // Optional
     colorBlending.attachmentCount = colorAttachmentCount;
     colorBlending.pAttachments = colorBlendAttachments.data();
