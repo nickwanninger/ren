@@ -7,6 +7,8 @@ set(CMAKE_C_STANDARD 17)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+
+
 # Find various packages we need
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(SDL2 REQUIRED sdl2)
@@ -31,8 +33,19 @@ set(IMGUI_SOURCES
    ${IMGUI_DIR}/backends/imgui_impl_vulkan.cpp
 )
 
+# Disable assimp tests, we don't need them, gonna trust it works.
+set(ASSIMP_BUILD_TESTS OFF)
+
+# Disable the assimp formats we don't want.
+set(ASSIMP_BUILD_ALL_IMPORTERS_BY_DEFAULT OFF)
+set(ASSIMP_BUILD_GLTF_IMPORTER ON)
+set(ASSIMP_BUILD_FBX_IMPORTER ON)
+set(ASSIMP_BUILD_PLY_IMPORTER ON)
+add_subdirectory(lib/assimp)
 
 
+
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++20 -Wno-unused-function ")
 
 # Define a variable to store the list of C++ source files
 set(REN_SOURCE_FILES "")
@@ -82,6 +95,9 @@ target_link_libraries(ren
   m # Everything needs math
 )
 
+target_link_libraries(ren
+  PRIVATE
+  assimp)
 
 # Include directories
 target_include_directories(ren PRIVATE
