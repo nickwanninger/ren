@@ -34,6 +34,8 @@ void main() {
 
     // Calculate the diffuse lighting based on the normal and light direction
     float diffuse = max(dot(normal, lightDirection), 0.0);
+    diffuse = mix(0.5, 1, ceil(diffuse * 4 + 0.25) / 4);
+
     // Calculate the final color by combining albedo, emissive, and diffuse
     vec3 finalColor = albedo.rgb * diffuse + emissive.rgb;
 

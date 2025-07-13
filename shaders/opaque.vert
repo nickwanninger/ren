@@ -31,7 +31,7 @@ layout(set = 2, binding = 0) uniform CameraUniforms {
   mat4 view;
   mat4 proj;
   vec3 cameraPos;
-} cameraUniforms;
+} MAT;
 
 
 layout(set = 3, binding = 0) uniform sampler2D shadowMap;
@@ -46,7 +46,7 @@ void main() {
   gl_Position = pc.proj * pc.view * pc.model * vec4(inPosition, 1.0f);
 
   fragEmissive = vec3(1.0f, 1.0f, 1.0f);
-  fragAlbedo = vec3(1.0f, 0.0f, 0.0f);
+  fragAlbedo = vec3(0.06f, 0.7f, 0.89f);
 
   vec3 worldNormal = normalize(mat3(pc.model) * inNormal);
 

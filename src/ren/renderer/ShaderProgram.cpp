@@ -4,7 +4,7 @@
 namespace ren {
 
   ShaderProgram::ShaderProgram(const std::string& shaderPrefix)
-      : ShaderProgram(shaderPrefix + ".vert.spv", shaderPrefix + ".frag.spv") {}
+      : ShaderProgram(shaderPrefix + ".vert", shaderPrefix + ".frag") {}
 
   ShaderProgram::ShaderProgram(const std::string& vertexPath, const std::string& fragmentPath)
       : vertexShaderPath(vertexPath)
@@ -58,10 +58,11 @@ namespace ren {
   }
 
 
-  void ShaderProgram::reflectShader(const std::vector<u8>& spirv, VkShaderStageFlagBits stage) {
+  void ShaderProgram::reflectShader(const std::vector<u32>& spirv, VkShaderStageFlagBits stage) {
     SpvReflectShaderModule module;
+    printf("Size = %zu\n", spirv.size() * sizeof(u32));
     SpvReflectResult result =
-        spvReflectCreateShaderModule(spirv.size() * sizeof(u8), (u32*)spirv.data(), &module);
+        spvReflectCreateShaderModule(spirv.size() * sizeof(u32), (u32*)spirv.data(), &module);
 
     if (result != SPV_REFLECT_RESULT_SUCCESS) {
       throw std::runtime_error("Failed to create SPIRV reflection module");
@@ -161,6 +162,9 @@ namespace ren {
     // Group bindings by set number
     std::map<u32, std::vector<VkDescriptorSetLayoutBinding>> setBindings;
 
+
+    u32 maxSet = 0;
+
     for (const auto& binding : bindings) {
       VkDescriptorSetLayoutBinding layoutBinding{};
       layoutBinding.binding = binding.binding;
@@ -169,22 +173,26 @@ namespace ren {
       layoutBinding.stageFlags = binding.stages;
       layoutBinding.pImmutableSamplers = nullptr;
 
+      if (binding.set > maxSet) maxSet = binding.set;
+
       setBindings[binding.set].push_back(layoutBinding);
     }
 
     // Create descriptor set layouts
     setLayouts.clear();
-    setLayouts.resize(setBindings.rbegin()->first + 1, VK_NULL_HANDLE);
 
+    if (setBindings.size() != 0) {
+      setLayouts.resize(maxSet + 1, VK_NULL_HANDLE);
+      for (const auto& [setIndex, bindings] : setBindings) {
+        VkDescriptorSetLayoutCreateInfo layoutInfo{};
+        layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        layoutInfo.bindingCount = static_cast<u32>(bindings.size());
+        layoutInfo.pBindings = bindings.data();
 
-    for (const auto& [setIndex, bindings] : setBindings) {
-      VkDescriptorSetLayoutCreateInfo layoutInfo{};
-      layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-      layoutInfo.bindingCount = static_cast<u32>(bindings.size());
-      layoutInfo.pBindings = bindings.data();
-
-      vkCreateDescriptorSetLayout(vulkan.device, &layoutInfo, nullptr, &setLayouts[setIndex]);
+        vkCreateDescriptorSetLayout(vulkan.device, &layoutInfo, nullptr, &setLayouts[setIndex]);
+      }
     }
+
 
 
     // TODO: also parse this!
@@ -201,12 +209,10 @@ namespace ren {
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     pipelineLayoutInfo.setLayoutCount = static_cast<u32>(setLayouts.size());
-    pipelineLayoutInfo.pSetLayouts = setLayouts.data();
+    pipelineLayoutInfo.pSetLayouts = setLayouts.size() == 0 ? NULL : setLayouts.data();
     pipelineLayoutInfo.pushConstantRangeCount = 1;
     pipelineLayoutInfo.pPushConstantRanges = &pushConstants;
     vkCreatePipelineLayout(vulkan.device, &pipelineLayoutInfo, nullptr, &this->pipelineLayout);
-
-    
   }
 
 

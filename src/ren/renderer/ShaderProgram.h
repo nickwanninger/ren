@@ -13,7 +13,7 @@ namespace ren {
 
   // A binding is a shader resource with a set and binding index, a type, and a name.
   struct ShaderBinding {
-    std::string name;
+  std::string name;
     u32 set, binding, count;
     VkDescriptorType type;
     VkShaderStageFlags stages;
@@ -54,7 +54,7 @@ namespace ren {
     std::string vertexShaderPath;
     std::string fragmentShaderPath;
     void reflectShaders();
-    void reflectShader(const std::vector<u8>& spirv, VkShaderStageFlagBits stage);
+    void reflectShader(const std::vector<u32>& spirv, VkShaderStageFlagBits stage);
 
     void mergeDescriptorBindings();
     void bakeLayouts();

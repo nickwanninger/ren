@@ -177,7 +177,7 @@ namespace ren {
     // ---- Color Blending Create Info ---- //
     VkPipelineColorBlendStateCreateInfo colorBlending{};
     colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-    colorBlending.logicOpEnable = VK_TRUE;
+    colorBlending.logicOpEnable = VK_FALSE;
     colorBlending.logicOp = VK_LOGIC_OP_COPY;  // Optional
     colorBlending.attachmentCount = colorAttachmentCount;
     colorBlending.pAttachments = colorBlendAttachments.data();

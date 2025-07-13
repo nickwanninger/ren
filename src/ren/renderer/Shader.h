@@ -27,11 +27,11 @@ namespace ren {
     auto &getCode() const { return code; }
 
    private:
-    std::vector<u8> loadShaderCode(const std::string &file_name);
+    std::vector<u32> loadShader(const std::string &file_name);
 
-    void initShader(const std::vector<u8> &code);
+    void initShader(const std::vector<u32> &code);
 
-    std::vector<u8> code;
+    std::vector<u32> code;
     std::string filename;
     VkShaderModule shaderModule = VK_NULL_HANDLE;
     VkShaderStageFlagBits stage;

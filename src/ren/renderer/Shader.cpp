@@ -8,9 +8,11 @@
 #include <spirv_reflect/common.h>
 #include <spirv_reflect/output_stream.h>
 
+#include <shaderc/shaderc.hpp>
+
 ren::Shader::Shader(const std::string& file_name, VkShaderStageFlagBits stage)
     : stage(stage) {
-  auto code = loadShaderCode(file_name);
+  auto code = loadShader(file_name);
   initShader(code);
 }
 ren::Shader::~Shader() {
@@ -22,81 +24,109 @@ ren::Shader::~Shader() {
 }
 
 
-std::vector<u8> ren::Shader::loadShaderCode(const std::string& filename) {
-  // TODO: AssetManager
-  std::vector<u8> code;
+std::vector<u32> ren::Shader::loadShader(const std::string& filename) {
+  REN_PROFILE_SCOPE("Load Shader");
+  // This is the output code that will be returned.
+  // It is either loaded from a .spv file, or compiled on the fly from GLSL.
+  std::vector<u32> code;
 
-  // Load the shader code from the file
-  std::ifstream file(filename, std::ios::binary | std::ios::ate);
-  if (!file.is_open()) {
-    throw std::runtime_error(fmt::format("Failed to open shader file: {}", filename));
+  std::filesystem::path path = filename;
+
+  // If the file ends in .spv, we assume its a precompiled SPIV-V shader,
+  // and we will just load that off the disk (and trust it! (eep))
+  if (path.extension() == ".spv") {
+    REN_PROFILE_SCOPE("Load Precompiled SPIR-V Shader");
+    // Load the SPIR-V binary from the file.
+    std::ifstream file(filename, std::ios::binary | std::ios::ate);
+    if (!file.is_open()) {
+      throw std::runtime_error(fmt::format("Failed to open shader file: {}", filename));
+    }
+    std::streamsize size = file.tellg();
+    file.seekg(0, std::ios::beg);
+    fmt::println("Loading shader with size: {}", size);
+    code.resize(size / sizeof(u32));
+    if (!file.read(reinterpret_cast<char*>(code.data()), size)) {
+      throw std::runtime_error(fmt::format("Failed to read shader file: {}", filename));
+    }
+    file.close();
+    fmt::print("Loading shader from {} ({} bytes)\n", filename, size);
+  } else {
+
+    // Otherwise, we'll compile it from source using shaderc from the vulkan sdk.
+    REN_PROFILE_SCOPE("Compile Shader from Source");
+
+    shaderc::Compiler compiler;
+    shaderc::CompileOptions options;
+
+    // Set compilation options
+    options.SetTargetEnvironment(shaderc_target_env_vulkan, shaderc_env_version_vulkan_1_2);
+
+    // Don't remove bindings.
+    options.SetPreserveBindings(true);
+    options.SetAutoMapLocations(true);
+    options.SetGenerateDebugInfo();  // Preserve debug info for reflection
+
+    // options.SetOptimizationLevel(shaderc_optimization_level_performance);
+    options.SetOptimizationLevel(shaderc_optimization_level_zero);
+
+
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
+    if (!file.is_open()) {
+      throw std::runtime_error(fmt::format("Failed to open shader file: {}", path.c_str()));
+    }
+    std::streamsize size = file.tellg();
+    file.seekg(0, std::ios::beg);
+
+    std::vector<char> sourceCode;
+    sourceCode.resize(size);
+
+    if (!file.read(reinterpret_cast<char*>(sourceCode.data()), size)) {
+      throw std::runtime_error(fmt::format("Failed to read shader file: {}", path.c_str()));
+    }
+    file.close();
+
+
+    // now, try to extract the shader stage from the filename
+    shaderc_shader_kind shaderKind = shaderc_glsl_infer_from_source;
+    if (path.extension() == ".vert") {
+      shaderKind = shaderc_glsl_vertex_shader;
+    } else if (path.extension() == ".frag") {
+      shaderKind = shaderc_glsl_fragment_shader;
+    } else if (path.extension() == ".comp") {
+      shaderKind = shaderc_glsl_compute_shader;
+    } else if (path.extension() == ".geom") {
+      shaderKind = shaderc_glsl_geometry_shader;
+    }
+
+
+    auto result = compiler.CompileGlslToSpv(sourceCode.data(), sourceCode.size(), shaderKind,
+                                            path.filename().c_str(), options);
+
+    if (result.GetCompilationStatus() == shaderc_compilation_status_success) {
+      fmt::print("Shader compiled successfully: {}\n", path.string());
+
+      // copy result.cbegin() to result.cend() into code
+      std::copy(result.cbegin(), result.cend(), std::back_inserter(code));
+
+    } else if (result.GetCompilationStatus() == shaderc_compilation_status_invalid_stage) {
+      throw std::runtime_error(fmt::format("Invalid shader stage for file: {}", path.c_str()));
+    } else {
+      throw std::runtime_error(
+          fmt::format("Shader compilation failed: {}", result.GetErrorMessage()));
+    }
   }
-  std::streamsize size = file.tellg();
-  file.seekg(0, std::ios::beg);
-  code.resize(size);
-  if (!file.read(reinterpret_cast<char*>(code.data()), size)) {
-    throw std::runtime_error(fmt::format("Failed to read shader file: {}", filename));
-  }
-  file.close();
-  fmt::print("Loading shader from {} ({} bytes)\n", filename, size);
   return code;
 }
 
-void ren::Shader::initShader(const std::vector<u8>& code) {
-
-  this->code = code;
-#if 1
-  // Generate reflection data for a shader
-  SpvReflectShaderModule module;
-  SpvReflectResult result = spvReflectCreateShaderModule(code.size(), code.data(), &module);
-  assert(result == SPV_REFLECT_RESULT_SUCCESS);
-
-  // Enumerate and extract shader's input variables
-  uint32_t var_count = 0;
-  result = spvReflectEnumerateInputVariables(&module, &var_count, NULL);
-
-  std::vector<SpvReflectInterfaceVariable*> vars(var_count);
-  result = spvReflectEnumerateInputVariables(&module, &var_count, vars.data());
-
-  PrintModuleInfo(std::cout, module);
-
-  const char* t = "  ";
-  const char* tt = "    ";
-
-  // std::cout << "Interface Variables:\n";
-  // for (size_t index = 0; index < vars.size(); ++index) {
-  //   auto v = vars[index];
-  //   std::cout << t << index << ":"
-  //             << "\n";
-  //   PrintInterfaceVariable(std::cout, module.source_language, *v, tt);
-  //   std::cout << "\n";
-  // }
-
-
-  u32 pcs_count = 0;
-  spvReflectEnumeratePushConstantBlocks(&module, &pcs_count, NULL);
-  std::vector<SpvReflectBlockVariable*> pcs(pcs_count);
-  spvReflectEnumeratePushConstantBlocks(&module, &pcs_count, pcs.data());
-
-
-  // Grab Descriptor sets
-  uint32_t count = 0;
-  result = spvReflectEnumerateDescriptorSets(&module, &count, NULL);
-  assert(result == SPV_REFLECT_RESULT_SUCCESS);
-
-  std::vector<SpvReflectDescriptorSet*> sets(count);
-  result = spvReflectEnumerateDescriptorSets(&module, &count, sets.data());
-  assert(result == SPV_REFLECT_RESULT_SUCCESS);
-
-#endif
-
+void ren::Shader::initShader(const std::vector<u32>& spirv) {
+  this->code = spirv;
   //////////////
 
   auto& vulkan = ren::getVulkan();
 
   VkShaderModuleCreateInfo createInfo{};
   createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-  createInfo.codeSize = code.size();
+  createInfo.codeSize = code.size() * sizeof(u32);  // the number of bytes in the spirv
   createInfo.pCode = reinterpret_cast<const uint32_t*>(code.data());
 
   if (vkCreateShaderModule(vulkan.device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS) {

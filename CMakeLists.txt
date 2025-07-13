@@ -1,25 +1,34 @@
-cmake_minimum_required(VERSION 3.6)
+cmake_minimum_required(VERSION 3.20)
 
 project(ren CXX C)
 
-# Set C standard
-set(CMAKE_C_STANDARD 17)
-set(CMAKE_C_STANDARD_REQUIRED ON)
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+include(FetchContent)
 
+# Set C standard
+# set(CMAKE_C_STANDARD 20)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS ON) # Enable compiler extensions
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 
 # Find various packages we need
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(SDL2 REQUIRED sdl2)
-find_package(Vulkan REQUIRED)
+find_package(Vulkan REQUIRED glslang shaderc_combined)
 
-add_subdirectory(lib/fmt)
+
+
+
+
 
 
 # Add some of the libraries we vendor
 add_subdirectory(lib/VulkanMemoryAllocator)
 add_subdirectory(lib/entt)
+add_subdirectory(lib/fmt)
 
 set(IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/imgui)
 set(IMGUI_SOURCES
@@ -88,16 +97,18 @@ target_link_libraries(ren
   ${SDL2_LIBRARIES}
   fmt::fmt # fmt library
 
-  Vulkan::Vulkan # Vulkan SDK
-  GPUOpen::VulkanMemoryAllocator # Vulkan Memory Allocator
   EnTT::EnTT # EnTT for ECS
-
   m # Everything needs math
 )
 
 target_link_libraries(ren
   PRIVATE
-  assimp)
+  assimp
+
+  Vulkan::Vulkan # Vulkan SDK
+  GPUOpen::VulkanMemoryAllocator # Vulkan Memory Allocator
+  Vulkan::shaderc_combined
+)
 
 # Include directories
 target_include_directories(ren PRIVATE
@@ -123,70 +134,3 @@ target_compile_options(ren PRIVATE
     # -O3
     -g3
 )
-
-
-
-
-
-
-
-
-
-
-if(OpenMP_C_FOUND)
-  target_link_libraries(ren PUBLIC OpenMP::OpenMP_C)
-  message(STATUS "OpenMP found - parallel processing enabled")
-else()
-  message(STATUS "OpenMP not found - using single-threaded execution")
-endif()
-
-find_program(GLSLANG_VALIDATOR glslang HINTS 
-    ${Vulkan_GLSLANG_VALIDATOR_EXECUTABLE}
-    /usr/bin
-    /usr/local/bin
-    ${VULKAN_SDK_PATH}/Bin
-    ${VULKAN_SDK_PATH}/Bin32
-    $ENV{VULKAN_SDK}/Bin/ 
-    $ENV{VULKAN_SDK}/Bin32/
-)
-
-
-# Function to compile shaders
-function(add_shader TARGET SHADER)
-    set(current-shader-path ${CMAKE_CURRENT_SOURCE_DIR}/${SHADER})
-    set(current-output-path ${CMAKE_CURRENT_SOURCE_DIR}/${SHADER}.spv)
-
-    get_filename_component(current-output-dir ${current-output-path} DIRECTORY)
-    file(MAKE_DIRECTORY ${current-output-dir})
-
-    add_custom_command(
-        OUTPUT ${current-output-path}
-        COMMAND ${GLSLANG_VALIDATOR} -V ${current-shader-path} -o ${current-output-path}
-        DEPENDS ${current-shader-path}
-        IMPLICIT_DEPENDS CXX ${current-shader-path}
-        VERBATIM
-    )
-
-    set_source_files_properties(${current-output-path} PROPERTIES GENERATED TRUE)
-    target_sources(${TARGET} PRIVATE ${current-output-path})
-endfunction(add_shader)
-
-# Find all shader files
-file(GLOB_RECURSE GLSL_SOURCE_FILES
-    "${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.frag"
-    "${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.vert"
-    "${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.comp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.geom"
-    "${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.tesc"
-    "${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.tese"
-)
-
-foreach(GLSL ${GLSL_SOURCE_FILES})
-  message(STATUS "Adding shader: ${GLSL}")
-  get_filename_component(FILE_NAME ${GLSL} NAME)
-  add_shader(ren "shaders/${FILE_NAME}")
-endforeach(GLSL)
-
-
-
-
