@@ -28,12 +28,9 @@ layout(set = 0, binding = 1) uniform sampler2D normalMap;
 layout(set = 1, binding = 0) uniform sampler2D metallicRoughness;
 
 
-layout(set = 2, binding = 0) uniform TestUBO {
-    vec3 color;
-} testUBO;
-
-
-layout(set = 3, binding = 0) uniform sampler2D shadowMap;
+// layout(set = 2, binding = 0) uniform TestUBO {
+//     vec3 color;
+// } testUBO;
 
 
 
@@ -45,7 +42,7 @@ void main() {
   gl_Position = pc.proj * pc.view * pc.model * vec4(inPosition, 1.0f);
 
   fragEmissive = vec3(1.0f, 1.0f, 1.0f);
-  fragAlbedo = testUBO.color;
+  fragAlbedo = vec3(0.5, 0.9, 0.1); // testUBO.color;
 
   vec3 worldNormal = normalize(mat3(pc.model) * inNormal);
 

@@ -31,9 +31,23 @@ namespace ren {
     // Grab an entity by its UUID.
     Entity getEntity(UUID uuid);
 
+
+    Entity getRoot(void);
+
+
    protected:
+    friend class SceneRenderer;
     friend class Entity;
+
+
+    void globalizeTransforms(void);
+
+
     entt::registry registry;
+
+    // the root entity of the scene graph heirarchy.
+    entt::entity rootEntity = entt::null;
+
 
     std::unordered_map<UUID, entt::entity> entities;
   };

@@ -29,6 +29,8 @@
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
 
+#include <ren/core/SceneRenderer.h>
+
 
 static ren::Application *g_application = nullptr;
 namespace ren {
@@ -94,6 +96,8 @@ namespace ren {
     auto lastTime = startTime;
     SDL_Event e;
 
+
+    SceneRenderer sceneRenderer(*this->renderer);
 
     ren::PipelineCache pipelineCache;
     auto &vulkan = ren::getVulkan();
@@ -190,104 +194,6 @@ namespace ren {
     };
 
 
-    // exit(0);
-
-    long trianglesRendered = 0;
-
-
-    struct TestUBO {
-      glm::vec3 color;
-    };
-
-    struct TestComponent {
-      UniformBufferSet<TestUBO> ubo;
-      TestUBO data;
-    };
-
-
-
-    auto render_test = [&]() {
-      REN_PROFILE_SCOPE("My Render Test");
-      auto &vulkan = ren::getVulkan();
-      auto &frame = ren::getFrameData();
-
-      // ---------------------- //
-      int w, h;
-      SDL_GetWindowSize(this->window, &w, &h);
-      // grab the aspect ratio
-      float windowAspect = (float)w / (float)h;
-      // ---------------------- //
-
-      if (windowAspect != renderAspect || targetValid == false) {
-        renderer->waitForIdle();
-        // resize the gbuffer target.
-        gbufferTarget =
-            renderPass->createRenderTarget(w / (float)pixelScale, h / (float)pixelScale);
-        renderAspect = windowAspect;
-        refreshImGuiTextures();
-        renderer->waitForIdle();
-        targetValid = true;
-      }
-
-
-      auto cmd = ren::getFrameData().commandBuffer;
-
-
-
-      renderer->withPass(*renderPass, *gbufferTarget, [&]() {
-        // set the scissor to half the window size.
-        VkRect2D scissor = {};
-        scissor.offset = {0, 0};
-        scissor.extent.width = w / pixelScale;
-        scissor.extent.height = h / pixelScale;
-        vkCmdSetScissor(cmd, 0, 1, &scissor);
-        trianglesRendered = 0;
-        REN_PROFILE_SCOPE("Render Test Pass");
-
-
-        frame.perf.begin(cmd, "test pass");
-        renderer->bind(opaquePSO);
-
-        this->sceneLayer->camera.projection =
-            glm::perspective(glm::radians(fov), renderAspect, 0.01f, 1000.0f);
-        this->sceneLayer->camera.projection[1][1] *= -1;  // Vulkan thing.
-
-        ren::MeshPushConstants pc;
-        pc.view = this->sceneLayer->camera.view_matrix();
-        pc.proj = this->sceneLayer->camera.projection;
-
-
-        sceneLayer->scene.getAll().each([&](auto e) {
-          Entity entity(e, &sceneLayer->scene);
-          if (entity.has<TestComponent>()) return;
-          entity.add<TestComponent>();
-        });
-
-        // We'll just iterate over the meshes in the scene and render them with their transforms.
-        auto view = sceneLayer->scene.getAllWith<comp::Mesh, comp::Transform, TestComponent>();
-        view.each([&](entt::entity id, const comp::Mesh &mesh, const comp::Transform &transform,
-                      TestComponent &testComp) {
-          testComp.ubo.update(testComp.data);
-          auto binder = renderer->startBinding(2);
-          binder.bind("testUBO", testComp.ubo);
-          binder.apply();
-
-          REN_PROFILE_SCOPE("Render Mesh");
-          // fmt::println("Rendering mesh {} with transform {}", id, transform.getTransform());
-          trianglesRendered += mesh.mesh->getIndexCount() / 3;
-          ren::bind(cmd, *mesh.mesh->getIndexBuffer());
-          ren::bind(cmd, *mesh.mesh->getVertexBuffer());
-
-          pc.model = transform.getTransform();
-          renderer->setPushConstants(pc);
-
-          // draw a single triangle on the screen.
-          vkCmdDrawIndexed(cmd, mesh.mesh->getIndexCount(), 1, 0, 0, 0);
-        });
-        frame.perf.end(cmd, "test pass");
-      });
-    };
-
 
 
 
@@ -338,16 +244,19 @@ namespace ren {
       REN_PROFILE_COUNTER("Memory Usage MB", ren::getCurrentProcessRSS() / (1024.0 * 1024.0));
 
 
-      render_test();
-      gbufferTarget->transitionToShaderReadonly(frame.commandBuffer);
 
 
+      auto gbufferTarget = sceneRenderer.render(sceneLayer->scene, sceneLayer->camera);
+      if (gbufferTarget) {
+        // Transition the gbuffer target to shader read-only.
+        gbufferTarget->transitionToShaderReadonly(frame.commandBuffer);
+      }
 
       renderer->withPass(*renderer->getDisplayPass(), *frame.renderTarget, [&]() {
         auto cmd = ren::getFrameData().commandBuffer;
-        // Blit the gbuffer to the screen temporarily.
-        {
+        if (true and gbufferTarget) {
           REN_PROFILE_SCOPE("Blit GBuffer");
+          // Blit the gbuffer to the screen temporarily.
 
           frame.perf.begin(cmd, "Blit GBuffer");
           renderer->bind(blitPSO);
@@ -397,16 +306,6 @@ namespace ren {
         ImGui::Begin("G-Buffer Viewer");
 
 
-
-        auto view = sceneLayer->scene.getAllWith<comp::Name, TestComponent>();
-        view.each([&](entt::entity id, const comp::Name &name, TestComponent &testComp) {
-          ImGui::PushID((u64)id);
-          ImGui::Text("Entity: %s", name.name.c_str());
-          ImGui::ColorEdit3("Test Color", &testComp.data.color.x);
-          ImGui::PopID();
-        });
-
-
         ImGui::Text("vulkan references: %zu", getVulkanRef().use_count());
 
         ImGui::DragFloat3("Position", &modelPosition.x, 0.01f);
@@ -416,7 +315,6 @@ namespace ren {
 
 
         if (ImGui::SliderInt("Pixel Scale", &pixelScale, 1, 10)) { targetValid = false; }
-        ImGui::Text("Triangles Rendered: %ld", trianglesRendered);
 
         ImGui::Separator();
 
@@ -434,7 +332,7 @@ namespace ren {
           ImGui::Text("Attachment: %s", attachment.name.c_str());
           float width = ImGui::GetContentRegionAvail().x;
           float height = width / renderAspect;
-          ImGui::Image((ImTextureID)imguiTextures[i], ImVec2(width, height));
+          // ImGui::Image((ImTextureID)imguiTextures[i], ImVec2(width, height));
           ImGui::Separator();
         }
         ImGui::End();

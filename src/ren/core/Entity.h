@@ -90,9 +90,8 @@ namespace ren {
     void eachChild(T&& callback) {
       auto& registry = scene->registry;
       auto& comp = registry.get<comp::Relationship>(handle);
-      for (auto cur = scene->getEntity(comp.firstChild); cur; cur = cur.getNextSibling()) {
-        callback(cur);
-      }
+      for (auto child : comp.children)
+        callback(scene->getEntity(child));
     }
 
     void addChild(Entity child);
@@ -106,28 +105,6 @@ namespace ren {
 
 
    private:
-    // Private methods to adjust relationships.
-    inline void setNextSibling(Entity sibling) { get<comp::Relationship>().nextSibling = sibling; }
-    inline void setPrevSibling(Entity sibling) { get<comp::Relationship>().prevSibling = sibling; }
-    inline void setFirstChild(Entity child) { get<comp::Relationship>().firstChild = child; }
-
-    inline Entity getNextSibling(void) {
-      return scene->getEntity(get<comp::Relationship>().nextSibling);
-    }
-    inline Entity getPrevSibling(void) {
-      return scene->getEntity(get<comp::Relationship>().prevSibling);
-    }
-    inline Entity getFirstChild(void) {
-      return scene->getEntity(get<comp::Relationship>().firstChild);
-    }
-
-
-    void setParent(Entity parent) {
-      if (parent) {
-        get<comp::Relationship>().parent = parent.getUUID();
-      } else {
-        get<comp::Relationship>().parent = UUID::null;
-      }
-    }
+    void setParent(Entity parent);
   };
 }  // namespace ren

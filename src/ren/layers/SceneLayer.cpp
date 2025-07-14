@@ -32,63 +32,12 @@ namespace ren {
     this->meshScene->instantiate(scene);
 
 
-    // MeshScene::loadGLTF("assets/test/meshes/cat.glb")->instantiate(scene);
+    camera.position.x = 10;
+    camera.position.y = 6;
+    camera.position.z = 6;
+    camera.angles.x = -0.5f;
+    camera.angles.y = -1;
 
-
-    auto dumpDot = [&](void) {
-      fmt::print("digraph G {{\n");
-      // define all the nodes.
-      fmt::print("  node [shape=box];\n");
-      fmt::print("  edge [arrowhead=vee, arrowsize=0.5, fontsize=4];\n");
-      fmt::print("  rankdir=LR;\n");
-
-      auto view = scene.getAllWith<comp::Relationship, comp::Name>();
-
-
-      view.each([&](entt::entity entity, const comp::Relationship &rel, const comp::Name &name) {
-        fmt::print("  e{} [label=\"{}\"];\n", (u32)entity, name.name);
-
-        if (rel.parent != UUID::null) {
-          fmt::print("  e{} -> e{} [label=P];\n", (u32)entity, (u32)rel.parent);
-        } else {
-          fmt::println("  {{ rank=min; e{}; }};", (u32)entity);
-        }
-
-
-        // siblings are the same rank.
-        if (rel.nextSibling != UUID::null) {
-          fmt::println("  e{} -> e{} [label=\"{}.n\"];", (u32)entity, (u32)rel.nextSibling,
-                       name.name);
-          fmt::println("  {{ rank=same; e{}; e{} }};\n", (u32)entity, (u32)rel.nextSibling);
-        }
-
-        if (rel.prevSibling != UUID::null) {
-          fmt::println("  e{} -> e{} [label=\"{}.p\"];", (u32)entity, (u32)rel.prevSibling,
-                       name.name);
-        }
-
-        if (rel.firstChild != UUID::null) {
-          fmt::print("  e{} -> e{} [style=dotted];\n", (u32)entity, (u32)rel.firstChild);
-        }
-      });
-
-
-      fmt::print("}}\n");
-    };
-
-
-    // auto a = scene.createEntity("a");
-    // auto b = scene.createEntity("b");
-    // auto c = scene.createEntity("c");
-    // auto d = scene.createEntity("d");
-
-    // auto e = scene.createEntity("e");
-    // auto f = scene.createEntity("f");
-    // a.addChild(b);
-    // a.addChild(c);
-    // a.addChild(d);
-    // d.addChild(e);
-    // d.addChild(f);
   }
 
   void SceneLayer::onUpdate(float deltaTime) {
@@ -233,16 +182,7 @@ namespace ren {
 
     ImGui::Separator();
 
-    // render the root nodes, and their children.
-    auto view = scene.getAllWith<comp::Relationship>();
-    for (auto [eid, rel] : view.each()) {
-      if (rel.parent == UUID::null) {
-        Entity e(eid, &this->scene);
-        renderEntityHeirarchy(e);
-      }
-    }
-
-
+    scene.getRoot().eachChild([&](Entity e) { renderEntityHeirarchy(e); });
 
     ImGui::End();
   }

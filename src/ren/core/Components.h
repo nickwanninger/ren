@@ -55,6 +55,10 @@ namespace ren {
 
 
       // --- //
+
+      // This value gets updated every frame to reflect the current *global*
+      // transformations of the entity.  it is used for model->view
+      // transformations, as well.
       glm::mat4 transformMatrix = glm::mat4(1.0f);
 
       NLOHMANN_DEFINE_TYPE_INTRUSIVE(Transform, translation, rotation, scale);
@@ -78,15 +82,10 @@ namespace ren {
     struct Relationship {
       // This is the parent entity of this entity.
       UUID parent = UUID::null;
-      UUID firstChild = UUID::null;  // The first child of this entity.
+      // I'm not sure about this being a vector...
+      std::vector<UUID> children;
 
-      // We represent the siblings of an entity as a linked list.
-      UUID prevSibling = UUID::null;  // The previous sibling of this entity.
-      UUID nextSibling = UUID::null;  // The next sibling of this entity
-
-
-      NLOHMANN_DEFINE_TYPE_INTRUSIVE(Relationship, parent, firstChild, prevSibling,
-                                     nextSibling);
+      NLOHMANN_DEFINE_TYPE_INTRUSIVE(Relationship, parent, children);
     };
 
 

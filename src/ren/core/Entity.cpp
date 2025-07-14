@@ -29,22 +29,16 @@ namespace ren {
 
 
   void Entity::addChild(Entity child) {
-    // First, remove the child from it's current position in the scene graph.
-    if (auto otherParent = child.getParent()) otherParent.removeChild(child);
+    auto otherParent = child.getParent();
+    if (otherParent) { otherParent.removeChild(child); }
+
 
     // add at the head of the children linked list.
     auto &rel = get<comp::Relationship>();
 
+
+    rel.children.push_back(child.getUUID());
     child.setParent(*this);  // Set the parent relationship of the child.
-    auto front = getFirstChild();
-    if (front) {
-      // If there is already a first child, we need to update the linked list.
-      child.setNextSibling(front);
-      front.setPrevSibling(child);
-      setFirstChild(child);  // Set the new first child to be the new child.
-    } else {
-      setFirstChild(child);  // If there are no children, set the first child to be the new child.
-    }
   }
 
   void Entity::removeChild(Entity child) {
@@ -55,21 +49,15 @@ namespace ren {
 
     auto &rel = get<comp::Relationship>();
 
+    auto uuidToRemove = child.getUUID();
+    auto it = std::remove(rel.children.begin(), rel.children.end(), uuidToRemove);
+    if (it != rel.children.end()) {
+      rel.children.erase(it, rel.children.end());
+    } else {
+      fmt::print("Entity {} is not a child of entity {}\n", child.getName(), getName());
+    }
 
-    // If the child is the first child, we need to update the firstChild pointer to be the next
-    // sibling.
-    if (rel.firstChild == child.getUUID()) { setFirstChild(child.getNextSibling()); }
-
-    // now, update the linked list of the child's siblings.
-    auto next = child.getNextSibling();
-    auto prev = child.getPrevSibling();
-    if (prev) { prev.setNextSibling(next); }
-    if (next) { next.setPrevSibling(prev); }
-
-    auto &crel = child.get<comp::Relationship>();
-    crel.parent = UUID::null;
-    crel.nextSibling = UUID::null;
-    crel.prevSibling = UUID::null;
+    child.get<comp::Relationship>().parent = UUID::null;
   }
 
 
@@ -85,6 +73,14 @@ namespace ren {
     j["children"] = children;
 
     return j;
+  }
+
+  void Entity::setParent(Entity parent) {
+    if (parent) {
+      get<comp::Relationship>().parent = parent.getUUID();
+    } else {
+      get<comp::Relationship>().parent = UUID::null;
+    }
   }
 
 

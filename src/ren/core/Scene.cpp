@@ -28,6 +28,9 @@ namespace ren {
 
     // Then register the entity with the scene.
     entities[uuid] = entity;
+
+    // Add the entity as a child of the root entity.
+    getRoot().addChild(entity);
     return entity;
   }
 
@@ -61,10 +64,49 @@ namespace ren {
   }
 
 
+
+
+  // This whole method of globalizing transforms is a bit of a hack,
+  // and it shouldn't be recursive I think.
+  static void globalizeChildren(Entity parent) {
+    // parent's transform is the global transform.
+    auto &parentTransformMatrix = parent.get<comp::Transform>().transformMatrix;
+
+    parent.eachChild([&](Entity child) {
+      auto &t = child.get<comp::Transform>();
+      t.transformMatrix = parentTransformMatrix * t.getTransform();
+      globalizeChildren(child);
+    });
+  }
+
+
+  void Scene::globalizeTransforms(void) {
+    // the global transform of the top level entities are simply their own local transforms.
+    getRoot().eachChild([](Entity child) {
+      auto &t = child.get<comp::Transform>();
+      t.transformMatrix = t.getTransform();
+    });
+
+    // Then we can recursively globalize the transforms of all children.
+    getRoot().eachChild(globalizeChildren);
+  }
+
   Entity Scene::getEntity(UUID uuid) {
     REN_PROFILE_FUNCTION();
     auto it = entities.find(uuid);
     if (it != entities.end()) return Entity(it->second, this);
     return Entity();
+  }
+
+  Entity Scene::getRoot(void) {
+    REN_PROFILE_FUNCTION();
+    if (rootEntity == entt::null) {
+      rootEntity = registry.create();
+      registry.emplace<comp::ID>(rootEntity, UUID());
+      registry.emplace<comp::Name>(rootEntity, "Root");
+      registry.emplace<comp::Transform>(rootEntity);
+      registry.emplace<comp::Relationship>(rootEntity);
+    }
+    return Entity(rootEntity, this);
   }
 }  // namespace ren
