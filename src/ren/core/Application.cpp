@@ -23,6 +23,13 @@
 
 #include <ren/renderer/ShaderProgram.h>
 
+
+#include <ren/layers/inspector/AssimpSceneInspector.h>
+#include <assimp/Importer.hpp>
+#include <assimp/scene.h>
+#include <assimp/postprocess.h>
+
+
 static ren::Application *g_application = nullptr;
 namespace ren {
 
@@ -117,7 +124,7 @@ namespace ren {
 
 
 
-    float pixelScale = 3.0f;
+    int pixelScale = 3;
     float fov = 90.0f;
 
 
@@ -153,6 +160,7 @@ namespace ren {
     ren::PipelineStateObject opaquePSO;
     opaquePSO.debugName = "GBuffer PSO";
     opaquePSO.program = makeRef<ShaderProgram>("shaders/opaque");
+    // opaquePSO.blendMode = ren::BlendMode::Additive;
 
     ren::PipelineStateObject blitPSO;
     blitPSO.debugName = "GBuffer Blit PSO";
@@ -186,6 +194,18 @@ namespace ren {
 
     long trianglesRendered = 0;
 
+
+    struct TestUBO {
+      glm::vec3 color;
+    };
+
+    struct TestComponent {
+      UniformBufferSet<TestUBO> ubo;
+      TestUBO data;
+    };
+
+
+
     auto render_test = [&]() {
       REN_PROFILE_SCOPE("My Render Test");
       auto &vulkan = ren::getVulkan();
@@ -200,9 +220,9 @@ namespace ren {
 
       if (windowAspect != renderAspect || targetValid == false) {
         renderer->waitForIdle();
-        fmt::println("Window aspect ratio changed from {} to {}", renderAspect, windowAspect);
         // resize the gbuffer target.
-        gbufferTarget = renderPass->createRenderTarget(w / pixelScale, h / pixelScale);
+        gbufferTarget =
+            renderPass->createRenderTarget(w / (float)pixelScale, h / (float)pixelScale);
         renderAspect = windowAspect;
         refreshImGuiTextures();
         renderer->waitForIdle();
@@ -212,12 +232,18 @@ namespace ren {
 
       auto cmd = ren::getFrameData().commandBuffer;
 
+
+
       renderer->withPass(*renderPass, *gbufferTarget, [&]() {
+        // set the scissor to half the window size.
+        VkRect2D scissor = {};
+        scissor.offset = {0, 0};
+        scissor.extent.width = w / pixelScale;
+        scissor.extent.height = h / pixelScale;
+        vkCmdSetScissor(cmd, 0, 1, &scissor);
         trianglesRendered = 0;
         REN_PROFILE_SCOPE("Render Test Pass");
 
-        // We'll just iterate over the meshes in the scene and render them with their transforms.
-        auto view = sceneLayer->scene.getAllWith<comp::Mesh, comp::Transform>();
 
         frame.perf.begin(cmd, "test pass");
         renderer->bind(opaquePSO);
@@ -230,7 +256,22 @@ namespace ren {
         pc.view = this->sceneLayer->camera.view_matrix();
         pc.proj = this->sceneLayer->camera.projection;
 
-        view.each([&](entt::entity id, const comp::Mesh &mesh, const comp::Transform &transform) {
+
+        sceneLayer->scene.getAll().each([&](auto e) {
+          Entity entity(e, &sceneLayer->scene);
+          if (entity.has<TestComponent>()) return;
+          entity.add<TestComponent>();
+        });
+
+        // We'll just iterate over the meshes in the scene and render them with their transforms.
+        auto view = sceneLayer->scene.getAllWith<comp::Mesh, comp::Transform, TestComponent>();
+        view.each([&](entt::entity id, const comp::Mesh &mesh, const comp::Transform &transform,
+                      TestComponent &testComp) {
+          testComp.ubo.update(testComp.data);
+          auto binder = renderer->startBinding(2);
+          binder.bind("testUBO", testComp.ubo);
+          binder.apply();
+
           REN_PROFILE_SCOPE("Render Mesh");
           // fmt::println("Rendering mesh {} with transform {}", id, transform.getTransform());
           trianglesRendered += mesh.mesh->getIndexCount() / 3;
@@ -246,6 +287,8 @@ namespace ren {
         frame.perf.end(cmd, "test pass");
       });
     };
+
+
 
 
     while (this->running) {
@@ -346,17 +389,33 @@ namespace ren {
                                        ImGuiDockNodeFlags_PassthruCentralNode);
         }
 
+        ImGui::Begin("Asset Manager");
+        getAssetManager().inspect();
+        ImGui::End();
+
 
         ImGui::Begin("G-Buffer Viewer");
+
+
+
+        auto view = sceneLayer->scene.getAllWith<comp::Name, TestComponent>();
+        view.each([&](entt::entity id, const comp::Name &name, TestComponent &testComp) {
+          ImGui::PushID((u64)id);
+          ImGui::Text("Entity: %s", name.name.c_str());
+          ImGui::ColorEdit3("Test Color", &testComp.data.color.x);
+          ImGui::PopID();
+        });
+
+
         ImGui::Text("vulkan references: %zu", getVulkanRef().use_count());
+
         ImGui::DragFloat3("Position", &modelPosition.x, 0.01f);
         ImGui::DragFloat3("Rotation", &modelRotation.x, 0.01f);
         ImGui::DragFloat("Scale", &modelScale, 0.01f);
         ImGui::DragFloat("FOV", &fov, 0.1f, 30.0f, 360.0f);
 
-        if (ImGui::DragFloat("Pixel Scale", &pixelScale, 0.1f, 1.0f, 64.0f)) {
-          targetValid = false;
-        }
+
+        if (ImGui::SliderInt("Pixel Scale", &pixelScale, 1, 10)) { targetValid = false; }
         ImGui::Text("Triangles Rendered: %ld", trianglesRendered);
 
         ImGui::Separator();
@@ -379,7 +438,6 @@ namespace ren {
           ImGui::Separator();
         }
         ImGui::End();
-
 
         ImGui::Begin("PSO");
         ImGui::Text("Pipeline cache size: %zu", renderer->getPipelineCache().size());

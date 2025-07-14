@@ -9,6 +9,7 @@
 #include <ren/core/Entity.h>
 #include <ren/layers/SceneLayer.h>
 #include <ren/layers/ImGuiLayer.h>
+#include <ren/assets/AssetManager.h>
 
 namespace ren {
 
@@ -25,6 +26,8 @@ namespace ren {
 
     ref<SceneLayer> sceneLayer = nullptr;
     ref<ImGuiLayer> imguiLayer = nullptr;
+
+    AssetManager assetManager;
 
    public:
     Application(const std::string &app_name, glm::uvec2 window_size);

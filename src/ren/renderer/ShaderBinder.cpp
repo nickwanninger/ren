@@ -7,17 +7,46 @@ namespace ren {
   ShaderBinder::ShaderBinder(ShaderProgram &program, u32 set)
       : set(set)
       , program(program) {
-    u32 imageBindingsInSet = 0;
+    u32 bindingsInSet = 0;
     // Count how many image bindings we have in this set.
     for (const auto &binding : program.getBindings()) {
-      if (binding.set == set && binding.type == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER) {
-        imageBindingsInSet += binding.count;
-      }
+      if (binding.set == set) { bindingsInSet++; }
     }
     // preallocate the imageinfos vector to avoid pointer invalidation.
-    this->imageInfos.reserve(imageBindingsInSet);
+    this->imageInfos.reserve(bindingsInSet);
+    this->bufferInfos.reserve(bindingsInSet);
   }
 
+
+  void ShaderBinder::bind(const std::string_view &name, const ren::Buffer &buffer) {
+    // Find the binding for this name in the shader program.
+    const auto *binding = program.getBinding(name);
+    if (binding == nullptr) {
+      throw std::runtime_error(
+          fmt::format("Shader binding '{}' not found in program '{}'", name, json(program).dump()));
+    }
+
+    // fmt::println("Binding UBS '{}' to shader binding '{}' ({}.{})", UBS.getName(), name,
+    //              binding->set, binding->binding);
+
+    VkWriteDescriptorSet newWrite{};
+    newWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    newWrite.pNext = nullptr;
+
+    // Create the image info for this texture.
+    bufferInfos.emplace_back();
+    VkDescriptorBufferInfo *bufferInfo = &bufferInfos.back();
+    bufferInfo->buffer = buffer.getHandle();
+    bufferInfo->offset = 0;  // TODO: support offsets.
+    bufferInfo->range = buffer.getSize();
+
+    newWrite.descriptorCount = 1;  // TODO: support arrays of buffers?
+    newWrite.descriptorType = binding->type;
+    newWrite.pBufferInfo = bufferInfo;
+    newWrite.dstBinding = binding->binding;
+
+    writes.push_back(newWrite);
+  }
 
   void ShaderBinder::bind(const std::string_view &name, const Texture &texture) {
     // Find the binding for this name in the shader program.
@@ -58,9 +87,6 @@ namespace ren {
           fmt::format("Shader binding '{}' not found in program '{}'", name, json(program).dump()));
     }
 
-    // fmt::println("Binding image with sampler {} to shader binding '{}' ({}.{})", (u64)sampler.getHandle(), name, binding->set,
-    //              binding->binding);
-
     VkWriteDescriptorSet newWrite{};
     newWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     newWrite.pNext = nullptr;
@@ -97,8 +123,11 @@ namespace ren {
                                            this->set, json(program).dump()));
     }
     // now that we have a descriptor set, apply the writes.
-    for (VkWriteDescriptorSet &w : writes)
+    for (VkWriteDescriptorSet &w : writes) {
       w.dstSet = descriptorSet;
+    }
+
+    // Now we can update the descriptor sets with the writes.
     vkUpdateDescriptorSets(getVulkan().device, writes.size(), writes.data(), 0, nullptr);
     writes.clear();
     // And bind that set.

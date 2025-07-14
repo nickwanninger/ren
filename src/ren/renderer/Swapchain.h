@@ -4,7 +4,6 @@
 #include <ren/renderer/Vulkan.h>
 #include <ren/renderer/Image.h>
 #include <SDL2/SDL.h>
-#include <ren/renderer/Buffer.h>
 #include <ren/renderer/FrameData.h>
 
 namespace ren {
@@ -13,6 +12,7 @@ namespace ren {
 
   // Get the current frame data from anywhere in the engine.
   FrameData &getFrameData(void);
+  inline u32 getFrameIndex(void) { return ren::getFrameData().frameIndex; }
 
   constexpr u32 target_render_width = 320;
   constexpr u32 target_render_height = 240;

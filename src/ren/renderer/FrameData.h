@@ -1,7 +1,6 @@
 #pragma once
 
 #include <ren/types.h>
-#include <ren/renderer/Buffer.h>
 #include <ren/renderer/Image.h>
 #include <ren/renderer/Texture.h>
 #include <ren/renderer/RenderTarget.h>
@@ -175,9 +174,6 @@ namespace ren {
     // Fence to ensure that the GPU has finished rendering before we can
     // submit the next frame.
     VkFence inFlightFence = VK_NULL_HANDLE;
-
-    // The uniform buffer to render this frame's scene.
-    ref<UniformBuffer<UniformBufferObject>> uniformBuffer = nullptr;
 
     FramePerformanceTracker perf;
 

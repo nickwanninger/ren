@@ -5,6 +5,7 @@
 #include <ren/renderer/Texture.h>
 #include <ren/renderer/Descriptors.h>
 #include <ren/renderer/Sampler.h>
+#include <ren/renderer/Buffer.h>
 
 namespace ren {
 
@@ -20,7 +21,16 @@ namespace ren {
 
     void bind(const std::string_view &name, const Texture &texture);
     void bind(const std::string_view &name, const Image &image, Sampler &sampler);
-    void bind(const std::string_view &name, const Image &image, VkFilter samplerFilter = VK_FILTER_NEAREST);
+    void bind(const std::string_view &name, const Image &image,
+              VkFilter samplerFilter = VK_FILTER_NEAREST);
+
+    void bind(const std::string_view &name, const ren::Buffer &bufferHandle);
+
+    template <typename T>
+    void bind(const std::string_view &name, const UniformBufferSet<T> &UBS) {
+      // Bind a uniform buffer set to the shader.
+      this->bind(name, UBS.currentAsBuffer());
+    }
 
     // Build, then apply the descriptor sets
     void apply();
@@ -35,6 +45,7 @@ namespace ren {
     // To bind image views, we need to keep track of the VkDescriptorImageInfo values we want to
     // bind.
     std::vector<VkDescriptorImageInfo> imageInfos;
+    std::vector<VkDescriptorBufferInfo> bufferInfos;
   };
 
 

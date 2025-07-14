@@ -10,7 +10,7 @@
 
 #include <shaderc/shaderc.hpp>
 
-ren::Shader::Shader(const std::string& file_name, VkShaderStageFlagBits stage)
+ren::Shader::Shader(const std::string_view& file_name, VkShaderStageFlagBits stage)
     : stage(stage) {
   auto code = loadShader(file_name);
   initShader(code);
@@ -24,26 +24,42 @@ ren::Shader::~Shader() {
 }
 
 
-std::vector<u32> ren::Shader::loadShader(const std::string& filename) {
+VkShaderStageFlagBits ren::Shader::getStageFromFilename(const std::string_view& filename) {
+
+  #define CASE(ext, stage) if (filename.ends_with(ext) || filename.ends_with(ext ".spv")) return stage;
+
+  CASE(".vert", VK_SHADER_STAGE_VERTEX_BIT);
+  CASE(".frag", VK_SHADER_STAGE_FRAGMENT_BIT);
+  CASE(".comp", VK_SHADER_STAGE_COMPUTE_BIT);
+  CASE(".compute", VK_SHADER_STAGE_COMPUTE_BIT);
+
+
+  throw std::runtime_error(fmt::format("Unknown shader stage for file: {}", filename));
+}
+
+
+std::vector<u32> ren::Shader::loadShader(const std::string_view& filename) {
   REN_PROFILE_SCOPE("Load Shader");
   // This is the output code that will be returned.
   // It is either loaded from a .spv file, or compiled on the fly from GLSL.
   std::vector<u32> code;
 
-  std::filesystem::path path = filename;
+  // if the filename contains .vert, .frag, .comp, extract the stage from it.
 
+
+  std::filesystem::path path = filename;
+path.has_stem();
   // If the file ends in .spv, we assume its a precompiled SPIV-V shader,
   // and we will just load that off the disk (and trust it! (eep))
   if (path.extension() == ".spv") {
     REN_PROFILE_SCOPE("Load Precompiled SPIR-V Shader");
     // Load the SPIR-V binary from the file.
-    std::ifstream file(filename, std::ios::binary | std::ios::ate);
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
     if (!file.is_open()) {
       throw std::runtime_error(fmt::format("Failed to open shader file: {}", filename));
     }
     std::streamsize size = file.tellg();
     file.seekg(0, std::ios::beg);
-    fmt::println("Loading shader with size: {}", size);
     code.resize(size / sizeof(u32));
     if (!file.read(reinterpret_cast<char*>(code.data()), size)) {
       throw std::runtime_error(fmt::format("Failed to read shader file: {}", filename));

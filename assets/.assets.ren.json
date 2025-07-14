@@ -1,0 +1,30 @@
+{
+    "assets": [
+        {
+            "id": 5945895149700741928,
+            "path": "shaders/display.vert",
+            "type": "Shader"
+        },
+        {
+            "id": 9004111778205689227,
+            "path": "shaders/display.frag",
+            "type": "Shader"
+        },
+        {
+            "id": 14506249415815981777,
+            "path": "shaders/opaque.vert",
+            "type": "Shader"
+        },
+        {
+            "id": 320458939598684567,
+            "path": "mars.jpg",
+            "type": "Texture"
+        },
+        {
+            "id": 3687639962692973184,
+            "path": "shaders/opaque.frag",
+            "type": "Shader"
+        }
+    ],
+    "version": 1
+}

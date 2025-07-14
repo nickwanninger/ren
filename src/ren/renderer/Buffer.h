@@ -3,6 +3,7 @@
 #include <ren/types.h>
 #include <ren/core/Instrumentation.h>
 #include <vulkan/vulkan_core.h>
+#include <ren/renderer/Swapchain.h>  // To get the current frame index.
 #include <vector>
 
 namespace ren {
@@ -100,6 +101,7 @@ namespace ren {
 
 
 
+
   template <typename T>
   using VertexBuffer = FixedUsageTypedBuffer<T, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT>;
   using IndexBuffer = FixedUsageTypedBuffer<u32, VK_BUFFER_USAGE_INDEX_BUFFER_BIT>;
@@ -120,5 +122,40 @@ namespace ren {
   inline void bind(VkCommandBuffer cmd, IndexBuffer &buf) {
     vkCmdBindIndexBuffer(cmd, buf.getHandle(), 0, VK_INDEX_TYPE_UINT32);
   }
+
+
+
+
+  template <typename T>
+  class UniformBufferSet {
+    static constexpr size_t buffercount = 3;  // This is an engine constant.
+   public:
+    UniformBufferSet(size_t count = 1)
+        : buffers(buffercount) {
+      for (size_t i = 0; i < buffercount; ++i) {
+        buffers[i] = std::make_shared<UniformBuffer<T>>(count);
+      }
+    }
+
+
+    // Avoid using these methods!
+    T *map(void) { return getCurrentBuffer()->map(); }
+    void unmap(void) { getCurrentBuffer()->unmap(); }
+
+    // Copy data from host memory to the current buffer.
+    void update(const T *data, VkDeviceSize count, VkDeviceSize offset = 0) {
+      getCurrentBuffer()->copyFromHost(data, count, offset);
+    }
+
+    void update(const T &data) { update(&data, 1, 0); }
+    VkBuffer getHandle() const { return getCurrentBuffer()->getHandle(); }
+    const Buffer &currentAsBuffer() const { return *getCurrentBuffer(); }
+
+   private:
+    auto &getCurrentBuffer() const { return buffers[ren::getFrameIndex()]; }
+    std::vector<ref<UniformBuffer<T>>> buffers;
+  };
+
+
 
 }  // namespace ren

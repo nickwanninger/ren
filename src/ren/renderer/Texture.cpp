@@ -1,14 +1,16 @@
+
 #include <ren/renderer/Texture.h>
+#include <ren/renderer/Buffer.h>
 #include <ren/renderer/Vulkan.h>
 #include <ren/core/Instrumentation.h>
 
 #include <stb/stb_image.h>
 #include <imgui_impl_vulkan.h>
 
-ren::Texture::Texture(const std::string &name, u32 width, u32 height, u8 *pixels)
+ren::Texture::Texture(const std::string_view &name, u32 width, u32 height, u8 *pixels)
     : name(name) {
   REN_PROFILE_FUNCTION();
-  ren::ImageBuilder ib(name);
+  ren::ImageBuilder ib(this->name);
 
   ib.setWidth(width).setHeight(height);
 
@@ -127,10 +129,10 @@ ren::Texture::~Texture(void) {
 }
 
 
-ren::ref<ren::Texture> ren::Texture::load(const std::string &filename) {
+ren::ref<ren::Texture> ren::Texture::load(const std::string_view &filename) {
   REN_PROFILE_FUNCTION();
   int texWidth, texHeight, texChannels;
-  stbi_uc *pixels;
+  stbi_uc *pixels = nullptr;
 
   {
     REN_PROFILE_SCOPE("stbi_load");
@@ -138,6 +140,25 @@ ren::ref<ren::Texture> ren::Texture::load(const std::string &filename) {
   }
 
   auto texture = ren::makeRef<ren::Texture>(filename, (u32)texWidth, (u32)texHeight, (u8 *)pixels);
+
+  stbi_image_free(pixels);
+
+  return texture;
+}
+
+
+ren::ref<ren::Texture> ren::Texture::load(const std::string_view &name, void *data, u64 size) {
+  REN_PROFILE_FUNCTION();
+  int texWidth, texHeight, texChannels;
+  stbi_uc *pixels = nullptr;
+
+  {
+    REN_PROFILE_SCOPE("stbi_load_from_memory");
+    pixels = stbi_load_from_memory((stbi_uc *)data, (int)size, &texWidth, &texHeight, &texChannels,
+                          STBI_rgb_alpha);
+  }
+
+  auto texture = ren::makeRef<ren::Texture>(name, (u32)texWidth, (u32)texHeight, (u8 *)pixels);
 
   stbi_image_free(pixels);
 

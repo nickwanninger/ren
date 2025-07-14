@@ -2,8 +2,7 @@
 #include <ren/renderer/Vulkan.h>
 #include <ren/core/Instrumentation.h>
 
-ren::Buffer::Buffer( VkDeviceSize size, VkBufferUsageFlags usage,
-                    VkMemoryPropertyFlags properties) 
+ren::Buffer::Buffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties)
     : size(size)
     , usage(usage)
     , properties(properties) {
@@ -39,9 +38,7 @@ void ren::Buffer::resize(size_t new_bytes) {
   VmaAllocationCreateInfo allocInfo = {};
   allocInfo.preferredFlags = properties;
   allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
-  allocInfo.flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT |
-                    VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
-
+  allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
 
   vmaCreateBuffer(getVulkan().allocator, &bufferInfo, &allocInfo, &buffer, &allocation, nullptr);
 }

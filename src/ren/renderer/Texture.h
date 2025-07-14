@@ -1,19 +1,19 @@
 #pragma once
 
 #include <ren/types.h>
-#include <ren/renderer/Buffer.h>
 #include <ren/renderer/Image.h>
 #include <ren/core/Instrumentation.h>
+#include <ren/assets/Asset.h>
 
 namespace ren {
 
 
   // A texture is just a 2D image with a sampler.
-  class Texture{
+  class Texture : public ren::TextureAsset {
    public:
     // Construct a texture with CPU side pixel data. Expect R8G8B8A8_SRGB format.
     // Use the load methods to create textures.
-    Texture(const std::string &name, u32 width, u32 height, u8 *data = nullptr);
+    Texture(const std::string_view &name, u32 width, u32 height, u8 *data = nullptr);
     explicit Texture(ren::ImageRef image);
 
     ~Texture();
@@ -21,7 +21,9 @@ namespace ren {
     // -- //
 
     // Load a texture from a file path. This will eventually be moved to a resource manager.
-    static ref<Texture> load(const std::string &filename);
+    static ref<Texture> load(const std::string_view &filename);
+    // load the texture from raw data in memory.
+    static ref<Texture> load(const std::string_view &name, void *data, u64 size);
 
     // -- //
 
@@ -40,6 +42,9 @@ namespace ren {
     VkSampler getSampler(void) const { return sampler; }
 
     VkDescriptorSet getImGui(void) { return imguiTextureID; }
+
+    // ^ren::Asset
+    AssetType getType() override { return AssetType::Texture; }
 
 
    private:

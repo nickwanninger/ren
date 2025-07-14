@@ -7,19 +7,25 @@
 #include <ren/types.h>
 #include <ren/core/UUID.h>
 
+#include <ren/assets/Asset.h>
 
 namespace ren {
   class VulkanInstance;
+
+
+
 
   // This class is the base class for all Vulkan shaders in the engine.
   // It's mainly responsible for manging the lifetime of teh VkShaderModule
   // and providing the shader stage so the pipeline can use it.
   // They should be obtained from a ShaderCache or similar system instead of
   // being created directly.
-  class Shader : public ren::HasUUID, public ren::VulkanResource {
+  class Shader : public ren::VulkanResource, public ren::ShaderAsset {
    public:
-    Shader(const std::string &filename, VkShaderStageFlagBits stage);
+    Shader(const std::string_view &filename, VkShaderStageFlagBits stage);
     virtual ~Shader();
+
+    static VkShaderStageFlagBits getStageFromFilename(const std::string_view &filename);
 
     const std::string &getFilename() const { return filename; }
     VkShaderModule getHandle() const { return shaderModule; }
@@ -27,7 +33,7 @@ namespace ren {
     auto &getCode() const { return code; }
 
    private:
-    std::vector<u32> loadShader(const std::string &file_name);
+    std::vector<u32> loadShader(const std::string_view &file_name);
 
     void initShader(const std::vector<u32> &code);
 

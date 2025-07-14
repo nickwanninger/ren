@@ -1,5 +1,7 @@
 #include <ren/renderer/ShaderProgram.h>
 #include <algorithm>
+#include <ren/assets/AssetManager.h>
+
 
 namespace ren {
 
@@ -9,8 +11,8 @@ namespace ren {
   ShaderProgram::ShaderProgram(const std::string& vertexPath, const std::string& fragmentPath)
       : vertexShaderPath(vertexPath)
       , fragmentShaderPath(fragmentPath) {
-    this->vertexShader = makeRef<VertexShader>(vertexPath);
-    this->fragmentShader = makeRef<FragmentShader>(fragmentPath);
+    this->vertexShader = ren::getAsset<VertexShader>(vertexPath);
+    this->fragmentShader = ren::getAsset<FragmentShader>(fragmentPath);
 
     assert(vertexShader != NULL);
     assert(fragmentShader != NULL);
@@ -60,7 +62,6 @@ namespace ren {
 
   void ShaderProgram::reflectShader(const std::vector<u32>& spirv, VkShaderStageFlagBits stage) {
     SpvReflectShaderModule module;
-    printf("Size = %zu\n", spirv.size() * sizeof(u32));
     SpvReflectResult result =
         spvReflectCreateShaderModule(spirv.size() * sizeof(u32), (u32*)spirv.data(), &module);
 

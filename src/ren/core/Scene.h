@@ -24,6 +24,7 @@ namespace ren {
       return registry.view<Component...>();
     }
 
+    auto getAll() { return registry.view<entt::entity>(); }
 
     std::string serialize(void);
 
