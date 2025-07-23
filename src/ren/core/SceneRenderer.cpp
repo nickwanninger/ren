@@ -18,6 +18,7 @@ namespace ren {
   // but in the future I'll batch them together for performance reasons.
   struct SceneBatch {
     ref<Mesh> mesh;
+    ref<Material> material;
     glm::mat4 transform;
   };
 
@@ -46,7 +47,6 @@ namespace ren {
 
     opaque.pass = R.getRenderPassCache().get(opaque.passDesc);
 
-    opaque.pso.program = makeRef<ShaderProgram>("shaders/opaque");
   }
 
 
@@ -59,8 +59,6 @@ namespace ren {
     lighting.passDesc.addDepthAttachment("depthStencil");
 
     lighting.pass = R.getRenderPassCache().get(lighting.passDesc);
-
-    lighting.pso.program = makeRef<ShaderProgram>("shaders/lighting");
   }
 
 
@@ -74,8 +72,8 @@ namespace ren {
 
     float width = res.x;
     float height = res.y;
-    if (width == 0) width = 1;
-    if (height == 0) height = 1;
+    if (width < 1) width = 1;
+    if (height < 1) height = 1;
 
 
     // Go through all the render targets and build them
@@ -110,12 +108,13 @@ namespace ren {
 
     std::vector<SceneBatch> batches;
 
-    auto view = scene.getAllWith<comp::Mesh, comp::Transform>();
-    view.each([&](entt::entity id, const comp::Mesh &mesh, const comp::Transform &transform) {
+    auto view = scene.getAllWith<comp::Mesh, comp::Transform, comp::Material>();
+    view.each([&](entt::entity id, const comp::Mesh &mesh, const comp::Transform &transform, const comp::Material &material) {
       // Create a batch for each mesh instance.
       SceneBatch batch;
       batch.mesh = mesh.mesh;
       batch.transform = transform.transformMatrix;
+      batch.material = material.material;
       batches.push_back(std::move(batch));
     });
 
@@ -129,13 +128,19 @@ namespace ren {
     R.withPass(*opaque.pass, *opaque.target, [&]() {
       REN_PROFILE_SCOPE("Opaque Pass");
 
-
-      R.bind(opaque.pso);
       ren::MeshPushConstants pc;
       pc.view = camera.view_matrix();
       pc.proj = camera.projection;
 
       for (auto &batch : batches) {
+        if (not batch.material->isDeferred()) {
+          // Skip materials that are not deferred (ie: they are forward (e.g., transparent) materials)
+          continue;
+        }
+        if (not batch.material->bind(R)) {
+          continue;  // Skip this batch if the material is not ready.
+        }
+
         ren::bind(cmd, *batch.mesh->getIndexBuffer());
         ren::bind(cmd, *batch.mesh->getVertexBuffer());
 
@@ -149,6 +154,7 @@ namespace ren {
     frame.perf.end(cmd, "Opaque Pass");
 
 
+    opaque.target->transitionToShaderReadonly(cmd);
 
     return opaque.target;
   }

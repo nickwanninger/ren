@@ -14,6 +14,7 @@ namespace ren {
     Texture,
     Mesh,
     Shader,
+    Material,
     Unknown,
   };
 
@@ -21,6 +22,7 @@ namespace ren {
                                      {AssetType::Texture, "Texture"},
                                      {AssetType::Mesh, "Mesh"},
                                      {AssetType::Shader, "Shader"},
+                                     {AssetType::Material, "Material"},
                                      {AssetType::Unknown, "Unknown"},
                                  })
 
@@ -60,6 +62,7 @@ namespace ren {
 
   using TextureAsset = impl::TypedAsset<AssetType::Texture>;
   using MeshAsset = impl::TypedAsset<AssetType::Mesh>;
+  using MaterialAsset = impl::TypedAsset<AssetType::Material>;
   using ShaderAsset = impl::TypedAsset<AssetType::Shader>;
 
 

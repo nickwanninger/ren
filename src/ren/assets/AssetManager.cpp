@@ -171,13 +171,11 @@ namespace ren {
     // TODO: asset loader abstraction
     switch (info.type) {
       case AssetType::Texture: {
-        fmt::print("TODO: Import texture asset: {}\n", path);
-
         asset = ren::Texture::load(path);
         break;
       }
       case AssetType::Mesh: {
-        fmt::print("TODO: Import mesh asset: {}\n", path);
+        fmt::print("IMPORTING MESH FROM {} IS NOT IMPLEMENTED\n", path);
         break;
       }
       case AssetType::Shader: {
@@ -194,7 +192,14 @@ namespace ren {
         }
         asset = shader;
       }
-      case AssetType::Unknown: {
+      case AssetType::Material: {
+        fmt::print("IMPORTING MATERIAL FROM {} IS NOT IMPLEMENTED\n", path);
+        break;
+      }
+
+
+      case AssetType::Unknown:
+      default: {
         fmt::print("Unknown asset type for path {}\n", path);
         break;
       }

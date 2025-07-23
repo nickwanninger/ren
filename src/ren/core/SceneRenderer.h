@@ -49,7 +49,6 @@ namespace ren {
     struct {
       RenderPass::Description passDesc;
       ref<RenderPass> pass;
-      PipelineStateObject pso;
 
       // The render target for the opaque pass.
       ref<RenderTarget> target;
@@ -61,7 +60,6 @@ namespace ren {
     struct {
       RenderPass::Description passDesc;
       ref<RenderPass> pass;
-      PipelineStateObject pso;
 
       // The render target for the lighting pass.
       ref<RenderTarget> target;
