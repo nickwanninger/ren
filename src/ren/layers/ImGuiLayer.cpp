@@ -55,7 +55,13 @@ namespace ren {
     auto &io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;  //  | ImGuiConfigFlags_ViewportsEnable;
 
+
+    io.Fonts->AddFontFromFileTTF("assets/fonts/Roboto-Medium.ttf", 15);
+    // io.Fonts->AddFontFromFileTTF("assets/fonts/FiraCode-Medium.ttf", 14);
+
+
     ImGui::StyleColorsDark();
+    // ImGui::StyleColorsLight();
 
 
 
@@ -164,6 +170,26 @@ namespace ren {
     ImGui::Text("Delta Time: %.3f ms", deltaTime * 1000.0f);
     ImGui::Text("FPS: %.1f", fps);
     ImGui::Text("RSS: %.2f MB", ren::getCurrentProcessRSS() / (1024.0f * 1024.0f));
+
+    // Display SDL window size and swapchain size.
+    auto &app = ren::Application::get();
+    auto &vulkan = ren::getVulkan();
+    int sdlWidth, sdlHeight;
+    SDL_GetWindowSize(app.getWindow(), &sdlWidth, &sdlHeight);
+    ImGui::Text("SDL Window Size: %dx%d", sdlWidth, sdlHeight);
+    SDL_Vulkan_GetDrawableSize(app.getWindow(), &sdlWidth, &sdlHeight);
+    ImGui::Text("SDL Drawable Size: %dx%d", sdlWidth, sdlHeight);
+    float dpiScaleX, dpiScaleY;
+    SDL_GetDisplayDPI(0, nullptr, &dpiScaleX, &dpiScaleY);
+    ImGui::Text("DPI Scale: %.2f, %.2f", dpiScaleX, dpiScaleY);
+
+    auto &R = ren::Renderer::get();
+    auto renderExtent = R.getSwapchain().renderExtent;
+    auto deviceExtent = R.getSwapchain().deviceExtent;
+    ImGui::Text("Swapchain Render Extent: %dx%d", renderExtent.width, renderExtent.height);
+    ImGui::Text("Swapchain Device Extent: %dx%d", deviceExtent.width, deviceExtent.height);
+
+
     auto &instr = ren::Instrumentor::Get();
     ImGui::Text("Instrument: %zu, %.2f MB", (size_t)instr.profileEvents,
                 instr.profileBytes / (1024.0f * 1024.0f));
