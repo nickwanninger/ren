@@ -8,9 +8,13 @@ namespace ren {
   Mesh::Mesh(const std::string &name, const std::vector<Vertex> &vertices,
              const std::vector<u32> &indices)
       : name(name)
-      , vertices(vertices)
-      , indices(indices) {
+      , vertexCount(vertices.size())
+      , indexCount(indices.size()) {
     REN_PROFILE_FUNCTION();
+
+    for (auto &vert : vertices) {
+      aabb.update(vert.pos);
+    }
 
     // Create the vertex buffer.
     vertexBuffer = makeRef<VertexBuffer<Vertex>>(vertices);

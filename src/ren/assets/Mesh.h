@@ -7,6 +7,29 @@
 
 namespace ren {
 
+  struct AABB {
+    glm::vec3 min = glm::vec3(0.0f);
+    glm::vec3 max = glm::vec3(0.0f);
+
+    AABB() = default;
+
+    AABB(const glm::vec3 &min, const glm::vec3 &max)
+        : min(min)
+        , max(max) {}
+
+    bool isValid() const { return min.x <= max.x && min.y <= max.y && min.z <= max.z; }
+
+    void update(const glm::vec3 &point) {
+      if (!isValid()) {
+        min = point;
+        max = point;
+      } else {
+        min = glm::min(min, point);
+        max = glm::max(max, point);
+      }
+    }
+  };
+
   class Mesh : public ren::HasUUID {
    public:
     Mesh(const std::string &name, const std::vector<Vertex> &vertices,
@@ -24,15 +47,17 @@ namespace ren {
     ref<IndexBuffer> getIndexBuffer(void) const { return indexBuffer; }
 
     // Get the number of indices.
-    u32 getIndexCount(void) const { return static_cast<u32>(indices.size()); }
-    u32 getVertexCount(void) const { return static_cast<u32>(vertices.size()); }
+    u32 getIndexCount(void) const { return indexCount; }
+    u32 getVertexCount(void) const { return vertexCount; }
+    const AABB &getAABB(void) const { return aabb; }
 
    private:
     std::string name;
     ref<VertexBuffer<ren::Vertex>> vertexBuffer;
     ref<IndexBuffer> indexBuffer;
-    std::vector<Vertex> vertices;
-    std::vector<u32> indices;
+    u32 vertexCount = 0;
+    u32 indexCount = 0;
+    AABB aabb;  // Axis-aligned bounding box for the mesh.
   };
 
   using MeshRef = ref<Mesh>;
