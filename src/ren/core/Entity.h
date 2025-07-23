@@ -39,8 +39,17 @@ namespace ren {
 
     template <typename T>
     T& get() {
-      assert(has<T>() && "Entity does not have component!");
       return scene->registry.get<T>(handle);
+    }
+
+    template <typename... T>
+    auto& getAll() {
+      return scene->registry.get<T...>(handle);
+    }
+
+    template <typename Type, typename... Func>
+    auto patch(Func&&... func) {
+      return scene->registry.template patch<Type>(handle, std::forward<Func>(func)...);
     }
 
     template <typename T>
@@ -55,7 +64,6 @@ namespace ren {
 
     template <typename T>
     void remove() {
-      assert(has<T>() && "Entity does not have component!");
       scene->registry.remove<T>(handle);
     }
 
