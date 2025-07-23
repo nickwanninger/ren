@@ -104,6 +104,9 @@ namespace ren {
       }
     }
 
+
+    const Swapchain &getSwapchain(void) const { return *swapchain; }
+
    private:
     void initSwapchain();
     inline const PipelineStateObject &getCurrentPSO() const {

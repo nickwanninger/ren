@@ -120,11 +120,19 @@ namespace ren {
            "Cannot bind a pipeline without a current render pass set. Call beginPass first.");
 
     // Get the cached pipeline for this render pass and PSO.
-    currentPipeline = this->pipelineCache.get(*this->currentPass, pso);
+    auto newPipeline = this->pipelineCache.get(*this->currentPass, pso);
 
-    if (currentPipeline == nullptr) {
+    if (newPipeline == nullptr) {
       throw std::runtime_error("Failed to get cached pipeline for PSO: " + pso.debugName);
     }
+    if (newPipeline == currentPipeline) {
+      // Don't rebind if the pipeline is already bound.
+      return;
+    }
+
+    this->currentPipeline = newPipeline;
+
+    // printf("Binding PSO: %s (%p)\n", pso.debugName.c_str(), currentPipeline->getHandle());
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, currentPipeline->getHandle());
   }
