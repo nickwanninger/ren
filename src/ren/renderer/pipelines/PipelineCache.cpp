@@ -40,10 +40,18 @@ namespace ren {
     // ---- Vertex Input Create Info ---- //
     VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
     vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    vertexInputInfo.vertexBindingDescriptionCount = 1;
-    vertexInputInfo.pVertexBindingDescriptions = &bindingDesc;
-    vertexInputInfo.vertexAttributeDescriptionCount = attributeDescs.size();
-    vertexInputInfo.pVertexAttributeDescriptions = attributeDescs.data();
+    if (not pso.hasVertexBinding) {
+      // If the PSO does not have a vertex binding, we set the binding count to 0.
+      vertexInputInfo.vertexBindingDescriptionCount = 0;
+      vertexInputInfo.pVertexBindingDescriptions = nullptr;
+      vertexInputInfo.vertexAttributeDescriptionCount = 0;
+      vertexInputInfo.pVertexAttributeDescriptions = 0;
+    } else {
+      vertexInputInfo.vertexBindingDescriptionCount = 1;
+      vertexInputInfo.pVertexBindingDescriptions = &bindingDesc;
+      vertexInputInfo.vertexAttributeDescriptionCount = attributeDescs.size();
+      vertexInputInfo.pVertexAttributeDescriptions = attributeDescs.data();
+    }
 
 
     // ---- Input Assembly Create Info ---- //

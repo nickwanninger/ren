@@ -24,7 +24,7 @@ namespace ren {
   }
 
 
-  u64 PipelineStateObject::hash(void) const  {
+  u64 PipelineStateObject::hash(void) const {
     // Generate a hash for this PSO based on its properties.
     u64 state = 0;
     ren::hash(state, (u64)program->getUUID());
@@ -78,6 +78,7 @@ namespace ren {
     j["fillMode"] = pso.fillMode;
     j["cullMode"] = pso.cullMode;
     j["frontCCW"] = pso.frontCCW;
+    j["hasVertexBinding"] = pso.hasVertexBinding;
     j["depthBias"] = pso.depthBias;
     j["depthBiasClamp"] = pso.depthBiasClamp;
     j["depthSlopeFactor"] = pso.depthSlopeFactor;
@@ -93,6 +94,7 @@ namespace ren {
     pso.fillMode = j.at("fillMode").get<FillMode>();
     pso.cullMode = j.at("cullMode").get<CullMode>();
     pso.frontCCW = j.at("frontCCW").get<bool>();
+    pso.hasVertexBinding = j.at("hasVertexBinding").get<bool>();
     pso.depthBias = j.at("depthBias").get<float>();
     pso.depthBiasClamp = j.at("depthBiasClamp").get<float>();
     pso.depthSlopeFactor = j.at("depthSlopeFactor").get<float>();

@@ -75,6 +75,11 @@ namespace ren {
     // If the front face of polygons are counter-clockwise.
     bool frontCCW = true;
 
+
+    // If this pipeline has a vertex binding or not.
+    // this is only false if you generate vertices on the fly in the vertex shader.
+    bool hasVertexBinding = true;
+
     // Depth bias settings
     float depthBias = 0.0f;
     float depthBiasClamp = 0.0f;
