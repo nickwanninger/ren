@@ -4,7 +4,7 @@
 #include <ren/core/UUID.h>
 #include <entt/entt.hpp>
 #include <ren/misc/json_serialize.h>
-
+#include <ren/assets/Material.h>
 #include <glm/glm.hpp>
 #include <glm/gtx/quaternion.hpp>
 #include <ren/assets/Mesh.h>
@@ -96,13 +96,22 @@ namespace ren {
       Mesh() = default;
       Mesh(ref<ren::Mesh> mesh)
           : mesh(mesh) {}
-      friend void to_json(json& j, const Mesh& m) {
-        j = m.mesh->getName();
+      friend void to_json(json& j, const Mesh& m) { j = m.mesh->getName(); }
+
+      friend void from_json(const json& j, Mesh& uuid) { abort(); }
+    };
+
+
+    struct Material {
+      ref<ren::Material> material;
+
+
+      friend void to_json(json& j, const comp::Material& m) {
+        j["name"] = m.material->getName();
+        j["asset_id"] = m.material->getAssetID();
       }
 
-      friend void from_json(const json& j, UUID& uuid) {
-        abort();
-      }
+      friend void from_json(const json& j, comp::Material& uuid) { abort(); }
     };
 
 

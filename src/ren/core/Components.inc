@@ -6,6 +6,7 @@ COMP(ren::comp::Name)
 COMP(ren::comp::Transform)
 COMP(ren::comp::Relationship)
 COMP(ren::comp::Mesh)
+COMP(ren::comp::Material)
 
 #undef COMP
 #endif
