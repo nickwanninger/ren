@@ -11,7 +11,8 @@
 namespace ren {
 
 
-  static bool dragParts(const char *label, const char *parts, float *values, float speed, float resetValue) {
+  static bool dragParts(const char *label, const char *parts, float *values, float speed,
+                        float resetValue) {
     auto &style = ImGui::GetStyle();
     int nparts = strlen(parts);
     bool changed = false;
@@ -28,7 +29,7 @@ namespace ren {
       // float buttonWidth = ImGui::GetFrameHeight(); // Use frame height for square button
       // float spacingWidth = style.ItemInnerSpacing.x;
       // float dragFloatWidth = partWidth - buttonWidth - spacingWidth;
-      
+
       // ImGui::SetNextItemWidth(buttonWidth);
       if (i > 0) ImGui::SameLine(0, style.ItemInnerSpacing.x);
       // render a reset button
@@ -36,7 +37,6 @@ namespace ren {
       if (ImGui::Button(buttonMessage, buttonSize)) {
         values[i] = resetValue;
         changed = true;
-
       }
       // ImGui::SetNextItemWidth(dragFloatWidth);
       ImGui::SameLine(0, style.ItemInnerSpacing.x);
@@ -91,12 +91,7 @@ namespace ren {
   }
 
   static void renderInspector(Entity &entity, comp::Relationship &comp) {
-    // if (ImGui::CollapsingHeader("Relationships", ImGuiTreeNodeFlags_DefaultOpen)) {
-    //   ImGui::Text("Parent: %llu", (u64)comp.parent);
-    //   ImGui::Text("First Child: %llu", (u64)comp.firstChild);
-    //   ImGui::Text("Next Sibling: %llu", (u64)comp.nextSibling);
-    //   ImGui::Text("Children Count: %zu", comp.children);
-    // }
+    // Nothing to see here!
   }
 
   static void renderInspector(Entity &entity, comp::Mesh &comp) {
@@ -107,6 +102,19 @@ namespace ren {
       ImGui::Text("Index Count: %u", mesh->getIndexCount());
     }
   }
+
+  static void renderInspector(Entity &entity, comp::Material &comp) {
+    if (ImGui::CollapsingHeader("Material", ImGuiTreeNodeFlags_DefaultOpen)) {
+      auto &material = comp.material;
+      if (material) {
+        material->inspect();
+      } else {
+        ImGui::Text("No material assigned.");
+      }
+    }
+  }
+
+
 
   void renderEntityInspector(Entity &entity) {
     if (!entity) {
