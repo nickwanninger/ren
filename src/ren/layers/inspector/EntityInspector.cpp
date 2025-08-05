@@ -90,10 +90,6 @@ namespace ren {
     }
   }
 
-  static void renderInspector(Entity &entity, comp::Relationship &comp) {
-    // Nothing to see here!
-  }
-
   static void renderInspector(Entity &entity, comp::Mesh &comp) {
     if (ImGui::CollapsingHeader("Mesh", ImGuiTreeNodeFlags_DefaultOpen)) {
       auto &mesh = comp.mesh;
@@ -122,9 +118,9 @@ namespace ren {
       return;
     }
 
-    ImGui::PushID((u64)entity.getUUID());
+    ImGui::PushID((u64)getUUID(entity));
 
-    auto &name = entity.get<comp::Name>();
+    auto &name = entity.get_mut<comp::Name>();
 
     // display an editor for the entity name
     char nameBuffer[256];
@@ -134,8 +130,9 @@ namespace ren {
       name.name = std::string(nameBuffer);
     }
 
+
 #define COMP(type)                          \
-  if (auto *comp = entity.tryGet<type>()) { \
+  if (auto *comp = entity.try_get_mut<type>()) { \
     ImGui::PushID(&comp);                   \
     renderInspector(entity, *comp);         \
     ImGui::PopID();                         \
@@ -145,7 +142,6 @@ namespace ren {
 
     ImGui::PopID();
   }  // namespace ren
-
 
 
 

@@ -1,54 +1,41 @@
 #pragma once
 
 
-#include <entt/entt.hpp>
 #include <ren/core/UUID.h>
+#include <ren/core/Entity.h>
 
 namespace ren {
 
-  class Entity;  // fwd declaration.
 
   // A scene is a collection of entities with components that can be rendered.
   class Scene {
    public:
+
+
     // Go through these interfaces to create entities.
     // This ensures that all entities are properly registered with a name, an id,
     // a transform, and any other necessary components.
     Entity createEntity(const std::string &name = "Entity");
     Entity createEntity(UUID uuid, const std::string &name = "Entity");
-    void destroyEntity(Entity entity);
 
-
-    template <typename... Component>
-    auto getAllWith() {
-      return registry.view<Component...>();
-    }
-
-    auto getAll() { return registry.view<entt::entity>(); }
-
-    std::string serialize(void);
+    json serialize(void);
 
     // Grab an entity by its UUID.
     Entity getEntity(UUID uuid);
 
+    Entity getRoot(void) { return this->root; }
 
-    Entity getRoot(void);
-
+    // Construct the scene using some entity as a root
+    Scene(ren::Entity rootEntity);
 
    protected:
     friend class SceneRenderer;
-    friend class Entity;
 
 
     void globalizeTransforms(void);
 
+    std::unordered_map<UUID, ren::Entity> entities;
 
-    entt::registry registry;
-
-    // the root entity of the scene graph heirarchy.
-    entt::entity rootEntity = entt::null;
-
-
-    std::unordered_map<UUID, entt::entity> entities;
+    ren::Entity root;
   };
 }  // namespace ren

@@ -4,6 +4,7 @@
 #include <vector>
 #include <map>
 #include <ren/types.h>
+#include <unordered_set>
 #include <ren/core/UUID.h>
 
 namespace ren {
@@ -29,6 +30,48 @@ namespace ren {
     const std::string name;
     RenderGraph &graph;
   };
+
+
+
+  class GraphResource {
+   public:
+    enum class Type { Buffer, Texture };
+
+
+    explicit GraphResource(Type type, u32 index)
+        : resourceType(type)
+        , index(index) {}
+
+
+    u32 getIndex() const { return index; }
+    Type getType() const { return resourceType; }
+
+    const std::unordered_set<u32> &getWrittenIn() const { return writtenIn; }
+    const std::unordered_set<u32> &getReadIn() const { return readIn; }
+
+    void setName(const std::string_view &name) { this->name = name; }
+    const std::string &getName() const { return name; }
+
+   private:
+    Type resourceType;
+    u32 index;
+
+    // Which passes is a resource read/written in?
+    std::unordered_set<u32> writtenIn;
+    std::unordered_set<u32> readIn;
+
+    std::string name;
+  };
+
+
+  class GraphTextureResource : public GraphResource {
+   public:
+    explicit GraphTextureResource(u32 index)
+        : GraphResource(Type::Texture, index) {}
+  };
+
+
+  // ...
 
 
   class GraphNode {

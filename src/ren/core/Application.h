@@ -10,6 +10,7 @@
 #include <ren/layers/SceneLayer.h>
 #include <ren/layers/ImGuiLayer.h>
 #include <ren/assets/AssetManager.h>
+#include <flecs.h>
 
 namespace ren {
 
@@ -29,12 +30,17 @@ namespace ren {
 
     AssetManager assetManager;
 
+
+
    public:
+    // Arguably the most important part of the application is the ECS world.
+    // We try to put everything in the world, so that we can use flecs systems to process basically
+    // everything.
+    flecs::world world;
     Application(const std::string &app_name, glm::uvec2 window_size);
     ~Application();
 
     void run();
-
 
     static Application &get(void);
 
@@ -43,4 +49,14 @@ namespace ren {
 
    private:
   };
+
+
+  // We provide a nice ren::world() global function to access the world from anywhere in the code.
+  // It may seem like a bit of an abstraction leakage, but I think it's important to let anything
+  // access the low-level ECS world without having to go through an abstraction which would restrict
+  // functionality.
+  static inline flecs::world &world(void) { return ren::Application::get().world; }
+  static inline float deltaTime(void) { return ren::world().delta_time(); }
+
+
 }  // namespace ren

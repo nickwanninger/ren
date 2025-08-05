@@ -83,7 +83,7 @@ void ren::VulkanInstance::init_instance(void) {
 
   // make the vulkan instance, with basic debug features
   auto inst_ret = builder.set_app_name("Example Vulkan Application")
-                      .request_validation_layers(true)
+                      .request_validation_layers(false)
                       .require_api_version(1, 3, 0)
                       .build();
 

@@ -20,6 +20,7 @@ namespace ren {
 
   Swapchain::Swapchain(SDL_Window *window)
       : window(window) {
+    REN_PROFILE_SCOPE("Build Swapchain");
     this->frameIndex = 0;
     auto &vulkan = ren::getVulkan();
     vulkan.frame_number = 0;

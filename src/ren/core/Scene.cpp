@@ -3,6 +3,7 @@
 #include <ren/core/Components.h>
 #include <ren/core/Instrumentation.h>
 
+#include <ren/core/Application.h>
 
 namespace ren {
 
@@ -15,52 +16,55 @@ namespace ren {
 
   Entity Scene::createEntity(UUID uuid, const std::string &name) {
     REN_PROFILE_FUNCTION();
-    Entity entity(registry.create(), this);
-
+    auto entity = ren::world().entity().child_of(this->root);
     // Make sure the entity has a UUID.
-    entity.add<comp::ID>(uuid);
+    entity.emplace<comp::ID>(uuid);
     // Give the entity a name
-    entity.add<comp::Name>(name);
+    entity.emplace<comp::Name>(name);
     // This places it at 0,0,0 by default.
-    entity.add<comp::Transform>();
-    // Add a default relationship component.
-    entity.add<comp::Relationship>();
+    entity.emplace<comp::Transform>();
 
-    // Then register the entity with the scene.
     entities[uuid] = entity;
 
-    // Add the entity as a child of the root entity.
-    getRoot().addChild(entity);
     return entity;
   }
 
 
-  void Scene::destroyEntity(Entity entity) {
-    REN_PROFILE_FUNCTION();
-    if (entity) {
-      // Remove the entity from the scene's entity map.
-      auto it = entities.find(entity.get<comp::ID>().uuid);
-      if (it != entities.end()) { entities.erase(it); }
-      // Destroy the entity in the registry.
-      registry.destroy(entity);
+  static json serializeEntity(Entity &e) {
+    json j = {};
+    if (!e.has<comp::ID>()) {
+      // If the entity does not have an ID, we cannot serialize it.
+      j["error"] = "Entity does not have a UUID.";
+      return j;
     }
+
+    j["uuid"] = fmt::format("{}", (u64)e.get<comp::ID>().uuid);
+    j["name"] = e.get<comp::Name>();
+
+    j["components"] = json::object();
+
+#define COMP(c) \
+  if (auto *comp = e.try_get<c>()) { j["components"][#c] = (json)(*comp); }
+#include <ren/core/Components.inc>
+
+
+    j["children"] = json::array();
+    e.children([&](Entity child) { j["children"].push_back(serializeEntity(child)); });
+
+    return j;
   }
 
-  std::string Scene::serialize(void) {
+
+  json Scene::serialize(void) {
     REN_PROFILE_FUNCTION();
     json j;
+    j["entities"] = json::array();
 
-    std::vector<json> serializedEntities;
-    for (auto &[uuid, entity] : this->entities) {
-      json e = Entity(entity, this).serialize();
-      serializedEntities.push_back(e);
-    }
-    j["entities"] = serializedEntities;
-
+    root.children([&](Entity e) { j["entities"].push_back(serializeEntity(this->root)); });
 
     // fmt::print("MessagePack: {} bytes\n", json::to_msgpack(j).size());
     // fmt::print("Json:        {} bytes\n", j.dump().size());
-    return j.dump(2);
+    return j;
   }
 
 
@@ -72,41 +76,28 @@ namespace ren {
     // parent's transform is the global transform.
     auto &parentTransformMatrix = parent.get<comp::Transform>().transformMatrix;
 
-    parent.eachChild([&](Entity child) {
-      auto &t = child.get<comp::Transform>();
+    parent.children([&](Entity child) {
+      auto &t = child.get_mut<comp::Transform>();
       t.transformMatrix = parentTransformMatrix * t.getTransform();
       globalizeChildren(child);
     });
   }
 
 
-  void Scene::globalizeTransforms(void) {
-    // the global transform of the top level entities are simply their own local transforms.
-    getRoot().eachChild([](Entity child) {
-      auto &t = child.get<comp::Transform>();
-      t.transformMatrix = t.getTransform();
-    });
-
-    // Then we can recursively globalize the transforms of all children.
-    getRoot().eachChild(globalizeChildren);
-  }
+  void Scene::globalizeTransforms(void) { getRoot().children(globalizeChildren); }
 
   Entity Scene::getEntity(UUID uuid) {
     REN_PROFILE_FUNCTION();
+
     auto it = entities.find(uuid);
-    if (it != entities.end()) return Entity(it->second, this);
+    if (it != entities.end()) return it->second;
     return Entity();
   }
 
-  Entity Scene::getRoot(void) {
+  Scene::Scene(ren::Entity rootEntity)
+      : root(rootEntity) {
     REN_PROFILE_FUNCTION();
-    if (rootEntity == entt::null) {
-      rootEntity = registry.create();
-      registry.emplace<comp::ID>(rootEntity, UUID());
-      registry.emplace<comp::Name>(rootEntity, "Root");
-      registry.emplace<comp::Transform>(rootEntity);
-      registry.emplace<comp::Relationship>(rootEntity);
-    }
-    return Entity(rootEntity, this);
+    //
   }
+
 }  // namespace ren

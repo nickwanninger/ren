@@ -6,7 +6,7 @@ namespace ren {
 
 
   void Material::inspect(void) {
-    ImGui::Text("Material '%s', ID: %lu", getName().c_str(), (u64)getAssetID());
+    ImGui::Text("Material '%s', ID: %llu", getName().c_str(), (u64)getAssetID());
   }
 
 

@@ -17,7 +17,8 @@
 namespace ren {
 
   SceneLayer::SceneLayer(Application &app)
-      : Layer(app, "ImGui") {}
+      : Layer(app, "ImGui")
+      , scene(app.world.lookup("scene")) {}
 
 
   void SceneLayer::onAttach(void) {
@@ -25,7 +26,7 @@ namespace ren {
     fmt::print("Scene Layer Attached\n");
 
 
-    this->meshScene = MeshScene::loadGLTF("assets/test/meshes/simple_scene.glb");
+    this->meshScene = MeshScene::load("assets/test/meshes/simple_scene.glb");
     // this->meshScene = MeshScene::loadGLTF("assets/test/meshes/unit_cube.glb");
 
 
@@ -37,7 +38,6 @@ namespace ren {
     camera.position.z = 6;
     camera.angles.x = -0.5f;
     camera.angles.y = -1;
-
   }
 
   void SceneLayer::onUpdate(float deltaTime) {
@@ -136,16 +136,16 @@ namespace ren {
   void SceneLayer::renderEntityHeirarchy(Entity entity) {
     REN_PROFILE_FUNCTION();
 
-    auto eid = entity.getUUID();
+    auto eid = getUUID(entity);
     ImGui::PushID((u64)eid);
 
-    if (ImGui::TreeNode(entity.getName().c_str())) {
+
+    char buf[256];
+    sprintf(buf, "%s : %lu", entity.get<comp::Name>().name.c_str(), (u64)eid);
+    if (ImGui::TreeNode(buf)) {
       ren::renderEntityInspector(entity);
 
-      entity.eachChild([this](Entity child) {
-        // fmt::print("Child: {}\n", child.getName());
-        renderEntityHeirarchy(child);
-      });
+      entity.children([this](Entity child) { renderEntityHeirarchy(child); });
 
       ImGui::TreePop();
     }
@@ -168,8 +168,6 @@ namespace ren {
     // SDL_GetWindowSize(app.getWindow(), &windowWidth, &windowHeight);
 
 
-
-
     ImGui::Begin("Scene Layer");
 
     if (ImGui::CollapsingHeader("Scene Information")) {
@@ -181,8 +179,9 @@ namespace ren {
     if (ImGui::CollapsingHeader("Mesh Scene")) { meshScene->onImguiRender(); }
 
     ImGui::Separator();
-
-    scene.getRoot().eachChild([&](Entity e) { renderEntityHeirarchy(e); });
+    if (ImGui::Button("Clone Root")) {
+      //
+    }
 
     ImGui::End();
   }

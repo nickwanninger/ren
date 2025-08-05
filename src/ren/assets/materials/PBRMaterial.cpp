@@ -31,8 +31,12 @@ namespace ren {
     ImGui::Text("PBR Material");
     ImGui::Separator();
 
-    pso.renderInspector();
+    // pso.renderInspector();
     // Add any PBR-specific properties here, such as textures, metallic, roughness, etc.
+
+    ImGui::ColorEdit3("Albedo Color", &albedoColor[0]);
+    ImGui::ColorEdit3("Emissive Color", &emissiveColor[0]);
+    ImGui::ColorEdit3("Specular Color", &specularColor[0]);
   }
 
 

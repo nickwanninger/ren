@@ -24,9 +24,9 @@ namespace ren {
     Material &operator=(Material &&) = delete;
 
 
-    
 
 
+    void setName(const std::string_view &name) { this->name = name; }
     const std::string &getName() const { return this->name; }
 
 
@@ -43,14 +43,12 @@ namespace ren {
     virtual void inspect(void);
 
     // If a material is compatible with deferred rendering, this should return true.
-    // It will determine when the material is used, be it in the deferred pass, or the 
+    // It will determine when the material is used, be it in the deferred pass, or the
     // forward pass afterwards (e.g., transparent materials).
     // The default here is false, and the only real material that overrides this is the
     // ren::PBRMaterial class.
     virtual bool isDeferred(void) const { return false; }
 
-   protected:
-    void setName(const std::string_view &name) { this->name = name; }
 
    private:
     std::string name = "Unknown Material";

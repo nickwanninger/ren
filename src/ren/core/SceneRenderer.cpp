@@ -5,6 +5,7 @@
 
 #include <ren/core/Entity.h>
 #include <ren/core/Components.h>
+#include <ren/core/Application.h>
 
 #include <ren/types.h>
 
@@ -46,7 +47,6 @@ namespace ren {
     opaque.passDesc.addDepthAttachment("depthStencil");
 
     opaque.pass = R.getRenderPassCache().get(opaque.passDesc);
-
   }
 
 
@@ -64,6 +64,7 @@ namespace ren {
 
   void SceneRenderer::rebuildRenderTargets(glm::vec2 res) {
     REN_PROFILE_FUNCTION();
+
     // HACK: this should be done elsewhere through an event system
     //       (or, I should have a real render graph (ie: finish the one I started))
     R.waitForIdle();
@@ -76,6 +77,12 @@ namespace ren {
     if (height < 1) height = 1;
 
 
+    float targetHeight = 240;
+    float scale = targetHeight / height;
+    width *= scale;
+    height *= scale;
+
+
     // Go through all the render targets and build them
     opaque.target = opaque.pass->createRenderTarget(width, height);
 
@@ -84,6 +91,7 @@ namespace ren {
 
   ref<RenderTarget> SceneRenderer::render(Scene &scene, Camera &camera) {
     REN_PROFILE_FUNCTION();
+
 
     // get the current frame data.
     auto &frame = ren::getFrameData();
@@ -99,24 +107,36 @@ namespace ren {
     }
 
     // Don't render!
-    if (renderResolution.x == 0 || renderResolution.y == 0) {
-      return opaque.target;
-    }
+    if (renderResolution.x == 0 || renderResolution.y == 0) { return opaque.target; }
 
     // Update all the transformation matrices in the scene to be global.
     scene.globalizeTransforms();
 
     std::vector<SceneBatch> batches;
 
-    auto view = scene.getAllWith<comp::Mesh, comp::Transform, comp::Material>();
-    view.each([&](entt::entity id, const comp::Mesh &mesh, const comp::Transform &transform, const comp::Material &material) {
-      // Create a batch for each mesh instance.
-      SceneBatch batch;
-      batch.mesh = mesh.mesh;
-      batch.transform = transform.transformMatrix;
-      batch.material = material.material;
-      batches.push_back(std::move(batch));
+    scene.getRoot().scope([&] {
+      ren::world().query<comp::Mesh, comp::Transform, comp::Material>().each(
+          [&](const comp::Mesh &mesh, const comp::Transform &transform,
+              const comp::Material &material) {
+            // Create a batch for each mesh instance.
+            SceneBatch batch;
+            batch.mesh = mesh.mesh;
+            batch.transform = transform.transformMatrix;
+            batch.material = material.material;
+            batches.push_back(std::move(batch));
+          });
     });
+
+    // auto view = scene.getAllWith<comp::Mesh, comp::Transform, comp::Material>();
+    // view.each([&](entt::entity id, const comp::Mesh &mesh, const comp::Transform &transform,
+    //               const comp::Material &material) {
+    //   // Create a batch for each mesh instance.
+    //   SceneBatch batch;
+    //   batch.mesh = mesh.mesh;
+    //   batch.transform = transform.transformMatrix;
+    //   batch.material = material.material;
+    //   batches.push_back(std::move(batch));
+    // });
 
 
     float renderAspect = (float)renderResolution.x / (float)renderResolution.y;
@@ -125,6 +145,10 @@ namespace ren {
 
     // Begin the opaque render pass.
     frame.perf.begin(cmd, "Opaque Pass");
+
+
+    u64 vertsDrawn = 0;
+
     R.withPass(*opaque.pass, *opaque.target, [&]() {
       REN_PROFILE_SCOPE("Opaque Pass");
 
@@ -134,29 +158,36 @@ namespace ren {
 
       for (auto &batch : batches) {
         if (not batch.material->isDeferred()) {
-          // Skip materials that are not deferred (ie: they are forward (e.g., transparent) materials)
+          // Skip materials that are not deferred (ie: they are forward (e.g., transparent)
+          // materials)
           continue;
         }
         if (not batch.material->bind(R)) {
+          printf("Failed to bind material for mesh %s\n", batch.mesh->getName().c_str());
           continue;  // Skip this batch if the material is not ready.
         }
 
         ren::bind(cmd, *batch.mesh->getIndexBuffer());
         ren::bind(cmd, *batch.mesh->getVertexBuffer());
 
+        vertsDrawn += batch.mesh->getIndexCount();
+
         pc.model = batch.transform;
         R.setPushConstants(pc);
 
         vkCmdDrawIndexed(cmd, batch.mesh->getIndexCount(), 1, 0, 0, 0);
       }
-
     });
+
+    // printf("Drawn %llu verts in opaque pass in %zu batches\n", vertsDrawn, batches.size());
     frame.perf.end(cmd, "Opaque Pass");
 
 
     opaque.target->transitionToShaderReadonly(cmd);
 
     return opaque.target;
+
+    return nullptr;
   }
 
 

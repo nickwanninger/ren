@@ -40,6 +40,18 @@ namespace ren {
     g_application = this;
     // Initialize the SDL window
     SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER);
+
+    // Enable the flecs world rest api
+    ren::world().set<flecs::Rest>({});
+    ren::world().import <flecs::stats>();
+    // ren::world().set_threads(4);
+    // ren::world().set_target_fps(60);
+
+    auto scene = ren::world().entity("scene");
+
+
+
+
     SDL_WindowFlags window_flags =
         (SDL_WindowFlags)(SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
     this->window =
@@ -55,7 +67,6 @@ namespace ren {
     // Add the ImGuiLayer to the stack.
     this->imguiLayer = makeRef<ImGuiLayer>(*this);
     this->layerStack.pushLayer(imguiLayer);
-
 
 
     // Find and open first PS5 controller
@@ -96,6 +107,7 @@ namespace ren {
     auto startTime = std::chrono::high_resolution_clock::now();
     auto lastTime = startTime;
     SDL_Event e;
+
 
 
     SceneRenderer sceneRenderer(*this->renderer);
@@ -149,6 +161,7 @@ namespace ren {
         REN_PROFILE_SCOPE("SDL Poll");
         // Handle events on queue
         while (SDL_PollEvent(&e) != 0) {
+          REN_PROFILE_SCOPE("SDL Dispatch");
           eventsHandled++;
           // close the window when user alt-f4s or clicks the X button
           if (e.type == SDL_QUIT) {
@@ -165,6 +178,8 @@ namespace ren {
 
 
 
+
+      world.progress(deltaTime);
 
       if (!running) break;
 
@@ -224,9 +239,54 @@ namespace ren {
           // Before rendering, lets create a dockspace
           ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport(),
                                        ImGuiDockNodeFlags_PassthruCentralNode);
-
-          ImGui::ShowMetricsWindow();
         }
+
+
+        ImGui::Begin("ECS World");
+        struct EntityTreeInspector {
+          static inline void drawEntity(flecs::entity entity) {
+            ImGui::PushID((u64)entity.id());
+            const char *nameBuffer;
+            if (auto name = entity.name(); name.length() != 0) {
+              nameBuffer = name.c_str();
+            } else if (auto nameComp = entity.try_get<comp::Name>()) {
+              nameBuffer = nameComp->name.c_str();
+            } else {
+              nameBuffer = "Unnamed Entity";
+            }
+            if (ImGui::TreeNode(nameBuffer)) {
+              entity.children([&](flecs::entity child) { drawEntity(child); });
+              ImGui::TreePop();
+            }
+            ImGui::PopID();
+          };
+        };
+
+        ren::world()
+            .query_builder()
+            .without(flecs::ChildOf, flecs::Wildcard)
+            .build()
+            .each(EntityTreeInspector::drawEntity);
+
+
+
+        ImGui::Separator();
+
+        auto start = std::chrono::steady_clock::now();
+        InstrumentationTimer timer("Entity Query");
+        ren::world().scope("scene").query<comp::Name>().each([&](Entity e, comp::Name &name) {
+          ImGui::Text("Entity: %s %zu", name.name.c_str(), e.id());
+        });
+        auto end = std::chrono::steady_clock::now();
+
+        auto highResStart = FloatingPointMicroseconds{start.time_since_epoch()};
+        auto elapsedTime =
+            std::chrono::time_point_cast<std::chrono::microseconds>(end).time_since_epoch() -
+            std::chrono::time_point_cast<std::chrono::microseconds>(start).time_since_epoch();
+        ImGui::Text("Query took %f ms",
+                    std::chrono::duration<float, std::milli>(end - start).count());
+
+        ImGui::End();
 
 
         ImGui::Begin("Gbuffer image pointers");

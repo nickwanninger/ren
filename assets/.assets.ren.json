@@ -1,6 +1,21 @@
 {
     "assets": [
         {
+            "id": 320458939598684567,
+            "path": "mars.jpg",
+            "type": "Texture"
+        },
+        {
+            "id": 3687639962692973184,
+            "path": "shaders/opaque.frag",
+            "type": "Shader"
+        },
+        {
+            "id": 4247184721532487586,
+            "path": "shaders/pbr.vert",
+            "type": "Shader"
+        },
+        {
             "id": 5945895149700741928,
             "path": "shaders/display.vert",
             "type": "Shader"
@@ -16,13 +31,8 @@
             "type": "Shader"
         },
         {
-            "id": 320458939598684567,
-            "path": "mars.jpg",
-            "type": "Texture"
-        },
-        {
-            "id": 3687639962692973184,
-            "path": "shaders/opaque.frag",
+            "id": 16737289790230236340,
+            "path": "shaders/pbr.frag",
             "type": "Shader"
         }
     ],

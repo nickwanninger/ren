@@ -2,7 +2,6 @@
 
 #include <ren/types.h>
 #include <ren/core/UUID.h>
-#include <entt/entt.hpp>
 #include <ren/misc/json_serialize.h>
 #include <ren/assets/Material.h>
 #include <glm/glm.hpp>
@@ -14,8 +13,7 @@ namespace ren {
   namespace comp {
 
 
-    // Entity components are simple PoD structs.
-    // Whenever you make a new component, make sure to add it to the X macro in Components.inc
+    // These entities are those which are available to the editor and serialization.
 
 
     struct ID {
@@ -72,20 +70,6 @@ namespace ren {
         return glm::translate(glm::mat4(1.0f), translation) *
                glm::mat4_cast(glm::normalize(rotation)) * glm::scale(glm::mat4(1.0f), scale);
       }
-    };
-
-
-    // The Relationship component is used to define parent-child relationships
-    // between entities.  It is used to create a transformation hierarchy, where
-    // a parent entity's transformation affects its children.
-    // This is meant to be used through the Entity abstraction, not directly.
-    struct Relationship {
-      // This is the parent entity of this entity.
-      UUID parent = UUID::null;
-      // I'm not sure about this being a vector...
-      std::vector<UUID> children;
-
-      NLOHMANN_DEFINE_TYPE_INTRUSIVE(Relationship, parent, children);
     };
 
 

@@ -27,7 +27,7 @@ find_package(Vulkan REQUIRED glslang shaderc_combined)
 
 # Add some of the libraries we vendor
 add_subdirectory(lib/VulkanMemoryAllocator)
-add_subdirectory(lib/entt)
+add_subdirectory(lib/flecs)
 add_subdirectory(lib/fmt)
 
 set(IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/imgui)
@@ -54,7 +54,7 @@ add_subdirectory(lib/assimp)
 
 
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++20 -Wno-unused-function ")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -std=c++20 -Wno-unused-function -Wno-deprecated-volatile ")
 
 # Define a variable to store the list of C++ source files
 set(REN_SOURCE_FILES "")
@@ -97,7 +97,7 @@ target_link_libraries(ren
   ${SDL2_LIBRARIES}
   fmt::fmt # fmt library
 
-  EnTT::EnTT # EnTT for ECS
+  flecs::flecs_static # Flecs for ECS
   m # Everything needs math
 )
 
@@ -115,6 +115,8 @@ target_include_directories(ren PRIVATE
   ${SDL2_INCLUDE_DIRS}
   ${IMGUI_DIR}
   ${IMGUI_DIR}/backends
+
+  ${GUILE_STATIC_INCLUDE_DIRS}
 
 
   src/

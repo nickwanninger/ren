@@ -42,6 +42,10 @@ namespace ren {
 
 
 
+    glm::vec3 albedoColor = glm::vec3(1.0f, 1.0f, 1.0f);
+    glm::vec3 emissiveColor = glm::vec3(0.0f, 0.0f, 0.0f);
+    glm::vec3 specularColor = glm::vec3(0.0f, 0.0f, 0.0f);
+
 
    private:
     // All PBR materials share the same pipeline state object.

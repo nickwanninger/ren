@@ -1,6 +1,6 @@
 #pragma once
 
-
+#include <map>
 #include <ren/assets/Asset.h>
 #include <ren/renderer/Shader.h>
 
@@ -62,8 +62,8 @@ namespace ren {
     std::filesystem::path assetDirectory;
 
 
-    std::unordered_map<ren::AssetID, AssetInfo> assetRegistry;
-    std::unordered_map<ren::AssetID, ref<Asset>> loadedAssets;  // Cache of loaded assets
+    std::map<ren::AssetID, AssetInfo> assetRegistry;
+    std::map<ren::AssetID, ref<Asset>> loadedAssets;  // Cache of loaded assets
   };
 
   AssetManager &getAssetManager();

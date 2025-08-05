@@ -93,9 +93,9 @@ namespace ren {
 
 
     auto &colors = ImGui::GetStyle().Colors;
-    colors[ImGuiCol_WindowBg] = ImVec4{0.0f, 0.0f, 0.0f, 0.8f};
+    colors[ImGuiCol_WindowBg] = ImVec4{0.01f, 0.01f, 0.01f, 0.9f};
 
-    auto border = ImVec4{0.01f, 0.01f, 0.01f, 1.0f};
+    auto border = ImVec4{0.1f, 0.1f, 0.1f, 1.0f};
     auto themeColor = ImVec4{0.2f, 0.205f, 0.21f, 1.0f};
     auto themeColorHovered = ImVec4{0.3f, 0.305f, 0.31f, 1.0f};
 
@@ -104,7 +104,7 @@ namespace ren {
     // Headers
     colors[ImGuiCol_Header] = border;
     colors[ImGuiCol_HeaderHovered] = border;
-    colors[ImGuiCol_HeaderActive] = ImVec4{0.15f, 0.1505f, 0.151f, 1.0f};
+    colors[ImGuiCol_HeaderActive] = border;
 
     // Buttons
     colors[ImGuiCol_Button] = ImVec4{0.2f, 0.205f, 0.21f, 1.0f};
