@@ -4,6 +4,7 @@
 #include <ImGuizmo/ImGuizmo.h>
 #include <ImGuizmo/GraphEditor.h>
 #include <unordered_map>
+#include <queue>
 
 namespace ren {
 

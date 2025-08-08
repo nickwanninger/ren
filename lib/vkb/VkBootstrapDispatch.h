@@ -5433,7 +5433,8 @@ struct DispatchTable {
 #endif
 #if (defined(VK_QCOM_tile_shading))
     void cmdDispatchTileQCOM(VkCommandBuffer commandBuffer) const noexcept {
-        fp_vkCmdDispatchTileQCOM(commandBuffer);
+        // ABORT
+        // fp_vkCmdDispatchTileQCOM(commandBuffer);
     }
 #endif
 #if (defined(VK_QCOM_tile_shading))

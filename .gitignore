@@ -6,5 +6,6 @@ build/
 /.direnv/
 .DS_Store
 /.vscode/
+/.vs/
 /imgui.ini
 engine_run_profile.json

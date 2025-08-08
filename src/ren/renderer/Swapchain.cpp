@@ -62,8 +62,8 @@ namespace ren {
     fmt::print("Vulkan swapchain created with {} images, extent: {}x{}. format={}\n", images.size(),
                deviceExtent.width, deviceExtent.height, (u32)imageFormat);
 
-    for (u64 i = 0; i < images.size(); i++) {
-      frames.push_back(makeBox<ren::FrameData>(i, *this, images[i], imageViews[i]));
+    for (size_t i = 0; i < images.size(); i++) {
+      frames.push_back(makeBox<ren::FrameData>((u32)i, *this, images[i], imageViews[i]));
     }
   }
 
@@ -93,7 +93,7 @@ namespace ren {
     auto frameData = frames[frameIndex].get();
     g_frameData = frameData;
 
-    assert(frameData->frameIndex == frameIndex);
+    // assert(frameData->frameIndex == frameIndex);
     {
       REN_PROFILE_SCOPE("Wait for fences");
       vkWaitForFences(vulkan.device, 1, &frameData->inFlightFence, VK_TRUE, UINT64_MAX);
@@ -112,6 +112,7 @@ namespace ren {
 
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR ||
         vulkan.framebuffer_resized) {
+      fmt::println("Swapchain image out of date");
       return nullptr;
     } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
       fmt::print("Failed to acquire swapchain image {}\n", (int)result);

@@ -48,7 +48,6 @@ std::vector<u32> ren::Shader::loadShader(const std::string_view& filename) {
 
 
   std::filesystem::path path = filename;
-path.has_stem();
   // If the file ends in .spv, we assume its a precompiled SPIV-V shader,
   // and we will just load that off the disk (and trust it! (eep))
   if (path.extension() == ".spv") {
@@ -88,7 +87,7 @@ path.has_stem();
 
     std::ifstream file(path, std::ios::binary | std::ios::ate);
     if (!file.is_open()) {
-      throw std::runtime_error(fmt::format("Failed to open shader file: {}", path.c_str()));
+      throw std::runtime_error(fmt::format("Failed to open shader file: {}", path.string()));
     }
     std::streamsize size = file.tellg();
     file.seekg(0, std::ios::beg);
@@ -97,7 +96,7 @@ path.has_stem();
     sourceCode.resize(size);
 
     if (!file.read(reinterpret_cast<char*>(sourceCode.data()), size)) {
-      throw std::runtime_error(fmt::format("Failed to read shader file: {}", path.c_str()));
+      throw std::runtime_error(fmt::format("Failed to read shader file: {}", path.string()));
     }
     file.close();
 
@@ -116,7 +115,7 @@ path.has_stem();
 
 
     auto result = compiler.CompileGlslToSpv(sourceCode.data(), sourceCode.size(), shaderKind,
-                                            path.filename().c_str(), options);
+                                            path.filename().string().c_str(), options);
 
     if (result.GetCompilationStatus() == shaderc_compilation_status_success) {
       fmt::print("Shader compiled successfully: {}\n", path.string());
@@ -125,7 +124,7 @@ path.has_stem();
       std::copy(result.cbegin(), result.cend(), std::back_inserter(code));
 
     } else if (result.GetCompilationStatus() == shaderc_compilation_status_invalid_stage) {
-      throw std::runtime_error(fmt::format("Invalid shader stage for file: {}", path.c_str()));
+      throw std::runtime_error(fmt::format("Invalid shader stage for file: {}", path.string()));
     } else {
       throw std::runtime_error(
           fmt::format("Shader compilation failed: {}", result.GetErrorMessage()));

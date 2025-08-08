@@ -322,18 +322,21 @@ namespace ren {
           node->transform.scale = glm::vec3(scaling.x, scaling.y, scaling.z);
 
           node->mesh = nullptr;  // Default to no mesh
-          // If this node has meshes, assign the first one.
-          if (assimpNode->mNumMeshes == 0) {
-            REN_PROFILE_SCOPE("Assign Mesh to Node");
-            // Get the first mesh index from the node.
-            unsigned int meshIndex = assimpNode->mMeshes[0];
-            unsigned int materialIndex = 0;
-            
 
+
+          // Add the child nodes
+          for (unsigned int i = 0; i < assimpNode->mNumChildren; ++i) {
+            REN_PROFILE_SCOPE("Add Child Node");
+            auto child = buildAssimpNodeHierarchy(assimpNode->mChildren[i], *node);
+            node->children.push_back(child);
+          }
+
+          if (assimpNode->mNumMeshes == 1) {
+            // If this node has exactly one mesh, assign it.
+            unsigned int meshIndex = assimpNode->mMeshes[0];
             if (meshIndex < meshScene->meshes.size()) {
-              materialIndex = scene->mMeshes[meshIndex]->mMaterialIndex;
               node->mesh = meshScene->meshes[meshIndex];
-              node->material = meshScene->materials[materialIndex];
+              node->material = meshScene->materials[scene->mMeshes[meshIndex]->mMaterialIndex];
             } else {
               fmt::print("Warning: Mesh index {} out of bounds for node '{}'\n", meshIndex,
                          node->name);

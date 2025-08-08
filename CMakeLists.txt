@@ -4,6 +4,19 @@ project(ren CXX C)
 
 include(FetchContent)
 
+if (WIN32)
+  set(BUILD_SHARED_LIBS OFF)
+endif()
+
+
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+
+# tell cmake to print the cmake path
+message(STATUS "CMake path: ${CMAKE_CURRENT_SOURCE_DIR}")
+
 # Set C standard
 # set(CMAKE_C_STANDARD 20)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -13,17 +26,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS ON) # Enable compiler extensions
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-
 # Find various packages we need
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(SDL2 REQUIRED sdl2)
+find_package(SDL2 REQUIRED)
 find_package(Vulkan REQUIRED glslang shaderc_combined)
-
-
-
-
-
-
+message(STATUS "Vulkan include dirs: ${Vulkan_INCLUDE_DIRS}")
 
 # Add some of the libraries we vendor
 add_subdirectory(lib/VulkanMemoryAllocator)
@@ -44,6 +50,7 @@ set(IMGUI_SOURCES
 
 # Disable assimp tests, we don't need them, gonna trust it works.
 set(ASSIMP_BUILD_TESTS OFF)
+set(ASSIMP_BUILD_STATIC_LIB ON)
 
 # Disable the assimp formats we don't want.
 set(ASSIMP_BUILD_ALL_IMPORTERS_BY_DEFAULT OFF)
@@ -52,9 +59,12 @@ set(ASSIMP_BUILD_FBX_IMPORTER ON)
 set(ASSIMP_BUILD_PLY_IMPORTER ON)
 add_subdirectory(lib/assimp)
 
-
-
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -std=c++20 -Wno-unused-function -Wno-deprecated-volatile ")
+# configure CXX flags on gcc or msvc differently
+if(MSVC)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+else()
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -Wno-unused-function -Wno-deprecated-volatile")
+endif()
 
 # Define a variable to store the list of C++ source files
 set(REN_SOURCE_FILES "")
@@ -87,6 +97,11 @@ add_executable(ren
   ${IMGUI_SOURCES}
 )
 
+target_compile_features(ren
+  PRIVATE
+  cxx_std_20
+)
+
 
 
 # Link libraries
@@ -96,8 +111,12 @@ target_link_libraries(ren
   fmt::fmt # fmt library
 
   flecs::flecs_static # Flecs for ECS
-  m # Everything needs math
 )
+
+# if not on windows, link libm
+if(NOT WIN32)
+  target_link_libraries(ren PRIVATE m)
+endif()
 
 target_link_libraries(ren
   PRIVATE
@@ -116,21 +135,29 @@ target_include_directories(ren PRIVATE
 
   ${GUILE_STATIC_INCLUDE_DIRS}
 
+  ${Vulkan_INCLUDE_DIRS}
+
 
   src/
   include/
   lib/
 )
 
-# Compiler flags
-target_compile_options(ren PRIVATE 
-    ${SDL2_CFLAGS_OTHER}
-    -Wall
-    -Wno-nullability-completeness
-    -Wno-unused-variable
-    -Wno-unused-private-field
-    -Wno-deprecated-declarations
-    -Wno-unused-parameter
-    # -O3
-    -g3
-)
+if (WIN32)
+
+else()
+  # Compiler flags
+  target_compile_options(ren PRIVATE 
+      ${SDL2_CFLAGS_OTHER}
+      -Wall
+      -Wno-nullability-completeness
+      -Wno-unused-variable
+      -Wno-unused-private-field
+      -Wno-deprecated-declarations
+      -Wno-unused-parameter
+      # -O3
+      -g3
+  )
+endif()
+
+

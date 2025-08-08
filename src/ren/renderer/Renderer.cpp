@@ -179,6 +179,8 @@ namespace ren {
       if (frame == nullptr) {
         // The swapchain is out of date, so we need to recreate it.
         this->initSwapchain();
+        SDL_Delay(100);
+        ren::getVulkan().waitForIdle();
       }
     } while (frame == nullptr);
 

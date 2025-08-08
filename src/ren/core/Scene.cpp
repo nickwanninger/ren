@@ -84,7 +84,7 @@ namespace ren {
   }
 
 
-  void Scene::globalizeTransforms(void) { getRoot().children(globalizeChildren); }
+  void Scene::globalizeTransforms(void) { getRoot().children([](Entity child) { globalizeChildren(child); }); }
 
   Entity Scene::getEntity(UUID uuid) {
     REN_PROFILE_FUNCTION();

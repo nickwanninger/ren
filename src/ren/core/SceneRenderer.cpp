@@ -65,6 +65,8 @@ namespace ren {
   void SceneRenderer::rebuildRenderTargets(glm::vec2 res) {
     REN_PROFILE_FUNCTION();
 
+    fmt::println("Rebuilding render targets to {}, {}", res.x, res.y);
+
     // HACK: this should be done elsewhere through an event system
     //       (or, I should have a real render graph (ie: finish the one I started))
     R.waitForIdle();
@@ -97,11 +99,16 @@ namespace ren {
     auto &frame = ren::getFrameData();
     auto &cmd = frame.commandBuffer;
 
+    renderScale = 1.0f;
+
 
     glm::vec2 outputResolution(frame.renderTarget->getWidth(), frame.renderTarget->getHeight());
     glm::vec2 currentRenderResolution = outputResolution * renderScale;
 
     if (currentRenderResolution != this->renderResolution) {
+      fmt::println("Output resolution: {}x{}", outputResolution.x, outputResolution.y);
+      fmt::println("Current render resolution: {}x{} ({})", currentRenderResolution.x, currentRenderResolution.y, renderScale);
+
       // Rebuild the render targets if the resolution has changed.
       rebuildRenderTargets(currentRenderResolution);
     }

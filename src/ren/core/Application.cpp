@@ -39,7 +39,10 @@ namespace ren {
   Application::Application(const std::string &app_name, glm::uvec2 window_size) {
     g_application = this;
     // Initialize the SDL window
-    SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER);
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER)) {
+      fmt::println("SDL_Init Error: {}", SDL_GetError());
+      throw std::runtime_error("Failed to initialize SDL");
+    }
 
     // Enable the flecs world rest api
     ren::world().set<flecs::Rest>({});
@@ -57,6 +60,10 @@ namespace ren {
     this->window =
         SDL_CreateWindow(app_name.c_str(), SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
                          window_size.x, window_size.y, window_flags);
+    if (!this->window) {
+      fmt::println("SDL_CreateWindow Error: {}", SDL_GetError());
+      throw std::runtime_error("Failed to create SDL window");
+    }
 
     this->renderer = makeRef<Renderer>(this->window);
 
@@ -155,14 +162,6 @@ namespace ren {
       REN_PROFILE_SCOPE("Frame");
 
 
-      auto currentTime = std::chrono::high_resolution_clock::now();
-      float time =
-          std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime)
-              .count();
-      auto deltaTime =
-          std::chrono::duration<float, std::chrono::seconds::period>(currentTime - lastTime)
-              .count();
-      lastTime = currentTime;
 
 
 
@@ -173,6 +172,10 @@ namespace ren {
         while (SDL_PollEvent(&e) != 0) {
           REN_PROFILE_SCOPE("SDL Dispatch");
           eventsHandled++;
+
+          if (e.type == SDL_WINDOWEVENT_RESIZED) {
+            fmt::println("resize event");
+          }
           // close the window when user alt-f4s or clicks the X button
           if (e.type == SDL_QUIT) {
             this->running = false;
@@ -186,8 +189,23 @@ namespace ren {
         REN_PROFILE_COUNTER("SDL Events", eventsHandled);
       }
 
+      // handle sdl 0 size window
+      int windowWidth, windowHeight;
+      SDL_GetWindowSize(getWindow(), &windowWidth, &windowHeight);
+      if (windowWidth == 0 || windowHeight == 0) {
+        SDL_Delay(100);
+        continue;
+      }
 
-
+      
+      auto currentTime = std::chrono::high_resolution_clock::now();
+      float time =
+          std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime)
+              .count();
+      auto deltaTime =
+          std::chrono::duration<float, std::chrono::seconds::period>(currentTime - lastTime)
+              .count();
+      lastTime = currentTime;
 
       world.progress(deltaTime);
 

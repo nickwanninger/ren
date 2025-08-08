@@ -12,7 +12,7 @@ namespace ren {
 
   AssetManager::AssetManager(const std::string_view &assetDirectory) {
     this->assetDirectory = assetDirectory;
-    fmt::print("AssetManager initialized with directory: {}\n", this->assetDirectory.c_str());
+    fmt::print("AssetManager initialized with directory: {}\n", this->assetDirectory.string());
 
 
     // traverse the asset directory and load all asset information
@@ -47,7 +47,7 @@ namespace ren {
     }
 
     // write json to assetDirectory/.assets.ren.json
-    std::string infoPath = getAssetPath(".assets.ren.json").c_str();
+    std::string infoPath = getAssetPath(".assets.ren.json").string().c_str();
     std::ofstream file(infoPath);
     file << info.dump(4);
     file.close();
@@ -56,7 +56,7 @@ namespace ren {
   void AssetManager::load(void) {
     REN_PROFILE_SCOPE("Load AssetManager databse from disk");
     // load the asset information from disk.
-    std::string infoPath = getAssetPath(".assets.ren.json").c_str();
+    std::string infoPath = getAssetPath(".assets.ren.json").string().c_str();
     std::ifstream file(infoPath);
     if (!file.is_open()) {
       fmt::print("No asset information file found at {}\n", infoPath);
@@ -156,7 +156,7 @@ namespace ren {
 
   ref<Asset> AssetManager::loadAsset(const AssetInfo &info) {
     REN_PROFILE_SCOPE("Load Asset");
-    std::string path = assetDirectory / info.path;
+    std::string path = (assetDirectory / info.path).string();
     ref<Asset> asset = nullptr;
 
     // Load!

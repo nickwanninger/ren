@@ -26,8 +26,8 @@ namespace ren {
     fmt::print("Scene Layer Attached\n");
 
 
-    // this->meshScene = MeshScene::load("assets/test/meshes/simple_scene.glb");
-    this->meshScene = MeshScene::load("/Users/nick/Desktop/sponza.glb");
+    this->meshScene = MeshScene::load("assets/test/meshes/simple_scene.glb");
+    // this->meshScene = MeshScene::load("/Users/nick/Desktop/sponza.glb");
     // this->meshScene = MeshScene::load("/Users/nick/Desktop/RamenCup.glb");
     // this->meshScene = MeshScene::load("assets/test/meshes/unit_cube.glb");
 
@@ -143,7 +143,7 @@ namespace ren {
 
 
     char buf[256];
-    sprintf(buf, "%s : %lu", entity.get<comp::Name>().name.c_str(), (u64)eid);
+    sprintf(buf, "%s : %zu", entity.get<comp::Name>().name.c_str(), (size_t)eid);
     if (ImGui::TreeNode(buf)) {
       ren::renderEntityInspector(entity);
 
