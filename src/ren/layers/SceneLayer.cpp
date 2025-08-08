@@ -26,8 +26,10 @@ namespace ren {
     fmt::print("Scene Layer Attached\n");
 
 
-    this->meshScene = MeshScene::load("assets/test/meshes/simple_scene.glb");
-    // this->meshScene = MeshScene::loadGLTF("assets/test/meshes/unit_cube.glb");
+    // this->meshScene = MeshScene::load("assets/test/meshes/simple_scene.glb");
+    this->meshScene = MeshScene::load("/Users/nick/Desktop/sponza.glb");
+    // this->meshScene = MeshScene::load("/Users/nick/Desktop/RamenCup.glb");
+    // this->meshScene = MeshScene::load("assets/test/meshes/unit_cube.glb");
 
 
     this->meshScene->instantiate(scene);

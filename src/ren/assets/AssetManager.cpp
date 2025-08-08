@@ -2,22 +2,17 @@
 
 #include <ren/renderer/Texture.h>
 #include <ren/renderer/Shader.h>
+#include <ren/core/Application.h>
 #include <imgui/imgui.h>
 
 namespace ren {
 
-  static AssetManager *g_assetManager = nullptr;
-
-  AssetManager &getAssetManager() {
-    assert(g_assetManager != nullptr && "AssetManager is not initialized!");
-    return *g_assetManager;
-  }
+  AssetManager &getAssetManager() { return ren::world().get_mut<AssetManager>(); }
 
 
   AssetManager::AssetManager(const std::string_view &assetDirectory) {
     this->assetDirectory = assetDirectory;
     fmt::print("AssetManager initialized with directory: {}\n", this->assetDirectory.c_str());
-    g_assetManager = this;
 
 
     // traverse the asset directory and load all asset information
@@ -34,10 +29,7 @@ namespace ren {
     load();
   }
 
-  AssetManager::~AssetManager() {
-    fmt::print("AssetManager destroyed.\n");
-    g_assetManager = nullptr;
-  }
+  AssetManager::~AssetManager() { fmt::print("AssetManager destroyed.\n"); }
 
 
   void AssetManager::sync(void) {

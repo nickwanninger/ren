@@ -28,9 +28,7 @@ namespace ren {
     ref<SceneLayer> sceneLayer = nullptr;
     ref<ImGuiLayer> imguiLayer = nullptr;
 
-    AssetManager assetManager;
-
-
+    AssetManager &getAssetManager() { return world.get_mut<AssetManager>(); }
 
    public:
     // Arguably the most important part of the application is the ECS world.

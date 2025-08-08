@@ -44,13 +44,13 @@ namespace ren {
     // Enable the flecs world rest api
     ren::world().set<flecs::Rest>({});
     ren::world().import <flecs::stats>();
-    // ren::world().set_threads(4);
-    // ren::world().set_target_fps(60);
+
+
+    // Create an asset manager. This part of the heirarchy will hold
+    // loaded assets.
+    world.emplace<AssetManager>();
 
     auto scene = ren::world().entity("scene");
-
-
-
 
     SDL_WindowFlags window_flags =
         (SDL_WindowFlags)(SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
@@ -109,8 +109,18 @@ namespace ren {
     SDL_Event e;
 
 
-
     SceneRenderer sceneRenderer(*this->renderer);
+
+
+    // Load a mesh scene using assimp, not tinygltf.
+    Assimp::Importer importer;
+    const char *path = "assets/test/meshes/simple_scene.glb";
+    // const char *path = "/Users/nick/Desktop/sponza.glb";
+    const aiScene *scene =
+        importer.ReadFile(path, aiProcess_Triangulate | aiProcess_OptimizeMeshes | aiProcess_JoinIdenticalVertices);
+    AssimpSceneInspector aiInspector(scene);
+
+
 
     ren::PipelineCache pipelineCache;
     auto &vulkan = ren::getVulkan();
@@ -306,7 +316,10 @@ namespace ren {
         displayRendertarget(gbufferTarget, "GBuffer");
         displayRendertarget(frame.renderTarget, "Display");
 
+        ImGui::End();
 
+        ImGui::Begin("assimp Inspector");
+        aiInspector.render();
         ImGui::End();
 
 

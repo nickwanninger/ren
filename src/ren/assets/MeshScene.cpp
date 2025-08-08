@@ -1,7 +1,6 @@
 #include <ren/assets/MeshScene.hpp>
 
 #include <imgui.h>
-#include <tinygltf/tiny_gltf.h>
 #include <math.h>
 
 #include <ren/assets/materials/PBRMaterial.h>
@@ -213,8 +212,7 @@ namespace ren {
     // Load a mesh scene using assimp, not tinygltf.
     Assimp::Importer importer;
     const aiScene *scene = importer.ReadFile(
-        filename.string(), aiProcess_Triangulate | aiProcess_FlipUVs | aiProcess_CalcTangentSpace |
-                               aiProcess_JoinIdenticalVertices);
+        filename.string(), aiProcess_Triangulate);
     if (!scene || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE || !scene->mRootNode) {
       fmt::print("Error loading mesh scene: {}\n", importer.GetErrorString());
       return nullptr;
@@ -325,7 +323,7 @@ namespace ren {
 
           node->mesh = nullptr;  // Default to no mesh
           // If this node has meshes, assign the first one.
-          if (assimpNode->mNumMeshes > 0) {
+          if (assimpNode->mNumMeshes == 0) {
             REN_PROFILE_SCOPE("Assign Mesh to Node");
             // Get the first mesh index from the node.
             unsigned int meshIndex = assimpNode->mMeshes[0];
@@ -340,10 +338,29 @@ namespace ren {
               fmt::print("Warning: Mesh index {} out of bounds for node '{}'\n", meshIndex,
                          node->name);
             }
+          } else if (assimpNode->mNumMeshes > 0) {
+            // Add a child for each mesh in the node.
+            REN_PROFILE_SCOPE("Assign Meshes to Node");
+
+            for (unsigned int j = 0; j < assimpNode->mNumMeshes; ++j) {
+              // unsigned int meshIndex = assimpNode->mMeshes[j];
+              // unsigned int materialIndex = scene->mMeshes[meshIndex]->mMaterialIndex;
+
+              // if (meshIndex < meshScene->meshes.size()) {
+              //   auto mesh = meshScene->meshes[meshIndex];
+              //   auto material = meshScene->materials[materialIndex];
+              //   node->mesh = mesh;
+              //   node->material = material;
+              // } else {
+              //   fmt::print("Warning: Mesh index {} out of bounds for node '{}'\n", meshIndex,
+              //              node->name);
+              // }
+            }
           }
 
 
           meshScene->nodes.push_back(node);
+          fmt::println("{} has {} children and {} meshes", node->name, assimpNode->mNumChildren, assimpNode->mNumMeshes);
           // recurse
           for (unsigned int i = 0; i < assimpNode->mNumChildren; ++i) {
             REN_PROFILE_SCOPE("Recurse into Child Node");

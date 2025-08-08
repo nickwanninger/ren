@@ -1,6 +1,4 @@
 #include <ren/assets/Mesh.h>
-#include <tinygltf/tiny_gltf.h>
-#include <tinyobjloader/tiny_obj_loader.h>
 
 namespace ren {
 

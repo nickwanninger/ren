@@ -114,7 +114,8 @@ namespace ren {
         if (node->mNumMeshes > 0) {
           ImGui::Text("Mesh Indices:");
           for (unsigned int i = 0; i < node->mNumMeshes; ++i) {
-            ImGui::Text("  [%u] -> Mesh %u", i, node->mMeshes[i]);
+            auto *mesh = scene->mMeshes[i];
+            ImGui::Text("  [%u] -> Mesh %u (%s)", i, node->mMeshes[i], mesh->mName.C_Str());
           }
         }
 
