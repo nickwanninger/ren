@@ -29,10 +29,12 @@ namespace ren {
     this->meshScene = MeshScene::load("assets/test/meshes/simple_scene.glb");
     // this->meshScene = MeshScene::load("/Users/nick/Desktop/sponza.glb");
     // this->meshScene = MeshScene::load("/Users/nick/Desktop/RamenCup.glb");
-    // this->meshScene = MeshScene::load("assets/test/meshes/unit_cube.glb");
 
 
     this->meshScene->instantiate(scene);
+
+
+    // MeshScene::load("assets/test/meshes/unit_cube.glb")->instantiate(scene);
 
 
     camera.position.x = 10;
@@ -141,14 +143,36 @@ namespace ren {
     auto eid = getUUID(entity);
     ImGui::PushID((u64)eid);
 
+    // Check if the entity has children
+    bool hasChildren = false;
+    entity.children([&](Entity) { hasChildren = true; });
 
-    char buf[256];
-    sprintf(buf, "%s : %zu", entity.get<comp::Name>().name.c_str(), (size_t)eid);
-    if (ImGui::TreeNode(buf)) {
-      ren::renderEntityInspector(entity);
+    ImGuiTreeNodeFlags nodeFlags = ImGuiTreeNodeFlags_SpanFullWidth | ImGuiTreeNodeFlags_OpenOnArrow;
+    if (!hasChildren) nodeFlags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
 
+    bool isSelected = (this->selectedEntity == entity);
+    if (isSelected) {
+      ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(40, 120, 255, 255));
+      nodeFlags |= ImGuiTreeNodeFlags_Selected;
+    }
+
+    ImGui::TableNextRow();
+    ImGui::TableSetColumnIndex(0);
+
+    bool nodeOpen = ImGui::TreeNodeEx(entity.get<comp::Name>().name.c_str(), nodeFlags);
+
+    // Only select on row click, not arrow click
+    if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && !ImGui::IsItemToggledOpen()) {
+      this->selectedEntity = entity;
+    }
+
+    ImGui::TableSetColumnIndex(1);
+    ImGui::Text("0x%16zx", (size_t)eid);
+
+    if (isSelected) { ImGui::PopStyleColor(); }
+
+    if (hasChildren && nodeOpen) {
       entity.children([this](Entity child) { renderEntityHeirarchy(child); });
-
       ImGui::TreePop();
     }
 
@@ -172,6 +196,16 @@ namespace ren {
 
     ImGui::Begin("Scene Layer");
 
+    // render the material info from the mesh scene
+    if (ImGui::CollapsingHeader("Materials from Scene")) {
+      for (auto &material : meshScene->materials) {
+        ImGui::PushID(&material);
+        ImGui::Text("Material: %s", material->getName().c_str());
+        material->inspect();
+        ImGui::PopID();
+      }
+    }
+
     if (ImGui::CollapsingHeader("Scene Information")) {
       drawVec3Control("Position", camera.position, 0.0f, 100.0f);
       drawVec3Control("Rotation", camera.angles, 0.0f, 100.0f);
@@ -181,8 +215,26 @@ namespace ren {
     if (ImGui::CollapsingHeader("Mesh Scene")) { meshScene->onImguiRender(); }
 
     ImGui::Separator();
-    if (ImGui::Button("Clone Root")) {
-      //
+
+    const float TEXT_BASE_WIDTH = ImGui::CalcTextSize("A").x;
+
+
+
+    // Render the scene hierarchy as a table tree view
+    if (ImGui::BeginTable("SceneHierarchyTable", 2,
+                          ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_Resizable)) {
+      ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_NoHide);
+      ImGui::TableSetupColumn("ID", ImGuiTableColumnFlags_NoHide);
+      ImGui::TableHeadersRow();
+
+      scene.getRoot().children([&](Entity e) { renderEntityHeirarchy(e); });
+      ImGui::EndTable();
+    }
+
+
+    if (selectedEntity) {
+      renderEntityInspector(selectedEntity);
+      if (ImGui::Button("Deselect")) { selectedEntity = {}; }
     }
 
     ImGui::End();

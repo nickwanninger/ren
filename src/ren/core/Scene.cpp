@@ -74,17 +74,26 @@ namespace ren {
   // and it shouldn't be recursive I think.
   static void globalizeChildren(Entity parent) {
     // parent's transform is the global transform.
-    auto &parentTransformMatrix = parent.get<comp::Transform>().transformMatrix;
+    auto &parentTransform = parent.get<comp::Transform>();
 
     parent.children([&](Entity child) {
       auto &t = child.get_mut<comp::Transform>();
-      t.transformMatrix = parentTransformMatrix * t.getTransform();
+      t.transformMatrix = parentTransform.transformMatrix * t.getTransform();
       globalizeChildren(child);
     });
   }
 
 
-  void Scene::globalizeTransforms(void) { getRoot().children([](Entity child) { globalizeChildren(child); }); }
+  void Scene::globalizeTransforms(void) {
+
+    getRoot().children([](Entity child) {
+      // We have to apply the top level children transforms specially to get the system going.
+      auto &parentTransform = child.get_mut<comp::Transform>();
+      parentTransform.transformMatrix = parentTransform.getTransform();
+
+      globalizeChildren(child);
+    });
+  }
 
   Entity Scene::getEntity(UUID uuid) {
     REN_PROFILE_FUNCTION();

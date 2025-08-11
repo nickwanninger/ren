@@ -68,13 +68,17 @@ ren::Texture::Texture(const std::string_view &name, u32 width, u32 height, u8 *p
   if (vkCreateSampler(vulkan.device, &samplerInfo, nullptr, &sampler) != VK_SUCCESS) {
     throw std::runtime_error("failed to create texture sampler!");
   }
-
-
-  // create the imgui texture ID so we can display it in imgui
-  imguiTextureID = ImGui_ImplVulkan_AddTexture(sampler, image->getImageView(),
-                                               VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 }
 
+
+VkDescriptorSet ren::Texture::getImGui(void) {
+  if (imguiTextureID == VK_NULL_HANDLE) {
+    // create the imgui texture ID so we can display it in imgui
+    imguiTextureID = ImGui_ImplVulkan_AddTexture(sampler, image->getImageView(),
+                                                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+  }
+  return imguiTextureID;
+}
 
 
 ren::Texture::Texture(ren::ImageRef image) {
@@ -120,7 +124,7 @@ ren::Texture::Texture(ren::ImageRef image) {
 ren::Texture::~Texture(void) {
   auto &vulkan = ren::getVulkan();
   // Remove the imgui texture ID first,
-  ImGui_ImplVulkan_RemoveTexture(imguiTextureID);
+  // ImGui_ImplVulkan_RemoveTexture(imguiTextureID); // LEAK!!!
 
   // then destroy the sampler.
   vkDestroySampler(vulkan.device, sampler, nullptr);
@@ -155,12 +159,27 @@ ren::ref<ren::Texture> ren::Texture::load(const std::string_view &name, void *da
   {
     REN_PROFILE_SCOPE("stbi_load_from_memory");
     pixels = stbi_load_from_memory((stbi_uc *)data, (int)size, &texWidth, &texHeight, &texChannels,
-                          STBI_rgb_alpha);
+                                   STBI_rgb_alpha);
   }
 
   auto texture = ren::makeRef<ren::Texture>(name, (u32)texWidth, (u32)texHeight, (u8 *)pixels);
 
   stbi_image_free(pixels);
 
+  if (texture == NULL) {
+    fmt::print("Failed to load texture from memory: {}\n", name);
+    return nullptr;
+  }
+
   return texture;
+}
+
+ren::ref<ren::Texture> ren::Texture::createSinglePixel(const std::string_view &name, u8 r, u8 g,
+                                                       u8 b, u8 a) {
+  u8 data[4];
+  data[0] = r;
+  data[1] = g;
+  data[2] = b;
+  data[3] = a;
+  return makeRef<Texture>(name, 1, 1, data);
 }

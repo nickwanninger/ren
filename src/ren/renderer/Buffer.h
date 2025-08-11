@@ -130,10 +130,10 @@ namespace ren {
   class UniformBufferSet {
     static constexpr size_t buffercount = 3;  // This is an engine constant.
    public:
-    UniformBufferSet(size_t count = 1)
+    UniformBufferSet(size_t arrayLength = 1)
         : buffers(buffercount) {
       for (size_t i = 0; i < buffercount; ++i) {
-        buffers[i] = std::make_shared<UniformBuffer<T>>(count);
+        buffers[i] = std::make_shared<UniformBuffer<T>>(arrayLength);
       }
     }
 

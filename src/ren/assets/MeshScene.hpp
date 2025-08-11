@@ -5,6 +5,8 @@
 #include <ren/core/Scene.h>
 #include <ren/core/Entity.h>
 #include <ren/assets/Material.h>
+#include <ren/renderer/Texture.h>
+#include <assimp/scene.h>
 
 namespace ren {
 
@@ -25,19 +27,23 @@ namespace ren {
       std::vector<ref<Node>> children;  // The child nodes of this node.
     };
 
-    std::vector<ref<Node>> nodes;   // The list of nodes in this scene.
-    std::vector<ref<Mesh>> meshes;  // The meshes in this scene.
+    std::vector<ref<Node>> nodes;          // The list of nodes in this scene.
+    std::vector<ref<Mesh>> meshes;         // The meshes in this scene.
     std::vector<ref<Material>> materials;  // The list of materials in this scene.
+    std::vector<ref<Texture>> textures;    // The list of textures in this scene.
 
-    std::vector<ref<Node>> rootNodes;  // The list of root nodes in this scene.
+    ref<Node> rootNode;  // The root node of the scene.
 
     void onImguiRender(void);
 
-    static ref<MeshScene> load(const std::filesystem::path &filename);
+    static ref<MeshScene> load(const std::filesystem::path& filename);
 
 
     // TOOD: temporary!
-    Entity instantiate(ren::Scene &scene);
+    Entity instantiate(ren::Scene& scene);
+
+   private:
+    ref<Node> convertAssimpNode(const aiNode* ainode, const aiScene* scene);
   };
 
 }  // namespace ren

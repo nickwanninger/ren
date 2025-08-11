@@ -63,24 +63,24 @@ namespace ren {
 
       glm::mat4 rotMatrix = glm::mat4_cast(node.transform.rotation);
 
-// #define TEST(order)                                                      \
+      // #define TEST(order)                                                      \
 //   {                                                                      \
 //     glm::extractEulerAngle##order(rotMatrix, euler.x, euler.y, euler.z); \
 //     printAngles(#order, euler);                                          \
 //   }
-//       TEST(XYZ)
-//       TEST(YXZ)
-//       TEST(XZX)
-//       TEST(XYX)
-//       TEST(YXY)
-//       TEST(YZY)
-//       TEST(ZYZ)
-//       TEST(ZXZ)
-//       TEST(XZY)
-//       TEST(YZX)
-//       TEST(ZYX)
-//       TEST(ZXY)
-// #undef TEST
+      //       TEST(XYZ)
+      //       TEST(YXZ)
+      //       TEST(XZX)
+      //       TEST(XYX)
+      //       TEST(YXY)
+      //       TEST(YZY)
+      //       TEST(ZYZ)
+      //       TEST(ZXZ)
+      //       TEST(XZY)
+      //       TEST(YZX)
+      //       TEST(ZYX)
+      //       TEST(ZXY)
+      // #undef TEST
 
 
       ImGui::Text("  Scale: (%f, %f, %f)", node.transform.scale.x, node.transform.scale.y,
@@ -157,11 +157,23 @@ namespace ren {
       ImGui::TreePop();
     }
 
+    if (ImGui::TreeNode("All Textures")) {
+      ImGui::PushID(&textures);
+      for (const auto &texture : textures) {
+        ImGui::PushID(texture.get());
+        if (ImGui::TreeNode("texture")) {
+          ImGui::Image(texture->getImGui(), ImVec2(512, 512));
+          ImGui::TreePop();
+        }
+        ImGui::PopID();
+      }
+      ImGui::PopID();
+      ImGui::TreePop();
+    }
+
 
     if (ImGui::TreeNode("Scene")) {
-      for (auto &node : rootNodes) {
-        renderNodeTreeImGui(*node);
-      }
+      renderNodeTreeImGui(*rootNode);
       ImGui::TreePop();
     }
 
@@ -172,9 +184,11 @@ namespace ren {
 
 
 
-  static void instantiateNode(ren::Scene &scene, const MeshScene::Node &node, Entity parentEntity) {
+  static Entity instantiateNode(ren::Scene &scene, const MeshScene::Node &node,
+                                Entity parentEntity) {
     // Create an entity for this node.
-    Entity entity = scene.createEntity(node.name).child_of(parentEntity);
+    Entity entity = scene.createEntity(node.name);
+    if (parentEntity) entity.child_of(parentEntity);
     entity.set<comp::Transform>(node.transform);  // Set the transform component.
 
 
@@ -191,28 +205,74 @@ namespace ren {
     for (const auto &child : node.children) {
       instantiateNode(scene, *child, entity);
     }
+    return entity;
   }
 
   Entity MeshScene::instantiate(ren::Scene &scene) {
-    // Create an entity for each root node in the scene.
-    Entity rootEntity = scene.createEntity("MeshSceneRoot");
-
-    // Add the root nodes as children of the root entity.
-    for (const auto &node : rootNodes) {
-      instantiateNode(scene, *node, rootEntity);
-    }
-
-    return rootEntity;
+    return instantiateNode(scene, *this->rootNode, scene.getRoot());
   }
 
+
+  ref<MeshScene::Node> MeshScene::convertAssimpNode(const aiNode *ainode, const aiScene *scene) {
+    auto node = makeRef<MeshScene::Node>();
+    node->name = ainode->mName.C_Str();
+    this->nodes.push_back(node);  // Add to the scene's node list
+
+    // Convert transform
+    aiMatrix4x4 m = ainode->mTransformation;
+    glm::mat4 transform = glm::transpose(glm::make_mat4(&m.a1));
+    // Decompose transform
+    glm::vec3 translation, scale, skew;
+    glm::vec4 perspective;
+    glm::quat rotation;
+    glm::decompose(transform, scale, rotation, translation, skew, perspective);
+    node->transform.translation = translation;
+    node->transform.rotation = rotation;
+    node->transform.scale = scale;
+
+    // If this node has one mesh, set it directly
+    if (ainode->mNumMeshes == 1) {
+      unsigned meshIdx = ainode->mMeshes[0];
+      node->mesh = this->meshes[meshIdx];
+
+      // Assign material if available
+      unsigned matIdx = scene->mMeshes[meshIdx]->mMaterialIndex;
+      if (matIdx < materials.size()) { node->material = materials[matIdx]; }
+    } else if (ainode->mNumMeshes > 1) {
+      // If this node has more than one mesh, create a child for each mesh
+      for (unsigned i = 0; i < ainode->mNumMeshes; ++i) {
+        unsigned meshIdx = ainode->mMeshes[i];
+        auto meshChild = makeRef<MeshScene::Node>();
+        meshChild->name = node->name + fmt::format("_Mesh{}", i);
+        meshChild->mesh = meshes[meshIdx];
+        meshChild->transform = node->transform;
+
+        // Assign material if available
+        unsigned matIdx = scene->mMeshes[meshIdx]->mMaterialIndex;
+        if (matIdx < materials.size()) { meshChild->material = materials[matIdx]; }
+
+        this->nodes.push_back(meshChild);  // Add to the scene's node list
+        node->children.push_back(meshChild);
+      }
+    }
+
+    // Recursively convert children
+    for (unsigned i = 0; i < ainode->mNumChildren; ++i) {
+      auto child = convertAssimpNode(ainode->mChildren[i], scene);
+      node->children.push_back(child);
+    }
+
+    return node;
+  }
 
   ref<MeshScene> MeshScene::load(const std::filesystem::path &filename) {
     REN_PROFILE_SCOPE("Load Mesh Scene");
 
+    std::string filenameWithoutExtension = filename.stem().string();
+
     // Load a mesh scene using assimp, not tinygltf.
     Assimp::Importer importer;
-    const aiScene *scene = importer.ReadFile(
-        filename.string(), aiProcess_Triangulate);
+    const aiScene *scene = importer.ReadFile(filename.string(), aiProcess_Triangulate | aiProcess_FlipUVs | aiProcess_EmbedTextures);
     if (!scene || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE || !scene->mRootNode) {
       fmt::print("Error loading mesh scene: {}\n", importer.GetErrorString());
       return nullptr;
@@ -273,6 +333,21 @@ namespace ren {
     }
 
 
+    // load all the textures
+    // TODO(opt): load these on demand based on the needs of the meshes
+    meshScene->textures.reserve(scene->mNumTextures);
+    for (unsigned int i = 0; i < scene->mNumTextures; ++i) {
+      const aiTexture *assimpTexture = scene->mTextures[i];
+      ref<Texture> texture;
+      if (assimpTexture->mHeight == 0) {
+        texture = ren::Texture::load("embedded", assimpTexture->pcData, assimpTexture->mWidth);
+      } else {
+        texture = ren::Texture::load(assimpTexture->mFilename.C_Str());
+      }
+      meshScene->textures.push_back(texture);
+    }
+
+
     // create all the materials
     meshScene->materials.reserve(scene->mNumMaterials);
     for (unsigned int i = 0; i < scene->mNumMaterials; ++i) {
@@ -285,100 +360,67 @@ namespace ren {
       if (assimpMaterial->Get(AI_MATKEY_NAME, materialName) == aiReturn_SUCCESS) {
         material->setName(materialName.C_Str());
       } else {
-        material->setName(fmt::format("Material_{}", i));
+        material->setName(fmt::format("{}_mat{}", filenameWithoutExtension, i));
       }
 
       // Set the material properties
       aiColor3D color;
       if (assimpMaterial->Get(AI_MATKEY_COLOR_DIFFUSE, color) == aiReturn_SUCCESS) {
-        material->albedoColor = glm::vec3(color.r, color.g, color.b);
+        material->props.baseColorFactor = glm::vec4(color.r, color.g, color.b, 1.0f);
       }
-      if (assimpMaterial->Get(AI_MATKEY_COLOR_SPECULAR, color) == aiReturn_SUCCESS) {
-        material->specularColor = glm::vec3(color.r, color.g, color.b);
-      }
+      // if (assimpMaterial->Get(AI_MATKEY_COLOR_SPECULAR, color) == aiReturn_SUCCESS) {
+      //   material->props.specularColor = glm::vec4(color.r, color.g, color.b, 1.0f);
+      // }
       if (assimpMaterial->Get(AI_MATKEY_COLOR_EMISSIVE, color) == aiReturn_SUCCESS) {
-        material->specularColor = glm::vec3(color.r, color.g, color.b);
+        material->props.emissive = glm::vec4(color.r, color.g, color.b, 1.0f);
+      }
+
+      // metallic
+      if (assimpMaterial->Get(AI_MATKEY_METALLIC_FACTOR, material->props.metallicFactor) ==
+          aiReturn_SUCCESS) {
+        material->props.metallicFactor = glm::clamp(material->props.metallicFactor, 0.0f, 1.0f);
+      }
+
+      // roughness
+      if (assimpMaterial->Get(AI_MATKEY_ROUGHNESS_FACTOR, material->props.roughnessFactor) ==
+          aiReturn_SUCCESS) {
+        material->props.roughnessFactor = glm::clamp(material->props.roughnessFactor, 0.0f, 1.0f);
+      }
+
+      // textures
+      auto grabTexture = [&](aiTextureType type) -> ref<Texture> {
+        aiString path;
+        if (assimpMaterial->GetTexture(type, 0, &path) == aiReturn_SUCCESS) {
+          if (path.C_Str()[0] == '*') {
+            // Embedded texture - path is "*0", "*1", etc.
+            int embeddedIndex = atoi(&path.C_Str()[1]);
+            return meshScene->textures[embeddedIndex];
+          }
+          fmt::println("Texture: {}", path.C_Str());
+        }
+        return nullptr;
+      };
+
+
+      if (auto diffuseTexture = grabTexture(aiTextureType_DIFFUSE)) {
+        material->baseColorTexture = diffuseTexture;
+      }
+      if (auto metallicRoughnessTexture = grabTexture(aiTextureType_DIFFUSE_ROUGHNESS)) {
+        material->metallicRoughnessTexture = metallicRoughnessTexture;
+      }
+      if (auto normalTexture = grabTexture(aiTextureType_NORMALS)) {
+        material->normalTexture = normalTexture;
       }
 
       meshScene->materials.push_back(material);
     }
 
 
-    // Now we need to build the hierarchy of nodes.
-    std::function<ref<MeshScene::Node>(const aiNode *assimpNode, MeshScene::Node &parentNode)>
-        buildAssimpNodeHierarchy = [&](const aiNode *assimpNode, MeshScene::Node &parentNode) {
-          REN_PROFILE_SCOPE("Build Assimp Node Hierarchy");
-          auto node = makeRef<MeshScene::Node>();
-
-          node->name = assimpNode->mName.C_Str();
-
-          aiVector3t<float> scaling;
-          aiQuaternion rotation;
-          aiVector3t<float> translation;
-          assimpNode->mTransformation.Decompose(scaling, rotation, translation);
-          // Convert Assimp's aiVector3t and aiQuaternion to glm types
-          node->transform.translation = glm::vec3(translation.x,translation.y, translation.z);
-          node->transform.rotation = glm::quat(rotation.w, rotation.x, rotation.y, rotation.z);
-          node->transform.scale = glm::vec3(scaling.x, scaling.y, scaling.z);
-
-          node->mesh = nullptr;  // Default to no mesh
-
-
-          // Add the child nodes
-          for (unsigned int i = 0; i < assimpNode->mNumChildren; ++i) {
-            REN_PROFILE_SCOPE("Add Child Node");
-            auto child = buildAssimpNodeHierarchy(assimpNode->mChildren[i], *node);
-            node->children.push_back(child);
-          }
-
-          if (assimpNode->mNumMeshes == 1) {
-            // If this node has exactly one mesh, assign it.
-            unsigned int meshIndex = assimpNode->mMeshes[0];
-            if (meshIndex < meshScene->meshes.size()) {
-              node->mesh = meshScene->meshes[meshIndex];
-              node->material = meshScene->materials[scene->mMeshes[meshIndex]->mMaterialIndex];
-            } else {
-              fmt::print("Warning: Mesh index {} out of bounds for node '{}'\n", meshIndex,
-                         node->name);
-            }
-          } else if (assimpNode->mNumMeshes > 0) {
-            // Add a child for each mesh in the node.
-            REN_PROFILE_SCOPE("Assign Meshes to Node");
-
-            for (unsigned int j = 0; j < assimpNode->mNumMeshes; ++j) {
-              // unsigned int meshIndex = assimpNode->mMeshes[j];
-              // unsigned int materialIndex = scene->mMeshes[meshIndex]->mMaterialIndex;
-
-              // if (meshIndex < meshScene->meshes.size()) {
-              //   auto mesh = meshScene->meshes[meshIndex];
-              //   auto material = meshScene->materials[materialIndex];
-              //   node->mesh = mesh;
-              //   node->material = material;
-              // } else {
-              //   fmt::print("Warning: Mesh index {} out of bounds for node '{}'\n", meshIndex,
-              //              node->name);
-              // }
-            }
-          }
-
-
-          meshScene->nodes.push_back(node);
-          fmt::println("{} has {} children and {} meshes", node->name, assimpNode->mNumChildren, assimpNode->mNumMeshes);
-          // recurse
-          for (unsigned int i = 0; i < assimpNode->mNumChildren; ++i) {
-            REN_PROFILE_SCOPE("Recurse into Child Node");
-            auto child = buildAssimpNodeHierarchy(assimpNode->mChildren[i], *node);
-            node->children.push_back(child);
-          }
-
-          return node;
-        };
-
-    {
-      REN_PROFILE_SCOPE("Build Assimp Node Hierarchy");
-      meshScene->rootNodes.push_back(
-          buildAssimpNodeHierarchy(scene->mRootNode, *makeRef<MeshScene::Node>()));
-    }
+    // Build the node hierarchy starting from the root in the aiScene
+    auto root = meshScene->convertAssimpNode(scene->mRootNode, scene);
+    // set the name to the filename without extension
+    root->name = fmt::format("{}", filenameWithoutExtension);
+    meshScene->rootNode = root;
 
     return meshScene;
   }

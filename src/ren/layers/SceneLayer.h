@@ -18,6 +18,9 @@ namespace ren {
     ref<MeshScene> meshScene;
 
 
+    ren::Entity selectedEntity = {}; // Null for now!
+
+
     SceneLayer(Application &app);
     ~SceneLayer() override = default;
 

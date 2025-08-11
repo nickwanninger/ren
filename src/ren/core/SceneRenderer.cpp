@@ -80,6 +80,7 @@ namespace ren {
 
 
     float targetHeight = 240;
+    // targetHeight = height;
     float scale = targetHeight / height;
     width *= scale;
     height *= scale;
@@ -156,6 +157,7 @@ namespace ren {
 
     u64 vertsDrawn = 0;
 
+  
     R.withPass(*opaque.pass, *opaque.target, [&]() {
       REN_PROFILE_SCOPE("Opaque Pass");
 

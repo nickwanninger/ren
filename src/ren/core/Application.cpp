@@ -119,16 +119,6 @@ namespace ren {
     SceneRenderer sceneRenderer(*this->renderer);
 
 
-    // Load a mesh scene using assimp, not tinygltf.
-    Assimp::Importer importer;
-    const char *path = "assets/test/meshes/simple_scene.glb";
-    // const char *path = "/Users/nick/Desktop/sponza.glb";
-    const aiScene *scene =
-        importer.ReadFile(path, aiProcess_Triangulate | aiProcess_OptimizeMeshes | aiProcess_JoinIdenticalVertices);
-    AssimpSceneInspector aiInspector(scene);
-
-
-
     ren::PipelineCache pipelineCache;
     auto &vulkan = ren::getVulkan();
 
@@ -164,7 +154,6 @@ namespace ren {
 
 
 
-
       {
         bool windowResized = false;
         REN_PROFILE_SCOPE("SDL Poll");
@@ -173,9 +162,7 @@ namespace ren {
           REN_PROFILE_SCOPE("SDL Dispatch");
           eventsHandled++;
 
-          if (e.type == SDL_WINDOWEVENT_RESIZED) {
-            fmt::println("resize event");
-          }
+          if (e.type == SDL_WINDOWEVENT_RESIZED) { fmt::println("resize event"); }
           // close the window when user alt-f4s or clicks the X button
           if (e.type == SDL_QUIT) {
             this->running = false;
@@ -197,7 +184,7 @@ namespace ren {
         continue;
       }
 
-      
+
       auto currentTime = std::chrono::high_resolution_clock::now();
       float time =
           std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime)
@@ -290,60 +277,37 @@ namespace ren {
           };
         };
 
-        ren::world()
-            .query_builder()
-            .without(flecs::ChildOf, flecs::Wildcard)
-            .build()
-            .each(EntityTreeInspector::drawEntity);
-
-
-
-        ImGui::Separator();
-
-        auto start = std::chrono::steady_clock::now();
-        InstrumentationTimer timer("Entity Query");
-        ren::world().scope("scene").query<comp::Name>().each([&](Entity e, comp::Name &name) {
-          ImGui::Text("Entity: %s %zu", name.name.c_str(), e.id());
-        });
-        auto end = std::chrono::steady_clock::now();
-
-        auto highResStart = FloatingPointMicroseconds{start.time_since_epoch()};
-        auto elapsedTime =
-            std::chrono::time_point_cast<std::chrono::microseconds>(end).time_since_epoch() -
-            std::chrono::time_point_cast<std::chrono::microseconds>(start).time_since_epoch();
-        ImGui::Text("Query took %f ms",
-                    std::chrono::duration<float, std::milli>(end - start).count());
+        EntityTreeInspector::drawEntity(ren::world().lookup("scene"));
 
         ImGui::End();
 
 
-        ImGui::Begin("Gbuffer image pointers");
-        ImGui::Text("GBuffer Target: %s", gbufferTarget ? "Valid" : "Invalid");
-
-        auto displayRendertarget = [&](auto &rt, const char *name) {
-          if (rt) {
-            ImGui::Text("%s Target Size: %ux%u", name, rt->getWidth(), rt->getHeight());
-            for (auto &attachment : rt->getAttachments()) {
-              ImGui::Text("Attachment %s: %p, %p", attachment.name.c_str(),
-                          attachment.texture->getImage(), attachment.texture->getImageView());
-            }
-            ImGui::Separator();
-          }
-        };
-
-        displayRendertarget(gbufferTarget, "GBuffer");
-        displayRendertarget(frame.renderTarget, "Display");
-
-        ImGui::End();
-
-        ImGui::Begin("assimp Inspector");
-        aiInspector.render();
-        ImGui::End();
 
 
-        ImGui::Begin("Asset Manager");
-        getAssetManager().inspect();
-        ImGui::End();
+        // ImGui::Begin("Gbuffer image pointers");
+        // ImGui::Text("GBuffer Target: %s", gbufferTarget ? "Valid" : "Invalid");
+
+        // auto displayRendertarget = [&](auto &rt, const char *name) {
+        //   if (rt) {
+        //     ImGui::Text("%s Target Size: %ux%u", name, rt->getWidth(), rt->getHeight());
+        //     for (auto &attachment : rt->getAttachments()) {
+        //       ImGui::Text("Attachment %s: %p, %p", attachment.name.c_str(),
+        //                   attachment.texture->getImage(), attachment.texture->getImageView());
+        //     }
+        //     ImGui::Separator();
+        //   }
+        // };
+
+        // displayRendertarget(gbufferTarget, "GBuffer");
+        // displayRendertarget(frame.renderTarget, "Display");
+        // ImGui::End();
+
+
+
+        // ImGui::Begin("Asset Manager");
+        // getAssetManager().inspect();
+        // ImGui::End();
+
 
         layerStack.onImGuiRender(deltaTime);
 

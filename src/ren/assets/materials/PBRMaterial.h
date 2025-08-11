@@ -2,26 +2,18 @@
 
 #include <ren/assets/Material.h>
 #include <ren/renderer/pipelines/PipelineStateObject.h>
+#include <ren/renderer/Texture.h>
+#include <ren/renderer/Buffer.h>
 // This file implements our PBR material workflow.
 
 namespace ren {
 
   struct PBRMaterialProperties {
-    // // Base color texture.
-    // ref<Texture> baseColorTexture;
-    // // Metallic texture.
-    // ref<Texture> metallicTexture;
-    // // Roughness texture.
-    // ref<Texture> roughnessTexture;
-    // // Normal map texture.
-    // ref<Texture> normalMapTexture;
+    glm::vec4 baseColorFactor = glm::vec4(1.0f); // (R, G, B, A)
+    glm::vec4 emissive = glm::vec4(0.0f); // (R, G, B, A) (not sure about A)
 
-    // Base color factor (RGBA).
-    glm::vec4 baseColorFactor = glm::vec4(1.0f);
-    // Metallic factor.
-    float metallicFactor = 1.0f;
-    // Roughness factor.
-    float roughnessFactor = 1.0f;
+    float metallicFactor = 0.0f; // Metallic factor (0.0 to 1.0)
+    float roughnessFactor = 1.0f; // Roughness factor (0.0 to 1.0)
   };
 
 
@@ -41,11 +33,15 @@ namespace ren {
     inline bool isDeferred(void) const override { return true; }
 
 
+    PBRMaterialProperties props;
 
-    glm::vec3 albedoColor = glm::vec3(1.0f, 1.0f, 1.0f);
-    glm::vec3 emissiveColor = glm::vec3(0.0f, 0.0f, 0.0f);
-    glm::vec3 specularColor = glm::vec3(0.0f, 0.0f, 0.0f);
+    // GLTF Compatible texture set for pbr metalic roughness model.
+    ref<Texture> baseColorTexture;
+    ref<Texture> metallicRoughnessTexture;
+    ref<Texture> normalTexture;
 
+
+    UniformBufferSet<PBRMaterialProperties> materialPropsBuffer;
 
    private:
     // All PBR materials share the same pipeline state object.

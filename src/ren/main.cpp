@@ -13,7 +13,7 @@
 
 int main(int argc, char *argv[]) {
  REN_PROFILE_BEGIN_SESSION("Engine Run", "engine_run_profile.json");
-  ren::Application app("ren", {1920, 1080});
+  ren::Application app("ren", {2560, 1440});
 
   app.run();
 
