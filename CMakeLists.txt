@@ -72,6 +72,9 @@ set(REN_SOURCE_FILES "")
 # Recursively find all .cpp files in the current directory and its subdirectories
 file(GLOB_RECURSE REN_SOURCE_FILES "src/ren/*.cpp")
 
+# Enable Tracy profiler
+add_compile_definitions(TRACY_ENABLE)
+
 # Ren is the main target of this project. For now, it's a single executable,
 # but eventually ren should be `libren` and we can have multiple executables
 # that link against it.
@@ -92,6 +95,8 @@ add_executable(ren
   lib/ImGuizmo/ImGradient.cpp
   lib/ImGuizmo/ImGuizmo.cpp
   lib/ImGuizmo/ImSequencer.cpp
+
+  lib/tracy/TracyClient.cpp
 
 
   ${IMGUI_SOURCES}
