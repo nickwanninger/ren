@@ -115,6 +115,7 @@ namespace ren {
     if (ImGui::CollapsingHeader("Material", ImGuiTreeNodeFlags_DefaultOpen)) {
       auto &material = comp.material;
       if (material) {
+        ImGui::Text("Asset ID: %llu", (u64)material->getAssetID());
         material->inspect();
       } else {
         ImGui::Text("No material assigned.");
@@ -130,7 +131,7 @@ namespace ren {
       return;
     }
 
-    ImGui::PushID((u64)getUUID(entity));
+    ImGui::PushID(entity.id());
 
     auto &name = entity.get_mut<comp::Name>();
 
