@@ -45,10 +45,11 @@ namespace ren {
 
   ImageBuilder::ImageBuilder(const std::string &name)
       : name(name) {
+    auto format = VK_FORMAT_R8G8B8A8_SRGB;
     // initialize the image create info with sane defaults
     imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     imageInfo.imageType = VK_IMAGE_TYPE_2D;
-    imageInfo.format = VK_FORMAT_R8G8B8A8_SRGB;
+    imageInfo.format = format;
     imageInfo.extent.width = 0;   // Set later
     imageInfo.extent.height = 0;  // Set later
     imageInfo.extent.depth = 1;   // sane default
@@ -63,7 +64,7 @@ namespace ren {
 
     viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-    viewInfo.format = VK_FORMAT_R8G8B8A8_SRGB;  // CONFIGURe
+    viewInfo.format = format;
     viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     viewInfo.subresourceRange.baseMipLevel = 0;
     viewInfo.subresourceRange.levelCount = 1;
