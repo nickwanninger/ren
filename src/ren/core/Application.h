@@ -24,13 +24,14 @@ namespace ren {
     ren::LayerStack layerStack;
 
     bool running = true;
+   public:
 
     ref<SceneLayer> sceneLayer = nullptr;
     ref<ImGuiLayer> imguiLayer = nullptr;
 
     AssetManager &getAssetManager() { return world.get_mut<AssetManager>(); }
 
-   public:
+    double timeSeconds = 0.0f;
     // Arguably the most important part of the application is the ECS world.
     // We try to put everything in the world, so that we can use flecs systems to process basically
     // everything.
@@ -45,7 +46,11 @@ namespace ren {
     SDL_Window *getWindow(void) const { return this->window; }
 
 
+
+
    private:
+    // Configure the ECS Phases for ren
+    void setupPhases();
   };
 
 
@@ -55,6 +60,15 @@ namespace ren {
   // functionality.
   static inline flecs::world &world(void) { return ren::Application::get().world; }
   static inline float deltaTime(void) { return ren::world().delta_time(); }
+  static inline float timeSeconds(void) { return ren::Application::get().timeSeconds; }
+  static inline Entity entity(void) { return ren::world().entity(); }
+
+
+  // Define your custom phases as components
+  struct RenderOpaque {};
+  struct PreRenderDebug {};
+  struct RenderDebug {};  // IMGUI, really.
+  struct PostRenderDebug {};
 
 
 }  // namespace ren

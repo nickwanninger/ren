@@ -1,5 +1,6 @@
 
 #include <ren/core/Application.h>
+#include <ren/core/AutoPlugin.h>
 #include <ren/layers/ImGuiLayer.h>
 #include <ren/renderer/pipelines/StandardPipeline.h>
 #include <ren/renderer/pipelines/DisplayPipeline.h>
@@ -19,7 +20,6 @@
 #include <ren/renderer/RenderGraph.h>
 #include <ren/renderer/Sampler.h>
 #include <ren/misc/resource_usage.h>
-
 
 #include <ren/renderer/ShaderProgram.h>
 
@@ -43,6 +43,8 @@ namespace ren {
       fmt::println("SDL_Init Error: {}", SDL_GetError());
       throw std::runtime_error("Failed to initialize SDL");
     }
+
+    world.set_threads(6);
 
     // Enable the flecs world rest api
     ren::world().set<flecs::Rest>({});
@@ -89,6 +91,9 @@ namespace ren {
         SDL_JoystickClose(joystick);
       }
     }
+
+
+    ren::AutoPlugin::registerPlugins(*this);
   }
 
   Application::~Application() {
@@ -109,6 +114,11 @@ namespace ren {
     this->window = nullptr;
   }
 
+
+
+  void Application::setupPhases() {
+    // world.run_pipeline<ren::phases::PostRenderDebug>();
+  }
 
   void Application::run() {
     auto startTime = std::chrono::high_resolution_clock::now();
@@ -192,9 +202,11 @@ namespace ren {
       auto deltaTime =
           std::chrono::duration<float, std::chrono::seconds::period>(currentTime - lastTime)
               .count();
+      TracyPlot("Frame Time", deltaTime);
+      TracyPlot("FPS", 1.0f / deltaTime);
+      this->timeSeconds = time;
       lastTime = currentTime;
 
-      world.progress(deltaTime);
 
       if (!running) break;
 
@@ -205,7 +217,32 @@ namespace ren {
 
       auto frameStats = frame.perf.nextFrame(frame.commandBuffer);
 
-      REN_PROFILE_COUNTER("Memory Usage MB", ren::getCurrentProcessRSS() / (1024.0 * 1024.0));
+
+
+
+      {
+        REN_PROFILE_SCOPE("ImGui New Frame");
+        ImGui_ImplVulkan_NewFrame();
+        ImGui_ImplSDL2_NewFrame();
+
+        ImGui::NewFrame();
+        ImGuizmo::BeginFrame();
+        ImGuizmo::SetDrawlist(ImGui::GetBackgroundDrawList());
+
+        int windowWidth, windowHeight;
+        SDL_GetWindowSize(getWindow(), &windowWidth, &windowHeight);
+        ImGuizmo::SetRect(0.0f, 0.0f, windowWidth, windowHeight);
+
+
+        // Before rendering, lets create a dockspace
+        ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport(),
+                                     ImGuiDockNodeFlags_PassthruCentralNode);
+      }
+
+      {
+        REN_PROFILE_SCOPE("Tick");
+        world.progress(deltaTime);
+      }
 
 
 
@@ -225,7 +262,9 @@ namespace ren {
           auto textureBinder = renderer->startBinding(0);
           auto &attachments = gbufferTarget->getAttachments();
           for (auto &attachment : attachments) {
-            textureBinder.bind(attachment.name, *attachment.texture);
+            if (attachment.name == "outColor") {
+              textureBinder.bind("albedo", *attachment.texture);
+            }
           }
           textureBinder.apply();
 
@@ -235,26 +274,7 @@ namespace ren {
 
 
 
-        // Render IMGUI
-        REN_PROFILE_SCOPE("ImGui Render");
-        {
-          REN_PROFILE_SCOPE("ImGui New Frame");
-          ImGui_ImplVulkan_NewFrame();
-          ImGui_ImplSDL2_NewFrame();
-
-          ImGui::NewFrame();
-          ImGuizmo::BeginFrame();
-          ImGuizmo::SetDrawlist(ImGui::GetBackgroundDrawList());
-
-          int windowWidth, windowHeight;
-          SDL_GetWindowSize(getWindow(), &windowWidth, &windowHeight);
-          ImGuizmo::SetRect(0.0f, 0.0f, windowWidth, windowHeight);
-
-
-          // Before rendering, lets create a dockspace
-          ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport(),
-                                       ImGuiDockNodeFlags_PassthruCentralNode);
-        }
+        // world.run_pipeline<ren::RenderDebug>(deltaTime);
 
 
         ImGui::Begin("ECS World");
@@ -281,6 +301,8 @@ namespace ren {
 
         ImGui::End();
 
+
+        sceneRenderer.inspect();
 
 
 
