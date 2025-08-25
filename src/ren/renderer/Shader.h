@@ -31,6 +31,7 @@ namespace ren {
     VkShaderModule getHandle() const { return shaderModule; }
     VkShaderStageFlagBits getStage() const { return stage; }
     auto &getCode() const { return code; }
+    bool reload();
 
    private:
     std::vector<u32> loadShader(const std::string_view &file_name);

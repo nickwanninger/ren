@@ -11,10 +11,15 @@
 #include <shaderc/shaderc.hpp>
 
 ren::Shader::Shader(const std::string_view& file_name, VkShaderStageFlagBits stage)
-    : stage(stage) {
-  auto code = loadShader(file_name);
-  initShader(code);
+    : filename(file_name)
+    , stage(stage) {
+  if (!reload()) {
+    fmt::print("Failed to load shader: {}\n", filename);
+    throw std::runtime_error(fmt::format("Failed to load shader: {}", filename));
+  }
 }
+
+
 ren::Shader::~Shader() {
   auto& vulkan = ren::getVulkan();
   if (shaderModule) {
@@ -24,9 +29,20 @@ ren::Shader::~Shader() {
 }
 
 
-VkShaderStageFlagBits ren::Shader::getStageFromFilename(const std::string_view& filename) {
+bool ren::Shader::reload() {
+  try {
+    auto code = loadShader(this->filename);
+    initShader(code);
+    return true;
+  } catch (const std::exception& e) {
+    fmt::print("Failed to reload shader {}: {}\n", this->filename, e.what());
+    return false;
+  }
+}
 
-  #define CASE(ext, stage) if (filename.ends_with(ext) || filename.ends_with(ext ".spv")) return stage;
+VkShaderStageFlagBits ren::Shader::getStageFromFilename(const std::string_view& filename) {
+#define CASE(ext, stage) \
+  if (filename.ends_with(ext) || filename.ends_with(ext ".spv")) return stage;
 
   CASE(".vert", VK_SHADER_STAGE_VERTEX_BIT);
   CASE(".frag", VK_SHADER_STAGE_FRAGMENT_BIT);
@@ -43,6 +59,8 @@ std::vector<u32> ren::Shader::loadShader(const std::string_view& filename) {
   // This is the output code that will be returned.
   // It is either loaded from a .spv file, or compiled on the fly from GLSL.
   std::vector<u32> code;
+
+  fmt::println("Loading shader from {}", filename);
 
   // if the filename contains .vert, .frag, .comp, extract the stage from it.
 
@@ -66,7 +84,6 @@ std::vector<u32> ren::Shader::loadShader(const std::string_view& filename) {
     file.close();
     fmt::print("Loading shader from {} ({} bytes)\n", filename, size);
   } else {
-
     // Otherwise, we'll compile it from source using shaderc from the vulkan sdk.
     REN_PROFILE_SCOPE("Compile Shader from Source");
 
@@ -114,6 +131,9 @@ std::vector<u32> ren::Shader::loadShader(const std::string_view& filename) {
     }
 
 
+    std::string shaderSource = std::string(sourceCode.begin(), sourceCode.end());
+    // fmt::println("Compiling shader from source:\n{}", shaderSource);
+
     auto result = compiler.CompileGlslToSpv(sourceCode.data(), sourceCode.size(), shaderKind,
                                             path.filename().string().c_str(), options);
 
@@ -139,7 +159,7 @@ void ren::Shader::initShader(const std::vector<u32>& spirv) {
 
   auto& vulkan = ren::getVulkan();
 
-  VkShaderModuleCreateInfo createInfo{};
+VkShaderModuleCreateInfo createInfo{};
   createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
   createInfo.codeSize = code.size() * sizeof(u32);  // the number of bytes in the spirv
   createInfo.pCode = reinterpret_cast<const uint32_t*>(code.data());
@@ -147,4 +167,5 @@ void ren::Shader::initShader(const std::vector<u32>& spirv) {
   if (vkCreateShaderModule(vulkan.device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS) {
     throw std::runtime_error("failed to create shader module!");
   }
+  fmt::println("Shader module created successfully! {}", (u64)shaderModule);
 }
