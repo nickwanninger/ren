@@ -119,8 +119,9 @@ namespace ren {
     auto layout = program.getDescriptorSetLayouts()[set];
     VkDescriptorSet descriptorSet;
     if (!frame.descriptorAllocator.allocate(&descriptorSet, layout)) {
-      throw std::runtime_error(fmt::format("Could not apply shader binder for set {} in {}",
-                                           this->set, json(program).dump()));
+      fmt::println("Could not allocate descriptor set for set {} in {}", this->set,
+                   json(program).dump());
+      return;
     }
     // now that we have a descriptor set, apply the writes.
     for (VkWriteDescriptorSet &w : writes) {
