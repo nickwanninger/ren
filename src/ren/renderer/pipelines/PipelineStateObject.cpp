@@ -27,7 +27,10 @@ namespace ren {
   u64 PipelineStateObject::hash(void) const {
     // Generate a hash for this PSO based on its properties.
     u64 state = 0;
-    ren::hash(state, (u64)program->getUUID());
+    // ren::hash(state, (u64)program->getUUID());
+
+    ren::hash(state, (u64)program->getVertexShader()->getHandle());
+    ren::hash(state, (u64)program->getFragmentShader()->getHandle());
     ren::hash(state, topology);
     ren::hash(state, depthTest);
     ren::hash(state, depthWrite);
