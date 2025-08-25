@@ -48,9 +48,6 @@ namespace ren {
       REN_PROFILE_FUNCTION();
       for (auto it = layers.rbegin(); it != layers.rend(); ++it) {
         (*it)->onEvent(event);
-        if (event.handled) {
-          break;  // Stop dispatching if the event is handled
-        }
       }
     }
 
