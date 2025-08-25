@@ -43,6 +43,8 @@ namespace ren {
 
     UniformBufferSet<PBRMaterialProperties> materialPropsBuffer;
 
+    ren::PipelineStateObject &getPSO();
+
    private:
     // All PBR materials share the same pipeline state object.
     static ren::PipelineStateObject pso;

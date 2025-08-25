@@ -26,12 +26,14 @@ namespace ren {
 
     if (PBRMaterial::pso.program == nullptr) {
       // If the PSO is not initialized, create it.
+      // PBRMaterial::pso.cullMode = CullMode::None;
       PBRMaterial::pso.program = makeRef<ShaderProgram>("shaders/pbr");
     }
   }
 
+  ren::PipelineStateObject &PBRMaterial::getPSO() { return PBRMaterial::pso; }
+
   bool PBRMaterial::bind(Renderer &R) {
-    REN_PROFILE_SCOPE("PBR_Static");
     // Bind the PBR Material's pipeline state object
     R.bind(PBRMaterial::pso);
 
@@ -40,7 +42,7 @@ namespace ren {
     this->materialPropsBuffer.update(this->props);
 
     // set 1 is the PBR material set for the fragment shader.
-    auto binder = R.startBinding(0);
+    auto binder = R.startBinding(1);
 
     binder.bind("material", this->materialPropsBuffer);
     binder.bind("baseColorTexture", *this->baseColorTexture);
@@ -56,11 +58,36 @@ namespace ren {
     ImGui::Text("PBR Material");
     ImGui::Separator();
 
-    // pso.renderInspector();
+    pso.renderInspector();
     // Add any PBR-specific properties here, such as textures, metallic, roughness, etc.
 
     ImGui::ColorEdit3("Albedo Color", &props.baseColorFactor[0]);
     ImGui::ColorEdit3("Emissive Color", &props.emissive[0]);
+
+    ImGui::SliderFloat("Metallic", &props.metallicFactor, 0.0f, 1.0f);
+    ImGui::SliderFloat("Roughness", &props.roughnessFactor, 0.0f, 1.0f);
+
+    ImGui::Text("Textures");
+    ImGui::Separator();
+
+    ImGui::Text("Base Color Texture");
+    ImGui::Image(baseColorTexture->getImGui(), ImVec2(100, 100));
+
+    ImGui::Text("Metallic Roughness Texture");
+    ImGui::Image(metallicRoughnessTexture->getImGui(), ImVec2(100, 100));
+
+    ImGui::Text("Normal Texture");
+    ImGui::Image(normalTexture->getImGui(), ImVec2(100, 100));
+
+    if (ImGui::Button("Reload Vertex")) {
+      // Reload the vertex shader.
+      PBRMaterial::pso.program->getVertexShader()->reload();
+    }
+
+    if (ImGui::Button("Reload Fragment")) {
+      // Reload the fragment shader.
+      PBRMaterial::pso.program->getFragmentShader()->reload();
+    }
   }
 
 
