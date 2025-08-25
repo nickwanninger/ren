@@ -11,6 +11,8 @@ namespace ren {
     // glm::vec3 color;
     glm::vec3 normal;
     glm::vec2 texCoord;
+    glm::i16vec3 tangent;   // Tangent vector for normal mapping
+    glm::i16vec3 bitangent; // Bitangent vector for normal mapping
 
     JSON_SERIALIZE(Vertex, pos, normal, texCoord);
 
@@ -66,8 +68,25 @@ namespace ren {
           .offset = offsetof(Vertex, texCoord),
       });
 
+      // Vertex::tangent
+      attrs.push_back(VkVertexInputAttributeDescription{
+          .location = (u32)attrs.size(),
+          .binding = 0,
+          .format = VK_FORMAT_R16G16B16_SNORM,
+          .offset = offsetof(Vertex, tangent),
+      });
+
+      // Vertex::bitangent
+      attrs.push_back(VkVertexInputAttributeDescription{
+          .location = (u32)attrs.size(),
+          .binding = 0,
+          .format = VK_FORMAT_R16G16B16_SNORM,
+          .offset = offsetof(Vertex, bitangent),
+      });
 
       return attrs;
     }
   };
+
+
 }  // namespace ren
