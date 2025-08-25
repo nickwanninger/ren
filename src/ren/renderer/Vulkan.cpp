@@ -23,6 +23,9 @@
 #include <imgui_impl_vulkan.h>
 
 
+
+#include <tracy/tracy/TracyVulkan.hpp>
+
 // Implement vk_mem_alloc here!
 #define VMA_IMPLEMENTATION
 #include "vk_mem_alloc.h"
@@ -58,6 +61,18 @@ ren::VulkanInstance::VulkanInstance(SDL_Window *window) {
 
   // ASAP, create a command pool.
   init_command_pool();
+
+
+  // -- Tracy Vulkan -- //
+  VkCommandBufferAllocateInfo allocInfo{};
+  allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+  allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+  allocInfo.commandPool = this->commandPool;
+  allocInfo.commandBufferCount = 1;
+  VkCommandBuffer tracyCommandBuffer;
+  vkAllocateCommandBuffers(this->device, &allocInfo, &tracyCommandBuffer);
+
+  TracyVkContext(this->physical_device, this->device, this->graphics_queue, tracyCommandBuffer);
 }
 
 
@@ -83,7 +98,7 @@ void ren::VulkanInstance::init_instance(void) {
 
   // make the vulkan instance, with basic debug features
   auto inst_ret = builder.set_app_name("Example Vulkan Application")
-                      .request_validation_layers(false)
+                      .request_validation_layers(true)
                       .require_api_version(1, 3, 0)
                       .build();
 
