@@ -33,20 +33,21 @@ ren::Texture::Texture(const std::string_view &name, u32 width, u32 height, u8 *p
 
   if (pixels != nullptr) stagingBuffer.copyFromHost(pixels, imageSize);
 
-  vulkan.transitionImageLayout(image->getImage(), VK_FORMAT_R8G8B8A8_SRGB,
+  vulkan.transitionImageLayout(image->getImage(), format,
                                VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 
   vulkan.copyBufferToImage(stagingBuffer.getHandle(), image->getImage(),
                            static_cast<uint32_t>(width), static_cast<uint32_t>(height));
 
-  vulkan.transitionImageLayout(image->getImage(), VK_FORMAT_R8G8B8A8_SRGB,
+  vulkan.transitionImageLayout(image->getImage(), format,
                                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
   // Texture Sampler
   VkSamplerCreateInfo samplerInfo{};
   samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-  samplerInfo.magFilter = samplerInfo.minFilter = VK_FILTER_NEAREST;
+  // samplerInfo.magFilter = samplerInfo.minFilter = VK_FILTER_NEAREST;
+  samplerInfo.magFilter = samplerInfo.minFilter = VK_FILTER_LINEAR;
 
   samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
   samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
