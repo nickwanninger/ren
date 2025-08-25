@@ -11,9 +11,9 @@ $(BUILD)/Makefile:
 	cd $(BUILD) && cmake ../ -DCMAKE_INSTALL_PREFIX:PATH=$(ROOT)/local -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 
 renderer: # $(BUILD_REQ)
-	@cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+	@cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 	@ninja -C build
-	@# cd $(BUILD) && cmake --build . --config Debug
+	@# cd $(BUILD) && cmake --build . --config Release
 	@cp build/compile_commands.json .
 
 
