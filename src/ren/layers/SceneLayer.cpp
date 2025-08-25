@@ -26,22 +26,16 @@ namespace ren {
     fmt::print("Scene Layer Attached\n");
 
 
-    this->meshScene = MeshScene::load("assets/test/meshes/simple_scene.glb");
+    // this->meshScene = MeshScene::load("assets/test/meshes/simple_scene.glb");
     // this->meshScene = MeshScene::load("/Users/nick/Desktop/sponza.glb");
-    // this->meshScene = MeshScene::load("/Users/nick/Desktop/RamenCup.glb");
+    // this->meshScene = MeshScene::load("/Users/nick/Downloads/NormalTangentTest.glb");
+    this->meshScene = MeshScene::load("/Users/nick/Downloads/DamagedHelmet.glb");
+    // this->meshScene = MeshScene::load("assets/test/meshes/unit_cube.glb");
+    // this->meshScene = MeshScene::load("/Users/nick/Downloads/MetalRoughSpheres.glb");
+    // this->meshScene = MeshScene::load("/Users/nick/Downloads/test3.glb");
 
-
-    this->meshScene->instantiate(scene);
-
-
-    // MeshScene::load("assets/test/meshes/unit_cube.glb")->instantiate(scene);
-
-
-    camera.position.x = 10;
-    camera.position.y = 6;
-    camera.position.z = 6;
-    camera.angles.x = -0.5f;
-    camera.angles.y = -1;
+    ren::Entity e = this->meshScene->instantiate(scene);
+    e.get_mut<comp::Transform>().scale = glm::vec3(1.0f); // Set the scale of the instantiated entity
   }
 
   void SceneLayer::onUpdate(float deltaTime) {
@@ -140,11 +134,11 @@ namespace ren {
   void SceneLayer::renderEntityHeirarchy(Entity entity) {
     REN_PROFILE_FUNCTION();
 
-    auto eid = getUUID(entity);
-    ImGui::PushID((u64)eid);
-
+    u64 eid = entity.id();
+    ImGui::PushID(eid);
     // Check if the entity has children
     bool hasChildren = false;
+    // there has to be a better way to do this
     entity.children([&](Entity) { hasChildren = true; });
 
     ImGuiTreeNodeFlags nodeFlags = ImGuiTreeNodeFlags_SpanFullWidth | ImGuiTreeNodeFlags_OpenOnArrow;
@@ -167,7 +161,9 @@ namespace ren {
     }
 
     ImGui::TableSetColumnIndex(1);
-    ImGui::Text("0x%16zx", (size_t)eid);
+    u32 entity_id = static_cast<u32>(eid);
+    u32 entity_generation = eid >> 32;
+    ImGui::Text("%u.%u", entity_id, entity_generation);
 
     if (isSelected) { ImGui::PopStyleColor(); }
 
