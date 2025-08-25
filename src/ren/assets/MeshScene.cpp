@@ -184,10 +184,11 @@ namespace ren {
 
 
 
-  static Entity instantiateNode(ren::Scene &scene, const MeshScene::Node &node,
+  static Entity instantiateNode(const MeshScene::Node &node,
                                 Entity parentEntity) {
     // Create an entity for this node.
-    Entity entity = scene.createEntity(node.name);
+    Entity entity = ren::createEntity().set<comp::Name>(node.name);
+
     if (parentEntity) entity.child_of(parentEntity);
     entity.set<comp::Transform>(node.transform);  // Set the transform component.
 
@@ -203,14 +204,19 @@ namespace ren {
 
     // Recursively instantiate child nodes.
     for (const auto &child : node.children) {
-      instantiateNode(scene, *child, entity);
+      instantiateNode(*child, entity);
     }
     return entity;
   }
 
   Entity MeshScene::instantiate(ren::Scene &scene) {
-    return instantiateNode(scene, *this->rootNode, scene.getRoot());
+    return instantiateNode(*this->rootNode, scene.getRoot());
   }
+
+  Entity MeshScene::instantiate(ren::Entity parent) {
+    return instantiateNode(*this->rootNode, parent);
+  }
+
 
 
   ref<MeshScene::Node> MeshScene::convertAssimpNode(const aiNode *ainode, const aiScene *scene) {
@@ -272,7 +278,17 @@ namespace ren {
 
     // Load a mesh scene using assimp, not tinygltf.
     Assimp::Importer importer;
-    const aiScene *scene = importer.ReadFile(filename.string(), aiProcess_Triangulate | aiProcess_FlipUVs | aiProcess_EmbedTextures);
+    unsigned int flags = 0;
+    flags |= aiProcess_Triangulate;            // Ensure all meshes are triangulated
+    flags |= aiProcess_FlipUVs;                // Flip UVs to match Vulkan's
+    flags |= aiProcess_EmbedTextures;          // Embed textures in the scene
+    flags |= aiProcess_JoinIdenticalVertices;  // Join identical vertices
+    flags |= aiProcess_CalcTangentSpace;       // Calculate tangent space
+    flags |= aiProcess_OptimizeMeshes;        // Optimize meshes
+    flags |= aiProcess_RemoveRedundantMaterials;  // Remove redundant materials
+    flags |= aiProcess_Debone; // DEBONE (temp)
+    flags |= aiProcess_FindInstances;
+    const aiScene *scene = importer.ReadFile(filename.string(), flags);
     if (!scene || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE || !scene->mRootNode) {
       fmt::print("Error loading mesh scene: {}\n", importer.GetErrorString());
       return nullptr;
@@ -305,6 +321,16 @@ namespace ren {
         } else {
           vertex.normal = glm::vec3(0.0f, 0.0f, 1.0f);  // Default normal if not present
         }
+        if (assimpMesh->HasTangentsAndBitangents()) {
+          vertex.tangent.x = assimpMesh->mTangents[j].x;
+          vertex.tangent.y = assimpMesh->mTangents[j].y;
+          vertex.tangent.z = assimpMesh->mTangents[j].z;
+
+          vertex.bitangent.x = assimpMesh->mBitangents[j].x;
+          vertex.bitangent.y = assimpMesh->mBitangents[j].y;
+          vertex.bitangent.z = assimpMesh->mBitangents[j].z;
+        }
+
         if (assimpMesh->HasTextureCoords(0)) {
           vertex.texCoord.x = assimpMesh->mTextureCoords[0][j].x;
           vertex.texCoord.y = assimpMesh->mTextureCoords[0][j].y;
@@ -364,15 +390,15 @@ namespace ren {
       }
 
       // Set the material properties
-      aiColor3D color;
+      aiColor4D color;
       if (assimpMaterial->Get(AI_MATKEY_COLOR_DIFFUSE, color) == aiReturn_SUCCESS) {
-        material->props.baseColorFactor = glm::vec4(color.r, color.g, color.b, 1.0f);
+        material->props.baseColorFactor = glm::vec4(color.r, color.g, color.b, color.a);
       }
       // if (assimpMaterial->Get(AI_MATKEY_COLOR_SPECULAR, color) == aiReturn_SUCCESS) {
       //   material->props.specularColor = glm::vec4(color.r, color.g, color.b, 1.0f);
       // }
       if (assimpMaterial->Get(AI_MATKEY_COLOR_EMISSIVE, color) == aiReturn_SUCCESS) {
-        material->props.emissive = glm::vec4(color.r, color.g, color.b, 1.0f);
+        material->props.emissive = glm::vec4(color.r, color.g, color.b, color.a);
       }
 
       // metallic

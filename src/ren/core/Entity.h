@@ -11,4 +11,7 @@ namespace ren {
 
   inline UUID getUUID(Entity &e) { return e.get<comp::ID>().uuid; }
 
+  // Create a new entity *in the scene*
+  Entity createEntity();
+
 }  // namespace ren

@@ -9,6 +9,15 @@
 namespace ren {
 
 
+  struct EngineUBO {
+    glm::mat4 view;
+    glm::mat4 proj;
+    // These must be vec4 becasue of std140 alignment.
+    glm::vec4 cameraWorldPosition;
+
+    glm::vec4 lightDirection = glm::vec4(1.0, 1.0, 1.0, 1.0); // TEMP
+  };
+
   // This class is used to render a scene from a given camera's viewpoint.
   // The output of this renderer is a framebuffer texture containing the
   // scene with postprocessing after tonemapping that can be blitted to the screen.
@@ -43,6 +52,8 @@ namespace ren {
     void rebuildRenderTargets(glm::vec2 newResolution);
 
    private:
+    EngineUBO engineUBO;
+    UniformBufferSet<EngineUBO> engineUBOBuffer;
 
     // ---- Private data for opaque rendering ---- //
     void initOpaque(void);
@@ -64,8 +75,6 @@ namespace ren {
       // The render target for the lighting pass.
       ref<RenderTarget> target;
     } lighting;
-
-
   };
 
 

@@ -41,6 +41,7 @@ namespace ren {
 
     // TOOD: temporary!
     Entity instantiate(ren::Scene& scene);
+    Entity instantiate(ren::Entity parent);
 
    private:
     ref<Node> convertAssimpNode(const aiNode* ainode, const aiScene* scene);

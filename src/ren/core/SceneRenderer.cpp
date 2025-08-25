@@ -2,7 +2,7 @@
 #include <ren/renderer/FrameData.h>
 #include <ren/core/Instrumentation.h>
 #include <ren/assets/Mesh.h>
-
+#include <imgui.h>
 #include <ren/core/Entity.h>
 #include <ren/core/Components.h>
 #include <ren/core/Application.h>
@@ -23,6 +23,7 @@ namespace ren {
     glm::mat4 transform;
   };
 
+
   SceneRenderer::SceneRenderer(Renderer &R)
       : R(R) {
     // Initialize any necessary resources for the SceneRenderer.
@@ -36,14 +37,10 @@ namespace ren {
 
     // Initialize the opaque pass description.
 
-    // HDR emissive data.
-    opaque.passDesc.addColorAttachment("emissive", VK_FORMAT_R8G8B8A8_UNORM);
     // Albedo/diffuse color data.
-    opaque.passDesc.addColorAttachment("albedo", VK_FORMAT_R8G8B8A8_UNORM);
+    opaque.passDesc.addColorAttachment("outColor", VK_FORMAT_R16G16B16A16_SFLOAT);
     // World space normal data.
-    opaque.passDesc.addColorAttachment("normal", VK_FORMAT_R16G16B16A16_SNORM);
-    // PBR data (R= metallic, G=roughness, B=?).
-    opaque.passDesc.addColorAttachment("pbr", VK_FORMAT_R8G8B8A8_UNORM);
+    opaque.passDesc.addColorAttachment("outNormal", VK_FORMAT_R16G16B16A16_SNORM);
     opaque.passDesc.addDepthAttachment("depthStencil");
 
     opaque.pass = R.getRenderPassCache().get(opaque.passDesc);
@@ -80,7 +77,7 @@ namespace ren {
 
 
     float targetHeight = 240;
-    // targetHeight = height;
+    targetHeight = height;
     float scale = targetHeight / height;
     width *= scale;
     height *= scale;
@@ -104,11 +101,18 @@ namespace ren {
 
 
     glm::vec2 outputResolution(frame.renderTarget->getWidth(), frame.renderTarget->getHeight());
+    if (outputResolution.x <= 0 || outputResolution.y <= 0) {
+      // fmt::println("Output resolution is zero, skipping render.");
+      return nullptr;
+      // return opaque.target;
+    }
+
     glm::vec2 currentRenderResolution = outputResolution * renderScale;
 
     if (currentRenderResolution != this->renderResolution) {
       fmt::println("Output resolution: {}x{}", outputResolution.x, outputResolution.y);
-      fmt::println("Current render resolution: {}x{} ({})", currentRenderResolution.x, currentRenderResolution.y, renderScale);
+      fmt::println("Current render resolution: {}x{} ({})", currentRenderResolution.x,
+                   currentRenderResolution.y, renderScale);
 
       // Rebuild the render targets if the resolution has changed.
       rebuildRenderTargets(currentRenderResolution);
@@ -120,9 +124,12 @@ namespace ren {
     // Update all the transformation matrices in the scene to be global.
     scene.globalizeTransforms();
 
-    std::vector<SceneBatch> batches;
+    std::unordered_map<ren::Material *, std::unordered_map<ren::Mesh *, std::vector<glm::mat4>>>
+        batchesByMaterial;
 
     scene.getRoot().scope([&] {
+      // return;
+      REN_PROFILE_SCOPE("Build Batches");
       ren::world().query<comp::Mesh, comp::Transform, comp::Material>().each(
           [&](const comp::Mesh &mesh, const comp::Transform &transform,
               const comp::Material &material) {
@@ -131,7 +138,9 @@ namespace ren {
             batch.mesh = mesh.mesh;
             batch.transform = transform.transformMatrix;
             batch.material = material.material;
-            batches.push_back(std::move(batch));
+
+            batchesByMaterial[material.material.get()][mesh.mesh.get()].push_back(batch.transform);
+            // batches.push_back(std::move(batch));
           });
     });
 
@@ -157,7 +166,7 @@ namespace ren {
 
     u64 vertsDrawn = 0;
 
-  
+
     R.withPass(*opaque.pass, *opaque.target, [&]() {
       REN_PROFILE_SCOPE("Opaque Pass");
 
@@ -165,27 +174,85 @@ namespace ren {
       pc.view = camera.view_matrix();
       pc.proj = camera.projection;
 
-      for (auto &batch : batches) {
-        if (not batch.material->isDeferred()) {
-          // Skip materials that are not deferred (ie: they are forward (e.g., transparent)
-          // materials)
-          continue;
-        }
-        if (not batch.material->bind(R)) {
-          printf("Failed to bind material for mesh %s\n", batch.mesh->getName().c_str());
+
+
+      engineUBO.view = pc.view;
+      engineUBO.proj = pc.proj;
+      engineUBO.cameraWorldPosition = glm::vec4(camera.position, 1.0);
+
+      this->engineUBOBuffer.update(engineUBO);
+
+
+      ImGui::Begin("Opaque Pass");
+
+      ren::Material *lastMaterial = nullptr;
+      ren::Mesh *lastMesh = nullptr;
+
+      size_t mesh_changes = 0;
+      size_t material_changes = 0;
+
+      for (auto &[material, meshBatches] : batchesByMaterial) {
+        REN_PROFILE_SCOPE("Material Batch");
+
+        if (not material->bind(R)) {
+          printf("Failed to bind material for mesh\n");
           continue;  // Skip this batch if the material is not ready.
         }
 
-        ren::bind(cmd, *batch.mesh->getIndexBuffer());
-        ren::bind(cmd, *batch.mesh->getVertexBuffer());
+        auto engineBinder = R.startBinding(0);
+        engineBinder.bind("engine", this->engineUBOBuffer);
+        engineBinder.apply();
 
-        vertsDrawn += batch.mesh->getIndexCount();
 
-        pc.model = batch.transform;
-        R.setPushConstants(pc);
+        for (auto &[mesh, transforms] : meshBatches) {
+          REN_PROFILE_SCOPE("Mesh Batch");
+          ren::bind(cmd, *mesh->getIndexBuffer());
+          ren::bind(cmd, *mesh->getVertexBuffer());
+          // pc.model = transforms[0];
+          // R.setPushConstants(pc);
+          // vkCmdDrawIndexed(cmd, mesh->getIndexCount(), transforms.size(), 0, 0, 0);
 
-        vkCmdDrawIndexed(cmd, batch.mesh->getIndexCount(), 1, 0, 0, 0);
+
+          for (const auto &transform : transforms) {
+            // REN_PROFILE_SCOPE("Draw Call");
+            pc.model = transform;
+            R.setPushConstants(pc);
+            vkCmdDrawIndexed(cmd, mesh->getIndexCount(), 1, 0, 0, 0);
+          }
+        }
       }
+      //   if (lastMaterial == nullptr || lastMaterial != batch.material.get()) {
+      //     material_changes++;
+      //     REN_PROFILE_SCOPE("Bind Material");
+      //     if (not batch.material->bind(R)) {
+      //       printf("Failed to bind material for mesh %s\n", batch.mesh->getName().c_str());
+      //       continue;  // Skip this batch if the material is not ready.
+      //     }
+
+      //     auto engineBinder = R.startBinding(0);
+      //     engineBinder.bind("engine", this->engineUBOBuffer);
+      //     engineBinder.apply();
+
+      //     lastMaterial = batch.material.get();
+      //   }
+
+
+      //   if (lastMesh == nullptr || lastMesh != batch.mesh.get()) {
+      //     REN_PROFILE_SCOPE("Bind Mesh");
+      //     mesh_changes++;
+      //     ren::bind(cmd, *batch.mesh->getIndexBuffer());
+      //     ren::bind(cmd, *batch.mesh->getVertexBuffer());
+      //     lastMesh = batch.mesh.get();
+      //   }
+      //   vertsDrawn += batch.mesh->getIndexCount();
+
+      //   pc.model = batch.transform;
+      //   R.setPushConstants(pc);
+
+      //   vkCmdDrawIndexed(cmd, batch.mesh->getIndexCount(), 1, 0, 0, 0);
+      // }
+
+      ImGui::End();
     });
 
     // printf("Drawn %llu verts in opaque pass in %zu batches\n", vertsDrawn, batches.size());
@@ -202,6 +269,11 @@ namespace ren {
 
   void SceneRenderer::inspect(void) {
     // TODO:
+
+    ImGui::Begin("Scene Renderer");
+    ImGui::DragFloat3("Light Direction", glm::value_ptr(engineUBO.lightDirection), 0.1f);
+    ImGui::DragFloat3("Camera Direction", glm::value_ptr(engineUBO.cameraWorldPosition), 0.1f);
+    ImGui::End();
   }
 
 
