@@ -33,8 +33,15 @@ namespace ren {
   // Assets are identified by their UUID.
   class Asset {
    public:
+    Asset() = default;
     virtual ~Asset() = default;
     virtual AssetType getType() = 0;
+
+    // No copy or move semantics
+    Asset(const Asset&) = delete;
+    Asset& operator=(const Asset&) = delete;
+    Asset(Asset&&) = delete;
+    Asset& operator=(Asset&&) = delete;
 
     AssetID getAssetID() const { return this->assetID; }
 
