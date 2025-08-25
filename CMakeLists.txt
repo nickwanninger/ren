@@ -63,7 +63,7 @@ add_subdirectory(lib/assimp)
 if(MSVC)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
 else()
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -Wno-unused-function -Wno-deprecated-volatile")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -Wno-unused-function -Wno-deprecated-volatile -Wno-unused-function")
 endif()
 
 # Define a variable to store the list of C++ source files
