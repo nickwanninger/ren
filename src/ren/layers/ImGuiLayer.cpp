@@ -155,9 +155,7 @@ namespace ren {
   void ImGuiLayer::onEvent(Event &event) {
     REN_PROFILE_FUNCTION();
     auto &io = ImGui::GetIO();
-    if (io.WantCaptureKeyboard || io.WantCaptureMouse) {
-      if (ImGui_ImplSDL2_ProcessEvent(&event.sdlEvent)) { event.handled = true; }
-    }
+    if (ImGui_ImplSDL2_ProcessEvent(&event.sdlEvent)) { event.handled = true; }
   }
 
 
@@ -225,6 +223,5 @@ namespace ren {
 
       ImGui::End();
     }
-
   }
 }  // namespace ren
