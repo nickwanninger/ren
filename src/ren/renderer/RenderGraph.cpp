@@ -123,7 +123,6 @@ namespace ren {
     // Go through the deps map and find nodes with no dependencies.
     while (!readyNodes.empty()) {
       auto node = readyNodes.front();
-      REN_PROFILE_SCOPE(node->desc.name.data());
       readyNodes.pop();
 
       // If the node has already run, skip it.
