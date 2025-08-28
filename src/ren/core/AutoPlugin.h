@@ -40,5 +40,10 @@ namespace ren {
   };
 
 }  // namespace ren
+
+
+#define REN_PLUGIN_TOKENPASTE(x, y) x ## y
+#define REN_PLUGIN_TOKENPASTE2(x, y) REN_PLUGIN_TOKENPASTE(x, y)
+
 #define REN_PLUGIN(name, callback) \
-  static ren::AutoPluginRegistration g_autoPluginRegistration_##__LINE__(name, callback);
+  static ren::AutoPluginRegistration REN_PLUGIN_TOKENPASTE2(g_autoPluginRegistration_, __LINE__) (name, callback);
