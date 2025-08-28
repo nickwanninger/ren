@@ -3,6 +3,8 @@
 #include <ren/types.h>
 #include <vulkan/vulkan_core.h>
 #include <ren/renderer/RenderTarget.h>
+#include <ren/core/UUID.h>
+#include <ren/renderer/Vulkan.h>
 
 namespace ren {
 

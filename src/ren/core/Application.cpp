@@ -2,8 +2,7 @@
 #include <ren/core/Application.h>
 #include <ren/core/AutoPlugin.h>
 #include <ren/layers/ImGuiLayer.h>
-#include <ren/renderer/pipelines/StandardPipeline.h>
-#include <ren/renderer/pipelines/DisplayPipeline.h>
+
 #include <ren/renderer/pipelines/PipelineStateObject.h>
 #include <ren/renderer/pipelines/PipelineCache.h>
 #include <ren/misc/hash.h>

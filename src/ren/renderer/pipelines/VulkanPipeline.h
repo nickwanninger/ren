@@ -3,8 +3,10 @@
 #include <ren/types.h>
 #include <ren/renderer/Shader.h>
 #include <vector>
+#include <ren/core/UUID.h>
 #include <ren/core/Instrumentation.h>
 #include <ren/assets/Vertex.h>
+#include <ren/renderer/Vulkan.h>
 
 namespace ren {
 
