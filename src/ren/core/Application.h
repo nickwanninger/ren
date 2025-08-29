@@ -24,8 +24,9 @@ namespace ren {
     ren::LayerStack layerStack;
 
     bool running = true;
-   public:
+    Entity globalEventEntity;
 
+   public:
     ref<SceneLayer> sceneLayer = nullptr;
     ref<ImGuiLayer> imguiLayer = nullptr;
 
@@ -46,7 +47,20 @@ namespace ren {
     SDL_Window *getWindow(void) const { return this->window; }
 
 
+    template <typename T>
+    void emitEvent(const T &event) {
+      globalEventEntity.emit<T>(event);
+    }
 
+    template <typename T>
+    void emitEvent() {
+      globalEventEntity.emit<T>();
+    }
+
+    template <typename T, typename Fn>
+    void onEvent(const Fn &callback) {
+      globalEventEntity.observe<T>(callback);
+    }
 
    private:
     // Configure the ECS Phases for ren
@@ -62,6 +76,22 @@ namespace ren {
   static inline float deltaTime(void) { return ren::world().delta_time(); }
   static inline float timeSeconds(void) { return ren::Application::get().timeSeconds; }
   static inline Entity entity(void) { return ren::world().entity(); }
+
+
+  template <typename T>
+  void emit(const T &event) {
+    ren::Application::get().emitEvent<T>(event);
+  }
+  template <typename T>
+  void emit() {
+    ren::Application::get().emitEvent<T>();
+  }
+
+
+  template <typename T, typename Fn>
+  static inline void onEvent(const Fn &callback) {
+    ren::Application::get().onEvent<T>(callback);
+  }
 
 
   // Define your custom phases as components

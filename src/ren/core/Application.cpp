@@ -45,6 +45,8 @@ namespace ren {
 
     world.set_threads(6);
 
+    this->globalEventEntity = world.entity("ren::events");
+
     // Enable the flecs world rest api
     ren::world().set<flecs::Rest>({});
     ren::world().import <flecs::stats>();
