@@ -1,9 +1,12 @@
 #pragma once
 #include <ren/types.h>
 #include <ren/misc/json_serialize.h>
+#include <glm/gtc/type_precision.hpp>
+#include <glm/gtc/packing.hpp>
 
 namespace ren {
 
+  typedef glm::vec<3, _Float16, glm::lowp> lowp_vec3;
 
   // TEMPORARY VERTEX TYPE
   struct Vertex {
@@ -11,15 +14,16 @@ namespace ren {
     // glm::vec3 color;
     glm::vec3 normal;
     glm::vec2 texCoord;
-    glm::i16vec3 tangent;   // Tangent vector for normal mapping
-    glm::i16vec3 bitangent; // Bitangent vector for normal mapping
+    glm::vec3 tangent;    // Tangent vector for normal mapping
+    glm::vec3 bitangent;  // Bitangent vector for normal mapping
 
     JSON_SERIALIZE(Vertex, pos, normal, texCoord);
 
-    Vertex(glm::vec3 pos = glm::vec3(0,0,0),  glm::vec3 normal = glm::vec3(0.0f, 0.0f, 1.0f),
+    Vertex(glm::vec3 pos = glm::vec3(0, 0, 0), glm::vec3 normal = glm::vec3(0.0f, 0.0f, 1.0f),
            glm::vec2 texCoord = glm::vec2(0.0f, 0.0f))
-        : pos(pos), normal(normal), texCoord(texCoord) {
-    }
+        : pos(pos)
+        , normal(normal)
+        , texCoord(texCoord) {}
 
 
 
@@ -37,7 +41,7 @@ namespace ren {
 
       // Vertex::pos
       attrs.push_back(VkVertexInputAttributeDescription{
-          .location = (u32)attrs.size(),
+          .location = 0,
           .binding = 0,
           .format = VK_FORMAT_R32G32B32_SFLOAT,
           .offset = offsetof(Vertex, pos),
@@ -54,7 +58,7 @@ namespace ren {
 
       // Vertex::normal
       attrs.push_back(VkVertexInputAttributeDescription{
-          .location = (u32)attrs.size(),
+          .location = 1,
           .binding = 0,
           .format = VK_FORMAT_R32G32B32_SFLOAT,
           .offset = offsetof(Vertex, normal),
@@ -62,25 +66,27 @@ namespace ren {
 
       // Vertex::texCoord
       attrs.push_back(VkVertexInputAttributeDescription{
-          .location = (u32)attrs.size(),
+          .location = 2,
           .binding = 0,
           .format = VK_FORMAT_R32G32_SFLOAT,
           .offset = offsetof(Vertex, texCoord),
       });
 
+
+      auto BTFormat = VK_FORMAT_R32G32B32_SFLOAT;
       // Vertex::tangent
       attrs.push_back(VkVertexInputAttributeDescription{
-          .location = (u32)attrs.size(),
+          .location = 3,
           .binding = 0,
-          .format = VK_FORMAT_R16G16B16_SNORM,
+          .format = BTFormat,
           .offset = offsetof(Vertex, tangent),
       });
 
       // Vertex::bitangent
       attrs.push_back(VkVertexInputAttributeDescription{
-          .location = (u32)attrs.size(),
+          .location = 4,
           .binding = 0,
-          .format = VK_FORMAT_R16G16B16_SNORM,
+          .format = BTFormat,
           .offset = offsetof(Vertex, bitangent),
       });
 
