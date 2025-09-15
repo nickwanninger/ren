@@ -180,6 +180,7 @@ namespace ren {
     REN_PROFILE_FUNCTION();
 
     u64 eid = entity.id();
+    if (entity.has<comp::ID>()) { eid = entity.get<comp::ID>().uuid; }
     ImGui::PushID(eid);
     // Check if the entity has children
     bool hasChildren = false;
@@ -260,9 +261,7 @@ namespace ren {
 
 
     if (selectedEntity) {
-      ren::world().defer_begin();
       renderEntityInspector(selectedEntity);
-      ren::world().defer_end();
       if (ImGui::Button("Deselect")) { selectedEntity = {}; }
     }
     ImGui::EndChild();

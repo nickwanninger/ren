@@ -3,7 +3,7 @@
 #include <ren/types.h>
 #include <ren/core/Components.h>
 
-#include <flecs.h>
+#include <flecs/flecs.h>
 
 namespace ren {
 

@@ -5,7 +5,7 @@
 #include <ren/core/Application.h>
 
 #include <ren/core/Components.h>
-#include <flecs.h>
+#include <flecs/flecs.h>
 
 #include <type_traits>
 #include <imgui.h>
@@ -234,7 +234,9 @@ void loadMeshIntoScene(const char *path, float scaleChange = 0.0f) {
   }
 }
 
+
 int main(int argc, char *argv[]) {
+  auto e = flecs::ChildOf;
   try {
     ren::Application app("ren", {1920, 1080});
 
@@ -243,7 +245,7 @@ int main(int argc, char *argv[]) {
     // e.add<ren::comp::DirectionalLight>();
 
     // loadMeshIntoScene("/Users/nick/dev/kajiya/assets/meshes/viziers_observation_deck/scene.gltf", 0.01);
-    loadMeshIntoScene("/Users/nick/dev/kajiya/assets/meshes/flying_world_-_battle_of_the_trash_god/scene.gltf", 0.002f);
+    // loadMeshIntoScene("/Users/nick/dev/kajiya/assets/meshes/flying_world_-_battle_of_the_trash_god/scene.gltf", 0.002f);
 
     // loadMeshIntoScene("/Users/nick/Desktop/sponza.glb");
     // loadMeshIntoScene("/Users/nick/Downloads/main_sponza/NewSponza_Main_glTF_003.gltf");
@@ -255,31 +257,29 @@ int main(int argc, char *argv[]) {
     // loadMeshIntoScene("/Users/nick/Downloads/Rock.glb");
     // loadMeshIntoScene("/Users/nick/Downloads/Walk in the Woods.glb");
     // loadMeshIntoScene("/Users/nick/Downloads/Fantasy Inn.glb");
-    // loadMeshIntoScene("/Users/nick/Downloads/broken_wall_slunl_high.glb");
+    loadMeshIntoScene("/Users/nick/Downloads/broken_wall_slunl_high.glb");
     // loadMeshIntoScene("/Users/nick/Downloads/broken_stump_rkswd_raw.glb");
 
 
-    // auto cube = ren::MeshScene::load("assets/test/meshes/unit_cube.glb");
+    auto cube = ren::MeshScene::load("assets/test/meshes/unit_cube.glb");
     // auto e = cube->instantiate({});
     // e.add<DebugLineDraw>();
 
-    /*
-    int scale = 50;
-    auto root = app.sceneLayer->scene.createEntity("root");
-    for (int x = 0; x < scale; x++) {
-      for (int z = 0; z < scale; z++) {
-        auto e = app.sceneLayer->scene.createEntity().child_of(root).add<CubeWave>();
+    // int scale = 50;
+    // auto root = app.sceneLayer->scene.createEntity("root");
+    // for (int x = 0; x < scale; x++) {
+    //   for (int z = 0; z < scale; z++) {
+    //     auto e = app.sceneLayer->scene.createEntity().child_of(root).add<CubeWave>();
 
-        ren::comp::Transform transform;
-        transform.translation.x = (x - scale / 2) * 2.0f;
-        transform.translation.y = 0;
-        transform.translation.z = (z - scale / 2) * 2.0f;
-        transform.scale = glm::vec3(0.75f);
-        e.set<ren::comp::Transform>(transform);
-        cube->instantiate(e);
-      }
-    }
-    */
+    //     ren::comp::Transform transform;
+    //     transform.translation.x = (x - scale / 2) * 2.0f;
+    //     transform.translation.y = 0;
+    //     transform.translation.z = (z - scale / 2) * 2.0f;
+    //     transform.scale = glm::vec3(0.75f);
+    //     e.set<ren::comp::Transform>(transform);
+    //     cube->instantiate(e);
+    //   }
+    // }
 
     app.world.entity<ren::RenderDebug>();
 

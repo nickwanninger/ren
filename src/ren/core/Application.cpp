@@ -43,7 +43,7 @@ namespace ren {
       throw std::runtime_error("Failed to initialize SDL");
     }
 
-    world.set_threads(6);
+    // world.set_threads(6);
 
     this->globalEventEntity = world.entity("ren::events");
 

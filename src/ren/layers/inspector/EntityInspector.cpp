@@ -85,7 +85,7 @@ namespace ren {
       dragParts("Rt", "XYZW", glm::value_ptr(transform.rotation), 0.1f, 0.0f);
       dragParts("Sc", "XYZ", glm::value_ptr(transform.scale), 0.1f, 1.0f);
       transform.rotation = glm::normalize(transform.rotation);
-   }
+    }
   }
 
   static void renderInspector(Entity &entity, comp::Mesh &comp) {
@@ -117,7 +117,10 @@ namespace ren {
       return;
     }
 
-    ImGui::PushID(entity.id());
+    u64 id = entity.id();
+    if (entity.has<comp::ID>()) { id = entity.get<comp::ID>().uuid; }
+
+    ImGui::PushID(id);
 
     auto &name = entity.get_mut<comp::Name>();
 

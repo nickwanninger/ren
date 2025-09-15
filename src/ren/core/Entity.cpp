@@ -13,6 +13,9 @@ namespace ren {
     e.emplace<ren::comp::ID>();
     e.emplace<ren::comp::Name>("Empty");
     e.emplace<ren::comp::Transform>();
+    e.add(flecs::OrderedChildren);  // enable ordered children
+
+
 
     return e;
   }

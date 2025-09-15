@@ -10,7 +10,7 @@
 #include <ren/layers/SceneLayer.h>
 #include <ren/layers/ImGuiLayer.h>
 #include <ren/assets/AssetManager.h>
-#include <flecs.h>
+#include <flecs/flecs.h>
 
 namespace ren {
 

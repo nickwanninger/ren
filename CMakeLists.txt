@@ -33,7 +33,7 @@ message(STATUS "Vulkan include dirs: ${Vulkan_INCLUDE_DIRS}")
 
 # Add some of the libraries we vendor
 add_subdirectory(lib/VulkanMemoryAllocator)
-add_subdirectory(lib/flecs)
+# add_subdirectory(lib/flecs)
 add_subdirectory(lib/fmt)
 
 set(IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/imgui)
@@ -101,6 +101,10 @@ add_executable(ren
   lib/tracy/TracyClient.cpp
 
 
+
+  lib/flecs/flecs.c
+
+
   ${IMGUI_SOURCES}
 )
 
@@ -117,7 +121,7 @@ target_link_libraries(ren
   ${SDL2_LIBRARIES}
   fmt::fmt # fmt library
 
-  flecs::flecs_static # Flecs for ECS
+  # flecs::flecs_static # Flecs for ECS
 )
 
 # if not on windows, link libm
