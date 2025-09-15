@@ -43,6 +43,7 @@ namespace ren {
     std::vector<ref<Shader>> getShaders() const { return {vertexShader, fragmentShader}; }
     const std::vector<ShaderBinding>& getBindings() const { return bindings; }
     const ShaderBinding* getBinding(const std::string_view& name) const;
+    const ShaderBinding* getBinding(u32 set, u32 binding) const;
 
     const std::vector<VkDescriptorSetLayout>& getDescriptorSetLayouts() const { return setLayouts; }
 

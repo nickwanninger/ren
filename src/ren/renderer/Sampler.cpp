@@ -17,7 +17,7 @@ namespace ren {
     samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
 
     samplerInfo.anisotropyEnable = VK_TRUE;
-    samplerInfo.maxAnisotropy = 1.0f;
+    samplerInfo.maxAnisotropy = 16.0f;
 
     samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
     samplerInfo.unnormalizedCoordinates = VK_FALSE;
@@ -33,7 +33,7 @@ namespace ren {
       throw std::runtime_error("failed to create texture sampler!");
     }
 
-    fmt::println("Created sampler: ", (u64)sampler);
+    fmt::println("Created sampler: {}", (u64)sampler);
   }
 
   Sampler::~Sampler(void) {

@@ -1,6 +1,7 @@
 #include <ren/renderer/ShaderProgram.h>
 #include <algorithm>
 #include <ren/assets/AssetManager.h>
+#include <fmt/format.h>
 
 
 namespace ren {
@@ -85,15 +86,21 @@ namespace ren {
       throw std::runtime_error("Failed to get descriptor reflectionBindings");
     }
 
-    // Convert to our format
+    // Convert to our format with basic hardening
     for (const auto* binding : reflectionBindings) {
       ShaderBinding desc;
       desc.set = binding->set;
       desc.binding = binding->binding;
       desc.type = static_cast<VkDescriptorType>(binding->descriptor_type);
-      desc.count = binding->count;
+      // If reflection reports 0 (runtime array), use 1 for layout creation; actual arraying handled by user
+      desc.count = binding->count == 0 ? 1u : binding->count;
       desc.stages = stage;
-      desc.name = binding->name ? binding->name : "";
+      // Some compilers may emit null/empty names; synthesize a stable name in that case
+      if (binding->name && binding->name[0] != '\0') {
+        desc.name = binding->name;
+      } else {
+        desc.name = fmt::format("set{}_binding{}", desc.set, desc.binding);
+      }
 
       bindings.push_back(desc);
     }
@@ -102,24 +109,50 @@ namespace ren {
   }
 
   void ShaderProgram::mergeDescriptorBindings() {
-    // Sort by set, then binding
-    std::sort(bindings.begin(), bindings.end(), [](const ShaderBinding& a, const ShaderBinding& b) {
+    // Merge by (set,binding), combine stages, validate consistency
+    struct Key {
+      u32 set;
+      u32 binding;
+      bool operator==(const Key& o) const { return set == o.set && binding == o.binding; }
+    };
+    struct KeyHash { size_t operator()(const Key& k) const { return (size_t(k.set) << 16) ^ k.binding; } };
+
+    std::unordered_map<Key, ShaderBinding, KeyHash> mergedMap;
+    for (const auto& b : bindings) {
+      Key k{b.set, b.binding};
+      auto it = mergedMap.find(k);
+      if (it == mergedMap.end()) {
+        mergedMap.emplace(k, b);
+      } else {
+        auto& m = it->second;
+        // Validate descriptor type and count are consistent across stages
+        if (m.type != b.type) {
+          throw std::runtime_error(fmt::format(
+              "Descriptor type mismatch for set {} binding {} across stages ({} vs {})",
+              m.set, m.binding, (int)m.type, (int)b.type));
+        }
+        if (m.count != b.count) {
+          // Take the max to be conservative
+          m.count = std::max(m.count, b.count);
+        }
+        // Merge stage flags
+        m.stages |= b.stages;
+        // Prefer a non-empty, longer name if they differ
+        if (m.name != b.name) {
+          if (m.name.empty() || b.name.size() > m.name.size()) m.name = b.name;
+        }
+      }
+    }
+
+    // Rebuild sorted list for stable ordering (by set then binding); allow sparse sets
+    std::vector<ShaderBinding> out;
+    out.reserve(mergedMap.size());
+    for (auto& [k, v] : mergedMap) out.push_back(v);
+    std::sort(out.begin(), out.end(), [](const ShaderBinding& a, const ShaderBinding& b) {
       if (a.set != b.set) return a.set < b.set;
       return a.binding < b.binding;
     });
-
-    // Merge duplicate bindings (same set/binding from different stages)
-    std::vector<ShaderBinding> merged;
-    for (const auto& binding : bindings) {
-      if (!merged.empty() && merged.back().set == binding.set &&
-          merged.back().binding == binding.binding) {
-        // Merge stages
-        merged.back().stages |= binding.stages;
-      } else {
-        merged.push_back(binding);
-      }
-    }
-    bindings = std::move(merged);
+    bindings = std::move(out);
   }
 
 
@@ -128,34 +161,16 @@ namespace ren {
   void ShaderProgram::bakeLayouts() {
     auto& vulkan = getVulkan();
 
-    printf("Baking shader program.\n");
-    printf("Binding listing:\n");
+    // Print a concise binding listing; allow sparse sets/bindings
+    printf("Baking shader program.\nBinding listing (sparse supported):\n");
     for (const auto& binding : bindings) {
-      const char* typeName = "???????";
+      const char* typeName = "???";
       if (binding.type == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER) typeName = "SAMPLER";
-      if (binding.type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER) typeName = "UNIFORM";
-      // print the binding.
-      printf(" %d.%d   %25s : %12s %c%c\n", binding.set, binding.binding, binding.name.c_str(),
-             typeName, binding.stages & VK_SHADER_STAGE_VERTEX_BIT ? 'v' : '-',
+      else if (binding.type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER) typeName = "UNIFORM";
+      else if (binding.type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER) typeName = "STORAGE";
+      printf(" %d.%d   %-25s : %-8s x%-2u  %c%c\n", binding.set, binding.binding, binding.name.c_str(),
+             typeName, binding.count, binding.stages & VK_SHADER_STAGE_VERTEX_BIT ? 'v' : '-',
              binding.stages & VK_SHADER_STAGE_FRAGMENT_BIT ? 'f' : '-');
-    }
-
-
-    // validate the bindings. if two contiguous bindings are not in contiguous sets, throw an error.
-    for (size_t i = 1; i < bindings.size(); i++) {
-      auto& b1 = bindings[i - 1];
-      auto& b2 = bindings[i];
-
-      // b1's set should be equal to or exactly one less than b2's set.
-      if (b1.set != b2.set and b1.set != b2.set - 1) {
-        throw std::runtime_error("Invalid bindings - non contiguous sets.");
-      }
-
-
-      // if the sets are the same, the bindings must be contiguous
-      if (b1.set == b2.set and b1.binding != b2.binding - 1) {
-        throw std::runtime_error("Invalid binding - non contiguous bindings.");
-      }
     }
 
     // using our bindings, we can create a pipeline layout.
@@ -182,8 +197,9 @@ namespace ren {
     // Create descriptor set layouts
     setLayouts.clear();
 
-    if (setBindings.size() != 0) {
-      setLayouts.resize(maxSet + 1, VK_NULL_HANDLE);
+    if (!setBindings.empty()) {
+      // Size to max set index + 1 so sparse sets are indexed directly; holes remain VK_NULL_HANDLE
+      setLayouts.assign(maxSet + 1, VK_NULL_HANDLE);
       for (const auto& [setIndex, bindings] : setBindings) {
         VkDescriptorSetLayoutCreateInfo layoutInfo{};
         layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -210,7 +226,7 @@ namespace ren {
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     pipelineLayoutInfo.setLayoutCount = static_cast<u32>(setLayouts.size());
-    pipelineLayoutInfo.pSetLayouts = setLayouts.size() == 0 ? NULL : setLayouts.data();
+    pipelineLayoutInfo.pSetLayouts = setLayouts.empty() ? nullptr : setLayouts.data();
     pipelineLayoutInfo.pushConstantRangeCount = 1;
     pipelineLayoutInfo.pPushConstantRanges = &pushConstants;
     vkCreatePipelineLayout(vulkan.device, &pipelineLayoutInfo, nullptr, &this->pipelineLayout);
@@ -224,6 +240,13 @@ namespace ren {
       if (binding.name == name) { return &binding; }
     }
     return nullptr;  // Not found
+  }
+
+  const ShaderBinding* ShaderProgram::getBinding(u32 set, u32 binding) const {
+    for (const auto& b : bindings) {
+      if (b.set == set && b.binding == binding) return &b;
+    }
+    return nullptr;
   }
 
 

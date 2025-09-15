@@ -13,12 +13,52 @@
 #include <ren/assets/MeshScene.hpp>
 
 #include <ren/types.h>
+#include <ren/core/DebugLines.hpp>
+#include <ren/core/AutoPlugin.h>
+
+
+
 
 namespace ren {
 
+  struct SceneSelectedEntity {
+    char _unused;
+  };
+
+  void draw_guizmo_editor(ren::Application &app) {
+    return;
+    ren::onEvent<DebugDrawEvent>([&](DebugDrawEvent &event) {
+      ren::world()
+          .query<SceneSelectedEntity, ren::comp::Transform>("ren::editor::GizmoQuery")
+          .each([&](SceneSelectedEntity, ren::comp::Transform &transform) {
+            auto guizmo_view = event.view;
+            auto guizmo_proj = event.proj;
+            // flip for Vulkan
+            guizmo_proj[1][1] *= -1;
+
+            ImGuizmo::PushID(&transform);
+            auto tmat = transform.getTransform();
+            ImGuizmo::Manipulate(glm::value_ptr(guizmo_view), glm::value_ptr(guizmo_proj),
+                                 ImGuizmo::TRANSLATE | ImGuizmo::ROTATE | ImGuizmo::BOUNDS,
+                                 ImGuizmo::WORLD, glm::value_ptr(tmat));
+
+            // decompose
+            glm::vec3 skew;
+            glm::vec4 perspective;
+            glm::decompose(tmat, transform.scale, transform.rotation, transform.translation, skew,
+                           perspective);
+            ImGuizmo::PopID();
+          });
+    });
+  }
+  REN_PLUGIN("GuizmoEditor", draw_guizmo_editor);
+
+
   SceneLayer::SceneLayer(Application &app)
       : Layer(app, "ImGui")
-      , scene(app.world.lookup("scene")) {}
+      , scene(app.world.lookup("scene")) {
+    this->selectedEntity = {};
+  }
 
 
   void SceneLayer::onAttach(void) {
@@ -29,13 +69,18 @@ namespace ren {
     // this->meshScene = MeshScene::load("assets/test/meshes/simple_scene.glb");
     // this->meshScene = MeshScene::load("/Users/nick/Desktop/sponza.glb");
     // this->meshScene = MeshScene::load("/Users/nick/Downloads/NormalTangentTest.glb");
-    this->meshScene = MeshScene::load("/Users/nick/Downloads/DamagedHelmet.glb");
+    // this->meshScene = MeshScene::load("/Users/nick/Downloads/DamagedHelmet.glb");
+    // this->meshScene =
+    // MeshScene::load("/Users/nick/Downloads/pkg_a_curtains/NewSponza_Curtains_glTF.gltf");
     // this->meshScene = MeshScene::load("assets/test/meshes/unit_cube.glb");
     // this->meshScene = MeshScene::load("/Users/nick/Downloads/MetalRoughSpheres.glb");
     // this->meshScene = MeshScene::load("/Users/nick/Downloads/test3.glb");
 
-    ren::Entity e = this->meshScene->instantiate(scene);
-    e.get_mut<comp::Transform>().scale = glm::vec3(1.0f); // Set the scale of the instantiated entity
+    // ren::Entity e = this->meshScene->instantiate(scene);
+
+    // // fmt::println("JSON:", e.to_json().c_str());
+    // e.get_mut<comp::Transform>().scale = glm::vec3(1.0f); // Set the scale of the instantiated
+    // entity
   }
 
   void SceneLayer::onUpdate(float deltaTime) {
@@ -141,7 +186,8 @@ namespace ren {
     // there has to be a better way to do this
     entity.children([&](Entity) { hasChildren = true; });
 
-    ImGuiTreeNodeFlags nodeFlags = ImGuiTreeNodeFlags_SpanFullWidth | ImGuiTreeNodeFlags_OpenOnArrow;
+    ImGuiTreeNodeFlags nodeFlags =
+        ImGuiTreeNodeFlags_SpanFullWidth | ImGuiTreeNodeFlags_OpenOnArrow;
     if (!hasChildren) nodeFlags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
 
     bool isSelected = (this->selectedEntity == entity);
@@ -157,7 +203,11 @@ namespace ren {
 
     // Only select on row click, not arrow click
     if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && !ImGui::IsItemToggledOpen()) {
+      if (selectedEntity && selectedEntity.has<SceneSelectedEntity>()) {
+        selectedEntity.remove<SceneSelectedEntity>();
+      }
       this->selectedEntity = entity;
+      selectedEntity.emplace<SceneSelectedEntity>();
     }
 
     ImGui::TableSetColumnIndex(1);
@@ -185,36 +235,11 @@ namespace ren {
     auto identityMatrix = glm::mat4(1.0f);
 
     ImGuizmo::SetOrthographic(false);
-    // ImGuizmo::SetDrawlist();
-    // int windowWidth, windowHeight;
-    // SDL_GetWindowSize(app.getWindow(), &windowWidth, &windowHeight);
 
+    ImGui::Begin("Scene");
 
-    ImGui::Begin("Scene Layer");
-
-    // render the material info from the mesh scene
-    if (ImGui::CollapsingHeader("Materials from Scene")) {
-      for (auto &material : meshScene->materials) {
-        ImGui::PushID(&material);
-        ImGui::Text("Material: %s", material->getName().c_str());
-        material->inspect();
-        ImGui::PopID();
-      }
-    }
-
-    if (ImGui::CollapsingHeader("Scene Information")) {
-      drawVec3Control("Position", camera.position, 0.0f, 100.0f);
-      drawVec3Control("Rotation", camera.angles, 0.0f, 100.0f);
-      drawVec3Control("Velocity", camera.velocity, 0.0f, 100.0f);
-    }
-
-    if (ImGui::CollapsingHeader("Mesh Scene")) { meshScene->onImguiRender(); }
-
-    ImGui::Separator();
-
-    const float TEXT_BASE_WIDTH = ImGui::CalcTextSize("A").x;
-
-
+    // Left panel - texture list with scrollbar
+    ImGui::BeginChild("EntityList", ImVec2(250, 0), true);
 
     // Render the scene hierarchy as a table tree view
     if (ImGui::BeginTable("SceneHierarchyTable", 2,
@@ -227,11 +252,21 @@ namespace ren {
       ImGui::EndTable();
     }
 
+    ImGui::EndChild();
+
+    ImGui::SameLine();
+
+    ImGui::BeginChild("EntityInspector", ImVec2(0, 0), true);
+
 
     if (selectedEntity) {
+      ren::world().defer_begin();
       renderEntityInspector(selectedEntity);
+      ren::world().defer_end();
       if (ImGui::Button("Deselect")) { selectedEntity = {}; }
     }
+    ImGui::EndChild();
+
 
     ImGui::End();
   }

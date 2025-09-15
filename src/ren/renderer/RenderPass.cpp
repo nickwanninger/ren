@@ -6,17 +6,24 @@
 namespace ren {
 
   static std::unordered_set<RenderPass *> allRenderPasses;
-  VkAttachmentDescription &RenderPass::Description::addColorAttachment(const std::string &name,
-                                                                       VkFormat format) {
+  VkAttachmentDescription &RenderPass::Description::addColorAttachment(
+      const std::string &name, VkFormat format, VkSampleCountFlagBits samples) {
     VkAttachmentDescription attachment{};
     attachment.format = format;
-    attachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    attachment.samples = samples;
     attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    // MSAA color attachments don't need to be stored if resolved
+    attachment.storeOp = (samples == VK_SAMPLE_COUNT_1_BIT) ? VK_ATTACHMENT_STORE_OP_STORE
+                                                            : VK_ATTACHMENT_STORE_OP_DONT_CARE;
     attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    attachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    // Single-sample colors use PRESENT (used both for swapchain resolve targets and as a sentinel
+    // for offscreen color we later transition to SHADER_READ_ONLY). Multisampled colors remain in
+    // COLOR_ATTACHMENT_OPTIMAL and are resolved in-subpass.
+    attachment.finalLayout = (samples == VK_SAMPLE_COUNT_1_BIT)
+                                 ? VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
+                                 : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
     attachments.push_back(attachment);
     attachmentNames.push_back(name);
@@ -24,10 +31,11 @@ namespace ren {
     return attachments.back();
   }
 
-  VkAttachmentDescription &RenderPass::Description::addDepthAttachment(const std::string &name) {
+  VkAttachmentDescription &RenderPass::Description::addDepthAttachment(
+      const std::string &name, VkSampleCountFlagBits samples) {
     VkAttachmentDescription attachment{};
     attachment.format = getVulkan().findDepthFormat();
-    attachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    attachment.samples = samples;
     attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     attachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
@@ -130,6 +138,7 @@ namespace ren {
                          .setWidth(width)
                          .setHeight(height)
                          .setFormat(attachment.format)
+                         .setSamples(attachment.samples)
                          .setViewAspectMask(VK_IMAGE_ASPECT_DEPTH_BIT)
                          .setUsage(VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
                                    VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT)
@@ -143,6 +152,7 @@ namespace ren {
                          .setWidth(width)
                          .setHeight(height)
                          .setFormat(attachment.format)
+                         .setSamples(attachment.samples)
                          .setViewAspectMask(VK_IMAGE_ASPECT_COLOR_BIT)
                          .setUsage(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
                                    VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT)
@@ -161,11 +171,13 @@ namespace ren {
     auto &vulkan = getVulkan();
 
 
-    // Now, go through and make references for the attachments.
-    // We can have many color attachments, but only one depth attachment.
+    // Build references for the attachments.
+    // Support resolve attachments if a multisampled color has a matching single-sample color.
     std::vector<VkAttachmentReference> colorRefs;
+    std::vector<VkAttachmentReference> resolveRefs;
     VkAttachmentReference depthRef;
     bool hasDepth = false;
+    std::vector<bool> usedAsResolve(desc.attachments.size(), false);
     // Loop through the attachments and create references.
     for (size_t i = 0; i < desc.attachments.size(); ++i) {
       auto &attachment = desc.attachments[i];
@@ -177,11 +189,38 @@ namespace ren {
         hasDepth = true;
         continue;
       } else {
-        VkAttachmentReference ref{};
-        ref.attachment = i;
-        ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        // Color attachment; check for MSAA resolve pairing
+        if (attachment.samples != VK_SAMPLE_COUNT_1_BIT) {
+          // Multisampled color attachment
+          VkAttachmentReference msaaRef{};
+          msaaRef.attachment = i;
+          msaaRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+          colorRefs.push_back(msaaRef);
 
-        colorRefs.push_back(ref);
+          // Find a matching single-sample color as resolve target
+          VkAttachmentReference resRef{};
+          resRef.attachment = VK_ATTACHMENT_UNUSED;
+          resRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+          for (size_t j = i + 1; j < desc.attachments.size(); ++j) {
+            auto &cand = desc.attachments[j];
+            if (cand.finalLayout != VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL &&
+                cand.samples == VK_SAMPLE_COUNT_1_BIT && cand.format == attachment.format) {
+              resRef.attachment = j;
+              usedAsResolve[j] = true;
+              break;
+            }
+          }
+          resolveRefs.push_back(resRef);
+        } else {
+          // Single-sample color attachment not used as resolve target
+          if (!usedAsResolve[i]) {
+            VkAttachmentReference ref{};
+            ref.attachment = i;
+            ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+            colorRefs.push_back(ref);
+            // No resolve for this one
+          }
+        }
       }
     }
 
@@ -194,6 +233,8 @@ namespace ren {
     subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
     subpass.colorAttachmentCount = colorRefs.size();
     subpass.pColorAttachments = colorRefs.data();
+    // If any resolves exist, provide them with same count; else leave null
+    if (!resolveRefs.empty()) { subpass.pResolveAttachments = resolveRefs.data(); }
     subpass.pDepthStencilAttachment = hasDepth ? &depthRef : nullptr;
 
 

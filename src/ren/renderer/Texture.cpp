@@ -7,14 +7,21 @@
 #include <stb/stb_image.h>
 #include <imgui_impl_vulkan.h>
 
+
+static std::vector<ren::Texture *> g_all_textures;
+
+
+const std::vector<ren::Texture *> ren::Texture::allTextures(void) { return g_all_textures; }
+
 ren::Texture::Texture(const std::string_view &name, u32 width, u32 height, u8 *pixels)
     : name(name) {
   REN_PROFILE_FUNCTION();
+  g_all_textures.push_back(this);
   ren::ImageBuilder ib(this->name);
 
   ib.setWidth(width).setHeight(height);
 
-  VkFormat format = VK_FORMAT_R8G8B8A8_SRGB;
+  VkFormat format = VK_FORMAT_R8G8B8A8_UNORM;
 
   ib.setFormat(format);
   ib.setUsage(VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
@@ -33,14 +40,13 @@ ren::Texture::Texture(const std::string_view &name, u32 width, u32 height, u8 *p
 
   if (pixels != nullptr) stagingBuffer.copyFromHost(pixels, imageSize);
 
-  vulkan.transitionImageLayout(image->getImage(), format,
-                               VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+  vulkan.transitionImageLayout(image->getImage(), format, VK_IMAGE_LAYOUT_UNDEFINED,
+                               VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 
   vulkan.copyBufferToImage(stagingBuffer.getHandle(), image->getImage(),
                            static_cast<uint32_t>(width), static_cast<uint32_t>(height));
 
-  vulkan.transitionImageLayout(image->getImage(), format,
-                               VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+  vulkan.transitionImageLayout(image->getImage(), format, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
   // Texture Sampler
@@ -83,6 +89,7 @@ VkDescriptorSet ren::Texture::getImGui(void) {
 
 
 ren::Texture::Texture(ren::ImageRef image) {
+  g_all_textures.push_back(this);
   REN_PROFILE_FUNCTION();
   auto &vulkan = ren::getVulkan();
   this->image = image;
@@ -123,9 +130,10 @@ ren::Texture::Texture(ren::ImageRef image) {
 
 
 ren::Texture::~Texture(void) {
+  g_all_textures.erase(std::remove(g_all_textures.begin(), g_all_textures.end(), this), g_all_textures.end());
   auto &vulkan = ren::getVulkan();
   // Remove the imgui texture ID first,
-  // ImGui_ImplVulkan_RemoveTexture(imguiTextureID); // LEAK!!!
+  if (imguiTextureID != VK_NULL_HANDLE) { ImGui_ImplVulkan_RemoveTexture(imguiTextureID); }
 
   // then destroy the sampler.
   vkDestroySampler(vulkan.device, sampler, nullptr);

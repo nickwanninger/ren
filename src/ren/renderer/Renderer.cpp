@@ -144,7 +144,8 @@ namespace ren {
 
     // Start binding the shader program.
     if (this->currentPipeline == nullptr) {
-      throw std::runtime_error("Cannot start binding without a current pipeline set. Call bind() first.");
+      throw std::runtime_error(
+          "Cannot start binding without a current pipeline set. Call bind() first.");
     }
 
     // Create a shader binder for the current program.

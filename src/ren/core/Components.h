@@ -16,6 +16,8 @@ namespace ren {
     // These entities are those which are available to the editor and serialization.
 
 
+
+
     struct ID {
       UUID uuid;
 
@@ -96,6 +98,11 @@ namespace ren {
       }
 
       friend void from_json(const json& j, comp::Material& uuid) { abort(); }
+    };
+
+
+    struct DirectionalLight {
+      // NLOHMANN_DEFINE_TYPE_INTRUSIVE(DirectionalLight);
     };
 
 

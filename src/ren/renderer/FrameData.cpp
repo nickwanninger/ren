@@ -27,18 +27,39 @@ namespace ren {
                                            VK_NULL_HANDLE,  // Null allocation is a little strange.
                                            imageCreateInfo);
 
+    auto &vk = ren::getVulkan();
+
     this->depthImage = ren::ImageBuilder(fmt::format("depth #{}", frameIndex))
                            .setWidth(sc.deviceExtent.width)
                            .setHeight(sc.deviceExtent.height)
                            .setFormat(sc.depthFormat)
+                           .setSamples(vk.msaaSamples)
                            .setUsage(VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)
                            .setViewAspectMask(VK_IMAGE_ASPECT_DEPTH_BIT)
                            .build();
 
 
     RenderTargetDescription renderTargetDesc;
-    renderTargetDesc.setupColorAndDepth(this->deviceImage, sc.imageFormat, this->depthImage,
-                                        sc.depthFormat);
+    if (vk.msaaSamples != VK_SAMPLE_COUNT_1_BIT) {
+      // Create a multisampled color buffer and resolve to the swapchain image
+      auto msaaColor = ren::ImageBuilder(fmt::format("msaa color #{}", frameIndex))
+                           .setWidth(sc.deviceExtent.width)
+                           .setHeight(sc.deviceExtent.height)
+                           .setFormat(sc.imageFormat)
+                           .setSamples(vk.msaaSamples)
+                           .setUsage(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)
+                           .setViewAspectMask(VK_IMAGE_ASPECT_COLOR_BIT)
+                           .build();
+
+      renderTargetDesc.attachments.clear();
+      // Order must match render pass: [MSAA color, resolve color, depth]
+      renderTargetDesc.attachments.push_back(RenderTargetAttachment(RenderTargetAttachmentTypeColor, msaaColor, sc.imageFormat, "backbuffer_msaa"));
+      renderTargetDesc.attachments.push_back(RenderTargetAttachment(RenderTargetAttachmentTypeColor, this->deviceImage, sc.imageFormat, "backbuffer"));
+      renderTargetDesc.attachments.push_back(RenderTargetAttachment(RenderTargetAttachmentTypeDepth, this->depthImage, sc.depthFormat, "backbuffer_depth"));
+    } else {
+      renderTargetDesc.setupColorAndDepth(this->deviceImage, sc.imageFormat, this->depthImage,
+                                          sc.depthFormat);
+    }
 
 
     this->renderTarget = makeRef<RenderTarget>(renderTargetDesc);

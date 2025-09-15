@@ -26,6 +26,12 @@ namespace ren {
 
     void bind(const std::string_view &name, const ren::Buffer &bufferHandle);
 
+    // Bind by binding index within the current set (useful when reflection names are absent)
+    void bind(u32 bindingIndex, const Texture &texture);
+    void bind(u32 bindingIndex, const Image &image, Sampler &sampler);
+    void bind(u32 bindingIndex, const Image &image, VkFilter samplerFilter = VK_FILTER_NEAREST);
+    void bind(u32 bindingIndex, const ren::Buffer &bufferHandle);
+
     template <typename T>
     void bind(const std::string_view &name, const UniformBufferSet<T> &UBS) {
       // Bind a uniform buffer set to the shader.

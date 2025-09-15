@@ -70,8 +70,7 @@ namespace ren {
   static void renderInspector(Entity &entity, comp::Transform &transform) {
     static glm::vec3 lastEuler = glm::vec3(0.0f);
     if (ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen)) {
-      dragParts("Translation", "XYZ", glm::value_ptr(transform.translation), 0.1f, 0.0f);
-
+      dragParts("Tr", "XYZ", glm::value_ptr(transform.translation), 0.1f, 0.0f);
       // Editing rotation is annoying.
       // glm::vec3 currentEuler = glm::degrees(glm::eulerAngles(transform.rotation));
       // float diff = glm::length(currentEuler - lastEuler);
@@ -83,23 +82,10 @@ namespace ren {
       //   transform.rotation = transform.rotation * deltaQuat;
       //   lastEuler = editEuler;
       // }
-
-      dragParts("Quaternion", "XYZW", glm::value_ptr(transform.rotation), 0.1f, 1.0f);
-
-      dragParts("Scale", "XYZ", glm::value_ptr(transform.scale), 0.1f, 1.0f);
-
-      // draw the transform matrix
-      ImGui::Text("Transform Matrix:");
-      ImGui::BeginTable("TransformMatrix", 4);
-      for (int row = 0; row < 4; row++) {
-        ImGui::TableNextRow();
-        for (int col = 0; col < 4; col++) {
-          ImGui::TableSetColumnIndex(col);
-          ImGui::Text("%f", transform.transformMatrix[row][col]);
-        }
-      }
-      ImGui::EndTable();
-    }
+      dragParts("Rt", "XYZW", glm::value_ptr(transform.rotation), 0.1f, 0.0f);
+      dragParts("Sc", "XYZ", glm::value_ptr(transform.scale), 0.1f, 1.0f);
+      transform.rotation = glm::normalize(transform.rotation);
+   }
   }
 
   static void renderInspector(Entity &entity, comp::Mesh &comp) {
@@ -144,11 +130,11 @@ namespace ren {
     }
 
 
-#define COMP(type)                          \
+#define COMP(type)                               \
   if (auto *comp = entity.try_get_mut<type>()) { \
-    ImGui::PushID(&comp);                   \
-    renderInspector(entity, *comp);         \
-    ImGui::PopID();                         \
+    ImGui::PushID(&comp);                        \
+    renderInspector(entity, *comp);              \
+    ImGui::PopID();                              \
   }
 #include <ren/core/Components.inc>
 

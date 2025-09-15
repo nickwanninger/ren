@@ -41,10 +41,10 @@ namespace ren {
     const std::string &getName(void) const { return name; }
 
     // Get the vertex buffer.
-    ref<VertexBuffer<ren::Vertex>> getVertexBuffer(void) const { return vertexBuffer; }
+    ref<VertexBuffer<ren::Vertex>> getVertexBuffer(void) { return vertexBuffer; }
 
     // Get the index buffer.
-    ref<IndexBuffer> getIndexBuffer(void) const { return indexBuffer; }
+    ref<IndexBuffer> getIndexBuffer(void) { return indexBuffer; }
 
     // Get the number of indices.
     u32 getIndexCount(void) const { return indexCount; }

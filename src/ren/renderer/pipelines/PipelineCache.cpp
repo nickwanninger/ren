@@ -117,7 +117,12 @@ namespace ren {
     VkPipelineMultisampleStateCreateInfo multisampling{};
     multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
     multisampling.sampleShadingEnable = VK_FALSE;
-    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+    // Pick the max samples used by this render pass's attachments (handles MSAA pipelines)
+    VkSampleCountFlagBits passSamples = VK_SAMPLE_COUNT_1_BIT;
+    for (const auto &att : renderPass.getDescription().attachments) {
+      if (att.samples > passSamples) passSamples = att.samples;
+    }
+    multisampling.rasterizationSamples = passSamples;
     multisampling.minSampleShading = 1.0f;           // Optional
     multisampling.pSampleMask = nullptr;             // Optional
     multisampling.alphaToCoverageEnable = VK_FALSE;  // Optional
@@ -125,7 +130,25 @@ namespace ren {
 
 
 
-    int colorAttachmentCount = renderPass.getDescription().colorAttachments;
+    // Determine the effective number of color attachments used by the subpass.
+    // If there are multisampled color attachments, single-sample colors are used as resolves.
+    int colorAttachmentCount = 0;
+    bool hasMsaaColor = false;
+    for (const auto &att : renderPass.getDescription().attachments) {
+      if (att.finalLayout != VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL &&
+          att.samples != VK_SAMPLE_COUNT_1_BIT) {
+        hasMsaaColor = true;
+        break;
+      }
+    }
+    for (const auto &att : renderPass.getDescription().attachments) {
+      if (att.finalLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) continue;
+      if (hasMsaaColor) {
+        if (att.samples != VK_SAMPLE_COUNT_1_BIT) colorAttachmentCount++;
+      } else {
+        colorAttachmentCount++;
+      }
+    }
     std::vector<VkPipelineColorBlendAttachmentState> colorBlendAttachments;
 
     for (int i = 0; i < colorAttachmentCount; ++i) {
@@ -160,6 +183,7 @@ namespace ren {
                 VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;  // Optional
             break;
           case BlendMode::Additive:
+            fmt::print("Additive blend mode\n");
             colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;             // Optional
             colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;  // Optional
             colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;  // Optional

@@ -9,7 +9,7 @@ namespace ren {
 
 
   // A texture is just a 2D image with a sampler.
-  class Texture : public ren::TextureAsset {
+  class Texture : public ren::TextureAsset, ren::VulkanResource {
    public:
     // Construct a texture with CPU side pixel data. Expect R8G8B8A8_SRGB format.
     // Use the load methods to create textures.
@@ -31,6 +31,8 @@ namespace ren {
     }
 
     static ref<Texture> createSinglePixel(const std::string_view &name, u8 r, u8 g, u8 b, u8 a);
+
+    static const std::vector<Texture *> allTextures(void);
     // -- //
 
     // Get the name of the texture.
@@ -51,6 +53,9 @@ namespace ren {
 
     // ^ren::Asset
     AssetType getType() override { return AssetType::Texture; }
+
+    // Display the texture in the ImGui inspection interface (assume we are in a window)
+    void inspect(void);
 
 
    private:

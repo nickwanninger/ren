@@ -55,6 +55,9 @@ namespace ren {
     VkQueue graphics_queue = VK_NULL_HANDLE;
     u32 graphics_queue_family = 0;
 
+    // Preferred MSAA sample count for color/depth attachments in render passes.
+    VkSampleCountFlagBits msaaSamples = VK_SAMPLE_COUNT_1_BIT;
+
     // ---- Memory Allocator ---- //
     VmaAllocator allocator;
 
@@ -134,6 +137,14 @@ namespace ren {
 
     VkFormat findSupportedFormat(const std::vector<VkFormat> &candidates, VkImageTiling tiling,
                                  VkFormatFeatureFlags features);
+    static VkSampleCountFlagBits getMaxUsableSampleCount(const VkPhysicalDeviceProperties &props) {
+      VkSampleCountFlags counts = props.limits.framebufferColorSampleCounts &
+                                 props.limits.framebufferDepthSampleCounts;
+      if (counts & VK_SAMPLE_COUNT_8_BIT) return VK_SAMPLE_COUNT_8_BIT;
+      if (counts & VK_SAMPLE_COUNT_4_BIT) return VK_SAMPLE_COUNT_4_BIT;
+      if (counts & VK_SAMPLE_COUNT_2_BIT) return VK_SAMPLE_COUNT_2_BIT;
+      return VK_SAMPLE_COUNT_1_BIT;
+    }
 
    private:
     void init_instance(void);

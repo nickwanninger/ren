@@ -65,7 +65,7 @@ namespace ren {
 
 
     // Wrap the map function in something typed
-    T *map(void) { return Buffer::map(); }
+    T *map(void) { return (T*)Buffer::map(); }
 
     void copyFromHost(const T *data, VkDeviceSize size, VkDeviceSize offset = 0) {
       return Buffer::copyFromHost((const void *)data, size * sizeof(T), offset);

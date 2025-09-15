@@ -79,10 +79,25 @@ namespace ren {
     inline auto getDisplayPass() {
       if (displayPass == nullptr) {
         // If the display pass is not initialized, create it.
+        auto &vk = ren::getVulkan();
         RenderPass::Description displayPassDesc;
         displayPassDesc.name = "Backbuffer Pass";
-        displayPassDesc.addColorAttachment("backbuffer", ren::getVulkan().swapchainFormat);
-        displayPassDesc.addDepthAttachment("backbuffer_depth");
+        // If MSAA enabled, add a multisample color + resolve to swapchain
+        if (vk.msaaSamples != VK_SAMPLE_COUNT_1_BIT) {
+          // First attachment: multisample color (not presentable)
+          auto &msaa = displayPassDesc.addColorAttachment("backbuffer_msaa", vk.swapchainFormat, vk.msaaSamples);
+          msaa.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+          msaa.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+          // Second attachment: resolve to the presentable swapchain image
+          auto &resolve = displayPassDesc.addColorAttachment("backbuffer", vk.swapchainFormat, VK_SAMPLE_COUNT_1_BIT);
+          resolve.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+          resolve.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+          // Depth with same sample count as msaa color
+          displayPassDesc.addDepthAttachment("backbuffer_depth", vk.msaaSamples);
+        } else {
+          displayPassDesc.addColorAttachment("backbuffer", vk.swapchainFormat, VK_SAMPLE_COUNT_1_BIT);
+          displayPassDesc.addDepthAttachment("backbuffer_depth", VK_SAMPLE_COUNT_1_BIT);
+        }
         displayPass = renderPassCache.get(displayPassDesc);
       }
       return displayPass;

@@ -184,8 +184,7 @@ namespace ren {
 
 
 
-  static Entity instantiateNode(const MeshScene::Node &node,
-                                Entity parentEntity) {
+  static Entity instantiateNode(const MeshScene::Node &node, Entity parentEntity) {
     // Create an entity for this node.
     Entity entity = ren::createEntity().set<comp::Name>(node.name);
 
@@ -260,6 +259,11 @@ namespace ren {
         this->nodes.push_back(meshChild);  // Add to the scene's node list
         node->children.push_back(meshChild);
       }
+
+      // Since the node has many submeshes, we reset the transform to identity, and have the submeshes have the transform instea
+      node->transform.translation = glm::vec3(0.0f);
+      node->transform.rotation = glm::quat();
+      node->transform.scale = glm::vec3(1.0f);
     }
 
     // Recursively convert children
@@ -279,14 +283,14 @@ namespace ren {
     // Load a mesh scene using assimp, not tinygltf.
     Assimp::Importer importer;
     unsigned int flags = 0;
-    flags |= aiProcess_Triangulate;            // Ensure all meshes are triangulated
-    flags |= aiProcess_FlipUVs;                // Flip UVs to match Vulkan's
-    flags |= aiProcess_EmbedTextures;          // Embed textures in the scene
-    flags |= aiProcess_JoinIdenticalVertices;  // Join identical vertices
-    flags |= aiProcess_CalcTangentSpace;       // Calculate tangent space
-    flags |= aiProcess_OptimizeMeshes;        // Optimize meshes
+    flags |= aiProcess_Triangulate;               // Ensure all meshes are triangulated
+    flags |= aiProcess_FlipUVs;                   // Flip UVs to match Vulkan's
+    flags |= aiProcess_EmbedTextures;             // Embed textures in the scene
+    flags |= aiProcess_JoinIdenticalVertices;     // Join identical vertices
+    flags |= aiProcess_CalcTangentSpace;          // Calculate tangent space
+    flags |= aiProcess_OptimizeMeshes;            // Optimize meshes
     flags |= aiProcess_RemoveRedundantMaterials;  // Remove redundant materials
-    flags |= aiProcess_Debone; // DEBONE (temp)
+    // flags |= aiProcess_Debone; // DEBONE (temp)
     flags |= aiProcess_FindInstances;
     const aiScene *scene = importer.ReadFile(filename.string(), flags);
     if (!scene || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE || !scene->mRootNode) {
@@ -318,6 +322,7 @@ namespace ren {
           vertex.normal.x = assimpMesh->mNormals[j].x;
           vertex.normal.y = assimpMesh->mNormals[j].y;
           vertex.normal.z = assimpMesh->mNormals[j].z;
+          vertex.normal = glm::normalize(vertex.normal);
         } else {
           vertex.normal = glm::vec3(0.0f, 0.0f, 1.0f);  // Default normal if not present
         }
@@ -366,7 +371,8 @@ namespace ren {
       const aiTexture *assimpTexture = scene->mTextures[i];
       ref<Texture> texture;
       if (assimpTexture->mHeight == 0) {
-        texture = ren::Texture::load("embedded", assimpTexture->pcData, assimpTexture->mWidth);
+        std::string embeddedName = fmt::format("embedded_{}_{}", i, assimpTexture->mFilename.C_Str());
+        texture = ren::Texture::load(embeddedName, assimpTexture->pcData, assimpTexture->mWidth);
       } else {
         texture = ren::Texture::load(assimpTexture->mFilename.C_Str());
       }

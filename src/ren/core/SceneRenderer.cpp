@@ -6,8 +6,9 @@
 #include <ren/core/Entity.h>
 #include <ren/core/Components.h>
 #include <ren/core/Application.h>
-
+#include <ren/core/DebugLines.hpp>
 #include <ren/types.h>
+#include <ImGuizmo/ImGuizmo.h>
 
 namespace ren {
 
@@ -36,13 +37,10 @@ namespace ren {
     REN_PROFILE_FUNCTION();
 
     // Initialize the opaque pass description.
-
-    // Albedo/diffuse color data.
+    // Albedo/diffuse color data and world space normals.
     opaque.passDesc.addColorAttachment("outColor", VK_FORMAT_R16G16B16A16_SFLOAT);
-    // World space normal data.
     opaque.passDesc.addColorAttachment("outNormal", VK_FORMAT_R16G16B16A16_SNORM);
     opaque.passDesc.addDepthAttachment("depthStencil");
-
     opaque.pass = R.getRenderPassCache().get(opaque.passDesc);
   }
 
@@ -76,7 +74,7 @@ namespace ren {
     if (height < 1) height = 1;
 
 
-    float targetHeight = 240;
+    float targetHeight = 480 / 2;
     targetHeight = height;
     float scale = targetHeight / height;
     width *= scale;
@@ -127,12 +125,17 @@ namespace ren {
     std::unordered_map<ren::Material *, std::unordered_map<ren::Mesh *, std::vector<glm::mat4>>>
         batchesByMaterial;
 
-    scene.getRoot().scope([&] {
-      // return;
+
+
+    std::unordered_set<ren::Mesh *> uniqueMeshes;
+    {
       REN_PROFILE_SCOPE("Build Batches");
-      ren::world().query<comp::Mesh, comp::Transform, comp::Material>().each(
-          [&](const comp::Mesh &mesh, const comp::Transform &transform,
-              const comp::Material &material) {
+      ren::world()
+          .query<comp::Mesh, comp::Transform, comp::Material>(
+              "ren::core::renderer::BatchBuildQuery")
+          .each([&](const comp::Mesh &mesh, const comp::Transform &transform,
+                    const comp::Material &material) {
+            uniqueMeshes.insert(mesh.mesh.get());
             // Create a batch for each mesh instance.
             SceneBatch batch;
             batch.mesh = mesh.mesh;
@@ -140,21 +143,8 @@ namespace ren {
             batch.material = material.material;
 
             batchesByMaterial[material.material.get()][mesh.mesh.get()].push_back(batch.transform);
-            // batches.push_back(std::move(batch));
           });
-    });
-
-    // auto view = scene.getAllWith<comp::Mesh, comp::Transform, comp::Material>();
-    // view.each([&](entt::entity id, const comp::Mesh &mesh, const comp::Transform &transform,
-    //               const comp::Material &material) {
-    //   // Create a batch for each mesh instance.
-    //   SceneBatch batch;
-    //   batch.mesh = mesh.mesh;
-    //   batch.transform = transform.transformMatrix;
-    //   batch.material = material.material;
-    //   batches.push_back(std::move(batch));
-    // });
-
+    }
 
     float renderAspect = (float)renderResolution.x / (float)renderResolution.y;
     camera.projection = glm::perspective(glm::radians(90.0f), renderAspect, 0.01f, 1000.0f);
@@ -175,21 +165,63 @@ namespace ren {
       pc.proj = camera.projection;
 
 
+      auto guizmo_view = pc.view;
+      auto guizmo_proj = pc.proj;
+      // flip for Vulkan
+      guizmo_proj[1][1] *= -1;
+      // ImGuizmo::DrawGrid(glm::value_ptr(guizmo_view), glm::value_ptr(guizmo_proj),
+      //                    glm::value_ptr(glm::identity<glm::mat4>()), 100.0f);
 
       engineUBO.view = pc.view;
       engineUBO.proj = pc.proj;
       engineUBO.cameraWorldPosition = glm::vec4(camera.position, 1.0);
 
-      this->engineUBOBuffer.update(engineUBO);
+      // ren::debugLine(glm::vec3(0, 0, 0), engineUBO.lightDirection * 512.0f, {1, 0, 1}, 4.0f);
 
+
+      // // TEMPORARY
+      // ren::world()
+      //     .query<ren::comp::Transform, ren::comp::Mesh>("Transform Editor")
+      //     .each([&](ren::comp::Transform &transform, ren::comp::Mesh &mesh) {
+      //       // Get the draw list for the current window
+      //       ImDrawList *draw_list = ImGui::GetBackgroundDrawList();
+
+
+      //       auto ProjectToScreen = [&](const glm::vec3 &point, const glm::mat4 &view,
+      //                                  const glm::mat4 &proj) {
+      //         glm::vec4 clipSpace = proj * view * glm::vec4(point, 1.0f);
+      //         clipSpace /= clipSpace.w;
+      //         return ImVec2{(clipSpace.x + 1.0f) * 0.5f * ImGui::GetIO().DisplaySize.x,
+      //                       (clipSpace.y + 1.0f) * 0.5f * ImGui::GetIO().DisplaySize.y};
+      //       };
+
+      //       // Project your 3D points to screen coordinates
+      //       ImVec2 p1_screen = ProjectToScreen(glm::vec3(1, 1, 1), pc.view, pc.proj);
+      //       ImVec2 p2_screen = ProjectToScreen(glm::vec3(0, 0, 0), pc.view, pc.proj);
+      //       fmt::println("Truth: {} {}, {} {}", p1_screen.x, p1_screen.y, p2_screen.x,
+      //       p2_screen.y); draw_list->AddLine(p1_screen, p2_screen, IM_COL32(255, 0, 0, 255), 2);
+
+      //       // ImGuizmo::PushID(&transform);
+      //       // auto tmat = transform.getTransform();
+      //       // ImGuizmo::Manipulate(glm::value_ptr(guizmo_view), glm::value_ptr(guizmo_proj),
+      //       //                      ImGuizmo::TRANSLATE | ImGuizmo::ROTATE | ImGuizmo::BOUNDS,
+      //       //                      ImGuizmo::WORLD, glm::value_ptr(tmat));
+
+      //       // // decompose
+      //       // glm::vec3 skew;
+      //       // glm::vec4 perspective;
+      //       // glm::decompose(tmat, transform.scale, transform.rotation, transform.translation,
+      //       skew,
+      //       //                perspective);
+      //       // ImGuizmo::PopID();
+      //     });
+
+      this->engineUBOBuffer.update(engineUBO);
 
       ImGui::Begin("Opaque Pass");
 
       ren::Material *lastMaterial = nullptr;
       ren::Mesh *lastMesh = nullptr;
-
-      size_t mesh_changes = 0;
-      size_t material_changes = 0;
 
       for (auto &[material, meshBatches] : batchesByMaterial) {
         REN_PROFILE_SCOPE("Material Batch");
@@ -205,14 +237,14 @@ namespace ren {
 
 
         for (auto &[mesh, transforms] : meshBatches) {
-          REN_PROFILE_SCOPE("Mesh Batch");
+          // REN_PROFILE_SCOPE("Mesh Batch");
           ren::bind(cmd, *mesh->getIndexBuffer());
           ren::bind(cmd, *mesh->getVertexBuffer());
           // pc.model = transforms[0];
           // R.setPushConstants(pc);
           // vkCmdDrawIndexed(cmd, mesh->getIndexCount(), transforms.size(), 0, 0, 0);
 
-
+          int calls = -1;
           for (const auto &transform : transforms) {
             // REN_PROFILE_SCOPE("Draw Call");
             pc.model = transform;
@@ -221,41 +253,12 @@ namespace ren {
           }
         }
       }
-      //   if (lastMaterial == nullptr || lastMaterial != batch.material.get()) {
-      //     material_changes++;
-      //     REN_PROFILE_SCOPE("Bind Material");
-      //     if (not batch.material->bind(R)) {
-      //       printf("Failed to bind material for mesh %s\n", batch.mesh->getName().c_str());
-      //       continue;  // Skip this batch if the material is not ready.
-      //     }
 
-      //     auto engineBinder = R.startBinding(0);
-      //     engineBinder.bind("engine", this->engineUBOBuffer);
-      //     engineBinder.apply();
-
-      //     lastMaterial = batch.material.get();
-      //   }
-
-
-      //   if (lastMesh == nullptr || lastMesh != batch.mesh.get()) {
-      //     REN_PROFILE_SCOPE("Bind Mesh");
-      //     mesh_changes++;
-      //     ren::bind(cmd, *batch.mesh->getIndexBuffer());
-      //     ren::bind(cmd, *batch.mesh->getVertexBuffer());
-      //     lastMesh = batch.mesh.get();
-      //   }
-      //   vertsDrawn += batch.mesh->getIndexCount();
-
-      //   pc.model = batch.transform;
-      //   R.setPushConstants(pc);
-
-      //   vkCmdDrawIndexed(cmd, batch.mesh->getIndexCount(), 1, 0, 0, 0);
-      // }
+      ren::emit<DebugDrawEvent>({pc.view, pc.proj});
 
       ImGui::End();
     });
 
-    // printf("Drawn %llu verts in opaque pass in %zu batches\n", vertsDrawn, batches.size());
     frame.perf.end(cmd, "Opaque Pass");
 
 
@@ -271,8 +274,8 @@ namespace ren {
     // TODO:
 
     ImGui::Begin("Scene Renderer");
-    ImGui::DragFloat3("Light Direction", glm::value_ptr(engineUBO.lightDirection), 0.1f);
-    ImGui::DragFloat3("Camera Direction", glm::value_ptr(engineUBO.cameraWorldPosition), 0.1f);
+    ImGui::DragFloat4("Light Direction", glm::value_ptr(engineUBO.lightDirection), 0.1f);
+    ImGui::DragFloat4("Camera Direction", glm::value_ptr(engineUBO.cameraWorldPosition), 0.1f);
     ImGui::End();
   }
 

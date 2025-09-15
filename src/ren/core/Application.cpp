@@ -248,6 +248,8 @@ namespace ren {
 
 
 
+
+      world.defer_begin();
       auto gbufferTarget = sceneRenderer.render(sceneLayer->scene, sceneLayer->camera);
 
       renderer->withPass(*renderer->getDisplayPass(), *frame.renderTarget, [&]() {
@@ -276,62 +278,30 @@ namespace ren {
 
 
         // world.run_pipeline<ren::RenderDebug>(deltaTime);
-
-
-        ImGui::Begin("ECS World");
-        struct EntityTreeInspector {
-          static inline void drawEntity(flecs::entity entity) {
-            ImGui::PushID((u64)entity.id());
-            const char *nameBuffer;
-            if (auto name = entity.name(); name.length() != 0) {
-              nameBuffer = name.c_str();
-            } else if (auto nameComp = entity.try_get<comp::Name>()) {
-              nameBuffer = nameComp->name.c_str();
-            } else {
-              nameBuffer = "Unnamed Entity";
-            }
-            if (ImGui::TreeNode(nameBuffer)) {
-              entity.children([&](flecs::entity child) { drawEntity(child); });
-              ImGui::TreePop();
-            }
-            ImGui::PopID();
-          };
-        };
-
-        EntityTreeInspector::drawEntity(ren::world().lookup("scene"));
-
-        ImGui::End();
+        // ImGui::Begin("ECS World");
+        // struct EntityTreeInspector {
+        //   static inline void drawEntity(flecs::entity entity) {
+        //     ImGui::PushID((u64)entity.id());
+        //     const char *nameBuffer;
+        //     if (auto name = entity.name(); name.length() != 0) {
+        //       nameBuffer = name.c_str();
+        //     } else if (auto nameComp = entity.try_get<comp::Name>()) {
+        //       nameBuffer = nameComp->name.c_str();
+        //     } else {
+        //       nameBuffer = "Unnamed Entity";
+        //     }
+        //     if (ImGui::TreeNode(nameBuffer)) {
+        //       entity.children([&](flecs::entity child) { drawEntity(child); });
+        //       ImGui::TreePop();
+        //     }
+        //     ImGui::PopID();
+        //   };
+        // };
+        // EntityTreeInspector::drawEntity(ren::world().lookup("scene"));
+        // ImGui::End();
 
 
         sceneRenderer.inspect();
-
-
-
-        // ImGui::Begin("Gbuffer image pointers");
-        // ImGui::Text("GBuffer Target: %s", gbufferTarget ? "Valid" : "Invalid");
-
-        // auto displayRendertarget = [&](auto &rt, const char *name) {
-        //   if (rt) {
-        //     ImGui::Text("%s Target Size: %ux%u", name, rt->getWidth(), rt->getHeight());
-        //     for (auto &attachment : rt->getAttachments()) {
-        //       ImGui::Text("Attachment %s: %p, %p", attachment.name.c_str(),
-        //                   attachment.texture->getImage(), attachment.texture->getImageView());
-        //     }
-        //     ImGui::Separator();
-        //   }
-        // };
-
-        // displayRendertarget(gbufferTarget, "GBuffer");
-        // displayRendertarget(frame.renderTarget, "Display");
-        // ImGui::End();
-
-
-
-        // ImGui::Begin("Asset Manager");
-        // getAssetManager().inspect();
-        // ImGui::End();
-
-
         layerStack.onImGuiRender(deltaTime);
 
         {
@@ -347,6 +317,7 @@ namespace ren {
       });
 
 
+      world.defer_end();
       renderer->endFrame();
 
 

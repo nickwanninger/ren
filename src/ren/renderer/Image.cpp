@@ -14,11 +14,11 @@ namespace ren {
       , imageCreateInfo(createInfo) {
     assert(image != VK_NULL_HANDLE && imageView != VK_NULL_HANDLE &&
            "Image resources must be valid. Check the Vulkan instance and image creation.");
-    // s_images.insert(this);
+    s_images.insert(this);
   }
 
   Image::~Image(void) {
-    // s_images.erase(this);
+    s_images.erase(this);
     auto &vulkan = ren::getVulkan();
 
     // If an Image has no memory, it means it is managed elsewhere and we should not actually

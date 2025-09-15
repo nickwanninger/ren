@@ -47,6 +47,10 @@ namespace ren {
     u32 getHeight(void) const { return imageCreateInfo.extent.height; }
     u32 getDepth(void) const { return imageCreateInfo.extent.depth; }
 
+    inline bool isFramebuffer() const { return memory == VK_NULL_HANDLE; }
+
+    auto &createInfo() const { return imageCreateInfo; }
+
    private:
     std::string name;
     VkImage image = VK_NULL_HANDLE;

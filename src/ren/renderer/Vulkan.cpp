@@ -124,7 +124,7 @@ void ren::VulkanInstance::init_instance(void) {
   // best one if you have multiple GPUs, but I don't so this is fine for now)
   vkb::PhysicalDeviceSelector selector{vkb_inst};
   VkPhysicalDeviceFeatures requiredFeatures = {};
-  requiredFeatures.geometryShader = VK_FALSE;    // Enable geometry shaders
+  // requiredFeatures.geometryShader = VK_FALSE;    // Enable geometry shaders
   requiredFeatures.samplerAnisotropy = VK_TRUE;  // Enable anisotropic filtering
   requiredFeatures.fillModeNonSolid = VK_TRUE;
 
@@ -192,6 +192,18 @@ void ren::VulkanInstance::init_instance(void) {
   printf("Max UBOs per stage: %u\n", props.limits.maxPerStageDescriptorUniformBuffers);
   printf("Push constants size: %u bytes\n", props.limits.maxPushConstantsSize);
 
+  // Choose MSAA sample count (prefer 4x when available on MoltenVK)
+  {
+    auto maxUsable = VulkanInstance::getMaxUsableSampleCount(props);
+    // Prefer 4x if supported, otherwise take max available
+    if (maxUsable >= VK_SAMPLE_COUNT_4_BIT) msaaSamples = VK_SAMPLE_COUNT_4_BIT;
+    else msaaSamples = maxUsable;
+
+    // Disable MSAA!
+    msaaSamples = VK_SAMPLE_COUNT_1_BIT;
+    fmt::println("MSAA samples selected: {}, max: {}", (unsigned)msaaSamples, (unsigned)maxUsable);
+  }
+
 
   this->swapchainFormat =
       findSupportedFormat({VK_FORMAT_B8G8R8A8_SRGB, VK_FORMAT_R8G8B8A8_UNORM},
@@ -214,6 +226,8 @@ ren::VulkanInstance::~VulkanInstance() {
 
   // Cleanup code for the Vulkan instance
   vkDestroyInstance(instance, nullptr);
+
+  g_vulkan_instance = nullptr;
 }
 
 
@@ -639,8 +653,8 @@ VkSampler ren::VulkanInstance::createSampler(VkFilter filter) {
   samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
   samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
 
-  samplerInfo.anisotropyEnable = VK_FALSE;
-  samplerInfo.maxAnisotropy = 1.0f;
+  samplerInfo.anisotropyEnable = VK_TRUE;
+  samplerInfo.maxAnisotropy = 8.0f;
 
   samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
   samplerInfo.unnormalizedCoordinates = VK_FALSE;

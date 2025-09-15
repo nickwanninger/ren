@@ -17,7 +17,7 @@ namespace ren {
       defaultTexture = Texture::createSinglePixel("default-white", 255, 255, 255, 255);
 
     if (defaultNormalTexture == nullptr)
-      defaultNormalTexture = Texture::createSinglePixel("default-normal", 128, 128, 255, 255);
+      defaultNormalTexture = Texture::createSinglePixel("default-normal", 127, 127, 255, 255);
 
 
     this->baseColorTexture = defaultTexture;
@@ -28,6 +28,8 @@ namespace ren {
       // If the PSO is not initialized, create it.
       // PBRMaterial::pso.cullMode = CullMode::None;
       PBRMaterial::pso.program = makeRef<ShaderProgram>("shaders/pbr");
+
+      PBRMaterial::pso.cullMode = ren::CullMode::None;
     }
   }
 
@@ -61,8 +63,8 @@ namespace ren {
     pso.renderInspector();
     // Add any PBR-specific properties here, such as textures, metallic, roughness, etc.
 
-    ImGui::ColorEdit3("Albedo Color", &props.baseColorFactor[0]);
-    ImGui::ColorEdit3("Emissive Color", &props.emissive[0]);
+    ImGui::ColorEdit4("Albedo Color", &props.baseColorFactor[0]);
+    ImGui::ColorEdit4("Emissive Color", &props.emissive[0]);
 
     ImGui::SliderFloat("Metallic", &props.metallicFactor, 0.0f, 1.0f);
     ImGui::SliderFloat("Roughness", &props.roughnessFactor, 0.0f, 1.0f);

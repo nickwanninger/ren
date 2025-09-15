@@ -43,14 +43,19 @@ layout(set = PBR_SET, binding = 3) uniform sampler2D normalTexture;
 
 
 vec3 computeWorldNormal() {
-    vec3 normalMapSample = texture(normalTexture, uv).rgb;
-    normalMapSample = normalize(normalMapSample * 2.0 - 1.0); // Convert from [0, 1] to [-1, 1]
-
+    // Sample the normal map in tangent space
+    vec3 normalMapSample = texture(normalTexture, uv).xyz * 2.0 - 1.0;
+    // normalMapSample.xy = normalMapSample.xy * 2.0 - 1.0;
+    // Grab the TBN matrix
     vec3 N = normalize(worldNormal);
+    // return N;
     vec3 T = normalize(worldTangent);
-    vec3 B = normalize(worldBitangent);
+    // return T;
+    // vec3 B = normalize(worldBitangent);
+    vec3 B = cross(T, N);
+    // return B;
     mat3 TBN = mat3(T, B, N);
-
+    // Transform the normal map sample to world space to produce the final normal
     return normalize(TBN * normalMapSample);
 }
 
@@ -97,13 +102,22 @@ float geometrySmith(vec3 N, vec3 V, vec3 L, float roughness) {
 
 // PBR shader using Cook-Torrance BRDF
 
+vec3 computeSkyboxColor(vec3 direction) {
+    // Simple gradient skybox based on the Y component of the direction
+    vec3 horizonColor = vec3(0.5, 0.7, 1.0); // Light blue
+    vec3 zenithColor = vec3(0.1, 0.2, 0.5);  // Dark blue
+
+    float t = saturate(direction.y * 0.5 + 0.5); // Map Y to [0, 1]
+    return mix(zenithColor, horizonColor, t);
+}
+
 void main() {
     // Sample textures
     vec4 baseColor = texture(baseColorTexture, uv) * material.baseColorFactor;
     if (baseColor.a < 0.01) discard;
-
+    
     vec3 metallicRoughnessSample = texture(metallicRoughnessTexture, uv).rgb;
-    float metallic = clamp(metallicRoughnessSample.r * material.metallicFactor, 0.0, 1.0);
+    float metallic = clamp(metallicRoughnessSample.b * material.metallicFactor, 0.0, 1.0);
     float roughness = clamp(metallicRoughnessSample.g * material.roughnessFactor, 0.04, 1.0);
 
     // Lighting vectors
@@ -139,9 +153,13 @@ void main() {
     // Simple ambient lighting
     vec3 ambient = vec3(0.1, 0.1, 0.1) * baseColor.rgb;
 
-    // Final color
+    // Compute skybox color
+    vec3 skyboxColor = computeSkyboxColor(normalize(worldPos));
+
+    // Final color with skybox contribution
     vec3 color = ambient + (diffuse + specular) * NdotL;
-    // color += material.emissiveFactor.rgb;
+    color += material.emissiveFactor.rgb;
+    // color = mix(skyboxColor, color, NdotL);
 
     outColor = vec4(color, baseColor.a);
     outNormal = vec4(N * 0.5 + 0.5, 1.0);

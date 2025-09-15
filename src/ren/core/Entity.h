@@ -14,4 +14,7 @@ namespace ren {
   // Create a new entity *in the scene*
   Entity createEntity();
 
+
+  glm::mat4 getWorldTransform(Entity &e);
+
 }  // namespace ren

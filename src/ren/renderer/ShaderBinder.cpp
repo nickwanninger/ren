@@ -1,5 +1,6 @@
 #include <ren/renderer/ShaderBinder.h>
 #include <ren/renderer/Renderer.h>
+#include <fmt/format.h>
 
 
 namespace ren {
@@ -112,11 +113,89 @@ namespace ren {
     bind(name, image, R.getSampler(samplerFilter));
   }
 
+  // ---- Bind by binding index within current set ---- //
+  void ShaderBinder::bind(u32 bindingIndex, const Texture &texture) {
+    const auto *binding = program.getBinding(set, bindingIndex);
+    if (binding == nullptr) {
+      throw std::runtime_error(fmt::format(
+          "Shader binding index {} not found in set {} for program {}", bindingIndex, set,
+          json(program).dump()));
+    }
+    VkWriteDescriptorSet newWrite{};
+    newWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    imageInfos.emplace_back();
+    VkDescriptorImageInfo *imageInfo = &imageInfos.back();
+    imageInfo->sampler = texture.getSampler();
+    imageInfo->imageView = texture.getImageView();
+    imageInfo->imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    newWrite.descriptorCount = 1;
+    newWrite.descriptorType = binding->type;
+    newWrite.pImageInfo = imageInfo;
+    newWrite.dstBinding = binding->binding;
+    writes.push_back(newWrite);
+  }
+
+  void ShaderBinder::bind(u32 bindingIndex, const Image &image, Sampler &sampler) {
+    const auto *binding = program.getBinding(set, bindingIndex);
+    if (binding == nullptr) {
+      throw std::runtime_error(fmt::format(
+          "Shader binding index {} not found in set {} for program {}", bindingIndex, set,
+          json(program).dump()));
+    }
+    VkWriteDescriptorSet newWrite{};
+    newWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    imageInfos.emplace_back();
+    VkDescriptorImageInfo *imageInfo = &imageInfos.back();
+    imageInfo->sampler = sampler.getHandle();
+    imageInfo->imageView = image.getImageView();
+    imageInfo->imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    newWrite.descriptorCount = 1;
+    newWrite.descriptorType = binding->type;
+    newWrite.pImageInfo = imageInfo;
+    newWrite.dstBinding = binding->binding;
+    writes.push_back(newWrite);
+  }
+
+  void ShaderBinder::bind(u32 bindingIndex, const Image &image, VkFilter samplerFilter) {
+    auto &R = ren::Renderer::get();
+    bind(bindingIndex, image, R.getSampler(samplerFilter));
+  }
+
+  void ShaderBinder::bind(u32 bindingIndex, const ren::Buffer &buffer) {
+    const auto *binding = program.getBinding(set, bindingIndex);
+    if (binding == nullptr) {
+      throw std::runtime_error(fmt::format(
+          "Shader binding index {} not found in set {} for program {}", bindingIndex, set,
+          json(program).dump()));
+    }
+    VkWriteDescriptorSet newWrite{};
+    newWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    bufferInfos.emplace_back();
+    VkDescriptorBufferInfo *bufferInfo = &bufferInfos.back();
+    bufferInfo->buffer = buffer.getHandle();
+    bufferInfo->offset = 0;
+    bufferInfo->range = buffer.getSize();
+    newWrite.descriptorCount = 1;
+    newWrite.descriptorType = binding->type;
+    newWrite.pBufferInfo = bufferInfo;
+    newWrite.dstBinding = binding->binding;
+    writes.push_back(newWrite);
+  }
+
 
   void ShaderBinder::apply(void) {
     auto &frame = getFrameData();
     // build the descriptor sets and write them.
-    auto layout = program.getDescriptorSetLayouts()[set];
+    const auto &layouts = program.getDescriptorSetLayouts();
+    if (set >= layouts.size()) {
+      throw std::runtime_error(fmt::format(
+          "Descriptor set {} not available in program ({} sets)", set, layouts.size()));
+    }
+    auto layout = layouts[set];
+    if (layout == VK_NULL_HANDLE) {
+      throw std::runtime_error(fmt::format(
+          "Descriptor set {} is sparse/unavailable (no layout). Did you reflect that set?", set));
+    }
     VkDescriptorSet descriptorSet;
     if (!frame.descriptorAllocator.allocate(&descriptorSet, layout)) {
       fmt::println("Could not allocate descriptor set for set {} in {}", this->set,

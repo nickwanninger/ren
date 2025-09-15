@@ -155,15 +155,11 @@ namespace ren {
     // The swapchain render target
     RenderTargetRef renderTarget = nullptr;
 
-
     // We then have a device image, which is the final image that is presented
     // to the device in the end. We will blit the render image to this
     // with some fancy up scaling and whatnot.
     ren::ImageRef deviceImage = nullptr;
     ren::ImageRef depthImage = nullptr;  // The depth buffer for rendering.
-
-
-    // Per-frame descriptor set pool
 
     // Semaphores for synchronizing the rendering process.
 
@@ -177,7 +173,6 @@ namespace ren {
 
     FramePerformanceTracker perf;
 
-
     // ---- Per frame data, reset at the start of each frame ---- //
     // The command buffer that we record the rendering commands into.
     VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
@@ -186,9 +181,6 @@ namespace ren {
     // Query pool for GPU performance queries.
     constexpr static u32 query_count = 2;
     VkQueryPool queryPool = VK_NULL_HANDLE;
-
-
-
 
     FrameData(u32 frameIndex, Swapchain &sc, VkImage swapchainImage,
               VkImageView swapchainImageView);

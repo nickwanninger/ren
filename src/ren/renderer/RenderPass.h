@@ -26,9 +26,12 @@ namespace ren {
       u32 colorAttachments = 0;
       u32 depthAttachments = 0;  // We can only have one depth attachment, but we'll just count it.
 
-      VkAttachmentDescription &addColorAttachment(const std::string &name,
-                                                  VkFormat format = VK_FORMAT_B8G8R8A8_SRGB);
-      VkAttachmentDescription &addDepthAttachment(const std::string &name = "depth");
+      VkAttachmentDescription &addColorAttachment(
+          const std::string &name, VkFormat format = VK_FORMAT_B8G8R8A8_SRGB,
+          VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT);
+      VkAttachmentDescription &addDepthAttachment(const std::string &name = "depth",
+                                                  VkSampleCountFlagBits samples =
+                                                      VK_SAMPLE_COUNT_1_BIT);
 
       // a hash function for this description
       size_t hash(void) const;
