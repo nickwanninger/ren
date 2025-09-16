@@ -61,10 +61,6 @@ namespace ren {
     void onEvent(const Fn &callback) {
       globalEventEntity.observe<T>(callback);
     }
-
-   private:
-    // Configure the ECS Phases for ren
-    void setupPhases();
   };
 
 
@@ -92,13 +88,5 @@ namespace ren {
   static inline void onEvent(const Fn &callback) {
     ren::Application::get().onEvent<T>(callback);
   }
-
-
-  // Define your custom phases as components
-  struct RenderOpaque {};
-  struct PreRenderDebug {};
-  struct RenderDebug {};  // IMGUI, really.
-  struct PostRenderDebug {};
-
 
 }  // namespace ren

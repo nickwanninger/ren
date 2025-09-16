@@ -27,7 +27,7 @@
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
-
+#include <ren/core/Systems.h>
 #include <ren/core/SceneRenderer.h>
 
 
@@ -51,6 +51,7 @@ namespace ren {
     ren::world().set<flecs::Rest>({});
     ren::world().import <flecs::stats>();
 
+    ren::initPhases(ren::world());
 
     // Create an asset manager. This part of the heirarchy will hold
     // loaded assets.
@@ -117,9 +118,6 @@ namespace ren {
 
 
 
-  void Application::setupPhases() {
-    // world.run_pipeline<ren::phases::PostRenderDebug>();
-  }
 
   void Application::run() {
     auto startTime = std::chrono::high_resolution_clock::now();
