@@ -1,0 +1,218 @@
+#include <ren/scripting/EcsBindings.h>
+
+#include <ren/scripting/Scheme.h>
+
+#include <optional>
+
+namespace ren {
+
+  namespace {
+
+    constexpr const char *kErrorSymbol = "ecs-error";
+
+    flecs::world *g_world = nullptr;
+
+    inline s7_pointer world_not_ready(s7_scheme *sc, const char *caller) {
+      return s7_error(sc, s7_make_symbol(sc, kErrorSymbol),
+                      s7_list(sc, 2, s7_make_string(sc, caller),
+                              s7_make_string(sc, "Flecs world is not initialised")));
+    }
+
+    inline std::optional<flecs::entity_t> extract_entity_id(s7_scheme *sc,
+                                                            s7_pointer args,
+                                                            const char *caller,
+                                                            s7_pointer *error_out) {
+      if (s7_is_null(sc, args) || !s7_is_null(sc, s7_cdr(args))) {
+        if (error_out) { *error_out = s7_wrong_number_of_args_error(sc, caller, args); }
+        return std::nullopt;
+      }
+
+      s7_pointer id_arg = s7_car(args);
+      if (!s7_is_integer(id_arg)) {
+        if (error_out) {
+          *error_out = s7_wrong_type_arg_error(sc, caller, 1, id_arg, "integer entity id");
+        }
+        return std::nullopt;
+      }
+
+      return static_cast<flecs::entity_t>(s7_integer(id_arg));
+    }
+
+    inline s7_pointer make_bool(s7_scheme *sc, bool value) {
+      return value ? s7_t(sc) : s7_f(sc);
+    }
+
+    s7_pointer ecs_create(s7_scheme *sc, s7_pointer args) {
+      if (!g_world) { return world_not_ready(sc, "ecs-create"); }
+
+      flecs::entity entity = g_world->entity();
+
+      if (!s7_is_null(sc, args)) {
+        s7_pointer name_arg = s7_car(args);
+        if (!s7_is_null(sc, s7_cdr(args))) { return s7_wrong_number_of_args_error(sc, "ecs-create", args); }
+        if (!s7_is_string(name_arg)) {
+          return s7_wrong_type_arg_error(sc, "ecs-create", 1, name_arg, "string");
+        }
+        entity.set_name(s7_string(name_arg));
+      }
+
+      return s7_make_integer(sc, static_cast<s7_int>(entity.id()));
+    }
+
+    s7_pointer ecs_destroy(s7_scheme *sc, s7_pointer args) {
+      if (!g_world) { return world_not_ready(sc, "ecs-destroy!"); }
+
+      s7_pointer error = nullptr;
+      auto id = extract_entity_id(sc, args, "ecs-destroy!", &error);
+      if (!id) { return error ? error : s7_f(sc); }
+
+      flecs::entity entity = g_world->entity(*id);
+      if (!entity.is_alive()) { return s7_f(sc); }
+      entity.destruct();
+      return s7_t(sc);
+    }
+
+    s7_pointer ecs_is_alive(s7_scheme *sc, s7_pointer args) {
+      if (!g_world) { return world_not_ready(sc, "ecs-alive?"); }
+
+      s7_pointer error = nullptr;
+      auto id = extract_entity_id(sc, args, "ecs-alive?", &error);
+      if (!id) { return error ? error : s7_f(sc); }
+
+      flecs::entity entity = g_world->entity(*id);
+      return make_bool(sc, entity.is_alive());
+    }
+
+    s7_pointer ecs_set_name(s7_scheme *sc, s7_pointer args) {
+      if (!g_world) { return world_not_ready(sc, "ecs-set-name!"); }
+
+      if (s7_is_null(sc, args) || s7_is_null(sc, s7_cdr(args)) || !s7_is_null(sc, s7_cddr(args))) {
+        return s7_wrong_number_of_args_error(sc, "ecs-set-name!", args);
+      }
+
+      s7_pointer id_arg = s7_car(args);
+      if (!s7_is_integer(id_arg)) {
+        return s7_wrong_type_arg_error(sc, "ecs-set-name!", 1, id_arg, "integer entity id");
+      }
+
+      s7_pointer name_arg = s7_cadr(args);
+      if (!s7_is_string(name_arg)) {
+        return s7_wrong_type_arg_error(sc, "ecs-set-name!", 2, name_arg, "string");
+      }
+
+      flecs::entity entity = g_world->entity(static_cast<flecs::entity_t>(s7_integer(id_arg)));
+      if (!entity.is_alive()) { return s7_f(sc); }
+      entity.set_name(s7_string(name_arg));
+      return s7_t(sc);
+    }
+
+    s7_pointer ecs_get_name(s7_scheme *sc, s7_pointer args) {
+      if (!g_world) { return world_not_ready(sc, "ecs-name"); }
+
+      s7_pointer error = nullptr;
+      auto id = extract_entity_id(sc, args, "ecs-name", &error);
+      if (!id) { return error ? error : s7_f(sc); }
+
+      flecs::entity entity = g_world->entity(*id);
+      if (!entity.is_alive()) { return s7_f(sc); }
+
+      const char *name = ecs_get_name(g_world->c_ptr(), *id);
+      if (!name || name[0] == '\0') { return s7_f(sc); }
+      return s7_make_string(sc, name);
+    }
+
+    s7_pointer ecs_lookup_id(s7_scheme *sc, s7_pointer args) {
+      if (!g_world) { return world_not_ready(sc, "ecs-lookup"); }
+
+      if (s7_is_null(sc, args) || !s7_is_null(sc, s7_cdr(args))) {
+        return s7_wrong_number_of_args_error(sc, "ecs-lookup", args);
+      }
+
+      s7_pointer name_arg = s7_car(args);
+      if (!s7_is_string(name_arg)) {
+        return s7_wrong_type_arg_error(sc, "ecs-lookup", 1, name_arg, "string path");
+      }
+
+      flecs::entity found = g_world->lookup(s7_string(name_arg));
+      if (!found.is_valid()) { return s7_f(sc); }
+      return s7_make_integer(sc, static_cast<s7_int>(found.id()));
+    }
+
+    s7_pointer ecs_add_tag(s7_scheme *sc, s7_pointer args) {
+      if (!g_world) { return world_not_ready(sc, "ecs-add-tag!"); }
+
+      if (s7_is_null(sc, args) || s7_is_null(sc, s7_cdr(args)) || !s7_is_null(sc, s7_cddr(args))) {
+        return s7_wrong_number_of_args_error(sc, "ecs-add-tag!", args);
+      }
+
+      s7_pointer id_arg = s7_car(args);
+      if (!s7_is_integer(id_arg)) {
+        return s7_wrong_type_arg_error(sc, "ecs-add-tag!", 1, id_arg, "integer entity id");
+      }
+
+      s7_pointer tag_arg = s7_cadr(args);
+      if (!s7_is_string(tag_arg)) {
+        return s7_wrong_type_arg_error(sc, "ecs-add-tag!", 2, tag_arg, "string tag path");
+      }
+
+      flecs::entity target = g_world->entity(static_cast<flecs::entity_t>(s7_integer(id_arg)));
+      if (!target.is_alive()) { return s7_f(sc); }
+
+      flecs::entity tag = g_world->lookup(s7_string(tag_arg));
+      if (!tag.is_valid()) { return s7_f(sc); }
+
+      target.add(tag.id());
+      return s7_t(sc);
+    }
+
+    s7_pointer ecs_remove_tag(s7_scheme *sc, s7_pointer args) {
+      if (!g_world) { return world_not_ready(sc, "ecs-remove-tag!"); }
+
+      if (s7_is_null(sc, args) || s7_is_null(sc, s7_cdr(args)) || !s7_is_null(sc, s7_cddr(args))) {
+        return s7_wrong_number_of_args_error(sc, "ecs-remove-tag!", args);
+      }
+
+      s7_pointer id_arg = s7_car(args);
+      if (!s7_is_integer(id_arg)) {
+        return s7_wrong_type_arg_error(sc, "ecs-remove-tag!", 1, id_arg, "integer entity id");
+      }
+
+      s7_pointer tag_arg = s7_cadr(args);
+      if (!s7_is_string(tag_arg)) {
+        return s7_wrong_type_arg_error(sc, "ecs-remove-tag!", 2, tag_arg, "string tag path");
+      }
+
+      flecs::entity target = g_world->entity(static_cast<flecs::entity_t>(s7_integer(id_arg)));
+      if (!target.is_alive()) { return s7_f(sc); }
+
+      flecs::entity tag = g_world->lookup(s7_string(tag_arg));
+      if (!tag.is_valid()) { return s7_f(sc); }
+
+      target.remove(tag.id());
+      return s7_t(sc);
+    }
+
+  }  // namespace
+
+  void registerEcsBindings(Scheme &vm, flecs::world &world) {
+    g_world = &world;
+
+    vm.bind("ecs-create", ecs_create, 0, 1, false,
+            "(ecs-create [name]) -> entity-id\nCreate a new entity optionally named.");
+    vm.bind("ecs-destroy!", ecs_destroy, 1, 0, false,
+            "(ecs-destroy! entity-id) -> boolean\nDestroy the entity if it is alive.");
+    vm.bind("ecs-alive?", ecs_is_alive, 1, 0, false,
+            "(ecs-alive? entity-id) -> boolean\nCheck whether an entity id refers to a live entity.");
+    vm.bind("ecs-set-name!", ecs_set_name, 2, 0, false,
+            "(ecs-set-name! entity-id name) -> boolean\nAssign a display name to an entity.");
+    vm.bind("ecs-name", ecs_get_name, 1, 0, false,
+            "(ecs-name entity-id) -> string|#f\nFetch the current name for an entity.");
+    vm.bind("ecs-lookup", ecs_lookup_id, 1, 0, false,
+            "(ecs-lookup path) -> entity-id|#f\nResolve an entity id from a hierarchical path.");
+    vm.bind("ecs-add-tag!", ecs_add_tag, 2, 0, false,
+            "(ecs-add-tag! entity-id tag-path) -> boolean\nAdd an existing tag (entity) to another entity.");
+    vm.bind("ecs-remove-tag!", ecs_remove_tag, 2, 0, false,
+            "(ecs-remove-tag! entity-id tag-path) -> boolean\nRemove a previously added tag from an entity.");
+  }
+
+}  // namespace ren
