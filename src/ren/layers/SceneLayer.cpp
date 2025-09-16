@@ -200,7 +200,14 @@ namespace ren {
     ImGui::TableNextRow();
     ImGui::TableSetColumnIndex(0);
 
-    bool nodeOpen = ImGui::TreeNodeEx(entity.get<comp::Name>().name.c_str(), nodeFlags);
+    std::string name;
+    if (entity.has<comp::Name>()) {
+      name = entity.get<comp::Name>().name;
+    } else {
+      name = fmt::format("#{}", eid);
+    }
+
+    bool nodeOpen = ImGui::TreeNodeEx(name.c_str(), nodeFlags);
 
     // Only select on row click, not arrow click
     if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && !ImGui::IsItemToggledOpen()) {
