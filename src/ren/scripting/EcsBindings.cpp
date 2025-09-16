@@ -3,6 +3,7 @@
 #include <ren/scripting/Scheme.h>
 
 #include <optional>
+#include <string>
 
 namespace ren {
 
@@ -18,8 +19,13 @@ namespace ren {
                               s7_make_string(sc, "Flecs world is not initialised")));
     }
 
-    inline std::optional<flecs::entity_t> extract_entity_id(s7_scheme *sc,
-                                                            s7_pointer args,
+    inline s7_pointer make_error(s7_scheme *sc, const char *caller, const std::string &message) {
+      return s7_error(
+          sc, s7_make_symbol(sc, kErrorSymbol),
+          s7_list(sc, 2, s7_make_string(sc, caller), s7_make_string(sc, message.c_str())));
+    }
+
+    inline std::optional<flecs::entity_t> extract_entity_id(s7_scheme *sc, s7_pointer args,
                                                             const char *caller,
                                                             s7_pointer *error_out) {
       if (s7_is_null(sc, args) || !s7_is_null(sc, s7_cdr(args))) {
@@ -38,9 +44,42 @@ namespace ren {
       return static_cast<flecs::entity_t>(s7_integer(id_arg));
     }
 
-    inline s7_pointer make_bool(s7_scheme *sc, bool value) {
-      return value ? s7_t(sc) : s7_f(sc);
+    inline s7_pointer make_bool(s7_scheme *sc, bool value) { return value ? s7_t(sc) : s7_f(sc); }
+
+    inline std::optional<flecs::entity> resolve_existing_entity(s7_scheme *sc, s7_pointer value,
+                                                                const char *caller, int arg_index,
+                                                                s7_pointer *error_out) {
+      if (s7_is_integer(value)) {
+        flecs::entity candidate = g_world->entity(static_cast<flecs::entity_t>(s7_integer(value)));
+        if (!candidate.is_alive()) {
+          if (error_out) {
+            *error_out = make_error(
+                sc, caller, "entity id " + std::to_string(s7_integer(value)) + " is not alive");
+          }
+          return std::nullopt;
+        }
+        return candidate;
+      }
+
+      if (s7_is_string(value)) {
+        const char *name = s7_string(value);
+        flecs::entity candidate = g_world->lookup(name);
+        if (!candidate.is_valid() || !candidate.is_alive()) {
+          if (error_out) {
+            *error_out = make_error(sc, caller, std::string("unknown entity '") + name + "'");
+          }
+          return std::nullopt;
+        }
+        return candidate;
+      }
+
+      if (error_out) {
+        *error_out =
+            s7_wrong_type_arg_error(sc, caller, arg_index, value, "integer id or string path");
+      }
+      return std::nullopt;
     }
+
 
     s7_pointer ecs_create(s7_scheme *sc, s7_pointer args) {
       if (!g_world) { return world_not_ready(sc, "ecs-create"); }
@@ -49,7 +88,9 @@ namespace ren {
 
       if (!s7_is_null(sc, args)) {
         s7_pointer name_arg = s7_car(args);
-        if (!s7_is_null(sc, s7_cdr(args))) { return s7_wrong_number_of_args_error(sc, "ecs-create", args); }
+        if (!s7_is_null(sc, s7_cdr(args))) {
+          return s7_wrong_number_of_args_error(sc, "ecs-create", args);
+        }
         if (!s7_is_string(name_arg)) {
           return s7_wrong_type_arg_error(sc, "ecs-create", 1, name_arg, "string");
         }
@@ -192,6 +233,62 @@ namespace ren {
       return s7_t(sc);
     }
 
+    // s7_pointer ecs_add_relation(s7_scheme *sc, s7_pointer args) {
+    //   if (!g_world) { return world_not_ready(sc, "ecs-add-relation!"); }
+
+    //   if (s7_list_length(sc, args) != 3) {
+    //     return s7_wrong_number_of_args_error(sc, "ecs-add-relation!", args);
+    //   }
+
+    //   s7_pointer subject_arg = s7_car(args);
+    //   if (!s7_is_integer(subject_arg)) {
+    //     return s7_wrong_type_arg_error(sc, "ecs-add-relation!", 1, subject_arg, "integer entity
+    //     id");
+    //   }
+
+    //   flecs::entity subject =
+    //   g_world->entity(static_cast<flecs::entity_t>(s7_integer(subject_arg))); if
+    //   (!subject.is_alive()) { return s7_f(sc); }
+
+    //   s7_pointer relation_arg = s7_cadr(args);
+    //   s7_pointer target_arg = s7_caddr(args);
+
+    //   s7_pointer error = nullptr;
+    //   auto relation = ensure_relation_entity(sc, relation_arg, "ecs-add-relation!", 2, &error);
+    //   if (!relation) { return error ? error : s7_f(sc); }
+
+    //   error = nullptr;
+    //   auto target = resolve_existing_entity(sc, target_arg, "ecs-add-relation!", 3, &error);
+    //   if (!target) { return error ? error : s7_f(sc); }
+
+    //   subject.add(relation->id(), target->id());
+    //   return s7_t(sc);
+    // }
+
+    s7_pointer ecs_add_pair_internal(s7_scheme *sc, s7_pointer args) {
+      if (!g_world) { return world_not_ready(sc, "ecs-add-pair!"); }
+
+      if (s7_list_length(sc, args) != 3) {
+        return s7_wrong_number_of_args_error(sc, "ecs-add-pair!", args);
+      }
+
+      s7_pointer subject_arg = s7_car(args);
+      s7_pointer relation_arg = s7_cadr(args);
+      s7_pointer target_arg = s7_caddr(args);
+
+      s7_pointer error = nullptr;
+      auto relation = resolve_existing_entity(sc, relation_arg, "ecs-add-pair!", 2, &error);
+      if (!relation) { return error ? error : s7_f(sc); }
+
+      error = nullptr;
+      auto target = resolve_existing_entity(sc, target_arg, "ecs-add-pair!", 3, &error);
+      if (!target) { return error ? error : s7_f(sc); }
+
+      ecs_add_pair(g_world->c_ptr(), static_cast<flecs::entity_t>(s7_integer(subject_arg)),
+                   relation->id(), target->id());
+      return s7_t(sc);
+    }
+
   }  // namespace
 
   void registerEcsBindings(Scheme &vm, flecs::world &world) {
@@ -201,18 +298,27 @@ namespace ren {
             "(ecs-create [name]) -> entity-id\nCreate a new entity optionally named.");
     vm.bind("ecs-destroy!", ecs_destroy, 1, 0, false,
             "(ecs-destroy! entity-id) -> boolean\nDestroy the entity if it is alive.");
-    vm.bind("ecs-alive?", ecs_is_alive, 1, 0, false,
-            "(ecs-alive? entity-id) -> boolean\nCheck whether an entity id refers to a live entity.");
+    vm.bind(
+        "ecs-alive?", ecs_is_alive, 1, 0, false,
+        "(ecs-alive? entity-id) -> boolean\nCheck whether an entity id refers to a live entity.");
     vm.bind("ecs-set-name!", ecs_set_name, 2, 0, false,
             "(ecs-set-name! entity-id name) -> boolean\nAssign a display name to an entity.");
     vm.bind("ecs-name", ecs_get_name, 1, 0, false,
             "(ecs-name entity-id) -> string|#f\nFetch the current name for an entity.");
     vm.bind("ecs-lookup", ecs_lookup_id, 1, 0, false,
             "(ecs-lookup path) -> entity-id|#f\nResolve an entity id from a hierarchical path.");
-    vm.bind("ecs-add-tag!", ecs_add_tag, 2, 0, false,
-            "(ecs-add-tag! entity-id tag-path) -> boolean\nAdd an existing tag (entity) to another entity.");
-    vm.bind("ecs-remove-tag!", ecs_remove_tag, 2, 0, false,
-            "(ecs-remove-tag! entity-id tag-path) -> boolean\nRemove a previously added tag from an entity.");
+    vm.bind(
+        "ecs-add-tag!", ecs_add_tag, 2, 0, false,
+        "(ecs-add-tag! entity-id tag-path) -> boolean\nAdd an existing tag (entity) to another entity.");
+    vm.bind(
+        "ecs-remove-tag!", ecs_remove_tag, 2, 0, false,
+        "(ecs-remove-tag! entity-id tag-path) -> boolean\nRemove a previously added tag from an entity.");
+    // vm.bind("ecs-add-relation!", ecs_add_relation, 3, 0, false,
+    //         "(ecs-add-relation! subject relation target) -> boolean\nCreate or fetch a relation
+    //         and relate subject to target.");
+    vm.bind(
+        "ecs-add-pair!", ecs_add_pair_internal, 3, 0, false,
+        "(ecs-add-pair! subject first second) -> boolean\nAdd an existing relation pair (first, second) to subject.");
   }
 
 }  // namespace ren
