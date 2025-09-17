@@ -21,9 +21,7 @@
 #include <ren/misc/resource_usage.h>
 
 #include <ren/renderer/ShaderProgram.h>
-
-
-#include <ren/layers/inspector/AssimpSceneInspector.h>
+#include <ren/scripting/Scheme.h>
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
@@ -57,6 +55,8 @@ namespace ren {
     // loaded assets.
     world.emplace<AssetManager>();
 
+    world.emplace<ren::Scheme>();
+
     auto scene = ren::world().entity("scene");
 
     SDL_WindowFlags window_flags =
@@ -75,9 +75,9 @@ namespace ren {
     this->sceneLayer = makeRef<SceneLayer>(*this);
     this->layerStack.pushLayer(sceneLayer);
 
-    // Add the ImGuiLayer to the stack.
-    this->imguiLayer = makeRef<ImGuiLayer>(*this);
-    this->layerStack.pushLayer(imguiLayer);
+    // // Add the ImGuiLayer to the stack.
+    // this->imguiLayer = makeRef<ImGuiLayer>(*this);
+    // this->layerStack.pushLayer(imguiLayer);
 
 
     // Find and open first PS5 controller
@@ -102,11 +102,15 @@ namespace ren {
     REN_PROFILE_FUNCTION();
     this->renderer->waitForIdle();
 
+    // Call exit callbacks
+    for (auto &func : exitCallbacks)
+      func();
+
     // Clear the layer stack
     this->layerStack.clear();
 
     this->sceneLayer.reset();
-    this->imguiLayer.reset();
+    // this->imguiLayer.reset();
 
     // Nuke the renderer.
     this->renderer.reset();
@@ -217,32 +221,10 @@ namespace ren {
       auto frameStats = frame.perf.nextFrame(frame.commandBuffer);
 
 
-
-
-      {
-        REN_PROFILE_SCOPE("ImGui New Frame");
-        ImGui_ImplVulkan_NewFrame();
-        ImGui_ImplSDL2_NewFrame();
-
-        ImGui::NewFrame();
-        ImGuizmo::BeginFrame();
-        ImGuizmo::SetDrawlist(ImGui::GetBackgroundDrawList());
-
-        int windowWidth, windowHeight;
-        SDL_GetWindowSize(getWindow(), &windowWidth, &windowHeight);
-        ImGuizmo::SetRect(0.0f, 0.0f, windowWidth, windowHeight);
-
-
-        // Before rendering, lets create a dockspace
-        ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport(),
-                                     ImGuiDockNodeFlags_PassthruCentralNode);
-      }
-
       {
         REN_PROFILE_SCOPE("Tick");
         world.progress(deltaTime);
       }
-
 
 
 
@@ -252,6 +234,7 @@ namespace ren {
 
       renderer->withPass(*renderer->getDisplayPass(), *frame.renderTarget, [&]() {
         auto cmd = ren::getFrameData().commandBuffer;
+
         if (true and gbufferTarget) {
           REN_PROFILE_SCOPE("Blit GBuffer");
           // Blit the gbuffer to the screen temporarily.
@@ -274,33 +257,6 @@ namespace ren {
         }
 
 
-
-        // world.run_pipeline<ren::RenderDebug>(deltaTime);
-        // ImGui::Begin("ECS World");
-        // struct EntityTreeInspector {
-        //   static inline void drawEntity(flecs::entity entity) {
-        //     ImGui::PushID((u64)entity.id());
-        //     const char *nameBuffer;
-        //     if (auto name = entity.name(); name.length() != 0) {
-        //       nameBuffer = name.c_str();
-        //     } else if (auto nameComp = entity.try_get<comp::Name>()) {
-        //       nameBuffer = nameComp->name.c_str();
-        //     } else {
-        //       nameBuffer = "Unnamed Entity";
-        //     }
-        //     if (ImGui::TreeNode(nameBuffer)) {
-        //       entity.children([&](flecs::entity child) { drawEntity(child); });
-        //       ImGui::TreePop();
-        //     }
-        //     ImGui::PopID();
-        //   };
-        // };
-        // EntityTreeInspector::drawEntity(ren::world().lookup("scene"));
-        // ImGui::End();
-
-
-        sceneRenderer.inspect();
-        layerStack.onImGuiRender(deltaTime);
 
         {
           frame.perf.begin(cmd, "ImGui");

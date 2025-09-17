@@ -9,19 +9,27 @@
 #include <ren/types.h>
 #include <ren/misc/resource_usage.h>
 
+#include <ImGuizmo/ImGuizmo.h>
+#include <ren/core/AutoPlugin.h>
+#include <ren/core/Systems.h>
+#include <ren/core/FramerateCounter.h>
 namespace ren {
 
-  ImGuiLayer::ImGuiLayer(Application &app)
-      : Layer(app, "ImGui") {}
+
+  struct ImGuiState {
+    FramerateCounter framerateCounter;            // Framerate counter for ImGui
+    VkDescriptorPool imguiPool = VK_NULL_HANDLE;  // Descriptor pool for ImGui
+  };
 
 
-  void ImGuiLayer::onAttach(void) {
-    REN_PROFILE_FUNCTION();
-    auto &app = ren::Application::get();
+  void imgui_plugin(ren::Application &app) {
+    app.world.emplace<ImGuiState>();
+
+
+    REN_PROFILE_SCOPE("ImGuiLayer::initialize");
     auto &vulkan = ren::getVulkan();
+    auto &state = app.world.get_mut<ImGuiState>();
 
-    // 1: create descriptor pool for IMGUI
-    // the size of the pool is very oversized, but it's copied from imgui demo itself.
     VkDescriptorPoolSize pool_sizes[] = {
         //
         {VK_DESCRIPTOR_TYPE_SAMPLER, 1000},
@@ -44,7 +52,7 @@ namespace ren {
     pool_info.poolSizeCount = 11;  // size of pool_sizes
     pool_info.pPoolSizes = pool_sizes;
 
-    VK_CHECK(vkCreateDescriptorPool(vulkan.device, &pool_info, nullptr, &imguiPool));
+    VK_CHECK(vkCreateDescriptorPool(vulkan.device, &pool_info, nullptr, &state.imguiPool));
 
 
     // 2: initialize imgui library
@@ -75,7 +83,7 @@ namespace ren {
     init_info.PhysicalDevice = vulkan.physical_device;
     init_info.Device = vulkan.device;
     init_info.Queue = vulkan.graphics_queue;
-    init_info.DescriptorPool = imguiPool;
+    init_info.DescriptorPool = state.imguiPool;
     init_info.MinImageCount = 3;
     init_info.ImageCount = 3;
     init_info.MSAASamples = ren::getVulkan().msaaSamples;
@@ -140,17 +148,54 @@ namespace ren {
          }) {
       colors[style] = themeColor;
     }
+
+
+    auto sys = ren::system::make_system(flecs::OnLoad, "ren::imgui::Init").run([](flecs::iter &it) {
+      REN_PROFILE_SCOPE("ImGui New Frame");
+      ImGui_ImplVulkan_NewFrame();
+      ImGui_ImplSDL2_NewFrame();
+
+      ImGui::NewFrame();
+      ImGuizmo::BeginFrame();
+      ImGuizmo::SetDrawlist(ImGui::GetBackgroundDrawList());
+
+      int windowWidth, windowHeight;
+      SDL_GetWindowSize(ren::Application::get().getWindow(), &windowWidth, &windowHeight);
+      ImGuizmo::SetRect(0.0f, 0.0f, windowWidth, windowHeight);
+
+
+      // Before rendering, lets create a dockspace
+      ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport(),
+                                   ImGuiDockNodeFlags_PassthruCentralNode);
+    });
+
+    app.atExit([]() {
+      REN_PROFILE_SCOPE("ImGuiLayer::shutdown");
+
+      auto &vulkan = ren::getVulkan();
+      auto &state = ren::world().get_mut<ImGuiState>();
+
+      vkDestroyDescriptorPool(vulkan.device, state.imguiPool, nullptr);
+      state.imguiPool = VK_NULL_HANDLE;
+
+      ImGui_ImplVulkan_Shutdown();
+      ImGui_ImplSDL2_Shutdown();
+      ImGui::DestroyContext();
+    });
   }
 
+  REN_PLUGIN("imgui", imgui_plugin);
 
-  void ImGuiLayer::onDetach(void) {
-    REN_PROFILE_FUNCTION();
-    ImGui_ImplVulkan_Shutdown();
-    ImGui_ImplSDL2_Shutdown();
-    ImGui::DestroyContext();
 
-    vkDestroyDescriptorPool(ren::getVulkan().device, imguiPool, nullptr);
-  }
+
+  ImGuiLayer::ImGuiLayer(Application &app)
+      : Layer(app, "ImGui") {}
+
+
+  void ImGuiLayer::onAttach(void) {}
+
+
+  void ImGuiLayer::onDetach(void) {}
 
   void ImGuiLayer::onEvent(Event &event) {
     REN_PROFILE_FUNCTION();
@@ -192,36 +237,5 @@ namespace ren {
     ImGui::Text("Instrument: %zu, %.2f MB", (size_t)instr.profileEvents,
                 instr.profileBytes / (1024.0f * 1024.0f));
     ImGui::End();
-
-
-    // ImGui::ShowDemoWindow();
-
-
-    if (1) {
-      ImGui::Begin("Render Passes");
-      auto &renderPasses = ren::RenderPass::allPasses();
-
-      for (auto &pass : renderPasses) {
-        ImGui::PushID(pass->getUUID());
-
-        if (ImGui::CollapsingHeader(pass->getName().c_str())) {
-          ImGui::Text("%s | %llu", pass->getName().c_str(), (u64)pass->getUUID());
-          ImGui::Text("Hash: %zx", pass->getDescription().hash());
-          ImGui::Text("Attachments: %zu", pass->getDescription().attachments.size());
-
-          for (size_t i = 0; i < pass->getDescription().attachments.size(); ++i) {
-            auto &attachment = pass->getDescription().attachments[i];
-            ImGui::Text("Attachment %zu: %s", i, pass->getDescription().attachmentNames[i].c_str());
-          }
-
-          auto &desc = pass->getDescription();
-          ImGui::Text("description: %s", desc.serialize().dump(2).c_str());
-        }
-
-        ImGui::PopID();
-      }
-
-      ImGui::End();
-    }
   }
 }  // namespace ren

@@ -65,7 +65,7 @@ namespace ren {
 
 
     // Wrap the map function in something typed
-    T *map(void) { return (T*)Buffer::map(); }
+    T *map(void) { return (T *)Buffer::map(); }
 
     void copyFromHost(const T *data, VkDeviceSize size, VkDeviceSize offset = 0) {
       return Buffer::copyFromHost((const void *)data, size * sizeof(T), offset);
@@ -131,11 +131,15 @@ namespace ren {
     static constexpr size_t buffercount = 3;  // This is an engine constant.
    public:
     UniformBufferSet(size_t arrayLength = 1)
-        : buffers(buffercount) {
+        : expectedArrayLength(arrayLength)
+        , buffers(buffercount) {
       for (size_t i = 0; i < buffercount; ++i) {
         buffers[i] = std::make_shared<UniformBuffer<T>>(arrayLength);
       }
     }
+
+
+    void setArrayLength(size_t newLength) { expectedArrayLength = newLength; }
 
 
     // Avoid using these methods!
@@ -152,7 +156,18 @@ namespace ren {
     const Buffer &currentAsBuffer() const { return *getCurrentBuffer(); }
 
    private:
-    auto &getCurrentBuffer() const { return buffers[ren::getFrameIndex()]; }
+    size_t expectedArrayLength = 1;
+    inline auto &getCurrentBuffer() const {
+      auto index = ren::getFrameIndex();
+      auto &buffer = buffers[index];
+      if (buffer->getSize() != expectedArrayLength * sizeof(T)) {
+        // resize the buffer!
+        fmt::println("Frame {} of UBS isn't the right size. resizing from {} to {}", index,
+                     buffer->getSize(), expectedArrayLength * sizeof(T));
+        buffer->resize(expectedArrayLength * sizeof(T));
+      }
+      return buffer;
+    }
     std::vector<ref<UniformBuffer<T>>> buffers;
   };
 

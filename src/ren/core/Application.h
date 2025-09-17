@@ -26,6 +26,8 @@ namespace ren {
     bool running = true;
     Entity globalEventEntity;
 
+    std::vector<std::function<void(void)>> exitCallbacks;
+
    public:
     ref<SceneLayer> sceneLayer = nullptr;
     ref<ImGuiLayer> imguiLayer = nullptr;
@@ -45,6 +47,9 @@ namespace ren {
     static Application &get(void);
 
     SDL_Window *getWindow(void) const { return this->window; }
+
+
+    void atExit(std::function<void(void)> func) { exitCallbacks.push_back(func); }
 
 
     template <typename T>
