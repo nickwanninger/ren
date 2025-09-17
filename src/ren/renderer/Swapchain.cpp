@@ -50,6 +50,7 @@ namespace ren {
             .set_desired_format(
                 {vulkan.swapchainFormat, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR})  // SRGB format
             .set_desired_extent(deviceExtent.width, deviceExtent.height)      // Window size
+            .set_desired_min_image_count(3) // Triple buffering
             .build()
             .value();
 
