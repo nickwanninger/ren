@@ -36,7 +36,6 @@ namespace ren {
                               doc);
   }
 
-  void Scheme::exposeEcs(flecs::world &world) { registerEcsBindings(*this, world); }
 
 
   s7_pointer Scheme::load(const std::string &path) const {

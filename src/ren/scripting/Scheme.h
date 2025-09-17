@@ -5,9 +5,6 @@
 #include <string>
 #include <string_view>
 
-namespace flecs {
-  class world;
-}
 
 namespace ren {
 
@@ -86,8 +83,6 @@ namespace ren {
 
     s7_scheme* context() const { return scheme_; }
 
-    // Expose Flecs ECS helpers.
-    void exposeEcs(flecs::world &world);
 
     /* ----- construction helpers ----- */
     SVal makeBool(bool b) { return SVal::makeBool(scheme_, b); }
