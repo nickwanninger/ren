@@ -69,23 +69,24 @@ namespace ren {
     glm::mat4 proj;
   };
 
+#define FLOAT_RAND_MAX ((float)RAND_MAX)
 
   inline float randomFloat(float min = 0.0f, float max = 1.0f) {
-    return min + static_cast<float>(rand()) / (static_cast<float>(RAND_MAX / (max - min)));
+    return min + static_cast<float>(rand()) / (static_cast<float>(FLOAT_RAND_MAX / (max - min)));
   }
 
   inline glm::vec3 randomDirection() {
-    float x = static_cast<float>(rand()) / static_cast<float>(RAND_MAX) * 2.0f - 1.0f;
-    float y = static_cast<float>(rand()) / static_cast<float>(RAND_MAX) * 2.0f - 1.0f;
-    float z = static_cast<float>(rand()) / static_cast<float>(RAND_MAX) * 2.0f - 1.0f;
+    float x = static_cast<float>(rand()) / static_cast<float>(FLOAT_RAND_MAX) * 2.0f - 1.0f;
+    float y = static_cast<float>(rand()) / static_cast<float>(FLOAT_RAND_MAX) * 2.0f - 1.0f;
+    float z = static_cast<float>(rand()) / static_cast<float>(FLOAT_RAND_MAX) * 2.0f - 1.0f;
     glm::vec3 dir(x, y, z);
     return glm::normalize(dir);
   }
   inline glm::vec3 randomColor(void) {
     // [0, 1] range
-    float r = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
-    float g = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
-    float b = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
+    float r = static_cast<float>(rand()) / static_cast<float>(FLOAT_RAND_MAX);
+    float g = static_cast<float>(rand()) / static_cast<float>(FLOAT_RAND_MAX);
+    float b = static_cast<float>(rand()) / static_cast<float>(FLOAT_RAND_MAX);
     return glm::vec3(r, g, b);
   }
 
