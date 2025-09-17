@@ -4,6 +4,10 @@ project(ren CXX C)
 
 include(FetchContent)
 
+
+message(STATUS "C Compiler: ${CMAKE_C_COMPILER}")
+message(STATUS "CXX Compiler: ${CMAKE_CXX_COMPILER}")
+
 if (WIN32)
   set(BUILD_SHARED_LIBS OFF)
 endif()
@@ -18,9 +22,9 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
 message(STATUS "CMake path: ${CMAKE_CURRENT_SOURCE_DIR}")
 
 # Set C standard
-# set(CMAKE_C_STANDARD 20)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
+# set(CMAKE_BUILD_WITH_INSTALL_RPATH ON) # something with assimp
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS ON) # Enable compiler extensions
@@ -28,7 +32,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Find various packages we need
 find_package(SDL2 REQUIRED)
-find_package(Vulkan REQUIRED glslang shaderc_combined)
+find_package(Vulkan REQUIRED COMPONENTS shaderc_combined)
 message(STATUS "Vulkan include dirs: ${Vulkan_INCLUDE_DIRS}")
 
 # Add some of the libraries we vendor
@@ -72,7 +76,7 @@ endif()
 set(REN_SOURCE_FILES "")
 
 # Recursively find all .cpp files in the current directory and its subdirectories
-file(GLOB_RECURSE REN_SOURCE_FILES "src/ren/*.cpp")
+file(GLOB_RECURSE REN_SOURCE_FILES "src/ren/*.cpp" "src/ren/**/*.c")
 
 # Enable Tracy profiler
 add_compile_definitions(TRACY_ENABLE)
@@ -119,7 +123,7 @@ target_compile_features(ren
 target_link_libraries(ren
   PUBLIC
   ${SDL2_LIBRARIES}
-  fmt::fmt # fmt library
+  fmt::fmt-header-only # fmt library
 
   # flecs::flecs_static # Flecs for ECS
 )

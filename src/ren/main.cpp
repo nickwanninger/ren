@@ -118,7 +118,8 @@ int main(int argc, char *argv[]) {
     // loadMeshIntoScene("/Users/nick/dev/kajiya/assets/meshes/flying_world_-_battle_of_the_trash_god/scene.gltf",
     // 0.002f);
 
-    loadMeshIntoScene("/Users/nick/Desktop/sponza.glb");
+    loadMeshIntoScene("assets/test/meshes/simple_scene.glb");
+    // loadMeshIntoScene("/Users/nick/Desktop/sponza.glb");
     // loadMeshIntoScene("/Users/nick/Downloads/main_sponza/NewSponza_Main_glTF_003.gltf");
     // loadMeshIntoScene("/Users/nick/Downloads/pkg_a_curtains/NewSponza_Curtains_glTF.gltf");
     // loadMeshIntoScene("/Users/nick/Downloads/pkg_b_ivy/NewSponza_IvyGrowth_glTF.gltf");
