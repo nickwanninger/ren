@@ -407,7 +407,7 @@
   #include <math.h>
 #endif
 
-#include "./s7.h"
+#include "s7.h"
 
 /* there is also apparently __STDC_NO_COMPLEX__ */
 #if WITH_CLANG_PP
@@ -15584,6 +15584,12 @@ static void init_ctables(void)
   /* for (int32_t i = 127; i < 160; i++) slashify_table[i] = true; */ /* 6-Apr-24 for utf-8, but this has no effect on s7test?? */
   slashify_table[(uint8_t)'\\'] = true;
   slashify_table[(uint8_t)'"'] = true;
+#if WITH_R7RS
+  /* In R7RS mode, newlines should be escaped to ensure proper serialization */
+  slashify_table[(uint8_t)'\n'] = true;
+#else
+   slashify_table[(uint8_t)'\n'] = false;
+#endif
   slashify_table[(uint8_t)'\n'] = false;
 
   for (int32_t i = 0; i < CTABLE_SIZE; i++)
@@ -30183,7 +30189,7 @@ static void file_display(s7_scheme *sc, const char *str, s7_pointer port)
 	  port_position(port) = 0;
 	}
 #if WITH_WARNINGS
-      if (fputs(s, port_file(port)) == EOF)
+      if (fputs(str, port_file(port)) == EOF)
 	s7_warn(sc, 64, "write to %s: %s\n", port_filename(port), strerror(errno));
 #else
       fputs(str, port_file(port));
@@ -33935,6 +33941,7 @@ static void slashify_string_to_port(s7_scheme *sc, s7_pointer port, const char *
 	  case '\'':  port_write_character(port)(sc, '\'', port);  break;
 	  case '\t':  port_write_character(port)(sc, 't', port);   break;
 	  case '\r':  port_write_character(port)(sc, 'r', port);   break;
+          case '\n':  port_write_character(port)(sc, 'n', port);   break; /* added 17-Sep-25 for r7rs */
 	  case '\b':  port_write_character(port)(sc, 'b', port);   break;
 	  case '\f':  port_write_character(port)(sc, 'f', port);   break;
 	  case '\?':  port_write_character(port)(sc, '?', port);   break;
@@ -62480,7 +62487,17 @@ static s7_int opt_i_add_any_f(opt_info *o)
   for (s7_int i = 0; i < q_i_am_args(o).i; i++)
     {
       opt_info *o1 = q_i_am_arg(o, i).o1;
+#if WITH_WARNINGS
+      s7_int new_val, val = q_call(o1).fi(o1); /* this is not worth all this bother */
+      if (add_overflow(sum, val, &new_val))
+	{
+	  s7_warn(cur_sc, 128, "integer add overflow: (+ %" ld64 " %" ld64 ")\n", sum, val);
+	  return(sum);
+	}
+      sum = new_val;
+#else
       sum += q_call(o1).fi(o1);
+#endif
     }
   return(sum);
 }
@@ -62527,7 +62544,7 @@ static s7_int opt_i_mul4(opt_info *o)
   return(sum * q_i_am_func4_call(o));
 }
 
-static s7_int opt_i_multiply_any_f(opt_info *o)
+static s7_int opt_i_mul_any_f(opt_info *o)
 {
   s7_int sum = 1;
   for (s7_int i = 0; i < q_i_am_args(o).i; i++)
@@ -62564,7 +62581,7 @@ static bool i_add_any_ok(s7_scheme *sc, opt_info *opc, s7_pointer expr)
 	else
 	  if (cur_len == 4)
 	    q_call(opc).fi = (head == sc->add_symbol) ? opt_i_add4 : opt_i_mul4;
-	  else q_call(opc).fi = (head == sc->add_symbol) ? opt_i_add_any_f : opt_i_multiply_any_f;
+	  else q_call(opc).fi = (head == sc->add_symbol) ? opt_i_add_any_f : opt_i_mul_any_f;
       return_true(sc, expr);
     }
   sc->pc = start;
@@ -64978,12 +64995,30 @@ static bool opt_zero_mod(opt_info *o)
   return((x % q_arg2(o).i) == 0);
 }
 
-static bool b_idp_ok(s7_scheme *sc, const s7_pointer s_func, const s7_pointer expr, const s7_pointer arg_type)
+static bool just_ints(s7_scheme *sc, s7_pointer form)
+{
+  if (is_pair(form))
+    return((just_ints(sc, car(form))) &&
+	   (just_ints(sc, cdr(form))));
+  return((!is_number(form)) || (is_t_integer(form)));
+}
+
+static bool just_floats(s7_scheme *sc, s7_pointer form)
+{
+  if (is_pair(form))
+    return((just_floats(sc, car(form))) &&
+	   (just_floats(sc, cdr(form))));
+  return((!is_number(form)) || (is_t_real(form)));
+}
+
+static bool b_idp_ok(s7_scheme *sc, const s7_pointer s_func, const s7_pointer form, const s7_pointer arg_type)
 {
   opt_info *opc = alloc_opt_info(sc);
   const int32_t cur_index = sc->pc;
+  s7_pointer expr = car(form);
 
-  if ((arg_type == sc->is_integer_symbol) || (arg_type == sc->is_byte_symbol))
+  if (((arg_type == sc->is_integer_symbol) || (arg_type == sc->is_byte_symbol)) &&
+      (just_ints(sc, form)))
     {
       const s7_b_i_t bif = s7_b_i_function(s_func);
       if (bif)
@@ -65014,7 +65049,8 @@ static bool b_idp_ok(s7_scheme *sc, const s7_pointer s_func, const s7_pointer ex
 	      return_true(sc, expr);
 	    }}}
   else
-    if (arg_type == sc->is_float_symbol)
+    if ((arg_type == sc->is_float_symbol) &&
+	(just_floats(sc, form)))
       {
 	const s7_b_d_t bdf = s7_b_d_function(s_func);
 	if (bdf)
@@ -65023,7 +65059,6 @@ static bool b_idp_ok(s7_scheme *sc, const s7_pointer s_func, const s7_pointer ex
 	    if (is_symbol(cadr(expr)))
 	      {
 		q_arg1(opc).p = s7_t_slot(sc, cadr(expr));
-		/* fprintf(stderr, "%d: %s %s\n", __LINE__, display(expr), display(q_arg1(opc).p)); */
 		q_call(opc).fb = (bdf == is_positive_d) ? opt_b_d_s_is_positive : opt_b_d_s;
 		return_true(sc, expr);
 	      }
@@ -69637,8 +69672,8 @@ static s7_pointer opt_do_list_simple(opt_info *o)
   if (fp == opt_if_bp)
     while (is_pair(slot_value(slot)))
       {
-	if (o1->v[3].fb(q_arg2(o1).o1))
-	  o1->v[5].fp(o1->v[4].o1);
+	if (do_end(o1).fb(q_arg2(o1).o1))
+	  q_p_func1_call(o1);
 	slot_set_value(slot, cdr(slot_value(slot)));
       }
   else
@@ -69669,7 +69704,7 @@ static s7_pointer opt_do_very_simple(opt_info *o)
   if (f == opt_p_pip_ssf)                            /* tref.scm */
     {
       opt_info *o2 = o1;
-      o1 = o2->v[4].o1;
+      o1 = q_func1_arg(o2).o1;
       if (q_func(o2).p_pip_f == t_vector_set_p_pip_direct)
 	{
 	  s7_pointer vec = slot_value(q_arg1(o2).p);
@@ -69714,7 +69749,7 @@ static s7_pointer opt_do_very_simple(opt_info *o)
 	    (is_t_integer(slot_value(q_arg1(o1).p))) &&
 	    (q_arg1(o1).p != let_dox_slot1(do_curlet(o))))
 	  {
-	    opt_info *o2 = o1->v[4].o1;         /* set_p_i_f: x = make_integer(o->sc, o-v[6].fi(o-v[5].o1)); */
+	    opt_info *o2 = q_func1_arg(o1).o1;           /* set_p_i_f: x = make_integer(o->sc, o-v[6].fi(o-v[5].o1)); */
 	    s7_int (*fi)(opt_info *o) = q_call(o2).fi;
 	    s7_pointer ival = make_mutable_integer(sc, integer(slot_value(q_arg1(o1).p)));
 	    slot_set_value(q_arg1(o1).p, ival);
@@ -70779,7 +70814,7 @@ static bool bool_optimize_nw_1(s7_scheme *sc, s7_pointer form)
       switch (len)
 	{
 	case 2:
-	  return_bool(sc, b_idp_ok(sc, s_func, expr, opt_arg_type(sc, cdr(expr))), expr);
+	  return_bool(sc, b_idp_ok(sc, s_func, form, opt_arg_type(sc, cdr(expr))), form);
 	case 3:
 	  {
 	    s7_pointer arg1 = cadr(expr), arg2 = caddr(expr);
@@ -85047,11 +85082,11 @@ static /* inline */ bool do_tree_has_definer(s7_scheme *sc, s7_pointer tree)
    */
 #if CYCLE_DEBUGGING
   char x;
-  if (!base) base = &x; 
-  else 
+  if (!base) base = &x;
+  else
     {
-      if (&x > base) base = &x; 
-      else 
+      if (&x > base) base = &x;
+      else
 	{
 	  if ((!min_char) || (&x < min_char))
 	    {
@@ -86687,9 +86722,9 @@ static bool op_simple_do_1(s7_scheme *sc, s7_pointer code)
 	  const s7_int start = integer(slot_value(ctr_slot)), stop = integer(slot_value(end_slot));
 	  if (fp == opt_cond_1b)
 	    { /*  (do ((i 0 (+ i 1))) ((> i a)) (cond (i i))) ! */
-	      s7_pointer (*test_fp)(opt_info *o) = o->v[4].q_temp(o1).fp;
-	      opt_info *test_o1 = o->v[4].o1;
-	      opt_info *o2 = o->v[6].o1;
+	      s7_pointer (*test_fp)(opt_info *o) = q_func1_arg(o).q_temp(o1).fp; /* see opt_cond_1b test expr */
+	      opt_info *test_o1 = q_func1_arg(o).o1;
+	      opt_info *o2 = q_cond_val1(o).o1;
 	      for (s7_int i = start; i <= stop; i++)
 		{
 		  slot_set_value(ctr_slot, make_integer(sc, i));
@@ -86991,8 +87026,8 @@ static bool opt_dotimes(s7_scheme *sc, s7_pointer code, s7_pointer scc, bool loo
 		if ((fi == opt_i_7pii_ssc) && (stepper == slot_value(q_arg2(o).p)) && (q_func(o).i_7pii_f == int_vector_set_i_7pii_direct))
 		  s7_fill(sc, set_plist_4(sc, slot_value(q_arg1(o).p), wrap_integer(sc, q_arg3(o).i), stepper, wrap_integer(sc, end)));  /* wrapped 16-Nov-23 */
 		else
-		  if ((q_func(o).i_7pii_f == int_vector_set_i_7pii_direct) && (q_func1(o).fi == opt_i_pi_ss_ivref) && (q_arg2(o).p == o->v[4].q_arg2(o1).p))
-		    copy_to_same_type(sc, slot_value(q_arg1(o).p), slot_value(o->v[4].o1->v[1].p), integer(stepper), end, integer(stepper));
+		  if ((q_func(o).i_7pii_f == int_vector_set_i_7pii_direct) && (q_func1(o).fi == opt_i_pi_ss_ivref) && (q_arg2(o).p == q_func1_arg(o).q_arg2(o1).p))
+		    copy_to_same_type(sc, slot_value(q_arg1(o).p), slot_value(q_func1_arg(o).q_arg1(o1).p), integer(stepper), end, integer(stepper));
 		  else /* (do ((i 0 (+ i 1))) ((= i size) (byte-vector-ref v 0)) (byte-vector-set! v i 2)) */
 		    for (; integer(stepper) < end; integer(stepper)++)
 		      fi(o);
@@ -87163,13 +87198,16 @@ static bool opt_dotimes(s7_scheme *sc, s7_pointer code, s7_pointer scc, bool loo
 		  for (int32_t i = 0; i < body_len; )
 		    LOOP_4(q_call(body[i]).fp(body[i]); i++);
 	      else
-		for (; integer(stepper) < end; integer(stepper)++)
-		  for (int32_t i = 0; i < body_len; i++) q_call(body[i]).fp(body[i]);
-#if 0 /* thash */
- 21,111,130  		  for (int32_t i = 0; i < body_len; i++) q_call(body[i]).fp(body[i]);
-519,996,302  => s7.c:opt_unless_p_1 (2,222,222x)
-327,777,752  => s7.c:opt_when_p_1 (1,111,111x)
-#endif
+		if (body_len == 1)
+		  {
+		    opt_info *o1 = body[0];
+		    for (; integer(stepper) < end; integer(stepper)++)
+		      q_call(o1).fp(o1);
+		  }
+		else
+		  /* TODO: opt_unless_p_1_nr? */
+		  for (; integer(stepper) < end; integer(stepper)++)
+		    for (int32_t i = 0; i < body_len; i++) q_call(body[i]).fp(body[i]);
 	      clear_mutable_integer(stepper);
 	    }
 	  else
@@ -99124,20 +99162,24 @@ static void r7rs_init(s7_scheme *sc)
 #ifdef F_OK
   s7_define(sc, cur_env, make_symbol(sc, "F_OK", 4), make_integer(sc, (s7_int)F_OK));
 #endif
-  /* TODO: add sigs */
-  s7_define(sc, cur_env, sc->getenvs_symbol, 
-            s7_make_typed_function_with_environment(sc, "getenvs", g_getenvs, 0, 0, false, "(getenvs) returns all the environment variables in an alist", NULL, cur_env));
+  s7_define(sc, cur_env, sc->getenvs_symbol,
+            s7_make_typed_function_with_environment(sc, "getenvs", g_getenvs, 0, 0, false, "(getenvs) returns all the environment variables in an alist",
+						    s7_make_signature(sc, 1, sc->is_pair_symbol), cur_env));
   s7_define(sc, cur_env, sc->clock_gettime_symbol,
-            s7_make_typed_function_with_environment(sc, "clock_gettime", g_clock_gettime, 1, 0, false, "clock_gettime", NULL, cur_env));
+            s7_make_typed_function_with_environment(sc, "clock_gettime", g_clock_gettime, 1, 0, false, "clock_gettime", 
+						    s7_make_signature(sc, 2, sc->is_pair_symbol, sc->is_integer_symbol), cur_env));
   s7_define(sc, cur_env, sc->uname_symbol,
-            s7_make_typed_function_with_environment(sc, "uname", g_uname, 0, 0, false, "uname", NULL, cur_env));
+            s7_make_typed_function_with_environment(sc, "uname", g_uname, 0, 0, false, "uname", 
+						    s7_make_signature(sc, 1, sc->is_pair_symbol), cur_env));
   s7_define(sc, cur_env, sc->unlink_symbol,
-            s7_make_typed_function_with_environment(sc, "unlink", g_unlink, 1, 0, false, "int unlink(char*)", NULL, cur_env));
+            s7_make_typed_function_with_environment(sc, "unlink", g_unlink, 1, 0, false, "int unlink(char*)",
+						    s7_make_signature(sc, 2, sc->is_integer_symbol, sc->is_string_symbol), cur_env));
   s7_define(sc, cur_env, sc->access_symbol,
-            s7_make_typed_function_with_environment(sc, "access", g_access, 2, 0, false, "int access(char* int)", NULL, cur_env));
+            s7_make_typed_function_with_environment(sc, "access", g_access, 2, 0, false, "int access(char* int)",
+						    s7_make_signature(sc, 3, sc->is_integer_symbol, sc->is_string_symbol, sc->is_integer_symbol), cur_env));
   s7_define(sc, cur_env, sc->time_symbol,
-            s7_make_typed_function_with_environment(sc, "time", g_time, 1, 0, false, "int time(time_t*)", NULL, cur_env));
-
+            s7_make_typed_function_with_environment(sc, "time", g_time, 1, 0, false, "int time(time_t*)",
+						    s7_make_signature(sc, 2, sc->is_integer_symbol, make_symbol(sc, "time_t*", 7)), cur_env));
   sc->r7rs_inited = true;
 }
 
@@ -101867,7 +101909,7 @@ s7_scheme *s7_init(void)
 
   {
     s7_pointer rs;
-    new_cell(sc, rs, T_RANDOM_STATE); /* s7_set_default_random_state might set sc->default_random_state, so this shouldn't be permanent */
+    new_cell(sc, rs, T_RANDOM_STATE);       /* s7_set_default_random_state might set sc->default_random_state, so this shouldn't be permanent */
     sc->default_random_state = rs;
 #if WITH_GMP
     mpz_set_ui(sc->mpz_1, (uint64_t)my_clock());
@@ -102385,21 +102427,21 @@ int main(int argc, char **argv)
  * tpeak        148    114    105    109    110
  * tref        1081    687    459    412    405
  * tlimit      3936   5371   5371    783    774
- * index              1016    967    988    987
+ * index              1016    967    988    987   998
  * tmock              1145   1042   1031   1033
  * tvect       3408   2464   1669   1457   1482
  * thook       7651   ----   2030   1731   1744
  * tauto                     2048   1760   1792
  * texit                     3094   3093   1831
- * s7test             1831   1829   1849   1913
  * lt          2222   2172   2185   1892   1896
- * dup                3788   2239   2012   1989
+ * s7test             1831   1829   1849   1913  1925
+ * dup                3788   2239   2012   1989  2003 [bool_optimize]
  * tread              2421   2408   2241   2251
  * tcopy              5546   2375   2352   2358
- * tload                     2404   2506   2679
+ * tload                     2404   2506   2679  2694
  * trclo       8248   2782   2634   2499   2490
  * fbench      2933   2583   2430   2536   2545
- * tmat               3042   2578   2522   2624
+ * tmat               3042   2578   2522   2624  2634
  * tsort       3683   3104   2804   2858   2857
  * titer       4550   3349   2985   2917   2929
  * tio                3752   3620   3127   3135
@@ -102411,13 +102453,13 @@ int main(int argc, char **argv)
  * tcase              4793   4430   4376   4387
  * tmap               8774   4541   4380   4375
  * tlet        11.0   6974   5980   4470   4478
- * tfft               7729   4476   4538   4585
+ * tfft               7729   4476   4538   4585  4576
  * tshoot             5447   5055   4833   4836
- * tstar              7121   5565   5237   5249
+ * tstar              7121   5565   5237   5249  5260 [starlet_set_1]
  * tnum               6013   5396   5402   5394
  * concordance 10.0   6095   5165   5345   5422
  * tlist       9219   7546   6240   5770   5793
- * tari        14.3   12.5   6662   6292   5997
+ * tari        14.3   12.5   6662   6292   5997  6085 [gc opt_if_b7p opt_p_pi_ss_fvref_direct]
  * trec        19.6   6980   6656   6015   6074
  * tgsl               7802   6282   6208   6221
  * tset                      6260   6278   6284
@@ -102430,26 +102472,18 @@ int main(int argc, char **argv)
  * thash              11.7   9479   9283   9192
  * cb          12.9   11.0   9564   9657   9667
  * tmap-hash                        10.3   10.2
- * tgen               11.4   12.1   12.4   12.5
+ * tgen               11.4   12.1   12.4   12.5  12.6 [malloc?]
  * tall        15.9   15.6   15.6   15.1   15.1
  * timp               24.4   19.6   15.5   15.6
  * tmv                21.9   20.7   16.6   17.7
- * calls              37.5   37.5   37.1   37.4
- * sg                        55.8   55.3   55.4
+ * calls              37.5   37.5   37.1   37.4  38.4 [unknown: mus_tap_dpd negate_p_p mus_rand_interp mus_table_lookup_dv -> 0]
+ * sg                        55.8   55.3   55.4  56.4 [same?]
  * tbig              175.8  148.1  145.5  145.2
  * ----------------------------------------------
  *
- * q_: remaining ->v[] (129) opt_do finished
- *
- * (define (f4) (do ((x 3.0) (i 0 (+ i 1))) ((= i 2) x) (set! x (if (negative? x) 1 2))))
- *         opt_b_d_s -- not a real but an integer! this runs ok w/o the debugger
- *   or use (if (negative? x) 1 2+i), and there's no error: 2+i.
- *        but (negative? 2+i): error: negative? argument, 2.0+1.0i, is a complex number but should be a real
- * (define (f11) (do ((x 3) (y 2) (i 0 (+ i 1))) ((= i 2) x) (set! x (make-int-vector x y))))
+ * t883 -> s7test:
+ * (define (f11) (do ((x 3) (y 2) (i 0 (+ i 1))) ((= i 2) x) (set! x (make-int-vector x y)))): opt_p_ii_ss
  *        not an integer but an int-vector (debugger), but if run #i(2 2 2)!!
- * (define (f4) (do ((x 3.0) (i 0 (+ i 1))) ((= i 3) x) (set! x (+ 1 (if (positive? x) 1 3.0))))):
- *        opt_b_d_s_is_positive[64879]: not a real, but an integer (type: 11)
- *    b_7p version of negative? if arg is set!? try more of these cases
  *    type mixup above to t725, if loop_end large -> opt?
  *    maybe no b_i_s if func not restricted to int arg, or if only ints in expr (b_d_s -> b_D_s if float+int as above)
  *
@@ -102458,14 +102492,13 @@ int main(int argc, char **argv)
  *   bits for values/eval/eval_c/load_c + flag set if encountered, report if safe_proc (see unsafe-s7.c) but how to avoid check if s7_eval from scheme eval?
  *     use wrappers
  *
- * overflow check in i_add_any? biggest opt-do-loop in s7test, readline_p_pp->opt? [try negative here], tmethod? see thash comment above
- *   why the (quote ...) in t725 output (not '...)
+ * tmethod? why the (quote ...) in t725 output (not '...)
  *
- * build-in a repl as in nrepl, so WITH_MAIN is less stupid
- *    similarly (*s7* scheme-version) s7 r5rs r7rs, latter 2 eq? et al to eqv? et al at reader level -- need r7rs tests?
- *    make it compatible with let-temporarily [and *features*?], maybe nrepl if not too onerous
- *      r7rs s7test/doc scheme-version
+ * (*s7* scheme-version) s7 r5rs r7rs, latter 2 eq? et al to eqv? et al at reader level -- need r7rs tests?
+ *    make it compatible with let-temporarily [and *features*?], r7rs s7test/doc scheme-version
  *      error: memv method is not defined in openlet? (inlet 'x (0 1 2) 'memq #<lambda args>) -- do we need reader-cond?
+ *      r7rs restricted to gnu/clang?
+ * build-in a repl as in nrepl, so WITH_MAIN is less stupid, maybe nrepl if not too onerous
  *    repl.scm is ca 4 times bigger, and will require libc -> s7.c for shell control etc
  *
  * [do_tree again -- instrumented...]
