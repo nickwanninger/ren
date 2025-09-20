@@ -35,10 +35,4 @@ namespace ren {
     throw std::runtime_error("Scheme::load failed to load " + path);
   }
 
-
-  void Scheme::define(const std::string_view &name, SVal value) {
-    if (name.empty()) { throw std::invalid_argument("Scheme::define requires a name"); }
-    s7_define_variable(scheme_, name.data(), value.raw());
-  }
-
 }  // namespace ren

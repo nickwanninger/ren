@@ -33,8 +33,6 @@ namespace ren {
 
     s7_scheme* context() const { return scheme_; }
 
-    // void define(const std::string_view &name, SVal value);
-
    private:
     s7_scheme* scheme_;
   };
