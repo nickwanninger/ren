@@ -33,12 +33,14 @@ namespace ren {
 
     // Getters
     VkBuffer getHandle() const { return buffer; }
+    // Size of the buffer in bytes.
     VkDeviceSize getSize() const { return size; }
     bool isMapped() const { return mapped != nullptr; }
     const std::string &getName() const { return name; }
     void setName(const std::string &new_name);
 
-    void resize(size_t new_bytes);
+    // Resize the buffer to a certain byte count.
+    void resizeBytes(size_t new_bytes);
 
 
    protected:
@@ -68,12 +70,18 @@ namespace ren {
     T *map(void) { return (T *)Buffer::map(); }
 
     void copyFromHost(const T *data, VkDeviceSize size, VkDeviceSize offset = 0) {
-      return Buffer::copyFromHost((const void *)data, size * sizeof(T), offset);
+      return Buffer::copyFromHost((const void *)data, size * sizeof(T), offset * sizeof(T));
     }
 
     void copyFromHost(const std::vector<T> &data, VkDeviceSize offset = 0) {
       return Buffer::copyFromHost((const void *)data.data(), data.size() * sizeof(T), offset);
     }
+
+    // Length of the buffer in elements (T)
+    size_t count(void) const { return this->getSize() / sizeof(T); }
+
+    // Resize the buffer to a certain element count.
+    void resizeCount(size_t new_count) { this->resizeBytes(new_count * sizeof(T)); }
   };
 
 
@@ -164,7 +172,7 @@ namespace ren {
         // resize the buffer!
         fmt::println("Frame {} of UBS isn't the right size. resizing from {} to {}", index,
                      buffer->getSize(), expectedArrayLength * sizeof(T));
-        buffer->resize(expectedArrayLength * sizeof(T));
+        buffer->resizeCount(expectedArrayLength);
       }
       return buffer;
     }
@@ -173,4 +181,37 @@ namespace ren {
 
 
 
+
+  template <typename T, VkBufferUsageFlags usage,
+            VkMemoryPropertyFlags props =
+                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT>
+  class ArenaBuffer : public FixedUsageTypedBuffer<T, usage, props> {
+   public:
+    ArenaBuffer(size_t initialCount)
+        : FixedUsageTypedBuffer<T, usage, props>(initialCount) {}
+
+    u64 allocate(size_t count = 1) {
+      u64 current = bumpNext;
+      bumpNext += count;
+      if (bumpNext > this->count()) {
+        // resize the buffer
+        this->resizeCount(this->count() * 2);
+      }
+      return current;
+    }
+
+
+    void ensure(u64 count) {
+      if (count > this->count()) { this->resizeCount(count); }
+    }
+
+    void reset(u64 to = 0) {
+      if (to <= this->count()) bumpNext = to;
+    }
+
+    u64 committed(void) const { return bumpNext; }
+
+   private:
+    u64 bumpNext = 0;
+  };
 }  // namespace ren

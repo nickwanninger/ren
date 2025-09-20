@@ -3,8 +3,7 @@
 #include <ren/core/Instrumentation.h>
 
 ren::Buffer::Buffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties)
-    : size(size)
-    , usage(usage)
+    : usage(usage)
     , properties(properties) {
   REN_PROFILE_FUNCTION();
 
@@ -17,7 +16,7 @@ ren::Buffer::Buffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropert
     default: setName("GenericBuffer"); break;
   }
 
-  resize(size);
+  resizeBytes(size);
 }
 
 ren::Buffer::~Buffer() {
@@ -26,13 +25,17 @@ ren::Buffer::~Buffer() {
   vmaDestroyBuffer(getVulkan().allocator, buffer, allocation);
 }
 
-void ren::Buffer::resize(size_t new_bytes) {
+void ren::Buffer::resizeBytes(size_t newSize) {
   if (isMapped()) { throw std::runtime_error("Cannot resize a mapped buffer"); }
+
+  auto oldBuffer = buffer;
+  auto oldAllocation = allocation;
+  auto oldSize = size;
 
   VkBufferCreateInfo bufferInfo{};
   bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-  bufferInfo.size = size;
-  bufferInfo.usage = usage;
+  bufferInfo.size = newSize;
+  bufferInfo.usage = usage | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
   bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
   VmaAllocationCreateInfo allocInfo = {};
@@ -41,6 +44,18 @@ void ren::Buffer::resize(size_t new_bytes) {
   allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
 
   vmaCreateBuffer(getVulkan().allocator, &bufferInfo, &allocInfo, &buffer, &allocation, nullptr);
+  this->size = newSize;
+
+
+
+  // copy data from the old buffer to the new buffer if it exists.
+  if (oldBuffer != VK_NULL_HANDLE) {
+    auto copySize = oldSize;
+    if (newSize < copySize) { copySize = newSize; }
+    fmt::println("Resizing buffer from {} to {}, copying {} bytes", oldSize, newSize, copySize);
+    getVulkan().copy_buffer(oldBuffer, buffer, copySize);
+    vmaDestroyBuffer(getVulkan().allocator, oldBuffer, oldAllocation);
+  }
 }
 
 
