@@ -20,7 +20,7 @@ namespace ren {
     bool Open = true;
 
     // Prompt string
-    std::string Prompt = "s7> ";
+    std::string Prompt = "> ";
 
     SchemeConsole(ren::Scheme& scheme)
         : S(scheme) {
@@ -83,7 +83,15 @@ namespace ren {
 
         /* Print values (like a REPL) unless they're (unspecified). */
         if (!s7_is_unspecified(sc, val)) {
-          s7_display(sc, val, s7_current_output_port(sc));
+          // attempt to call (pretty-print val) in scheme, if available
+          s7_pointer pp_sym = s7_make_symbol(sc, "pretty-print");
+          s7_pointer pp_fn = s7_eval(sc, pp_sym, s7_rootlet(sc));
+          if (s7_is_procedure(pp_fn)) {
+            // quote the value to avoid it being evaluated again.
+            s7_call(sc, pp_fn, s7_list(sc, 1, val));
+          } else {
+            s7_display(sc, val, s7_current_output_port(sc));
+          }
           s7_newline(sc, s7_current_output_port(sc));
         }
       }
