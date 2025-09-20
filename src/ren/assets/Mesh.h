@@ -4,6 +4,7 @@
 #include <ren/renderer/Buffer.h>
 #include <ren/assets/Vertex.h>
 #include <ren/core/UUID.h>
+#include <ren/assets/MegaMeshBuffer.h>
 
 namespace ren {
 
@@ -41,20 +42,24 @@ namespace ren {
     const std::string &getName(void) const { return name; }
 
     // Get the vertex buffer.
-    ref<VertexBuffer<ren::Vertex>> getVertexBuffer(void) { return vertexBuffer; }
+    // ref<VertexBuffer<ren::Vertex>> getVertexBuffer(void) { return vertexBuffer; }
 
     // Get the index buffer.
-    ref<IndexBuffer> getIndexBuffer(void) { return indexBuffer; }
+    // ref<IndexBuffer> getIndexBuffer(void) { return indexBuffer; }
 
     // Get the number of indices.
     u32 getIndexCount(void) const { return indexCount; }
     u32 getVertexCount(void) const { return vertexCount; }
     const AABB &getAABB(void) const { return aabb; }
 
+
+    // TEMP:
+    ren::MegaMeshHandle megaHandle = 0;
+
    private:
     std::string name;
-    ref<VertexBuffer<ren::Vertex>> vertexBuffer;
-    ref<IndexBuffer> indexBuffer;
+    // ref<VertexBuffer<ren::Vertex>> vertexBuffer;
+    // ref<IndexBuffer> indexBuffer;
     u32 vertexCount = 0;
     u32 indexCount = 0;
     AABB aabb;  // Axis-aligned bounding box for the mesh.

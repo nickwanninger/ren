@@ -1,4 +1,7 @@
 #include <ren/assets/Mesh.h>
+#include <ren/assets/MegaMeshBuffer.h>
+#include <ren/core/Application.h>
+
 
 namespace ren {
 
@@ -14,13 +17,7 @@ namespace ren {
       aabb.update(vert.pos);
     }
 
-    // Create the vertex buffer.
-    vertexBuffer = makeRef<VertexBuffer<Vertex>>(vertices);
-    vertexBuffer->setName(fmt::format("Mesh: {} Vertex Buffer", name));
-
-    // Create the index buffer.
-    indexBuffer = makeRef<IndexBuffer>(indices);
-    indexBuffer->setName(fmt::format("Mesh: {} Index Buffer", name));
+    this->megaHandle = ren::resource<ren::MegaMeshBuffer>().allocate(vertices, indices);
   }
 
   Mesh::~Mesh() {}

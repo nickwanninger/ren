@@ -9,6 +9,7 @@
 #include <ren/core/DebugLines.hpp>
 #include <ren/types.h>
 #include <ImGuizmo/ImGuizmo.h>
+#include <ren/assets/MegaMeshBuffer.h>
 
 namespace ren {
 
@@ -154,6 +155,16 @@ namespace ren {
     frame.perf.begin(cmd, "Opaque Pass");
 
 
+    ImGui::Begin("Draw Batches");
+    for (auto &[material, meshBatches] : batchesByMaterial) {
+      ImGui::Text("Material: %s", material->getName().c_str());
+      for (auto &[mesh, transforms] : meshBatches) {
+        ImGui::Text("  Mesh: %s (%d instances)", mesh->getName().c_str(), (int)transforms.size());
+      }
+    }
+    ImGui::End();
+
+
     u64 vertsDrawn = 0;
 
 
@@ -218,13 +229,24 @@ namespace ren {
 
       this->engineUBOBuffer.update(engineUBO);
 
-      ImGui::Begin("Opaque Pass");
+      auto &megaMesh = ren::world().get_mut<ren::MegaMeshBuffer>();
+
+      megaMesh.bind(cmd);
+      megaMesh.dumpEntries();
+
+
+      auto &indBuf = megaMesh.getIndexBuffer();
+      u32 *inds = (u32 *)indBuf.map();
+
+      auto *verts = (Vertex *)megaMesh.getVertexBuffer().map();
 
       ren::Material *lastMaterial = nullptr;
       ren::Mesh *lastMesh = nullptr;
 
+
       for (auto &[material, meshBatches] : batchesByMaterial) {
         REN_PROFILE_SCOPE("Material Batch");
+
 
         if (not material->bind(R)) {
           printf("Failed to bind material for mesh\n");
@@ -236,10 +258,12 @@ namespace ren {
         engineBinder.apply();
 
 
+
         for (auto &[mesh, transforms] : meshBatches) {
+          auto &entry = megaMesh.getEntry(mesh->megaHandle);
           // REN_PROFILE_SCOPE("Mesh Batch");
-          ren::bind(cmd, *mesh->getIndexBuffer());
-          ren::bind(cmd, *mesh->getVertexBuffer());
+          // ren::bind(cmd, *mesh->getIndexBuffer());
+          // ren::bind(cmd, *mesh->getVertexBuffer());
           // pc.model = transforms[0];
           // R.setPushConstants(pc);
           // vkCmdDrawIndexed(cmd, mesh->getIndexCount(), transforms.size(), 0, 0, 0);
@@ -249,14 +273,18 @@ namespace ren {
             // REN_PROFILE_SCOPE("Draw Call");
             pc.model = transform;
             R.setPushConstants(pc);
-            vkCmdDrawIndexed(cmd, mesh->getIndexCount(), 1, 0, 0, 0);
+            auto instanceCount = 1;
+            vkCmdDrawIndexed(cmd, entry.indexCount, instanceCount, entry.indexOffset,
+                             entry.vertexOffset, 0);
           }
         }
       }
 
-      ren::emit<DebugDrawEvent>({pc.view, pc.proj});
+      megaMesh.getVertexBuffer().unmap();
+      indBuf.unmap();
 
-      ImGui::End();
+
+      ren::emit<DebugDrawEvent>({pc.view, pc.proj});
     });
 
     frame.perf.end(cmd, "Opaque Pass");
