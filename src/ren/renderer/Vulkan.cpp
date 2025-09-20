@@ -196,8 +196,10 @@ void ren::VulkanInstance::init_instance(void) {
   {
     auto maxUsable = VulkanInstance::getMaxUsableSampleCount(props);
     // Prefer 4x if supported, otherwise take max available
-    if (maxUsable >= VK_SAMPLE_COUNT_4_BIT) msaaSamples = VK_SAMPLE_COUNT_4_BIT;
-    else msaaSamples = maxUsable;
+    if (maxUsable >= VK_SAMPLE_COUNT_4_BIT)
+      msaaSamples = VK_SAMPLE_COUNT_4_BIT;
+    else
+      msaaSamples = maxUsable;
 
     // Disable MSAA!
     msaaSamples = VK_SAMPLE_COUNT_1_BIT;
