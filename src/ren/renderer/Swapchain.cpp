@@ -40,7 +40,7 @@ namespace ren {
     // ---- Allocate the Swapchain for device target rendering ---- //
     vkb::SwapchainBuilder swapchain_builder(vulkan.physical_device, vulkan.device, vulkan.surface);
 
-    bool vsync = false;
+    bool vsync = true;
 
     vkb::Swapchain vkb_swapchain =
         swapchain_builder.use_default_format_selection()
