@@ -8,8 +8,8 @@
 #include <ren/core/Scene.h>
 #include <ren/core/Entity.h>
 #include <ren/layers/SceneLayer.h>
-#include <ren/layers/ImGuiLayer.h>
 #include <ren/assets/AssetManager.h>
+#include <ren/core/FramerateCounter.h>
 #include <flecs/flecs.h>
 
 namespace ren {
@@ -25,12 +25,17 @@ namespace ren {
 
     bool running = true;
     Entity globalEventEntity;
-
     std::vector<std::function<void(void)>> exitCallbacks;
+
+    struct ImGuiState {
+      // TODO: move this elsewhere!
+      FramerateCounter framerateCounter;            // Framerate counter for ImGui
+      VkDescriptorPool imguiPool = VK_NULL_HANDLE;  // Descriptor pool for ImGui
+    };
+    void initImGui();
 
    public:
     ref<SceneLayer> sceneLayer = nullptr;
-    ref<ImGuiLayer> imguiLayer = nullptr;
 
     AssetManager &getAssetManager() { return world.get_mut<AssetManager>(); }
 
@@ -94,4 +99,23 @@ namespace ren {
     ren::Application::get().onEvent<T>(callback);
   }
 
+
+  template <typename T>
+  static inline T &resource(void) {
+    return ren::world().get_mut<T>();
+  }
+
+  template <typename T>
+  static inline bool hasResource(void) {
+    return ren::world().has<T>();
+  }
+
+  template <typename T>
+  static inline T &ensureResource(void) {
+    if (hasResource<T>()) return resource<T>();
+
+    auto &world = ren::world();
+    world.emplace<T>();
+    return resource<T>();
+  }
 }  // namespace ren
