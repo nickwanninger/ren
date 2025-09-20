@@ -17,23 +17,14 @@ namespace ren {
   }
 
 
-  s7_pointer Scheme::bind(const std::string &name,
-                          s7_function function,
-                          s7_int required_args,
-                          s7_int optional_args,
-                          bool rest_arg,
-                          const char *doc) {
+  s7_pointer Scheme::bind(const std::string &name, s7_function function, s7_int required_args,
+                          s7_int optional_args, bool rest_arg, const char *doc) {
     if (name.empty()) { throw std::invalid_argument("Scheme::bind requires a function name"); }
     if (!function) {
       throw std::invalid_argument("Scheme::bind requires a valid function callback");
     }
-    return s7_define_function(scheme_,
-                              name.c_str(),
-                              function,
-                              required_args,
-                              optional_args,
-                              rest_arg,
-                              doc);
+    return s7_define_function(scheme_, name.c_str(), function, required_args, optional_args,
+                              rest_arg, doc);
   }
 
 
