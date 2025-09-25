@@ -103,6 +103,7 @@ namespace ren {
   }
 
 
+#if 0
   static bool drawVec3Control(const std::string &label, glm::vec3 &values, float resetValue = 0.0f,
                               float columnWidth = 100.0f) {
     bool changed = false;
@@ -173,7 +174,7 @@ namespace ren {
     ImGui::PopID();
     return changed;
   }
-
+#endif
 
 
   void SceneLayer::renderEntityHeirarchy(Entity entity) {

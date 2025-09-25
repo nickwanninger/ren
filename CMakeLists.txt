@@ -35,6 +35,10 @@ find_package(SDL2 REQUIRED)
 find_package(Vulkan REQUIRED COMPONENTS shaderc_combined)
 message(STATUS "Vulkan include dirs: ${Vulkan_INCLUDE_DIRS}")
 
+# grab luajit (required, static)
+find_package(PkgConfig REQUIRED)  
+pkg_check_modules(LuaJIT REQUIRED IMPORTED_TARGET luajit)
+
 # Add some of the libraries we vendor
 add_subdirectory(lib/VulkanMemoryAllocator)
 # add_subdirectory(lib/flecs)
@@ -79,7 +83,7 @@ set(REN_SOURCE_FILES "")
 file(GLOB_RECURSE REN_SOURCE_FILES "src/ren/*.cpp" "src/ren/**/*.c")
 
 # Enable Tracy profiler
-add_compile_definitions(TRACY_ENABLE)
+# add_compile_definitions(TRACY_ENABLE)
 
 # Ren is the main target of this project. For now, it's a single executable,
 # but eventually ren should be `libren` and we can have multiple executables
@@ -125,8 +129,12 @@ target_link_libraries(ren
   ${SDL2_LIBRARIES}
   fmt::fmt-header-only # fmt library
 
+  PkgConfig::LuaJIT
+
   # flecs::flecs_static # Flecs for ECS
 )
+
+target_include_directories(ren PRIVATE ${LuaJIT_INCLUDE_DIRS})
 
 # if not on windows, link libm
 if(NOT WIN32)

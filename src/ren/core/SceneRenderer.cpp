@@ -154,17 +154,6 @@ namespace ren {
     // Begin the opaque render pass.
     frame.perf.begin(cmd, "Opaque Pass");
 
-
-    ImGui::Begin("Draw Batches");
-    for (auto &[material, meshBatches] : batchesByMaterial) {
-      ImGui::Text("Material: %s", material->getName().c_str());
-      for (auto &[mesh, transforms] : meshBatches) {
-        ImGui::Text("  Mesh: %s (%d instances)", mesh->getName().c_str(), (int)transforms.size());
-      }
-    }
-    ImGui::End();
-
-
     u64 vertsDrawn = 0;
 
 
@@ -232,8 +221,6 @@ namespace ren {
       auto &megaMesh = ren::world().get_mut<ren::MegaMeshBuffer>();
 
       megaMesh.bind(cmd);
-      megaMesh.dumpEntries();
-
 
       auto &indBuf = megaMesh.getIndexBuffer();
       u32 *inds = (u32 *)indBuf.map();
@@ -261,12 +248,6 @@ namespace ren {
 
         for (auto &[mesh, transforms] : meshBatches) {
           auto &entry = megaMesh.getEntry(mesh->megaHandle);
-          // REN_PROFILE_SCOPE("Mesh Batch");
-          // ren::bind(cmd, *mesh->getIndexBuffer());
-          // ren::bind(cmd, *mesh->getVertexBuffer());
-          // pc.model = transforms[0];
-          // R.setPushConstants(pc);
-          // vkCmdDrawIndexed(cmd, mesh->getIndexCount(), transforms.size(), 0, 0, 0);
 
           int calls = -1;
           for (const auto &transform : transforms) {

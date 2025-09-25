@@ -12,6 +12,15 @@
 #include <ren/core/FramerateCounter.h>
 #include <flecs/flecs.h>
 
+#include <sol/sol.hpp>
+
+extern "C" {
+#include <lua.h>
+#include <lauxlib.h>
+#include <lualib.h>
+#include <luajit.h>
+}
+
 namespace ren {
 
 
@@ -26,6 +35,8 @@ namespace ren {
     bool running = true;
     Entity globalEventEntity;
     std::vector<std::function<void(void)>> exitCallbacks;
+
+    sol::state lua;
 
     struct ImGuiState {
       // TODO: move this elsewhere!
@@ -50,6 +61,8 @@ namespace ren {
     void run();
 
     static Application &get(void);
+
+    auto &getLuaState(void) { return this->lua; }
 
     SDL_Window *getWindow(void) const { return this->window; }
 
@@ -117,5 +130,21 @@ namespace ren {
     auto &world = ren::world();
     world.emplace<T>();
     return resource<T>();
+  }
+
+  // TODO: This stuff should really just be a resource...
+  static inline auto *lua(void) { return ren::Application::get().getLuaState().lua_state(); }
+  static inline auto &sol(void) { return ren::Application::get().getLuaState(); }
+  // TODO: This should be elsewhere. Application.hpp is getting too big.
+  static inline auto evalFennel(const std::string_view &code) {
+    auto &lua = ren::sol();
+    sol::function lua_require = lua["require"];
+    sol::table fennel = lua_require("assets.fennel");
+    sol::function fennel_eval = fennel["eval"];
+    return fennel_eval(code);
+  }
+
+  static inline auto evalLua(const std::string_view &code) {
+    return ren::sol().script(code);
   }
 }  // namespace ren

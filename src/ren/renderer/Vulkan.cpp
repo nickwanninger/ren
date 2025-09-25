@@ -568,6 +568,7 @@ void ren::VulkanInstance::create_buffer(VkDeviceSize size, VkBufferUsageFlags us
 
 void ren::VulkanInstance::copy_buffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size,
                                       u32 srcOffset, u32 dstOffset) {
+  fmt::println("Copying buffer: size={} srcOffset={} dstOffset={}", size, srcOffset, dstOffset);
   VkCommandBuffer commandBuffer = beginSingleTimeCommands();
 
   VkBufferCopy copyRegion{};

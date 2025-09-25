@@ -21,9 +21,6 @@
 
 #include <ren/renderer/ShaderProgram.h>
 
-#include <ren/scripting/Scheme.h>
-#include <ren/scripting/EcsBindings.h>
-#include <ren/scripting/Console.h>
 
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
@@ -32,6 +29,16 @@
 #include <ren/core/SceneRenderer.h>
 #include <ren/assets/MegaMeshBuffer.h>
 
+#include <ren/scripting/imgui_lua_inspector.hpp>
+
+
+
+extern "C" {
+struct Foo {
+  int a, b;
+};
+Foo the_foo;
+}
 
 static ren::Application *g_application = nullptr;
 namespace ren {
@@ -72,14 +79,17 @@ namespace ren {
 
 
 
+
     // Create an asset manager. This part of the heirarchy will hold loaded assets.
     ren::ensureResource<ren::AssetManager>();
     ren::ensureResource<ren::MegaMeshBuffer>();
 
-    auto &scm = ren::ensureResource<ren::Scheme>();
-    ren::registerEcsBindings(scm, ren::world());
-    scm.load("assets/scheme/init.scm");
 
+    lua.open_libraries(sol::lib::base, sol::lib::package, sol::lib::math, sol::lib::table,
+                       sol::lib::string, sol::lib::io, sol::lib::os, sol::lib::debug, sol::lib::ffi,
+                       sol::lib::jit);
+    // make the inspector, which sets up the output window.
+    world.emplace<neko::luainspector>(ren::lua());
 
 
     auto scene = ren::world().entity("scene");
@@ -107,11 +117,22 @@ namespace ren {
 
 
     ren::AutoPlugin::registerPlugins(*this);
+
+
+    auto result = lua.do_file("assets/init.lua");
+    if (result.valid() /* An error was returned */) {
+      // Eep!
+      throw std::runtime_error(fmt::format("Failed to load init.lua: {}", result.get<std::string>()));
+    }
+
+
+    ren::evalFennel("(print 42)");
   }
 
   Application::~Application() {
     REN_PROFILE_FUNCTION();
     this->renderer->waitForIdle();
+    // Not quite sure when to tear down lua yet.
 
     // Call exit callbacks
     for (auto &func : exitCallbacks)
@@ -161,7 +182,6 @@ namespace ren {
 
 
 
-    ren::SchemeConsole console(ren::resource<ren::Scheme>());
 
     int pixelScale = 3;
     float fov = 90.0f;
@@ -268,14 +288,21 @@ namespace ren {
       }
 
 
-      ImGui::ShowDemoWindow();
+      // Update lua globals
+      lua.globals()["time"] = time;
+      lua.globals()["delta_time"] = deltaTime;
+      lua.globals()["fps"] = (int)(1 / deltaTime);
+      lua.globals()["frame"] = vulkan.frame_number;
+
+
+
       {
         REN_PROFILE_SCOPE("Tick");
         world.progress(deltaTime);
       }
 
-      console.Draw("Scheme");
 
+      ren::resource<neko::luainspector>().draw();
 
       world.defer_begin();
       auto gbufferTarget = sceneRenderer.render(sceneLayer->scene, sceneLayer->camera);
@@ -303,6 +330,7 @@ namespace ren {
           vkCmdDraw(cmd, 3, 1, 0, 0);
           frame.perf.end(cmd, "Blit GBuffer");
         }
+
 
 
 
@@ -397,7 +425,6 @@ namespace ren {
     ImGui_ImplVulkan_Init(&init_info);
 
 
-
     ImGuiStyle &style = ImGui::GetStyle();
     // if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
     //   style.WindowRounding = 0.0f;
@@ -443,6 +470,11 @@ namespace ren {
 
     colors[ImGuiCol_ButtonHovered] = ImVec4(1.f, 1.f, 1.f, 1.f);
 
+
+    // Table row alternating colors for less high contrast
+    colors[ImGuiCol_TableRowBg] = ImVec4{0.0f, 0.0f, 0.0f, 0.0f};        // Transparent
+    colors[ImGuiCol_TableRowBgAlt] = ImVec4{0.08f, 0.08f, 0.08f, 0.1f};  // Subtle alternating row
+
     // Update controls
     for (auto &style : {
              ImGuiCol_CheckMark,
@@ -455,41 +487,41 @@ namespace ren {
     }
 
 
-    auto sys = ren::system::onUpdate("ren::Application::RenderStats").run([](flecs::iter &it) {
-      auto &state = ren::resource<ren::Application::ImGuiState>();
-      float deltaTime = ren::deltaTime();
-      state.framerateCounter.addFrame(deltaTime);
+    // auto sys = ren::system::onUpdate("ren::Application::RenderStats").run([](flecs::iter &it) {
+    //   auto &state = ren::resource<ren::Application::ImGuiState>();
+    //   float deltaTime = ren::deltaTime();
+    //   state.framerateCounter.addFrame(deltaTime);
 
-      float fps = state.framerateCounter.getAverageFramerate();
-      ImGui::Begin("Debug State");
-      ImGui::Text("Delta Time: %.3f ms", deltaTime * 1000.0f);
-      ImGui::Text("FPS: %.1f", fps);
-      ImGui::Text("RSS: %.2f MB", ren::getCurrentProcessRSS() / (1024.0f * 1024.0f));
+    //   float fps = state.framerateCounter.getAverageFramerate();
+    //   ImGui::Begin("Debug State");
+    //   ImGui::Text("Delta Time: %.3f ms", deltaTime * 1000.0f);
+    //   ImGui::Text("FPS: %.1f", fps);
+    //   ImGui::Text("RSS: %.2f MB", ren::getCurrentProcessRSS() / (1024.0f * 1024.0f));
 
-      // Display SDL window size and swapchain size.
-      auto &app = ren::Application::get();
-      auto &vulkan = ren::getVulkan();
-      int sdlWidth, sdlHeight;
-      SDL_GetWindowSize(app.getWindow(), &sdlWidth, &sdlHeight);
-      ImGui::Text("SDL Window Size: %dx%d", sdlWidth, sdlHeight);
-      SDL_Vulkan_GetDrawableSize(app.getWindow(), &sdlWidth, &sdlHeight);
-      ImGui::Text("SDL Drawable Size: %dx%d", sdlWidth, sdlHeight);
-      float dpiScaleX, dpiScaleY;
-      SDL_GetDisplayDPI(0, nullptr, &dpiScaleX, &dpiScaleY);
-      ImGui::Text("DPI Scale: %.2f, %.2f", dpiScaleX, dpiScaleY);
+    //   // Display SDL window size and swapchain size.
+    //   auto &app = ren::Application::get();
+    //   auto &vulkan = ren::getVulkan();
+    //   int sdlWidth, sdlHeight;
+    //   SDL_GetWindowSize(app.getWindow(), &sdlWidth, &sdlHeight);
+    //   ImGui::Text("SDL Window Size: %dx%d", sdlWidth, sdlHeight);
+    //   SDL_Vulkan_GetDrawableSize(app.getWindow(), &sdlWidth, &sdlHeight);
+    //   ImGui::Text("SDL Drawable Size: %dx%d", sdlWidth, sdlHeight);
+    //   float dpiScaleX, dpiScaleY;
+    //   SDL_GetDisplayDPI(0, nullptr, &dpiScaleX, &dpiScaleY);
+    //   ImGui::Text("DPI Scale: %.2f, %.2f", dpiScaleX, dpiScaleY);
 
-      auto &R = ren::Renderer::get();
-      auto renderExtent = R.getSwapchain().renderExtent;
-      auto deviceExtent = R.getSwapchain().deviceExtent;
-      ImGui::Text("Swapchain Render Extent: %dx%d", renderExtent.width, renderExtent.height);
-      ImGui::Text("Swapchain Device Extent: %dx%d", deviceExtent.width, deviceExtent.height);
+    //   auto &R = ren::Renderer::get();
+    //   auto renderExtent = R.getSwapchain().renderExtent;
+    //   auto deviceExtent = R.getSwapchain().deviceExtent;
+    //   ImGui::Text("Swapchain Render Extent: %dx%d", renderExtent.width, renderExtent.height);
+    //   ImGui::Text("Swapchain Device Extent: %dx%d", deviceExtent.width, deviceExtent.height);
 
 
-      auto &instr = ren::Instrumentor::Get();
-      ImGui::Text("Instrument: %zu, %.2f MB", (size_t)instr.profileEvents,
-                  instr.profileBytes / (1024.0f * 1024.0f));
-      ImGui::End();
-    });
+    //   auto &instr = ren::Instrumentor::Get();
+    //   ImGui::Text("Instrument: %zu, %.2f MB", (size_t)instr.profileEvents,
+    //               instr.profileBytes / (1024.0f * 1024.0f));
+    //   ImGui::End();
+    // });
   }
 
 }  // namespace ren
