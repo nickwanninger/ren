@@ -2,19 +2,21 @@
 
 
 #include <ren/types.h>
-#include <ren/core/UUID.h>
 #include <ren/misc/json_serialize.h>
 
 namespace ren {
 
 
-  using AssetID = UUID;
+  // An AssetID is just an integer.
+  // The value comes from the issuing global asset manager.
+  using AssetID = u64;
 
   enum class AssetType {
     Texture,
     Mesh,
     Shader,
     Material,
+    Script,
     Unknown,
   };
 
@@ -23,6 +25,7 @@ namespace ren {
                                      {AssetType::Mesh, "Mesh"},
                                      {AssetType::Shader, "Shader"},
                                      {AssetType::Material, "Material"},
+                                     {AssetType::Script, "Script"},
                                      {AssetType::Unknown, "Unknown"},
                                  })
 

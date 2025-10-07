@@ -3,6 +3,8 @@
 #include <map>
 #include <ren/assets/Asset.h>
 #include <ren/renderer/Shader.h>
+#include <ren/assets/AssetSource.h>
+
 
 namespace ren {
 
@@ -12,55 +14,67 @@ namespace ren {
     AssetType type;              // The type of the asset.
   };
 
+
+
+  // An AssetHandle is a typed wrapper around a u64 integer, which abstracts the
+  // resolution of an asset of a given type. Whenever an asset is needed, it can
+  // be resolved, but should not be maintained beyond that, to allow the asset
+  // manager to manage the lifetimes of assets according to the requirements of
+  // the program.
+  template <typename T>
+    requires(std::is_base_of_v<Asset, T>)
+  struct AssetHandle {
+    AssetID id;  // Just the ID.
+
+    AssetHandle(AssetID id)
+        : id(id) {}
+  };
+
+
+
+  class AssetManagerBase {
+   public:
+    virtual ~AssetManagerBase() = default;
+
+    // The core of the asset manager interface is the ability to resolve an
+    // asset by its UUID.  If an asset hasn't been used after a period of time,
+    // it gets unloaded from memory automatically. Each asset can have its own timeout.
+  };
+
+
+
+
   // AssetManager is an interface for managing assets in the engine.
   // It's mostly used to retrieve assets by their UUIDs.
   class AssetManager {
    public:
-    AssetManager(const std::string_view &assetDirectory = "assets");
+    AssetManager();
     ~AssetManager();
+    // Add a filesystem source to the asset manager.
+    void addFilesystemSource(const std::string_view &path);
 
-
-
-    // Get an asset by its asset ID. If the asset has not been imported into ren
-    // yet, return nullptr.
     ref<Asset> getAsset(ren::AssetID assetID);
-    // Import an asset from a file path. If the asset already is imported, this
-    // will return the existing asset. Otherwise it will register a new one
-    // with the system. If Unknown is the type passed, it will try to deduct it based
-    // on the file extension.
-    ref<Asset> importAsset(const std::string_view &path, AssetType type = AssetType::Unknown);
+    ref<Asset> getAsset(const std::string_view &name);
 
-    // Render the asset manager using ImGui
-    void inspect(void);
+    AssetID importAsset(const std::string_view &path, AssetType type);
 
-   private:
-    // sync the in-memory asset cache with the disk.
-    void sync(void);
-    // Force the asset manager to load the asset information from disk.
-    void load(void);
-
-    std::filesystem::path getAssetPath(const std::string_view &assetPath) const {
-      return this->assetDirectory / assetPath;
-    }
-
-
-    u64 getAssetTimestamp(const std::string_view &assetPath) const {
-      auto path = getAssetPath(assetPath);
-      if (std::filesystem::exists(path)) {
-        return std::filesystem::last_write_time(path).time_since_epoch().count();
-      }
-      return 0;  // Return 0 if the file does not exist
-    }
-
-
-    ref<Asset> loadAsset(const AssetInfo &info);
+    // Given an asset's name, return the AssetID which identifies it.
+    static AssetID getID(const std::string_view &name);
 
 
 
+    // Load the bytes of some asset from the asset source. No Caching!
+    bool load(const std::string_view &name, std::vector<u8> &out) { return source.load(name, out); }
+
+    // Load an asset by path and type. If the type is unknown, it will be inferred from the file extension.
+    ref<Asset> load(const std::string_view &path, AssetType type = AssetType::Unknown);
+
+   protected:
+    ref<Asset> load(const AssetInfo &info);
 
    private:
-    std::filesystem::path assetDirectory;
-
+    // The source that assets are loaded from.
+    ren::MultiAssetSource source;
 
     std::map<ren::AssetID, AssetInfo> assetRegistry;
     std::map<ren::AssetID, ref<Asset>> loadedAssets;  // Cache of loaded assets
@@ -68,15 +82,12 @@ namespace ren {
 
   AssetManager &getAssetManager();
 
-  inline ref<Asset> getAsset(ren::AssetID assetID) { return getAssetManager().getAsset(assetID); }
-  inline ref<Asset> importAsset(const std::string_view &path, AssetType type = AssetType::Unknown) {
-    return getAssetManager().importAsset(path, type);
-  }
-
+  bool loadAssetBytes(const std::string_view &path, std::vector<u8> &out);
 
   template <typename T>
   inline ref<T> getAsset(const std::filesystem::path &path) {
-    auto asset = getAssetManager().importAsset(path.string(), T::getStaticType());
+    auto &am = getAssetManager();
+    auto asset = am.load(path.string(), T::getStaticType());
     if (asset && asset->getType() == T::getStaticType()) {
       return std::static_pointer_cast<T>(asset);
     }

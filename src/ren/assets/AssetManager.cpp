@@ -4,105 +4,32 @@
 #include <ren/renderer/Shader.h>
 #include <ren/core/Application.h>
 #include <imgui/imgui.h>
+#include <ren/misc/hash.h>
 
 namespace ren {
 
   AssetManager &getAssetManager() { return ren::world().get_mut<AssetManager>(); }
 
-
-  AssetManager::AssetManager(const std::string_view &assetDirectory) {
-    this->assetDirectory = assetDirectory;
-    fmt::print("AssetManager initialized with directory: {}\n", this->assetDirectory.string());
-
-
-    // traverse the asset directory and load all asset information
-    fmt::print("Loading asset information from disk...\n");
-    for (const auto &entry : std::filesystem::directory_iterator(this->assetDirectory)) {
-      if (entry.is_regular_file() && entry.path().extension() == ".json") {
-        fmt::print("Found asset information file: {}\n", entry.path().string());
-        // // Load the asset information from the file
-        // this->load();
-        // return;
-      }
-    }
-
-    load();
-  }
+  AssetManager::AssetManager() {}
 
   AssetManager::~AssetManager() { fmt::print("AssetManager destroyed.\n"); }
 
 
-  void AssetManager::sync(void) {
-    REN_PROFILE_SCOPE("Sync AssetManager databse to disk");
-    json info;
-    info["version"] = 1;  // Version magic numberkA
-    info["assets"] = json::array();
-    for (const auto &pair : assetRegistry) {
-      const auto &assetInfo = pair.second;
-      json assetJson;
-      assetJson["id"] = assetInfo.id;
-      assetJson["path"] = assetInfo.path;
-      assetJson["type"] = assetInfo.type;
-      info["assets"].push_back(assetJson);
-    }
-
-    // write json to assetDirectory/.assets.ren.json
-    std::string infoPath = getAssetPath(".assets.ren.json").string().c_str();
-    std::ofstream file(infoPath);
-    file << info.dump(4);
-    file.close();
-  }
-
-  void AssetManager::load(void) {
-    REN_PROFILE_SCOPE("Load AssetManager databse from disk");
-    // load the asset information from disk.
-    std::string infoPath = getAssetPath(".assets.ren.json").string().c_str();
-    std::ifstream file(infoPath);
-    if (!file.is_open()) {
-      fmt::print("No asset information file found at {}\n", infoPath);
-      return;
-    }
-    json info;
-    file >> info;
-    file.close();
-
-    if (info["version"] != 1) {
-      fmt::print("Asset information file version mismatch. Expected 1, got {}\n",
-                 (u32)info["version"]);
-      return;
-    }
-
-    fmt::print("Loading asset information from {}\n", infoPath);
-    for (const auto &assetJson : info["assets"]) {
-      AssetInfo assetInfo;
-      assetInfo.id = assetJson["id"];
-      assetInfo.path = (std::string)assetJson["path"];
-      assetInfo.type = assetJson["type"];
-
-      assetRegistry[assetInfo.id] = assetInfo;  // Store the asset info in the map
-    }
+  void AssetManager::addFilesystemSource(const std::string_view &path) {
+    this->source.addFilesystem(path);
   }
 
 
-  ref<Asset> AssetManager::getAsset(ren::AssetID assetID) {
-    REN_PROFILE_SCOPE("Get Asset");
-    // First, lookup the asset in the cached asset map.
-    if (auto it = loadedAssets.find(assetID); it != loadedAssets.end()) {
-      return it->second;  // Return the cached asset if found
-    }
-
-    // If it isn't loaded, load the asset if we can.
-    if (auto it = assetRegistry.find(assetID); it != assetRegistry.end()) {
-      // if the cached asset is not loaded, load it.
-      return loadAsset(it->second);
-    } else {
-      fmt::print("Asset with ID {} is not found in the asset registry\n", (u64)assetID);
-    }
-    return nullptr;  // Asset not found
+  AssetID AssetManager::getID(const std::string_view &name) {
+    u64 state = 0;
+    // For now, simply hash. Later on we might need to do this centrally.
+    // It's unlikely to get a collision, but you never know.
+    ren::hashStd(state, name);
+    return state;
   }
 
 
-  ref<Asset> AssetManager::importAsset(const std::string_view &path, AssetType type) {
+  ref<Asset> AssetManager::load(const std::string_view &path, AssetType type) {
     REN_PROFILE_SCOPE("Get Asset");
     // Check if the asset is already loaded
     for (const auto &pair : assetRegistry) {
@@ -140,6 +67,11 @@ namespace ren {
       extension(".frag", AssetType::Shader);
       extension(".comp", AssetType::Shader);
       extension(".geom", AssetType::Shader);
+
+
+      // Scripts
+      extension(".lua", AssetType::Script);
+      extension(".fnl", AssetType::Script);
     }
 
     // Create a new AssetInfo
@@ -150,13 +82,34 @@ namespace ren {
     assetRegistry[info.id] = info;  // Store the asset info in the map
     sync();                         // sync the asset state!
 
-    return loadAsset(info);
+    return load(info);
   }
 
 
-  ref<Asset> AssetManager::loadAsset(const AssetInfo &info) {
+
+  ref<Asset> AssetManager::getAsset(ren::AssetID assetID) {
+    REN_PROFILE_SCOPE("Get Asset");
+    // First, lookup the asset in the cached asset map.
+    if (auto it = loadedAssets.find(assetID); it != loadedAssets.end()) {
+      return it->second;  // Return the cached asset if found
+    }
+
+    // If it isn't loaded, load the asset if we can.
+    if (auto it = assetRegistry.find(assetID); it != assetRegistry.end()) {
+      // if the cached asset is not loaded, load it.
+      return load(it->second);
+    } else {
+      fmt::print("Asset with ID {} is not found in the asset registry\n", (u64)assetID);
+    }
+    return nullptr;  // Asset not found
+  }
+
+
+
+
+  ref<Asset> AssetManager::load(const AssetInfo &info) {
     REN_PROFILE_SCOPE("Load Asset");
-    std::string path = (assetDirectory / info.path).string();
+    std::string path = info.path;
     ref<Asset> asset = nullptr;
 
     // Load!
@@ -209,25 +162,27 @@ namespace ren {
   }
 
 
-  void AssetManager::inspect(void) {
-    REN_PROFILE_SCOPE("AssetManager Inspect");
-    ImGui::Text("Asset Manager");
-    ImGui::Separator();
+  // void AssetManager::inspect(void) {
+  //   REN_PROFILE_SCOPE("AssetManager Inspect");
+  //   ImGui::Text("Asset Manager");
+  //   ImGui::Separator();
+  //   if (ImGui::Button("Sync Assets")) {
+  //     sync();
+  //     fmt::print("Assets synced to disk.\n");
+  //   }
+  //   ImGui::Text("Assets Loaded: %zu", loadedAssets.size());
+  //   ImGui::Text("Assets Registered: %zu", assetRegistry.size());
+  //   // List all assets
+  //   for (const auto &pair : assetRegistry) {
+  //     const auto &assetInfo = pair.second;
+  //     ImGui::Text("Asset ID: %llu, Path: %s, Type: %s", (u64)assetInfo.id,
+  //                 assetInfo.path.string().c_str(), json(assetInfo.type).dump().c_str());
+  //   }
+  // }
 
-    if (ImGui::Button("Sync Assets")) {
-      sync();
-      fmt::print("Assets synced to disk.\n");
-    }
-
-    ImGui::Text("Assets Loaded: %zu", loadedAssets.size());
-    ImGui::Text("Assets Registered: %zu", assetRegistry.size());
-
-    // List all assets
-    for (const auto &pair : assetRegistry) {
-      const auto &assetInfo = pair.second;
-      ImGui::Text("Asset ID: %llu, Path: %s, Type: %s", (u64)assetInfo.id,
-                  assetInfo.path.string().c_str(), json(assetInfo.type).dump().c_str());
-    }
+  bool loadAssetBytes(const std::string_view &path, std::vector<u8> &out) {
+    return getAssetManager().load(path, out);
   }
+
 
 }  // namespace ren

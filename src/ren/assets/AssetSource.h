@@ -70,11 +70,12 @@ namespace ren {
   // ------ //
   class FilesystemAssetSource final : public AssetSource {
    public:
-    explicit FilesystemAssetSource(const std::filesystem::path &root);
+    FilesystemAssetSource(const std::filesystem::path &root);
 
     ~FilesystemAssetSource() override = default;
     bool load(const std::string_view &name, std::vector<u8> &out) override;
     bool enumerate(std::function<void(const std::string_view &)> callback) override;
+    
 
 
    private:
@@ -118,7 +119,7 @@ namespace ren {
 
     template <typename T, typename... Args>
     inline void addStore(Args &&...args) {
-      stores.push_back(std::make_unique<T>(std::forward<Args>(args)...));
+      stores.push_back(std::make_shared<T>(std::forward<Args>(args)...));
     }
 
     inline void addFilesystem(const std::string_view &path) {
@@ -126,7 +127,7 @@ namespace ren {
     }
 
    private:
-    std::vector<std::unique_ptr<AssetSource>> stores;
+    std::vector<std::shared_ptr<AssetSource>> stores;
   };
 
 }  // namespace ren

@@ -24,7 +24,6 @@ namespace ren {
   bool FilesystemAssetSource::load(const std::string_view& name, std::vector<u8>& out) {
     const std::filesystem::path assetPath = m_root / std::filesystem::path(name);
 
-
     if (!std::filesystem::exists(assetPath) || !std::filesystem::is_regular_file(assetPath)) {
       return false;  // file does not exist or is not a regular file
     }
@@ -50,6 +49,8 @@ namespace ren {
       out.clear();  // reading failed – return an empty vector
       return false;
     }
+
+    fmt::println("[Asset Source] Loaded '{}' ({} bytes) from filesystem", name, out.size());
 
     return true;
   }
