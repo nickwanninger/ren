@@ -7,7 +7,7 @@
 #include <fstream>
 #include <fmt/core.h>
 #include <sstream>
-
+#include <sol/sol.hpp>
 
 namespace neko {
 
@@ -185,42 +185,39 @@ void neko::luainspector::setL(lua_State* L) {
   lua_getglobal(L, "print");
   lua_setglobal(L, "_old_print");
 
-  // override print
-  lua_pushlightuserdata(L, this);
-  lua_pushcclosure(
-      L,
-      +[](lua_State* L) {
-        auto* con = static_cast<neko::luainspector*>(lua_touserdata(L, lua_upvalueindex(1)));
-        int n = lua_gettop(L);  // number of arguments
 
-        std::string line;
-        line.reserve(256);
-        for (int i = 1; i <= n; ++i) {
-          size_t len;
-          if (i > 1) line.push_back(' ');
-          const char* s = lua_tolstring(L, i, &len);
-          line.append(s, len);
-          lua_pop(L, 1);
-        }
+  sol::state_view lua(L);
+  // Define our replacement print function
+  auto inspector_print = [this](sol::variadic_args va, sol::this_state ts) {
+    std::ostringstream oss;
+    sol::state_view lua(ts);
+    sol::function tostring = lua["tostring"];
 
-        // For each line in the message, print it separately
+    bool first = true;
+    for (auto v : va) {
+      if (!first) oss << " ";  // Separate with spaces (unlike lua, which is tabs)
+      first = false;
 
-        fmt::print("\e[34m");
-        std::size_t beg = 0u;
-        for (std::size_t i = 0u; i < line.size(); ++i) {
-          if (line[i] == '\n') {
-            fmt::println("[Lua]: {}", line.substr(beg, i - beg));
-            beg = i + 1u;
-          }
-        }
-        if (beg < line.size()) { fmt::println("[Lua]: {}", line.substr(beg, line.size() - beg)); }
-        fmt::print("\e[0m");
+      // Convert to string using Lua's tostring
+      sol::object s = tostring(v);
+      oss << s.as<std::string>();
+    }
 
-        con->print_line(line, LUACON_LOG_TYPE_MESSAGE);
-        return 0;
-      },
-      1);
-  lua_setglobal(L, "print");
+    std::string line = oss.str();
+    fmt::print("\e[34m");
+    std::size_t beg = 0u;
+    for (std::size_t i = 0u; i < line.size(); ++i) {
+      if (line[i] == '\n') {
+        fmt::println("[SCR]: {}", line.substr(beg, i - beg));
+        beg = i + 1u;
+      }
+    }
+    if (beg < line.size()) { fmt::println("[SCR]: {}", line.substr(beg, line.size() - beg)); }
+    fmt::print("\e[0m");
+
+    this->print_line(line, LUACON_LOG_TYPE_MESSAGE);
+  };
+  lua.set_function("print", inspector_print);
 }
 
 std::string neko::luainspector::read_history(int change) {
@@ -789,6 +786,18 @@ int neko::luainspector::draw(void) {
         lua_Integer kb = lua_gc(L, LUA_GCCOUNT, 0);
         lua_Integer bytes = lua_gc(L, LUA_GCCOUNTB, 0);
 
+
+        float mb = (float)kb / 1024.0f;
+        this->m_memory_usage_history.add(mb);
+        ImGui::PlotLines("##memory_usage",
+                     [](void* data, int idx) {
+                         return ((RingBuffer*)data)->operator[](idx);
+                     },
+                     &m_memory_usage_history,
+                     m_memory_usage_history.size,
+                     0,
+                     nullptr);
+
         // if (!arr.empty() && arr.back() != ((f64)bytes)) {
         //     arr.push_back(((f64)bytes));
         //     arr.erase(arr.begin());
@@ -797,9 +806,9 @@ int neko::luainspector::draw(void) {
         ImGui::Text("Lua MemoryUsage: %.2lf mb", ((double)kb / 1024.0f));
         ImGui::Text("Lua Remaining: %.2lf mb", ((double)bytes / 1024.0f));
 
-        ImGui::Text("Lua Version: %s", LUA_VERSION);
-        ImGui::Text("Lua Copyright: %s", LUA_COPYRIGHT);
-        ImGui::Text("Lua Authors: %s", LUA_AUTHORS);
+        // ImGui::Text("Lua Version: %s", LUA_VERSION);
+        // ImGui::Text("Lua Copyright: %s", LUA_COPYRIGHT);
+        // ImGui::Text("Lua Authors: %s", LUA_AUTHORS);
 
         if (ImGui::Button("GC")) lua_gc(L, LUA_GCCOLLECT, 0);
 

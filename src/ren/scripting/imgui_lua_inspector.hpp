@@ -19,6 +19,28 @@ namespace neko {
 #define neko_assert assert
 #define neko_bool_str(V) (V ? "true" : "false")
 
+  // A simple ring buffer to store values
+  struct RingBuffer {
+    std::vector<float> data;
+    int head = 0;
+    int size = 0;
+
+    RingBuffer(int capacity)
+        : data(capacity, 0.0f) {}
+
+    void add(float v) {
+      data[head] = v;
+      head = (head + 1) % data.size();
+      if (size < (int)data.size()) size++;
+    }
+
+
+    float operator[](int i) const {
+      int idx = (head + i) % data.size();
+      return data[idx];
+    }
+  };
+
   inline ImVec4 rgba_to_imvec(int r, int g, int b, int a = 255) {
     float newr = r / 255.f;
     float newg = g / 255.f;
@@ -137,6 +159,8 @@ namespace neko {
    private:
     std::vector<std::pair<std::string, luainspector_logtype>> messageLog;
 
+    RingBuffer m_memory_usage_history{100};
+
     lua_State* L;
     std::vector<std::string> m_history;
     int m_hindex;
@@ -150,7 +174,7 @@ namespace neko {
 
 
     bool m_input_focused = false;
-    bool open = true; // toggle on ~ key
+    bool open = true;  // toggle on ~ key
 
    private:
     static int try_push_style(ImGuiCol col, const std::optional<ImVec4>& color) {
@@ -162,8 +186,7 @@ namespace neko {
     }
 
    public:
-
-    luainspector(lua_State *L) {
+    luainspector(lua_State* L) {
       this->setL(L);
       this->m_history.resize(8);
     }
