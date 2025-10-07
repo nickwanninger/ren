@@ -52,7 +52,7 @@ namespace ren {
         vulkan.transitionImageLayout(cmd, attachment.texture->getImage(), attachment.format,
                                      VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
                                      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                                     VK_IMAGE_ASPECT_COLOR_BIT);
+                                     VK_IMAGE_ASPECT_DEPTH_BIT);
       }
     }
   }
