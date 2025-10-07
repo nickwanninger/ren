@@ -9,6 +9,7 @@
 #include <spirv_reflect/output_stream.h>
 
 #include <shaderc/shaderc.hpp>
+#include <ren/assets/AssetManager.h>
 
 ren::Shader::Shader(const std::string_view& file_name, VkShaderStageFlagBits stage)
     : filename(file_name)
@@ -70,19 +71,19 @@ std::vector<u32> ren::Shader::loadShader(const std::string_view& filename) {
   // and we will just load that off the disk (and trust it! (eep))
   if (path.extension() == ".spv") {
     REN_PROFILE_SCOPE("Load Precompiled SPIR-V Shader");
-    // Load the SPIR-V binary from the file.
-    std::ifstream file(path, std::ios::binary | std::ios::ate);
-    if (!file.is_open()) {
-      throw std::runtime_error(fmt::format("Failed to open shader file: {}", filename));
+
+    std::vector<u8> rawData;
+    if (!ren::loadAssetBytes(filename, rawData)) {
+      throw std::runtime_error(fmt::format("Failed to load shader file: {}", filename));
     }
-    std::streamsize size = file.tellg();
-    file.seekg(0, std::ios::beg);
-    code.resize(size / sizeof(u32));
-    if (!file.read(reinterpret_cast<char*>(code.data()), size)) {
-      throw std::runtime_error(fmt::format("Failed to read shader file: {}", filename));
+
+    if (rawData.size() % sizeof(u32) != 0) {
+      throw std::runtime_error(fmt::format("Invalid SPIR-V file size: {}", filename));
     }
-    file.close();
-    fmt::print("Loading shader from {} ({} bytes)\n", filename, size);
+
+    code.resize(rawData.size() / sizeof(u32));
+    std::memcpy(code.data(), rawData.data(), rawData.size());
+    fmt::print("Loading shader from {} ({} bytes)\n", filename, rawData.size());
   } else {
     // Otherwise, we'll compile it from source using shaderc from the vulkan sdk.
     REN_PROFILE_SCOPE("Compile Shader from Source");
@@ -102,20 +103,11 @@ std::vector<u32> ren::Shader::loadShader(const std::string_view& filename) {
     options.SetOptimizationLevel(shaderc_optimization_level_zero);
 
 
-    std::ifstream file(path, std::ios::binary | std::ios::ate);
-    if (!file.is_open()) {
-      throw std::runtime_error(fmt::format("Failed to open shader file: {}", path.string()));
-    }
-    std::streamsize size = file.tellg();
-    file.seekg(0, std::ios::beg);
 
-    std::vector<char> sourceCode;
-    sourceCode.resize(size);
-
-    if (!file.read(reinterpret_cast<char*>(sourceCode.data()), size)) {
-      throw std::runtime_error(fmt::format("Failed to read shader file: {}", path.string()));
+    std::vector<u8> sourceCode;
+    if (!ren::loadAssetBytes(filename, sourceCode)) {
+      throw std::runtime_error(fmt::format("Failed to load shader file: {}", path.string()));
     }
-    file.close();
 
 
     // now, try to extract the shader stage from the filename
@@ -134,7 +126,7 @@ std::vector<u32> ren::Shader::loadShader(const std::string_view& filename) {
     std::string shaderSource = std::string(sourceCode.begin(), sourceCode.end());
     // fmt::println("Compiling shader from source:\n{}", shaderSource);
 
-    auto result = compiler.CompileGlslToSpv(sourceCode.data(), sourceCode.size(), shaderKind,
+    auto result = compiler.CompileGlslToSpv((char*)sourceCode.data(), sourceCode.size(), shaderKind,
                                             path.filename().string().c_str(), options);
 
     if (result.GetCompilationStatus() == shaderc_compilation_status_success) {
@@ -159,7 +151,7 @@ void ren::Shader::initShader(const std::vector<u32>& spirv) {
 
   auto& vulkan = ren::getVulkan();
 
-VkShaderModuleCreateInfo createInfo{};
+  VkShaderModuleCreateInfo createInfo{};
   createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
   createInfo.codeSize = code.size() * sizeof(u32);  // the number of bytes in the spirv
   createInfo.pCode = reinterpret_cast<const uint32_t*>(code.data());
