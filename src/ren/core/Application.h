@@ -48,7 +48,7 @@ namespace ren {
    public:
     ref<SceneLayer> sceneLayer = nullptr;
 
-    AssetManager &getAssetManager() { return world.get_mut<AssetManager>(); }
+    ren::AssetManager &getAssetManager() { return world.get_mut<ren::AssetManager>(); }
 
     double timeSeconds = 0.0f;
     // Arguably the most important part of the application is the ECS world.

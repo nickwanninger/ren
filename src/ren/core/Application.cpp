@@ -33,12 +33,6 @@
 
 
 
-extern "C" {
-struct Foo {
-  int a, b;
-};
-Foo the_foo;
-}
 
 static ren::Application *g_application = nullptr;
 namespace ren {
@@ -81,14 +75,44 @@ namespace ren {
 
 
     // Create an asset manager. This part of the heirarchy will hold loaded assets.
-    ren::ensureResource<ren::AssetManager>();
+    auto &am = ren::ensureResource<ren::AssetManager>();
+    am.addFilesystemSource("assets/");
+
+
     ren::ensureResource<ren::MegaMeshBuffer>();
 
 
-    lua.open_libraries(sol::lib::base, sol::lib::package, sol::lib::math, sol::lib::table,
-                       sol::lib::string, sol::lib::io, sol::lib::os, sol::lib::debug, sol::lib::ffi,
-                       sol::lib::jit);
-    // make the inspector, which sets up the output window.
+
+    luaL_openlibs(lua.lua_state());
+
+
+    // Insert your loader at the beginning
+    lua["package"]["loaders"].get<sol::table>().add(
+        1, +[](lua_State *L) -> int {
+          std::string module_name = sol::stack::get<std::string>(L, 1);
+          fmt::println("Loading lua module '{}'\n", module_name);
+          return 0;
+        });
+
+
+    sol::table ren_components = lua.create_table();
+
+    lua["package"]["preload"]["ren_components"] = [ren_components](sol::this_state s) {
+      sol::state_view L(s);
+      sol::table mod = L.create_table();
+      mod.set_function("test", [](const sol::object &a) {
+        if (a.is<ecs_entity_t>()) {
+          ecs_entity_t *ptr = a.as<ecs_entity_t *>();
+          fmt::println("Hello from ren_components.test({})", (void *)ptr);
+          return 0;
+        }
+        fmt::println("Hello from ren_components.test(?)");
+        return 0;
+      });
+      return mod;
+    };
+
+
     world.emplace<neko::luainspector>(ren::lua());
 
 
@@ -120,13 +144,10 @@ namespace ren {
 
 
     auto result = lua.do_file("assets/init.lua");
-    if (result.valid() /* An error was returned */) {
-      // Eep!
-      throw std::runtime_error(fmt::format("Failed to load init.lua: {}", result.get<std::string>()));
+    if (result.status() != sol::call_status::ok) {
+      throw std::runtime_error(
+          fmt::format("Failed to load init.lua: {}", result.get<std::string>()));
     }
-
-
-    ren::evalFennel("(print 42)");
   }
 
   Application::~Application() {
@@ -296,9 +317,19 @@ namespace ren {
 
 
 
+      // Call the lua update function if it exists
+      sol::protected_function lua_update = lua["update"];
+      if (lua_update.valid()) {
+        sol::protected_function_result result = lua_update(deltaTime);
+        if (!result.valid()) {
+          sol::error err = result;
+          fmt::println("Error running lua update: {}", err.what());
+        }
+      }
+
       {
         REN_PROFILE_SCOPE("Tick");
-        world.progress(deltaTime);
+        world.lookup("scene").scope([&]() { world.progress(deltaTime); });
       }
 
 
@@ -524,4 +555,51 @@ namespace ren {
     // });
   }
 
+
+
 }  // namespace ren
+
+
+
+extern "C" {
+// LUA API (FFI)
+ecs_world_t *__ren_get_world(void) { return ren::world().c_ptr(); }
+
+ecs_entity_t __ren_register_component(const char *name, size_t size, size_t alignment,
+                                      const char *desc) {
+  auto &world = ren::world();
+
+  auto entity = world.entity(name);
+  ecs_entity_t id = entity.id();
+
+  ecs_component_desc_t componentDesc = {};
+  componentDesc.entity = id;
+  componentDesc.type.size = size;
+  componentDesc.type.alignment = alignment;
+
+  id = ecs_component_init(world, &componentDesc);
+
+  ecs_meta_from_desc(world, id, EcsStructType, desc);
+  // fmt::println("Registering component '{}' size={} align={} desc={}", name, size, alignment,
+  // desc);
+  return id;
+}
+
+
+// Register a component that is just a sol::value
+ecs_entity_t __ren_register_lua_component(const char *name) {
+  auto &world = ren::world();
+
+  auto entity = world.entity(name);
+  ecs_entity_t id = entity.id();
+
+  ecs_component_desc_t componentDesc = {};
+  componentDesc.entity = id;
+  componentDesc.type.size = sizeof(sol::object);
+  componentDesc.type.alignment = alignof(sol::object);
+
+  id = ecs_component_init(world, &componentDesc);
+
+  return id;
+}
+}

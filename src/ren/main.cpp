@@ -18,56 +18,7 @@
 #include <ren/core/Time.h>
 
 
-extern "C" {
-}
-
-
-struct Position {
-  float x, y, z;
-};
-extern "C" {
-Position the_position;
-
-int (*test_callback)(int, int);
-}
-
-
-
-void lua_test(void) {
-  fmt::println("Position at start: {}, {}, {}", the_position.x, the_position.y, the_position.z);
-  lua_State *L = luaL_newstate();
-  luaL_openlibs(L);
-  if (luaL_dofile(L, "assets/test.lua") != LUA_OK) {
-    fmt::println("Failed to load script: {}", lua_tostring(L, -1));
-    lua_pop(L, 1);
-  }
-  fmt::println("Position after script: {}, {}, {}", the_position.x, the_position.y, the_position.z);
-
-  for (int i = 0; i < 1000; i++) {
-    auto start = ren::timestamp();
-    auto trials = 1000000;
-    for (int i = 0; i < trials; i++) {
-      test_callback(5, 7);
-    }
-    auto end = ren::timestamp();
-
-    auto elapsed = ren::elapsed_ns(start, end);
-    auto average = elapsed / (float)trials;
-    fmt::println("elapsed: {} ns. avg: {} ns", elapsed, average);
-  }
-
-  lua_close(L);
-}
-
-static void debug_line_test_plugin(ren::Application &app) {
-  using namespace ren;
-  ren::system::onUpdate<ren::comp::Transform>("Gizmo").each(
-      [](flecs::entity e, ren::comp::Transform &t) {});
-}
-REN_PLUGIN("Debug Line Test", debug_line_test_plugin);
-
-
-
+#include <ren/assets/AssetSource.h>
 
 void loadMeshIntoScene(const char *path, float scaleChange = 0.0f) {
   fmt::println("Loading {}...", path);
@@ -83,34 +34,58 @@ void loadMeshIntoScene(const char *path, float scaleChange = 0.0f) {
   }
 }
 
+ECS_STRUCT(Position, {
+  float x;
+  float y;
+});
 
-template <typename T>
-void dump_as(void *ptr, size_t length) {
-  T *typed_ptr = static_cast<T *>(ptr);
-  for (size_t i = 0; i < length; i++) {
-    fmt::print("[{}] = {}\n", i, typed_ptr[i]);
-  }
-}
-
+// ECS_META_IMPL_CALL(ECS_STRUCT_, ECS_META_IMPL, Position, "{ float x; float y; }");
 
 
 int main(int argc, char *argv[]) {
-  // lua_test();
-  // return 0;
-  try {
-    ren::Application app("ren", {1920, 1080});
+  auto x = EcsStructType ;
+#if 0
+  flecs::world world;
+  ECS_META_COMPONENT(world, Position);
 
+  {
+    ecs_component_desc_t desc = {0};
+    ecs_entity_desc_t edesc = {0};
+    edesc.id = FLECS_IDPositionID_;
+    edesc.use_low_id = true;
+    edesc.name = "Position";
+    edesc.symbol = "Position";
+    desc.entity = ecs_entity_init(world, &edesc);
+    desc.type.size = (static_cast<ecs_size_t>(sizeof(Position)));
+    desc.type.alignment = static_cast<int64_t>(alignof(Position));
+    FLECS_IDPositionID_ = ecs_component_init(world, &desc);
+  }
+  if (!(FLECS_IDPositionID_ != 0)) {
+    ecs_assert_log_((2), "ecs_id(Position) != 0", "/Users/nick/dev/renderer/src/ren/main.cpp", 47,
+                    "failed to create component %s", "Position");
+    ecs_os_api.abort_();
+  }
+  (__builtin_expect(!(FLECS_IDPositionID_ != 0), 0)
+       ? __assert_rtn(__func__, "main.cpp", 47, "FLECS_IDPositionID_ != 0")
+       : (void)0);
+  ecs_meta_from_desc(world, FLECS_IDPositionID_, FLECS__Position_kind, FLECS__Position_desc);
+#endif
+
+  try {
+    ren::Application app("ren", {1024, 768});
     // app.world.set_target_fps(30);
 
     // loadMeshIntoScene("/Users/nick/Desktop/sponza.glb");
-    // loadMeshIntoScene("assets/test/meshes/simple_scene.glb");
+    // loadMeshIntoScene("assets/map.obj");
+    loadMeshIntoScene("assets/test/meshes/simple_scene.glb");
     // loadMeshIntoScene("assets/test/meshes/unit_cube.glb");
     // loadMeshIntoScene("assets/test/meshes/unit_cube.glb");
     // loadMeshIntoScene("/Users/nick/dev/kajiya/assets/meshes/viziers_observation_deck/scene.gltf",
     // 0.01);
-    loadMeshIntoScene(
-        "/Users/nick/dev/kajiya/assets/meshes/flying_world_-_battle_of_the_trash_god/scene.gltf",
-        0.002f);
+
+    // loadMeshIntoScene(
+    //     "/Users/nick/dev/kajiya/assets/meshes/flying_world_-_battle_of_the_trash_god/scene.gltf",
+    //     0.002f);
     // loadMeshIntoScene("/Users/nick/Desktop/sponza.glb");
     // loadMeshIntoScene("/Users/nick/Desktop/enrico.glb");
     // loadMeshIntoScene("/Users/nick/Downloads/main_sponza/NewSponza_Main_glTF_003.gltf");

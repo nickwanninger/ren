@@ -560,5 +560,20 @@ struct ecs_struct_desc_t {
 };
 typedef struct ecs_struct_desc_t ecs_struct_desc_t;
 ecs_entity_t ecs_struct_init(struct ecs_world_t *, struct ecs_struct_desc_t const *);
+/** Type kinds supported by meta addon */
+
+typedef enum ecs_type_kind_t {
+    EcsPrimitiveType,
+    EcsBitmaskType,
+    EcsEnumType,
+    EcsStructType,
+    EcsArrayType,
+    EcsVectorType,
+    EcsOpaqueType,
+    EcsTypeKindLast = EcsOpaqueType
+} ecs_type_kind_t;
+
+
+ecs_entity_t ecs_new(ecs_world_t *world);
 /* }}} */
 ]]
