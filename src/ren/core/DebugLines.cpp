@@ -14,6 +14,7 @@ namespace ren {
   std::vector<DebugLine> g_debugLines;
 
 
+
   // dispatch the draw calls for the debug lines
   void debugLine(glm::vec3 a, glm::vec3 b, glm::vec3 color, float thickness) {
     g_debugLines.push_back({a, b, color, thickness});
@@ -166,3 +167,9 @@ namespace ren {
   }
 
 }  // namespace ren
+
+
+// LUA FFI
+extern "C" void __lua_draw_debug_line(glm::vec3 a, glm::vec3 b, glm::vec3 color, float thickness) {
+  ren::debugLine(a, b, color, thickness);
+}
