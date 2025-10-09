@@ -207,9 +207,7 @@ namespace ren {
     // Override the normal filesystem loader with our custom one.
     lua["package"]["loaders"][2] = +[](lua_State *L) -> int {
       const char *modname = luaL_checkstring(L, 1);
-      fmt::println("[!!] Loading lua module '{}'\n", modname);
       auto &am = ren::Application::get().getAssetManager();
-
       std::vector<std::string> candidates;
       // Load everything from the scripts/ directory.
       build_candidate_keys(modname, "scripts/", candidates);
@@ -228,6 +226,7 @@ namespace ren {
         }
       }
 
+      fmt::println("[!!] Failed to load lua module '{}'\n", modname);
       // On failure, return nil and an error string.
       lua_pushnil(L);
       lua_pushfstring(L, "Module '%s' not found", modname);

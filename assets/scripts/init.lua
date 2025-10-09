@@ -13,7 +13,6 @@ print [[
 
 ]]
 
-
 local ren = require 'ren'
 local ffi = require 'ffi'
 
@@ -73,7 +72,7 @@ ren.struct("vec3", [[
             return vec3(a.x + b, a.y + b, a.z + b)
         end
         return vec3(a.x + b.x, a.y + b.y, a.z + b.z)
-    end,
+    end
 })
 
 ren.struct("vec4", [[
@@ -90,8 +89,6 @@ ren.struct("quat", [[
     float w;
 ]])
 
-
-
 ren.struct("Transform", [[
     vec3 pos;
     quat rot;
@@ -99,7 +96,6 @@ ren.struct("Transform", [[
 
     float __tm[16]; // transformation matrix (4x4) (IGNORE)
 ]])
-
 
 ffi.cdef [[
     void __lua_draw_debug_line(vec3 a, vec3 b, vec3 color, float thickness);
@@ -109,10 +105,8 @@ function debug_line(a, b, color, thickness)
     ffi.C.__lua_draw_debug_line(a, b, color, thickness)
 end
 
-
-
-
 e = ren.spawn("LazerBeam")
+local other = ren.spawn("OtherEntity")
 
 ren.struct("BeamLines", [[
     u32 line_index;
@@ -121,20 +115,12 @@ ren.struct("BeamLines", [[
     u32 line_progress;
 ]])
 
-
 BeamLines.set(e, {
     pos = vec3(0, 0, 0),
-    line_count = 500,
+    line_count = 32,
     line_progress = 0,
-    line_index = 0,
+    line_index = 0
 })
-
-
-
-
-
-
-
 
 local ren_comps = require 'ren_components'
 
@@ -145,9 +131,12 @@ function update()
     local beam = BeamLines.get_mut(e)
     local start = beam.pos
 
+
     if beam.line_progress == beam.line_count then
         beam.line_progress = 0
         beam.line_index = beam.line_index + 1
+        local spawned = ren.spawn()
+        print("Spawned entity " .. tostring(spawned) .. " for beam " .. beam.line_index)
     end
 
     -- set the seed
@@ -171,11 +160,4 @@ function update()
     end
     beam.line_progress = beam.line_progress + 1
 end
-
-
-
-
-
-
-
 

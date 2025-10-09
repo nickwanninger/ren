@@ -136,6 +136,11 @@ namespace ren {
 
 
     // This should kick it off.
+    auto bootstrap_result = lua.do_string("require 'ren.bootstrap'");
+    if (bootstrap_result.status() != sol::call_status::ok) {
+      throw std::runtime_error(
+          fmt::format("Failed to run ren.bootstrap: {}", bootstrap_result.get<std::string>()));
+    }
     auto result = lua.do_string("require 'init'");
     if (result.status() != sol::call_status::ok) {
       throw std::runtime_error(
