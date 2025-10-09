@@ -18,6 +18,7 @@ namespace ren {
   void AssetManager::addFilesystemSource(const std::string_view &path) {
     this->source.addFilesystem(path);
   }
+  void AssetManager::addEmbeddedSource(void) { this->source.addEmbeddedSource(); }
 
 
   AssetID AssetManager::getID(const std::string_view &name) {
@@ -184,5 +185,57 @@ namespace ren {
     return getAssetManager().load(path, out);
   }
 
+
+
+  // Utility: module name "a.b.c" -> "a/b/c"
+  inline std::string dot_to_slash(std::string s) {
+    std::replace(s.begin(), s.end(), '.', '/');
+    return s;
+  }
+
+  // A tiny path expander similar to package.path semantics.
+  // We’ll try <name>.lua, <name>/init.lua, and allow a configurable prefix like "scripts/".
+  inline void build_candidate_keys(const std::string &mod, const std::string &prefix,
+                                   std::vector<std::string> &out) {
+    const std::string base = dot_to_slash(mod);
+    out.push_back(prefix + base + ".lua");
+    out.push_back(prefix + base + "/init.lua");  // init
+  }
+
+
+  void AssetManager::configureLua(sol::state &lua) {
+    // Override the normal filesystem loader with our custom one.
+    lua["package"]["loaders"][2] = +[](lua_State *L) -> int {
+      const char *modname = luaL_checkstring(L, 1);
+      fmt::println("[!!] Loading lua module '{}'\n", modname);
+      auto &am = ren::Application::get().getAssetManager();
+
+      std::vector<std::string> candidates;
+      // Load everything from the scripts/ directory.
+      build_candidate_keys(modname, "scripts/", candidates);
+      // build_candidate_keys(modname, "", candidates);
+      std::vector<u8> scriptData;
+      for (auto &candidate : candidates) {
+        scriptData.clear();
+        if (am.load(candidate, scriptData)) {
+          if (luaL_loadbuffer(L, (const char *)scriptData.data(), scriptData.size(),
+                              candidate.c_str()) == LUA_OK) {
+            return 1;  // return the loaded chunk
+          } else {
+            // Loading failed; return the error message
+            return lua_error(L);
+          }
+        }
+      }
+
+      // On failure, return nil and an error string.
+      lua_pushnil(L);
+      lua_pushfstring(L, "Module '%s' not found", modname);
+      return 2;
+    };
+    // remove loaders 3 and 4 (C loader and all else fails)
+    lua["package"]["loaders"][3] = nullptr;
+    lua["package"]["loaders"][4] = nullptr;
+  }
 
 }  // namespace ren

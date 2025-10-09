@@ -4,7 +4,7 @@
 #include <ren/assets/Asset.h>
 #include <ren/renderer/Shader.h>
 #include <ren/assets/AssetSource.h>
-
+#include <sol/sol.hpp>
 
 namespace ren {
 
@@ -52,6 +52,7 @@ namespace ren {
     ~AssetManager();
     // Add a filesystem source to the asset manager.
     void addFilesystemSource(const std::string_view &path);
+    void addEmbeddedSource(void);
 
     ref<Asset> getAsset(ren::AssetID assetID);
     ref<Asset> getAsset(const std::string_view &name);
@@ -68,6 +69,9 @@ namespace ren {
 
     // Load an asset by path and type. If the type is unknown, it will be inferred from the file extension.
     ref<Asset> load(const std::string_view &path, AssetType type = AssetType::Unknown);
+
+
+    void configureLua(sol::state &lua);
 
    protected:
     ref<Asset> load(const AssetInfo &info);

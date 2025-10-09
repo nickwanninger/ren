@@ -1,4 +1,5 @@
 #include <ren/assets/AssetSource.h>
+#include <miniz/miniz.h>
 
 namespace ren {
 
@@ -105,6 +106,97 @@ namespace ren {
   }
 
 
+  // ------------------------ //
+
+  // embedded asset resources are
+
+  struct EmbeddedResource {
+    std::string name;
+    const u8* data;
+    unsigned long size;
+    unsigned long uncompressed_size;
+  };
+
+
+  static std::vector<EmbeddedResource>& getEmbeddedResources() {
+    static std::vector<EmbeddedResource> resources;
+    return resources;
+  }
+
+
+
+  // Helper function for decompressing gzip data in EmbeddedAssetSource::load
+  static int decompress_gzip(const unsigned char* compressed_data, size_t compressed_size,
+                             unsigned char* dest, size_t dest_size) {
+    fmt::println("Decompressing gzip data: {} bytes -> {} bytes", compressed_size, dest_size);
+    // Skip gzip header (10 bytes minimum, but variable with optional fields)
+    // Simple case: skip 10 bytes, ignore 8-byte footer at end
+    const unsigned char* deflate_data = compressed_data + 10;
+    size_t deflate_size = compressed_size - 10 - 8;
+
+    mz_stream stream = {0};
+    stream.next_in = deflate_data;
+    stream.avail_in = deflate_size;
+    stream.next_out = dest;
+    stream.avail_out = dest_size;
+
+    // -15 = raw deflate (no wrapper)
+    int status = mz_inflateInit2(&stream, -15);
+    if (status != MZ_OK) { return status; }
+
+    status = mz_inflate(&stream, MZ_FINISH);
+    mz_inflateEnd(&stream);
+
+    if (status != MZ_STREAM_END) { return status; }
+
+    return MZ_OK;
+  }
+
+  bool EmbeddedAssetSource::load(const std::string_view& name, std::vector<u8>& out) {
+    for (const auto& res : getEmbeddedResources()) {
+      if (res.name == name) {
+        // Decompress the data using miniz
+
+        auto decompressed_size = res.uncompressed_size;
+        out.resize(decompressed_size);
+
+        // Decompress into the buffer
+        int status = decompress_gzip(res.data, res.size, out.data(), out.size());
+        if (status != MZ_OK) {
+          fmt::println("[Asset Source] Failed to decompress embedded resource '{}', status={}",
+                       name, status);
+          out.clear();
+          return false;
+        }
+        fmt::println(
+            "[Asset Source] Loaded '{}' ({} bytes compressed, {} bytes) from embedded resources",
+            name, res.size, out.size());
+        return true;
+      }
+    }
+    return false;
+  }
+
+
+  bool EmbeddedAssetSource::enumerate(std::function<void(const std::string_view&)> callback) {
+    bool enumerated = false;
+    for (const auto& res : getEmbeddedResources()) {
+      callback(std::string_view{res.name});
+      enumerated = true;
+    }
+    return enumerated;
+  }
+
+
 
 
 }  // namespace ren
+
+
+extern "C" {
+void __ren_register_embedded_resource(const char* name, const unsigned char* data,
+                                      unsigned long size, unsigned long original_size) {
+  fmt::println("Registering embedded resource: {}, ({}B -> {}B)", name, size, original_size);
+  ren::getEmbeddedResources().push_back({name, data, size, original_size});
+}
+}

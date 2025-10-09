@@ -34,49 +34,12 @@ void loadMeshIntoScene(const char *path, float scaleChange = 0.0f) {
   }
 }
 
-ECS_STRUCT(Position, {
-  float x;
-  float y;
-});
-
-// ECS_META_IMPL_CALL(ECS_STRUCT_, ECS_META_IMPL, Position, "{ float x; float y; }");
-
-
 int main(int argc, char *argv[]) {
-  auto x = EcsStructType ;
-#if 0
-  flecs::world world;
-  ECS_META_COMPONENT(world, Position);
-
-  {
-    ecs_component_desc_t desc = {0};
-    ecs_entity_desc_t edesc = {0};
-    edesc.id = FLECS_IDPositionID_;
-    edesc.use_low_id = true;
-    edesc.name = "Position";
-    edesc.symbol = "Position";
-    desc.entity = ecs_entity_init(world, &edesc);
-    desc.type.size = (static_cast<ecs_size_t>(sizeof(Position)));
-    desc.type.alignment = static_cast<int64_t>(alignof(Position));
-    FLECS_IDPositionID_ = ecs_component_init(world, &desc);
-  }
-  if (!(FLECS_IDPositionID_ != 0)) {
-    ecs_assert_log_((2), "ecs_id(Position) != 0", "/Users/nick/dev/renderer/src/ren/main.cpp", 47,
-                    "failed to create component %s", "Position");
-    ecs_os_api.abort_();
-  }
-  (__builtin_expect(!(FLECS_IDPositionID_ != 0), 0)
-       ? __assert_rtn(__func__, "main.cpp", 47, "FLECS_IDPositionID_ != 0")
-       : (void)0);
-  ecs_meta_from_desc(world, FLECS_IDPositionID_, FLECS__Position_kind, FLECS__Position_desc);
-#endif
-
   try {
-    ren::Application app("ren", {1024, 768});
+    ren::Application app("ren", {1920, 1080});
     // app.world.set_target_fps(30);
 
     // loadMeshIntoScene("/Users/nick/Desktop/sponza.glb");
-    // loadMeshIntoScene("assets/map.obj");
     loadMeshIntoScene("assets/test/meshes/simple_scene.glb");
     // loadMeshIntoScene("assets/test/meshes/unit_cube.glb");
     // loadMeshIntoScene("assets/test/meshes/unit_cube.glb");

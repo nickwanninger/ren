@@ -1,20 +1,36 @@
 local M = {}
 
 local ffi = require 'ffi'
-local reflect = require "assets.reflect"
+local reflect = require 'util.reflect'
 
-ffi.cdef(require 'assets.flecs_cdef')
+-- Define the basic integer types we will use.
+ffi.cdef[[
+typedef uint8_t u8;
+typedef int8_t i8;
+typedef uint16_t u16;
+typedef int16_t i16;
+typedef uint32_t u32;
+typedef int32_t i32;
+typedef uint64_t u64;
+typedef int64_t i64;
+typedef float f32;
+typedef double f64;
+]]
+
+-- Load the flecs C definitions.
+ffi.cdef(require 'ren.flecs_cdef')
 ffi.cdef[[
     ecs_world_t *__ren_get_world();
     ecs_entity_t __ren_register_component(const char *name, size_t size, size_t alignment, const char *desc);
     ecs_entity_t __ren_register_lua_component(const char *name);
 ]]
 
+
+-- ren.world(): Get the ECS world pointer.
 M.world = function()
     return ffi.C.__ren_get_world()
 end
-local dump = require 'jit.dump'
-dump.start('v')
+
 
 local function struct_tostring(self)
     local ref = reflect.typeof(self)
@@ -49,6 +65,7 @@ local function struct_tostring(self)
     return output
 end
 
+-- ren.struct: define a struct component in the ECS.
 -- A struct is a component type in the ECS world backed by an FFI struct. As such, it is
 -- restricted to only having fields which are FFI-compatible. You also have to provide the
 -- fields as a string (C syntax) so we can construct the FFI struct and register it with flecs.

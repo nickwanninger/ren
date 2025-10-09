@@ -75,13 +75,25 @@ namespace ren {
     ~FilesystemAssetSource() override = default;
     bool load(const std::string_view &name, std::vector<u8> &out) override;
     bool enumerate(std::function<void(const std::string_view &)> callback) override;
-    
+
 
 
    private:
     std::filesystem::path m_root;  ///< Directory that serves as the root.
   };
 
+
+  // EmbeddedAssetSource - for assets compiled into the binary
+  class EmbeddedAssetSource final : public AssetSource {
+   public:
+    EmbeddedAssetSource() = default;
+    ~EmbeddedAssetSource() override = default;
+    bool load(const std::string_view &name, std::vector<u8> &out) override;
+    bool enumerate(std::function<void(const std::string_view &)> callback) override;
+
+   private:
+    // Nothing! This operates on global data compiled into the binary.
+  };
 
   // ------ //
 
@@ -121,6 +133,8 @@ namespace ren {
     inline void addStore(Args &&...args) {
       stores.push_back(std::make_shared<T>(std::forward<Args>(args)...));
     }
+
+    inline void addEmbeddedSource() { addStore<ren::EmbeddedAssetSource>(); }
 
     inline void addFilesystem(const std::string_view &path) {
       addStore<ren::FilesystemAssetSource>(path);

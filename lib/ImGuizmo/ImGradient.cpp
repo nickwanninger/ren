@@ -23,6 +23,15 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 //
+
+
+#ifdef __GNUC__
+#pragma GCC diagnostic ignored "-Wunused-function"
+#elif defined(__clang__)
+#pragma clang diagnostic ignored "-Wunused-function"
+#endif
+
+
 #include "ImGradient.h"
 #include "imgui.h"
 #include "imgui_internal.h"

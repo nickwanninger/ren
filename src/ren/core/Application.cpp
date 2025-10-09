@@ -72,27 +72,19 @@ namespace ren {
     ren::initPhases(ren::world());
 
 
-
+    // Configure Lua by loading the standard libraries.
+    luaL_openlibs(lua.lua_state());
 
     // Create an asset manager. This part of the heirarchy will hold loaded assets.
     auto &am = ren::ensureResource<ren::AssetManager>();
+    am.addEmbeddedSource();
     am.addFilesystemSource("assets/");
 
+    // Configure the lua interpreter to pull from the asset manager.
+    am.configureLua(lua);
 
+    // Ensure we have a megamesh buffer. (TODO: move this somewhere non-global.)
     ren::ensureResource<ren::MegaMeshBuffer>();
-
-
-
-    luaL_openlibs(lua.lua_state());
-
-
-    // Insert your loader at the beginning
-    lua["package"]["loaders"].get<sol::table>().add(
-        1, +[](lua_State *L) -> int {
-          std::string module_name = sol::stack::get<std::string>(L, 1);
-          fmt::println("Loading lua module '{}'\n", module_name);
-          return 0;
-        });
 
 
     sol::table ren_components = lua.create_table();
@@ -143,7 +135,8 @@ namespace ren {
     ren::AutoPlugin::registerPlugins(*this);
 
 
-    auto result = lua.do_file("assets/init.lua");
+    // This should kick it off.
+    auto result = lua.do_string("require 'init'");
     if (result.status() != sol::call_status::ok) {
       throw std::runtime_error(
           fmt::format("Failed to load init.lua: {}", result.get<std::string>()));

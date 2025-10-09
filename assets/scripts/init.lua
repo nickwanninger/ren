@@ -14,7 +14,7 @@ print [[
 ]]
 
 
-local ren = require 'assets.ren'
+local ren = require 'ren'
 local ffi = require 'ffi'
 
 ren.struct("vec2", [[
@@ -110,22 +110,30 @@ function debug_line(a, b, color, thickness)
 end
 
 
-line_count = 500
-line_progress = 0 -- how far are we into this line?
-line_index = 0 -- which line are we on?
 
 
-ren.struct("MyComp", [[
+e = ren.spawn("LazerBeam")
+
+ren.struct("BeamLines", [[
+    u32 line_index;
     vec3 pos;
+    u32 line_count;
+    u32 line_progress;
 ]])
 
 
-e = ren.spawn("MyEntity")
-MyComp.set(e, {})
+BeamLines.set(e, {
+    pos = vec3(0, 0, 0),
+    line_count = 500,
+    line_progress = 0,
+    line_index = 0,
+})
 
-MyComp.get_mut(e).pos = vec3(1, 2, 3)
 
-print(MyComp.get(e))
+
+
+
+
 
 
 local ren_comps = require 'ren_components'
@@ -134,16 +142,16 @@ print('now', ren_comps.test(e))
 luacomp = ren.component("MyLuaComp")
 
 function update()
-    local myComp = MyComp.get(e)
-    local start = myComp.pos
+    local beam = BeamLines.get_mut(e)
+    local start = beam.pos
 
-    if line_progress == line_count then
-        line_progress = 0
-        line_index = line_index + 1
+    if beam.line_progress == beam.line_count then
+        beam.line_progress = 0
+        beam.line_index = beam.line_index + 1
     end
 
     -- set the seed
-    math.randomseed(line_index)
+    math.randomseed(beam.line_index)
 
     local function rand()
         return math.random() * 2 - 1
@@ -154,14 +162,14 @@ function update()
         return vec3(rand() * scale, rand() * scale, rand() * scale)
     end
 
-    local count = line_count
+    local count = beam.line_count
     local color = vec3(1, 1, 1)
-    for i = 1, line_progress do
+    for i = 1, beam.line_progress do
         local next = start + randomvec3()
         debug_line(start, next, color, 0.1)
         start = next
     end
-    line_progress = line_progress + 1
+    beam.line_progress = beam.line_progress + 1
 end
 
 
