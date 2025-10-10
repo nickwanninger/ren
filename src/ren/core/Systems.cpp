@@ -29,18 +29,6 @@ namespace ren {
 #undef PHASE_DEPENDS_ON
 #undef PHASE
 
-
-    // Build a query that lists phases in execution order (topologically sorted)
-    auto q = world.query_builder<>()
-                 .with(flecs::Phase)         // match all phase entities
-                 .cascade(flecs::DependsOn)  // order by DependsOn depth (like the pipeline)
-                 .build();
-
-    // Print the order
-    q.each([](flecs::id id) { fmt::println("Phase: {}", id.entity().path().c_str()); });
-
-    // ren::onWooHoo("Hello").run([](flecs::iter& it) { fmt::println("WooHoo!"); });
-    // ren::onUpdate("Hello").run([](flecs::iter& it) { fmt::println("Update!"); });  //
   }
 
 
