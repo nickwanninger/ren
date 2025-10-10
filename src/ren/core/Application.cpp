@@ -225,6 +225,7 @@ namespace ren {
     glm::vec3 modelRotation(0.0f);
     glm::vec3 modelPosition(0.0f);
 
+    FramerateCounter framerateCounter;
 
     while (this->running) {
       int eventsHandled = 0;
@@ -285,7 +286,7 @@ namespace ren {
 
       auto frameStats = frame.perf.nextFrame(frame.commandBuffer);
 
-
+      framerateCounter.addFrame(deltaTime);
 
       {
         REN_PROFILE_SCOPE("ImGui New Frame");
@@ -310,11 +311,8 @@ namespace ren {
       // Update lua globals
       lua.globals()["time"] = time;
       lua.globals()["delta_time"] = deltaTime;
-      lua.globals()["fps"] = (int)(1 / deltaTime);
+      lua.globals()["fps"] = framerateCounter.getAverageFramerate();
       lua.globals()["frame"] = vulkan.frame_number;
-
-
-
       // Call the lua update function if it exists
       sol::protected_function lua_update = lua["update"];
       if (lua_update.valid()) {
