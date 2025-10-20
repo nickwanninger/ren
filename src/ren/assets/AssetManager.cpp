@@ -81,7 +81,7 @@ namespace ren {
     info.path = path;
     info.type = type;
     assetRegistry[info.id] = info;  // Store the asset info in the map
-    sync();                         // sync the asset state!
+    // sync();                         // sync the asset state!
 
     return load(info);
   }

@@ -12,7 +12,7 @@ namespace ren {
     bool first_update = true;
     float cameraSpeed = 32.0f;
 
-    glm::mat4 projection; // HACK: REMOVE ME
+    glm::mat4 projection;  // HACK: REMOVE ME
 
     SDL_GameController *controller = nullptr;
 

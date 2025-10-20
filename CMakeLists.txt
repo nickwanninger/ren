@@ -194,7 +194,7 @@ target_compile_features(ren
   cxx_std_20
 )
 
-
+target_include_directories(ren PRIVATE ${LuaJIT_INCLUDE_DIRS})
 
 # Link libraries
 target_link_libraries(ren
@@ -204,24 +204,18 @@ target_link_libraries(ren
 
   PkgConfig::LuaJIT
 
-  # flecs::flecs_static # Flecs for ECS
-)
-
-target_include_directories(ren PRIVATE ${LuaJIT_INCLUDE_DIRS})
-
-# if not on windows, link libm
-if(NOT WIN32)
-  target_link_libraries(ren PRIVATE m)
-endif()
-
-target_link_libraries(ren
-  PRIVATE
   assimp
 
   Vulkan::Vulkan # Vulkan SDK
   GPUOpen::VulkanMemoryAllocator # Vulkan Memory Allocator
   Vulkan::shaderc_combined
 )
+
+
+# if not on windows, link libm
+if(NOT WIN32)
+  target_link_libraries(ren PRIVATE m)
+endif()
 
 # Include directories
 target_include_directories(ren PRIVATE
@@ -230,6 +224,7 @@ target_include_directories(ren PRIVATE
   ${IMGUI_DIR}/backends
 
   ${GUILE_STATIC_INCLUDE_DIRS}
+  ${LuaJIT_LIBRARIES}
 
   ${Vulkan_INCLUDE_DIRS}
 

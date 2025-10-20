@@ -44,13 +44,14 @@ namespace ren {
 
     vkb::Swapchain vkb_swapchain =
         swapchain_builder.use_default_format_selection()
-            .set_desired_present_mode(vsync ? VK_PRESENT_MODE_FIFO_KHR : VK_PRESENT_MODE_IMMEDIATE_KHR)
+            .set_desired_present_mode(vsync ? VK_PRESENT_MODE_FIFO_KHR
+                                            : VK_PRESENT_MODE_IMMEDIATE_KHR)
             .set_image_usage_flags(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
                                    VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT)
             .set_desired_format(
                 {vulkan.swapchainFormat, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR})  // SRGB format
             .set_desired_extent(deviceExtent.width, deviceExtent.height)      // Window size
-            .set_desired_min_image_count(3) // Triple buffering
+            .set_desired_min_image_count(3)                                   // Triple buffering
             .build()
             .value();
 
@@ -101,13 +102,10 @@ namespace ren {
       REN_PROFILE_SCOPE("Wait for fences");
       vkWaitForFences(vulkan.device, 1, &frameData->inFlightFence, VK_TRUE, UINT64_MAX);
       vkResetFences(vulkan.device, 1, &frameData->inFlightFence);
-
-      vkResetCommandBuffer(frameData->commandBuffer, 0);
     }
 
-
-
-    // fmt::println("Acquiring next image for frame index: {}", frameData->frameIndex);
+    // Reset the command buffer for this frame.
+    vkResetCommandBuffer(frameData->commandBuffer, 0);
 
     auto result = vkAcquireNextImageKHR(vulkan.device, this->swapchain, UINT64_MAX,
                                         frameData->imageAvailableSemaphore, VK_NULL_HANDLE,

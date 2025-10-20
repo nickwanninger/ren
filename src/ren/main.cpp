@@ -40,15 +40,15 @@ int main(int argc, char *argv[]) {
     // app.world.set_target_fps(30);
 
     // loadMeshIntoScene("/Users/nick/Desktop/sponza.glb");
-    loadMeshIntoScene("assets/test/meshes/simple_scene.glb");
+    // loadMeshIntoScene("assets/test/meshes/simple_scene.glb");
     // loadMeshIntoScene("assets/test/meshes/unit_cube.glb");
     // loadMeshIntoScene("assets/test/meshes/unit_cube.glb");
     // loadMeshIntoScene("/Users/nick/dev/kajiya/assets/meshes/viziers_observation_deck/scene.gltf",
     // 0.01);
 
-    // loadMeshIntoScene(
-    //     "/Users/nick/dev/kajiya/assets/meshes/flying_world_-_battle_of_the_trash_god/scene.gltf",
-    //     0.002f);
+    loadMeshIntoScene(
+        "/Users/nick/dev/kajiya/assets/meshes/flying_world_-_battle_of_the_trash_god/scene.gltf",
+        0.002f);
     // loadMeshIntoScene("/Users/nick/Desktop/sponza.glb");
     // loadMeshIntoScene("/Users/nick/Desktop/enrico.glb");
     // loadMeshIntoScene("/Users/nick/Downloads/main_sponza/NewSponza_Main_glTF_003.gltf");
