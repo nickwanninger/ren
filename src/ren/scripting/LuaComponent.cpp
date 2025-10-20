@@ -23,6 +23,7 @@ struct LuaComponent {
     // if the value $v on the top of the stack is not a table, make a new table like this: {value =
     // $v}
     if (!lua_istable(L, -1)) {
+      fmt::println("LuaComponent::set() wrapping non-table value into table {{value = ...}}");
       lua_newtable(L);
       lua_pushvalue(L, -2);  // copy the value
       lua_setfield(L, -2, "value");
