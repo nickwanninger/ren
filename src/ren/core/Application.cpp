@@ -32,7 +32,33 @@
 #include <ren/scripting/imgui_lua_inspector.hpp>
 
 
+extern "C" {
+#include <luajit.h>
+#include <lua.h>
+#include <lauxlib.h>
+}
 
+// static void dumpstack(lua_State *L) {
+//   int top = lua_gettop(L);
+//   for (int i = 1; i <= top; i++) {
+//     printf("%d\t%s\t", i, luaL_typename(L, i));
+//     int type = lua_type(L, i);
+//     switch (type) {
+//       case LUA_TNUMBER: printf("num  %g\n", lua_tonumber(L, i)); break;
+//       case LUA_TSTRING: printf("str  %s\n", lua_tostring(L, i)); break;
+//       case LUA_TBOOLEAN: printf("bool %s\n", (lua_toboolean(L, i) ? "true" : "false")); break;
+//       case LUA_TNIL: printf("nil  %s\n", "nil"); break;
+//       default: {
+//         uint64_t v = *(uint64_t*)lua_topointer(L, i);
+//         printf("%-4d ptr  %p 0x%llx\n", type, lua_topointer(L, i), v);
+
+
+//       }
+
+//       break;
+//     }
+//   }
+// }
 
 static ren::Application *g_application = nullptr;
 namespace ren {
@@ -63,6 +89,7 @@ namespace ren {
 
     // world.set_threads(6);
 
+
     this->globalEventEntity = world.entity("ren::events");
 
     // Enable the flecs world rest api
@@ -71,9 +98,27 @@ namespace ren {
 
     ren::initPhases(ren::world());
 
-
+    LUAJIT_VERSION_SYM();  // ensure luajit is linked
     // Configure Lua by loading the standard libraries.
     luaL_openlibs(lua.lua_state());
+
+    auto *L = ren::lua();
+    if (luaJIT_setmode(L, 0, LUAJIT_MODE_ENGINE | LUAJIT_MODE_ON) == 0) {
+      fmt::println("Warning: failed to enable LuaJIT JIT engine");
+    }
+
+    // auto jit_config = lua.do_string(R"(
+    //   local jit = require 'jit'
+    //   jit.on()
+    //   local dump = require 'jit.dump'
+    //   local dump_flags = os.getenv('REN_LUAJIT_DUMP_FLAGS') or '+rsxXa'
+    //   local dump_out = os.getenv('REN_LUAJIT_DUMP_OUT') or '-'
+    //   dump.on(dump_flags, dump_out)
+    // )");
+    // if (jit_config.status() != sol::call_status::ok) {
+    //   fmt::println("Failed to configure LuaJIT dump: {}", jit_config.get<std::string>());
+    // }
+
 
     // Create an asset manager. This part of the heirarchy will hold loaded assets.
     auto &am = ren::ensureResource<ren::AssetManager>();
@@ -565,7 +610,7 @@ ecs_entity_t __ren_register_component(const char *name, size_t size, size_t alig
                                       const char *desc) {
   auto &world = ren::world();
 
-  auto entity = world.entity(name);
+  auto entity = world.entity(name, ".", ".");
   ecs_entity_t id = entity.id();
 
   ecs_component_desc_t componentDesc = {};
@@ -576,26 +621,9 @@ ecs_entity_t __ren_register_component(const char *name, size_t size, size_t alig
   id = ecs_component_init(world, &componentDesc);
 
   ecs_meta_from_desc(world, id, EcsStructType, desc);
-  // fmt::println("Registering component '{}' size={} align={} desc={}", name, size, alignment,
-  // desc);
+  fmt::println("Registering component '{}' -> {}", name, id);
   return id;
 }
 
 
-// Register a component that is just a sol::value
-ecs_entity_t __ren_register_lua_component(const char *name) {
-  auto &world = ren::world();
-
-  auto entity = world.entity(name);
-  ecs_entity_t id = entity.id();
-
-  ecs_component_desc_t componentDesc = {};
-  componentDesc.entity = id;
-  componentDesc.type.size = sizeof(sol::object);
-  componentDesc.type.alignment = alignof(sol::object);
-
-  id = ecs_component_init(world, &componentDesc);
-
-  return id;
-}
 }

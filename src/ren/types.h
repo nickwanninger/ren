@@ -28,6 +28,9 @@
 #include <glm/gtx/matrix_decompose.hpp>
 
 
+// #include <absl/container/flat_hash_map.h>
+
+
 #include <json/json.hpp>
 using json = nlohmann::json;
 
@@ -68,6 +71,9 @@ namespace ren {
     glm::mat4 view;
     glm::mat4 proj;
   };
+
+  // template <typename K, typename V>
+  // using map = absl::flat_hash_map<K, V>;
 
 #define FLOAT_RAND_MAX ((float)RAND_MAX)
 

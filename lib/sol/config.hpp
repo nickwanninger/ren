@@ -29,6 +29,12 @@
 
 // beginning of sol/config.hpp
 
+// #define SOL_LUAJIT 1
+// #define SOL_LUA_VERSION 501
+// #include <luajit-2.1/lua.hpp>     // from LuaJIT, not PUC-Lua’s <lua.h>
+// #define SOL_NO_COMPAT 1
+
+
 /* Base, empty configuration file!
 
      To override, place a file in your include paths of the form:
