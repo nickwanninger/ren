@@ -1,15 +1,17 @@
 print [[
 
-    '########::'########:'##::: ##:
-     ##.... ##: ##.....:: ###:: ##:
-     ##:::: ##: ##::::::: ####: ##:
-     ########:: ######::: ## ## ##:
-     ##.. ##::: ##...:::: ##. ####:
-     ##::. ##:: ##::::::: ##:. ###:
-     ##:::. ##: ########: ##::. ##:
-    ..:::::..::........::..::::..::
+   ::::::::::::::::::::::::::::::::::
+   ::'########::'########:'##::: ##::
+   :: ##.... ##: ##.....:: ###:: ##::
+   :: ##:::: ##: ##::::::: ####: ##::
+   :: ########:: ######::: ## ## ##::
+   :: ##.. ##::: ##...:::: ##. ####::
+   :: ##::. ##:: ##::::::: ##:. ###::
+   :: ##:::. ##: ########: ##::. ##::
+   ::..:::::..::........::..::::..:::
+   ::::::::::::::::::::::::::::::::::
 
-         -- Welcome to REN --
+          -- Welcome to REN --
 
 ]]
 
@@ -20,60 +22,116 @@ ren.struct("vec2", [[
     float x;
     float y;
 ]], {
-    len = function(a)
-        return math.sqrt(a.x * a.x + a.y * a.y)
-    end,
-    norm = function(a)
-        local l = a:len()
-        if l == 0 then
-            return vec2(0, 0)
-        end
-        return vec2(a.x / l, a.y / l)
-    end,
-    dot = function(a, b)
-        return a.x * b.x + a.y * b.y
+  len = function(a)
+    return math.sqrt(a.x * a.x + a.y * a.y)
+  end,
+  norm = function(a)
+    local l = a:len()
+    if l == 0 then
+      return vec2(0, 0)
     end
+    return vec2(a.x / l, a.y / l)
+  end,
+  dot = function(a, b)
+    return a.x * b.x + a.y * b.y
+  end
 }, {
-    __add = function(a, b)
-        if type(b) == "number" then
-            return vec2(a.x + b, a.y + b)
-        end
-        return vec2(a.x + b.x, a.y + b.y)
-    end,
-    __sub = function(a, b)
-        if type(b) == "number" then
-            return vec2(a.x - b, a.y - b)
-        end
-        return vec2(a.x - b.x, a.y - b.y)
-    end,
-    __mul = function(a, b)
-        -- scalar multiply on either side
-        if type(a) == "number" then
-            return vec2(a * b.x, a * b.y)
-        end
-        if type(b) == "number" then
-            return vec2(a.x * b, a.y * b)
-        end
-        -- dot if both vec2
-        return a:dot(b)
-    end,
-    __eq = function(a, b)
-        return a.x == b.x and a.y == b.y
+  __add = function(a, b)
+    if type(b) == "number" then
+      return vec2(a.x + b, a.y + b)
     end
+    return vec2(a.x + b.x, a.y + b.y)
+  end,
+  __sub = function(a, b)
+    if type(b) == "number" then
+      return vec2(a.x - b, a.y - b)
+    end
+    return vec2(a.x - b.x, a.y - b.y)
+  end,
+  __mul = function(a, b)
+    -- scalar multiply on either side
+    if type(a) == "number" then
+      return vec2(a * b.x, a * b.y)
+    end
+    if type(b) == "number" then
+      return vec2(a.x * b, a.y * b)
+    end
+    -- dot if both vec2
+    return a:dot(b)
+  end,
+  __eq = function(a, b)
+    return a.x == b.x and a.y == b.y
+  end
 })
+
+vec2.up = vec2(0, 1)
+vec2.right = vec2(1, 0)
+vec2.left = vec2(-1, 0)
+vec2.down = vec2(0, -1)
+vec2.zero = vec2(0, 0)
+vec2.one = vec2(1, 1)
 
 ren.struct("vec3", [[
     float x;
     float y;
     float z;
-]], {}, {
-    __add = function(a, b)
-        if type(b) == "number" then
-            return vec3(a.x + b, a.y + b, a.z + b)
-        end
-        return vec3(a.x + b.x, a.y + b.y, a.z + b.z)
+]], {
+  len = function(a)
+    return math.sqrt(a.x * a.x + a.y * a.y + a.z * a.z)
+  end,
+  norm = function(a)
+    local l = a:len()
+    if l == 0 then
+      return vec3(0, 0, 0)
     end
+    return vec3(a.x / l, a.y / l, a.z / l)
+  end,
+  dot = function(a, b)
+    return a.x * b.x + a.y * b.y + a.z * b.z
+  end,
+  cross = function(a, b)
+    return vec3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x)
+  end
+}, {
+  __add = function(a, b)
+    if type(b) == "number" then
+      return vec3(a.x + b, a.y + b, a.z + b)
+    end
+    return vec3(a.x + b.x, a.y + b.y, a.z + b.z)
+  end,
+  __sub = function(a, b)
+    if type(b) == "number" then
+      return vec3(a.x - b, a.y - b, a.z - b)
+    end
+    return vec3(a.x - b.x, a.y - b.y, a.z - b.z)
+  end,
+  __mul = function(a, b)
+    -- scalar multiply on either side
+    if type(a) == "number" then
+      return vec3(a * b.x, a * b.y, a * b.z)
+    end
+    if type(b) == "number" then
+      return vec3(a.x * b, a.y * b, a.z * b)
+    end
+    -- dot if both vec3
+    return a:dot(b)
+  end,
+  __eq = function(a, b)
+    return a.x == b.x and a.y == b.y and a.z == b.z
+  end
 })
+
+vec3.forward = vec3(0, 0, 1)
+vec3.back = vec3(0, 0, -1)
+
+vec3.up = vec3(0, 1, 0)
+vec3.down = vec3(0, -1, 0)
+
+vec3.left = vec3(-1, 0, 0)
+vec3.right = vec3(1, 0, 0)
+
+vec3.zero = vec3(0, 0, 0)
+vec3.one = vec3(1, 1, 1)
 
 ren.struct("vec4", [[
     float x;
@@ -102,12 +160,15 @@ ffi.cdef [[
 ]]
 
 function debug_line(a, b, color, thickness)
-    ffi.C.__lua_draw_debug_line(a, b, color, thickness)
+  ffi.C.__lua_draw_debug_line(a, b, color, thickness)
 end
 
-e = ren.spawn("LazerBeam")
-local other = ren.spawn("OtherEntity")
+local ecs = require 'ren.ecs'
 
+local e = ecs.spawn("LazerBeam")
+local other = ecs.spawn("OtherEntity")
+
+-- local BeamLines = ecs.component "BeamLines"
 ren.struct("BeamLines", [[
     u32 line_index;
     vec3 pos;
@@ -115,49 +176,70 @@ ren.struct("BeamLines", [[
     u32 line_progress;
 ]])
 
+local q = ecs.query.new(BeamLines, Transform)
+print('query:', q)
+
+ecs.query.run(q)
+
 BeamLines.set(e, {
-    pos = vec3(0, 0, 0),
-    line_count = 32,
-    line_progress = 0,
-    line_index = 0
+  pos = vec3(0, 0, 0),
+  line_count = 32,
+  line_progress = 0,
+  line_index = 0
 })
 
-local ren_comps = require 'ren_components'
+Transform.set(e, {})
 
-print('now', ren_comps.test(e))
-luacomp = ren.component("MyLuaComp")
+local function rand()
+  return math.random() * 2 - 1
+end
+
+local function randomvec3()
+  local scale = 1
+  return vec3(rand() * scale, rand() * scale, rand() * scale)
+end
+
+local function jitter(scale)
+  return vec3(rand() * scale, rand() * scale, rand() * scale)
+end
 
 function update()
-    local beam = BeamLines.get_mut(e)
-    local start = beam.pos
 
+  --   ecs.query.run(q)
+  -- print("---- Update ----")
+  local count = 0
+  ecs.query.map(q, function(it)
+    local bs = ffi.cast("BeamLines*", ffi.C.ecs_field_w_size(it, ffi.sizeof("BeamLines"), 0))
+    local ts = ffi.cast("Transform*", ffi.C.ecs_field_w_size(it, ffi.sizeof("Transform"), 1))
+    for i = 0, it.count - 1 do
+      local entity = it.entities[i]
 
-    if beam.line_progress == beam.line_count then
+      local beam = bs[i]
+      local pos = ts[i].pos
+
+      -- print(entity, ts[i].pos)
+      local start = beam.pos
+
+      if beam.line_progress == beam.line_count then
         beam.line_progress = 0
         beam.line_index = beam.line_index + 1
-        local spawned = ren.spawn()
-        print("Spawned entity " .. tostring(spawned) .. " for beam " .. beam.line_index)
-    end
+      end
 
-    -- set the seed
-    math.randomseed(beam.line_index)
+      -- set the seed
+      math.randomseed(beam.line_index)
 
-    local function rand()
-        return math.random() * 2 - 1
-    end
-
-    local function randomvec3()
-        local scale = 1
-        return vec3(rand() * scale, rand() * scale, rand() * scale)
-    end
-
-    local count = beam.line_count
-    local color = vec3(1, 1, 1)
-    for i = 1, beam.line_progress do
+      local count = beam.line_count
+      local color = vec3(1, 1, 1)
+      for i = 1, beam.line_progress do
         local next = start + randomvec3()
         debug_line(start, next, color, 0.1)
         start = next
+      end
+      beam.line_progress = beam.line_progress + 1
     end
-    beam.line_progress = beam.line_progress + 1
-end
+  end)
 
+  -- print("Updated entities count:", count, delta_time * 1000, "ms")
+
+  -- local beam = BeamLines.get_mut(e)
+end

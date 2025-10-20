@@ -115,7 +115,7 @@ void main() {
     // Sample textures
     vec4 baseColor = texture(baseColorTexture, uv) * material.baseColorFactor;
     if (baseColor.a < 0.01) discard;
-    
+
     vec3 metallicRoughnessSample = texture(metallicRoughnessTexture, uv).rgb;
     float metallic = clamp(metallicRoughnessSample.b * material.metallicFactor, 0.0, 1.0);
     float roughness = clamp(metallicRoughnessSample.g * material.roughnessFactor, 0.04, 1.0);
@@ -154,7 +154,7 @@ void main() {
     vec3 ambient = vec3(0.1, 0.1, 0.1) * baseColor.rgb;
 
     // Compute skybox color
-    vec3 skyboxColor = computeSkyboxColor(normalize(worldPos));
+    // vec3 skyboxColor = computeSkyboxColor(normalize(worldPos));
 
     // Final color with skybox contribution
     vec3 color = ambient + (diffuse + specular) * NdotL;

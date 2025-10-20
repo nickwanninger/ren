@@ -27,4 +27,5 @@ void main() {
 
     vec3 tonemapped = aces(albedo.rgb);
     outColor = vec4(tonemapped, 1.0);
+    outColor = albedo;
 }
