@@ -1,6 +1,6 @@
 #include "imgui_lua_inspector.hpp"
 
-#define lua_pushglobaltable(L) lua_pushvalue(L, LUA_GLOBALSINDEX)
+// #define lua_pushglobaltable(L) lua_pushvalue(L, LUA_GLOBALSINDEX)
 #include <SDL2/SDL.h>
 #include <algorithm>
 #include <cstring>
@@ -784,8 +784,8 @@ int neko::luainspector::draw(void) {
 
       if (ImGui::BeginTabItem("Info")) {
         lua_Integer kb = lua_gc(L, LUA_GCCOUNT, 0);
-        lua_Integer bytes = lua_gc(L, LUA_GCCOUNTB, 0);
 
+        ImGui::ShowDemoWindow();
 
         float mb = (float)kb / 1024.0f;
         this->m_memory_usage_history.add(mb);
@@ -796,7 +796,10 @@ int neko::luainspector::draw(void) {
                      &m_memory_usage_history,
                      m_memory_usage_history.size,
                      0,
-                     nullptr);
+                     "Memory Usage (mb)",
+                     0.0f,
+                     FLT_MAX,
+                     ImVec2(0, 80.0f));
 
         // if (!arr.empty() && arr.back() != ((f64)bytes)) {
         //     arr.push_back(((f64)bytes));
@@ -804,7 +807,6 @@ int neko::luainspector::draw(void) {
         // }
 
         ImGui::Text("Lua MemoryUsage: %.2lf mb", ((double)kb / 1024.0f));
-        ImGui::Text("Lua Remaining: %.2lf mb", ((double)bytes / 1024.0f));
 
         // ImGui::Text("Lua Version: %s", LUA_VERSION);
         // ImGui::Text("Lua Copyright: %s", LUA_COPYRIGHT);

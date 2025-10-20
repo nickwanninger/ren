@@ -12,7 +12,7 @@
 #include <imgui.h>
 #include <imgui_internal.h>
 
-#include <lua.hpp>
+#include <sol/sol.hpp>
 
 namespace neko {
 
