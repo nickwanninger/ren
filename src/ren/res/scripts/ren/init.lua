@@ -3,6 +3,10 @@ local ren = {}
 local ffi = require 'ffi'
 local reflect = require 'util.reflect'
 
+-- jit.dump
+local jit = require 'jit'
+jit.on()
+
 -- Define the basic integer types we will use.
 ffi.cdef [[
 typedef uint8_t u8;
@@ -18,7 +22,7 @@ typedef double f64;
 ]]
 
 -- Load the flecs C definitions.
-ffi.cdef(require 'ren.flecs_cdef')
+require 'ren.ecs.ffidef' -- Require for the sideeffects
 ffi.cdef [[
     ecs_world_t *__ren_get_world();
     ecs_entity_t __ren_register_component(const char *name, size_t size, size_t alignment, const char *desc);
@@ -68,7 +72,6 @@ end
 -- restricted to only having fields which are FFI-compatible. You also have to provide the
 -- fields as a string (C syntax) so we can construct the FFI struct and register it with flecs.
 function ren.struct(name, fields, user_methods, user_metatype)
-
     -- remove c-style comments from fields
     fields = fields:gsub("/%*.-%*/", "")
     -- remove c++-style comments from fields
@@ -82,7 +85,9 @@ function ren.struct(name, fields, user_methods, user_metatype)
 
     ffi.cdef(cdef)
 
-    local component_id = ffi.C.__ren_register_component("ren::comp::" .. name, ffi.sizeof(name), ffi.alignof(name),
+    local component_name = "ren.comp." .. name
+
+    local component_id = ffi.C.__ren_register_component(component_name, ffi.sizeof(name), ffi.alignof(name),
         "{ " .. fields .. " }")
 
     local metatype = {
@@ -103,7 +108,7 @@ function ren.struct(name, fields, user_methods, user_metatype)
     -- optimized that well, but we'll see.
     local info = {
         -- The name of the struct
-        name = name,
+        name = component_name,
         -- The C definition of the struct as the user typed.
         fields = fields,
         -- The ID of the component in the ECS world.
@@ -112,7 +117,6 @@ function ren.struct(name, fields, user_methods, user_metatype)
         size = ffi.sizeof(name)
     }
 
-    print("Defined struct " .. name .. " size " .. info.size)
     local thestruct = setmetatable(info, {
         -- call is the constructor
         __call = function(_, ...)
@@ -146,7 +150,14 @@ function ren.struct(name, fields, user_methods, user_metatype)
                 ffi.copy(copy, comp, info.size)
                 -- ... and return the copy
                 return copy
+            end,
+
+            -- Check if an entity has this component.
+            -- component.on(e) -> bool
+            on = function(entity)
+                return ffi.C.ecs_has_id(ren.world(), entity, info.cid) ~= 0
             end
+            
         }
     })
 
@@ -174,5 +185,8 @@ function ren.component(name)
     print(name, component_id)
     return component_id
 end
+
+
+ren.ecs = require 'ren.ecs'
 
 return ren
