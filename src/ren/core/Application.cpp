@@ -107,18 +107,6 @@ namespace ren {
       fmt::println("Warning: failed to enable LuaJIT JIT engine");
     }
 
-    // auto jit_config = lua.do_string(R"(
-    //   local jit = require 'jit'
-    //   jit.on()
-    //   local dump = require 'jit.dump'
-    //   local dump_flags = os.getenv('REN_LUAJIT_DUMP_FLAGS') or '+rsxXa'
-    //   local dump_out = os.getenv('REN_LUAJIT_DUMP_OUT') or '-'
-    //   dump.on(dump_flags, dump_out)
-    // )");
-    // if (jit_config.status() != sol::call_status::ok) {
-    //   fmt::println("Failed to configure LuaJIT dump: {}", jit_config.get<std::string>());
-    // }
-
 
     // Create an asset manager. This part of the heirarchy will hold loaded assets.
     auto &am = ren::ensureResource<ren::AssetManager>();
@@ -130,25 +118,6 @@ namespace ren {
 
     // Ensure we have a megamesh buffer. (TODO: move this somewhere non-global.)
     ren::ensureResource<ren::MegaMeshBuffer>();
-
-
-    sol::table ren_components = lua.create_table();
-
-    lua["package"]["preload"]["ren_components"] = [ren_components](sol::this_state s) {
-      sol::state_view L(s);
-      sol::table mod = L.create_table();
-      mod.set_function("test", [](const sol::object &a) {
-        if (a.is<ecs_entity_t>()) {
-          ecs_entity_t *ptr = a.as<ecs_entity_t *>();
-          fmt::println("Hello from ren_components.test({})", (void *)ptr);
-          return 0;
-        }
-        fmt::println("Hello from ren_components.test(?)");
-        return 0;
-      });
-      return mod;
-    };
-
 
     world.emplace<neko::luainspector>(ren::lua());
 
