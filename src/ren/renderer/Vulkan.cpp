@@ -6,21 +6,21 @@
 #include <vector>
 #include <fmt/core.h>
 #include <fstream>
-#include "imgui.h"
+#include <imgui/imgui.h>
 #include "vkb/VkBootstrap.h"
 #include "vulkan/vulkan_core.h"
 #include <SDL2/SDL_vulkan.h>
 #include <fmt/core.h>
 #include <stb/stb_image.h>
 
-#include <imconfig.h>
-#include <imgui.h>
-#include <imgui_internal.h>
+#include <imgui/imconfig.h>
+#include <imgui/imgui.h>
+#include <imgui/imgui_internal.h>
 #include <imstb_rectpack.h>
 #include <imstb_textedit.h>
 #include <imstb_truetype.h>
-#include <imgui_impl_sdl2.h>
-#include <imgui_impl_vulkan.h>
+#include <imgui/backends/imgui_impl_sdl2.h>
+#include <imgui/backends/imgui_impl_vulkan.h>
 
 
 

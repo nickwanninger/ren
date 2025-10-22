@@ -1,6 +1,6 @@
 #include <ren/assets/MeshScene.hpp>
 
-#include <imgui.h>
+#include <imgui/imgui.h>
 #include <math.h>
 
 #include <ren/assets/materials/PBRMaterial.h>

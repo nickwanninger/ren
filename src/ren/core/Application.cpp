@@ -6,9 +6,9 @@
 #include <ren/renderer/pipelines/PipelineCache.h>
 #include <ren/misc/hash.h>
 
-#include <imgui.h>
-#include <imgui_impl_vulkan.h>
-#include <imgui_impl_sdl2.h>
+#include <imgui/imgui.h>
+#include <imgui/backends/imgui_impl_vulkan.h>
+#include <imgui/backends/imgui_impl_sdl2.h>
 #include <ImGuizmo/ImGuizmo.h>
 
 #include <ren/core/Entity.h>

@@ -4,21 +4,6 @@
 #include <ren/core/Instrumentation.h>
 #include <ren/core/Application.h>
 
-#include <ren/core/Components.h>
-#include <flecs/flecs.h>
-
-#include <type_traits>
-#include <imgui.h>
-#include <ren/core/AutoPlugin.h>
-
-#include <imgui.h>
-#include <imgui_impl_vulkan.h>
-#include <ren/core/DebugLines.hpp>
-#include <ren/core/Systems.h>
-#include <ren/core/Time.h>
-
-
-#include <ren/assets/AssetSource.h>
 
 void loadMeshIntoScene(const char *path, float scaleChange = 0.0f) {
   fmt::println("Loading {}...", path);
@@ -37,18 +22,17 @@ void loadMeshIntoScene(const char *path, float scaleChange = 0.0f) {
 int main(int argc, char *argv[]) {
   try {
     ren::Application app("ren", {1920, 1080});
-    // app.world.set_target_fps(30);
 
-    // loadMeshIntoScene("/Users/nick/Desktop/sponza.glb");
+    loadMeshIntoScene("/Users/nick/Desktop/sponza.glb");
     // loadMeshIntoScene("assets/test/meshes/simple_scene.glb");
     // loadMeshIntoScene("assets/test/meshes/unit_cube.glb");
     // loadMeshIntoScene("assets/test/meshes/unit_cube.glb");
     // loadMeshIntoScene("/Users/nick/dev/kajiya/assets/meshes/viziers_observation_deck/scene.gltf",
     // 0.01);
 
-    loadMeshIntoScene(
-        "/Users/nick/dev/kajiya/assets/meshes/flying_world_-_battle_of_the_trash_god/scene.gltf",
-        0.002f);
+    // loadMeshIntoScene(
+    //     "/Users/nick/dev/kajiya/assets/meshes/flying_world_-_battle_of_the_trash_god/scene.gltf",
+    //     0.002f);
     // loadMeshIntoScene("/Users/nick/Desktop/sponza.glb");
     // loadMeshIntoScene("/Users/nick/Desktop/enrico.glb");
     // loadMeshIntoScene("/Users/nick/Downloads/main_sponza/NewSponza_Main_glTF_003.gltf");

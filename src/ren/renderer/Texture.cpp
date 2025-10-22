@@ -5,7 +5,7 @@
 #include <ren/core/Instrumentation.h>
 
 #include <stb/stb_image.h>
-#include <imgui_impl_vulkan.h>
+#include <imgui/backends/imgui_impl_vulkan.h>
 
 
 static std::vector<ren::Texture *> g_all_textures;

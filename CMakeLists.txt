@@ -18,9 +18,6 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
 
 
-# tell cmake to print the cmake path
-message(STATUS "CMake path: ${CMAKE_CURRENT_SOURCE_DIR}")
-
 # Set C standard
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
@@ -30,31 +27,27 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS ON) # Enable compiler extensions
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# Find various packages we need
+
+# ------- Find various packages we need -------
+# We depend on LuaJIT as a scripting engine.
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(LuaJIT REQUIRED IMPORTED_TARGET luajit)
+include_directories(${LuaJIT_INCLUDE_DIRS})
+
+# SDL as a display and input handling library
 find_package(SDL2 REQUIRED)
+include_directories(${SDL2_INCLUDE_DIRS})
+
+# Vulkan as a Graphics API
 find_package(Vulkan REQUIRED COMPONENTS shaderc_combined)
 message(STATUS "Vulkan include dirs: ${Vulkan_INCLUDE_DIRS}")
-
-# grab luajit (required, static)
-find_package(PkgConfig REQUIRED)  
-pkg_check_modules(LuaJIT REQUIRED IMPORTED_TARGET luajit)
+include_directories(${Vulkan_INCLUDE_DIRS})
 
 # Add some of the libraries we vendor
 add_subdirectory(lib/VulkanMemoryAllocator)
 # add_subdirectory(lib/flecs)
 add_subdirectory(lib/fmt)
 
-set(IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/imgui)
-set(IMGUI_SOURCES
-   ${IMGUI_DIR}/imgui.cpp
-   ${IMGUI_DIR}/imgui_demo.cpp
-   ${IMGUI_DIR}/imgui_draw.cpp
-   ${IMGUI_DIR}/imgui_tables.cpp
-   ${IMGUI_DIR}/imgui_widgets.cpp
-   
-   ${IMGUI_DIR}/backends/imgui_impl_sdl2.cpp
-   ${IMGUI_DIR}/backends/imgui_impl_vulkan.cpp
-)
 
 # Disable assimp tests, we don't need them, gonna trust it works.
 set(ASSIMP_BUILD_TESTS OFF)
@@ -81,6 +74,12 @@ endif()
 
 
 
+
+include_directories(${CMAKE_SOURCE_DIR}/lib)
+include_directories(${CMAKE_SOURCE_DIR}/lib/imgui) # hack to include imgui headers properly
+include_directories(${CMAKE_SOURCE_DIR}/lib/imgui/backends)
+include_directories(${CMAKE_SOURCE_DIR}/lib/fmt/include)
+include_directories(${CMAKE_SOURCE_DIR}/src)
 
 # ---------------------- Embedded Resources ---------------------- #
 
@@ -135,120 +134,34 @@ function(embed_file input_file output_file variable_name)
     )
 endfunction()
 
-file(GLOB_RECURSE files "src/ren/res/*")
-foreach(file ${files})
-    file(RELATIVE_PATH rel_path "${CMAKE_SOURCE_DIR}/resources" ${file})
-    string(MAKE_C_IDENTIFIER ${rel_path} var_name)
-    embed_file(${file} "${CMAKE_BINARY_DIR}/res/${var_name}.c" "embedded_${var_name}")
-    list(APPEND EMBEDDED_SOURCES "${CMAKE_BINARY_DIR}/res/${var_name}.c")
-endforeach()
+function(collect_embedded_resources OUT_VAR GLOB)
+  # initialize local list from parent's value (if any)
+  if(DEFINED ${OUT_VAR})
+    set(_out_list "${${OUT_VAR}}")
+  else()
+    set(_out_list)
+  endif()
+
+  file(GLOB_RECURSE _res_files "${GLOB}")
+  foreach(_f IN LISTS _res_files)
+    file(RELATIVE_PATH rel_path "${CMAKE_SOURCE_DIR}/resources" "${_f}")
+    string(MAKE_C_IDENTIFIER "${rel_path}" var_name)
+    embed_file("${_f}" "${CMAKE_BINARY_DIR}/res/${var_name}.c" "embedded_${var_name}")
+    list(APPEND _out_list "${CMAKE_BINARY_DIR}/res/${var_name}.c")
+  endforeach()
+
+  set(${OUT_VAR} "${_out_list}" PARENT_SCOPE)
+endfunction()
 
 
 
+function(collect_sources OUT_VAR DIR)
+  set(SOURCE_FILES "")
+  file(GLOB_RECURSE SOURCE_FILES "${DIR}/*.cpp" "${DIR}/*.c")
+  collect_embedded_resources(EMBEDDED_SOURCES "${DIR}/res/*")
+  set(${OUT_VAR} "${SOURCE_FILES};${EMBEDDED_SOURCES}" PARENT_SCOPE)
+endfunction()
 
 
-
-# Define a variable to store the list of C++ source files
-set(REN_SOURCE_FILES "")
-
-# Recursively find all .cpp files in the current directory and its subdirectories
-file(GLOB_RECURSE REN_SOURCE_FILES "src/ren/*.cpp" "src/ren/**/*.c")
-
-# Enable Tracy profiler
-# add_compile_definitions(TRACY_ENABLE)
-
-# Ren is the main target of this project. For now, it's a single executable,
-# but eventually ren should be `libren` and we can have multiple executables
-# that link against it.
-add_executable(ren
-
-  ${REN_SOURCE_FILES}
-  ${EMBEDDED_SOURCES}
-
-  lib/spirv_reflect/spirv_reflect.c
-  lib/spirv_reflect/common.cpp
-  lib/spirv_reflect/output_stream.cpp
-  lib/vkb/VkBootstrap.cpp
-  lib/stb/stb_image.c
-
-
-  # Imguizmo
-  lib/ImGuizmo/GraphEditor.cpp
-  lib/ImGuizmo/ImCurveEdit.cpp
-  lib/ImGuizmo/ImGradient.cpp
-  lib/ImGuizmo/ImGuizmo.cpp
-  lib/ImGuizmo/ImSequencer.cpp
-
-  lib/tracy/TracyClient.cpp
-
-
-
-  lib/flecs/flecs.c
-
-
-  ${IMGUI_SOURCES}
-)
-
-target_compile_features(ren
-  PRIVATE
-  cxx_std_20
-)
-
-target_include_directories(ren PRIVATE ${LuaJIT_INCLUDE_DIRS})
-
-# Link libraries
-target_link_libraries(ren
-  PUBLIC
-  ${SDL2_LIBRARIES}
-  fmt::fmt-header-only # fmt library
-
-  PkgConfig::LuaJIT
-
-  assimp
-
-  Vulkan::Vulkan # Vulkan SDK
-  GPUOpen::VulkanMemoryAllocator # Vulkan Memory Allocator
-  Vulkan::shaderc_combined
-)
-
-
-# if not on windows, link libm
-if(NOT WIN32)
-  target_link_libraries(ren PRIVATE m)
-endif()
-
-# Include directories
-target_include_directories(ren PRIVATE
-  ${SDL2_INCLUDE_DIRS}
-  ${IMGUI_DIR}
-  ${IMGUI_DIR}/backends
-
-  ${GUILE_STATIC_INCLUDE_DIRS}
-  ${LuaJIT_LIBRARIES}
-
-  ${Vulkan_INCLUDE_DIRS}
-
-
-  src/
-  include/
-  lib/
-)
-
-if (WIN32)
-
-else()
-  # Compiler flags
-  target_compile_options(ren PRIVATE 
-      ${SDL2_CFLAGS_OTHER}
-      -Wall
-      -Wno-nullability-completeness
-      -Wno-unused-variable
-      -Wno-unused-private-field
-      -Wno-deprecated-declarations
-      -Wno-unused-parameter
-      # -O3
-      -g3
-  )
-endif()
-
+add_subdirectory(src)
 

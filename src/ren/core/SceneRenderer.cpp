@@ -2,7 +2,7 @@
 #include <ren/renderer/FrameData.h>
 #include <ren/core/Instrumentation.h>
 #include <ren/assets/Mesh.h>
-#include <imgui.h>
+#include <imgui/imgui.h>
 #include <ren/core/Entity.h>
 #include <ren/core/Components.h>
 #include <ren/core/Application.h>
