@@ -200,8 +200,72 @@ namespace ren {
     const std::string base = dot_to_slash(mod);
     out.push_back(prefix + base + ".lua");
     out.push_back(prefix + base + "/init.lua");  // init
+    out.push_back(prefix + base + ".fnl");
+    out.push_back(prefix + base + "/init.fnl");  // init
   }
 
+
+  static int loadFennelScript(lua_State *L, std::vector<u8> &scriptData, const char *filename) {
+    // Load the fennel compiler if not already loaded
+    // Use plain Lua C API to require fennel and call compileString.
+    // Stack: [...] before; we will clean up before continuing.
+    lua_getglobal(L, "require");            // push require
+    lua_pushstring(L, "fennel");            // arg
+    if (lua_pcall(L, 1, 1, 0) != LUA_OK) {  // call require("fennel")
+      const char *err = lua_tostring(L, -1);
+      fmt::println("Failed to require fennel: {}", err ? err : "unknown error");
+      abort();
+    }
+
+    // Now fennel module is on top of the stack.
+    if (!lua_istable(L, -1)) {
+      fmt::println("fennel.require did not return a table");
+      abort();
+    }
+
+    // Get fennel.compileString
+    lua_getfield(L, -1, "compileString");  // pushes function
+    if (!lua_isfunction(L, -1)) {
+      fmt::println("fennel.compileString not found or not a function");
+      abort();
+    }
+
+    // Push arguments: source string and options table { filename = candidate }
+    lua_pushlstring(L, (const char *)scriptData.data(), scriptData.size());
+    lua_newtable(L);
+    lua_pushstring(L, "filename");
+    lua_pushstring(L, filename);
+    lua_settable(L, -3);  // options["filename"] = candidate
+
+    // Call compileString(source, options)
+    if (lua_pcall(L, 2, 1, 0) != LUA_OK) {
+      const char *err = lua_tostring(L, -1);
+      fmt::println("fennel.compileString error: {}", err ? err : "unknown error");
+      return lua_error(L);
+      // lua_pop(L, 1);  // pop error
+      // lua_pop(L, 1);  // pop module
+      // return 0;
+    }
+
+    // Result should be a string containing compiled Lua
+    size_t compiled_len = 0;
+    const char *compiled_cstr = lua_tolstring(L, -1, &compiled_len);
+    if (!compiled_cstr) {
+      fmt::println("fennel.compileString did not return a string");
+      lua_pop(L, 1);  // pop result
+      return 0;
+    }
+
+    std::string compiledCode(compiled_cstr, compiled_len);
+    lua_pop(L, 1);  // pop compiled result
+    lua_pop(L, 1);  // pop fennel module
+
+    if (luaL_loadbuffer(L, compiledCode.c_str(), compiledCode.size(), filename) == LUA_OK) {
+      return 1;  // return the loaded chunk
+    } else {
+      return lua_error(L);
+    }
+  }
 
   void AssetManager::configureLua(sol::state &lua) {
     // Override the normal filesystem loader with our custom one.
@@ -216,12 +280,20 @@ namespace ren {
       for (auto &candidate : candidates) {
         scriptData.clear();
         if (am.load(candidate, scriptData)) {
-          if (luaL_loadbuffer(L, (const char *)scriptData.data(), scriptData.size(),
-                              candidate.c_str()) == LUA_OK) {
-            return 1;  // return the loaded chunk
-          } else {
-            // Loading failed; return the error message
-            return lua_error(L);
+          // if the script is found, and it ends in .lua, load as lua.
+          if (candidate.ends_with(".lua")) {
+            if (luaL_loadbuffer(L, (const char *)scriptData.data(), scriptData.size(),
+                                candidate.c_str()) == LUA_OK) {
+              return 1;  // return the loaded chunk
+            } else {
+              // Loading failed; return the error message
+              return lua_error(L);
+            }
+          }
+
+          // if it ends in .fnl, load as fennel.
+          if (candidate.ends_with(".fnl")) {
+            return loadFennelScript(L, scriptData, candidate.c_str());
           }
         }
       }
