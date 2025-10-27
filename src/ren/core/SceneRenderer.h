@@ -12,6 +12,8 @@ namespace ren {
   struct EngineUBO {
     glm::mat4 view;
     glm::mat4 proj;
+    glm::mat4 invViewProj; // inverse(proj * view)
+
     // These must be vec4 becasue of std140 alignment.
     glm::vec4 cameraWorldPosition;
 
@@ -60,6 +62,9 @@ namespace ren {
     struct {
       RenderPass::Description passDesc;
       ref<RenderPass> pass;
+
+
+      ren::PipelineStateObject skyboxPSO;
 
       // The render target for the opaque pass.
       ref<RenderTarget> target;

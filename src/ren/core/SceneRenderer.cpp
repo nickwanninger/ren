@@ -43,6 +43,13 @@ namespace ren {
     opaque.passDesc.addColorAttachment("outNormal", VK_FORMAT_R16G16B16A16_SNORM);
     opaque.passDesc.addDepthAttachment("depthStencil");
     opaque.pass = R.getRenderPassCache().get(opaque.passDesc);
+
+    opaque.skyboxPSO.depthTest = false;
+    opaque.skyboxPSO.depthWrite = false;
+    opaque.skyboxPSO.program =
+        makeRef<ShaderProgram>("shaders/display.vert", "shaders/skybox.frag");
+    opaque.skyboxPSO.hasVertexBinding = false;
+    opaque.skyboxPSO.cullMode = ren::CullMode::None;
   }
 
 
@@ -75,7 +82,7 @@ namespace ren {
     if (height < 1) height = 1;
 
 
-    float targetHeight = 480 / 2;
+    float targetHeight = 768;
     targetHeight = height;
     float scale = targetHeight / height;
     width *= scale;
@@ -174,6 +181,7 @@ namespace ren {
 
       engineUBO.view = pc.view;
       engineUBO.proj = pc.proj;
+      engineUBO.invViewProj = glm::inverse(pc.proj * pc.view);
       engineUBO.cameraWorldPosition = glm::vec4(camera.position, 1.0);
 
       // ren::debugLine(glm::vec3(0, 0, 0), engineUBO.lightDirection * 512.0f, {1, 0, 1}, 4.0f);
@@ -216,7 +224,24 @@ namespace ren {
       //       // ImGuizmo::PopID();
       //     });
 
+
+
+
+      // TEMP: render a skybox
+
+
+      {
+        R.bind(opaque.skyboxPSO);
+        R.startBinding(0).bind("engine", this->engineUBOBuffer).apply();
+        vkCmdDraw(cmd, 3, 1, 0, 0);
+      }
+
+
+
+
       this->engineUBOBuffer.update(engineUBO);
+
+
 
       auto &megaMesh = ren::world().get_mut<ren::MegaMeshBuffer>();
 

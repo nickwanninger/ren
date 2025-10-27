@@ -33,9 +33,10 @@ namespace ren {
     void bind(u32 bindingIndex, const ren::Buffer &bufferHandle);
 
     template <typename T>
-    void bind(const std::string_view &name, const UniformBufferSet<T> &UBS) {
+    auto &bind(const std::string_view &name, const UniformBufferSet<T> &UBS) {
       // Bind a uniform buffer set to the shader.
       this->bind(name, UBS.currentAsBuffer());
+      return *this;
     }
 
     // Build, then apply the descriptor sets
