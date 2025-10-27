@@ -194,8 +194,9 @@ namespace ren {
       u64 current = bumpNext;
       bumpNext += count;
       if (bumpNext > this->count()) {
-        // resize the buffer
-        this->resizeCount(this->count() * 2);
+        // resize the buffer to accommodate the requested allocation
+        size_t newSize = std::max(this->count() * 2, (size_t)bumpNext);
+        this->resizeCount(newSize);
       }
       return current;
     }
