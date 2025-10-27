@@ -20,6 +20,7 @@ layout(location = 1) out vec4 outNormal;
 layout(set = ENGINE_SET, binding = 0, std140) uniform EngineUBO {
     mat4 view;
     mat4 proj;
+    mat4 invViewProj; // inverse(proj * view)
 
     vec4 cameraWorldPosition;
     vec4 lightDirection;
