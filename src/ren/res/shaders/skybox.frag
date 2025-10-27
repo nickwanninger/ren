@@ -27,41 +27,41 @@ vec3 getWorldSpaceRay(vec2 uv) {
 }
 
 vec3 computeSkyColor(vec3 rayDir) {
-    float height = rayDir.y;
-    
-    if (height >= 0.0) {
-        // Minecraft sky: very uniform light blue, barely any gradient
-        vec3 skyColor = vec3(0.52, 0.73, 1.0); // #85B8FF - Minecraft day sky
-        
-        // Very subtle darkening toward horizon
-        float heightFactor = smoothstep(0.0, 0.3, height);
-        skyColor = mix(vec3(0.68, 0.83, 1.0), skyColor, heightFactor);
-        
-        // Minecraft sun: bright white circle, hard edge
-        vec3 sunDir = normalize(vec3(0.0, 0.8, 0.6));
-        float sundot = dot(rayDir, sunDir);
-        
-        // Sharp sun disc
-        if (sundot > 0.9998) { // ~1 degree radius
-            return vec3(1.0); // Pure white sun
-        }
-        
-        // Subtle sun glow (much subtler than realistic)
-        float sunGlow = pow(clamp(sundot, 0.0, 1.0), 512.0);
-        skyColor += vec3(0.8, 0.8, 0.6) * sunGlow * 0.3;
-        
-        return skyColor;
-    } else {
-        // Minecraft void: dark, desaturated fog color
-        float groundDepth = -height;
-        
-        // Start with fog color at horizon
-        vec3 horizonFog = vec3(0.68, 0.83, 1.0); // Light blue fog
-        vec3 voidColor = vec3(0.17, 0.17, 0.17);  // Dark gray void
-        
-        // Sharp transition - Minecraft doesn't blend much
-        return mix(horizonFog, voidColor, pow(groundDepth, 0.8));
+  float height = rayDir.y;
+
+  if (height >= 0.0) {
+    // Minecraft sky: very uniform light blue, barely any gradient
+    vec3 skyColor = vec3(0.52, 0.73, 1.0);  // #85B8FF - Minecraft day sky
+
+    // Very subtle darkening toward horizon
+    float heightFactor = smoothstep(0.0, 0.3, height);
+    skyColor = mix(vec3(0.68, 0.83, 1.0), skyColor, heightFactor);
+
+    // Minecraft sun: bright white circle, hard edge
+    vec3 sunDir = normalize(vec3(0.0, 0.8, 0.6));
+    float sundot = dot(rayDir, sunDir);
+
+    // Sharp sun disc
+    if (sundot > 0.9998) {  // ~1 degree radius
+      return vec3(1.0);     // Pure white sun
     }
+
+    // Subtle sun glow (much subtler than realistic)
+    float sunGlow = pow(clamp(sundot, 0.0, 1.0), 512.0);
+    skyColor += vec3(0.8, 0.8, 0.6) * sunGlow * 0.3;
+
+    return skyColor;
+  } else {
+    // Minecraft void: dark, desaturated fog color
+    float groundDepth = -height;
+
+    // Start with fog color at horizon
+    vec3 horizonFog = vec3(0.68, 0.83, 1.0);  // Light blue fog
+    vec3 voidColor = vec3(0.17, 0.17, 0.17);  // Dark gray void
+
+    // Sharp transition - Minecraft doesn't blend much
+    return mix(horizonFog, voidColor, pow(groundDepth, 0.8));
+  }
 }
 
 
