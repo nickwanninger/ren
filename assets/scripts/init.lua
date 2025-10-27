@@ -169,83 +169,98 @@ function debug_line(a, b, color, thickness)
   ffi.C.__lua_draw_debug_line(a, b, color, thickness)
 end
 
-local ecs = require 'ren.ecs'
-
-local e = ecs.spawn("LazerBeam")
-local other = ecs.spawn("OtherEntity")
-
--- local BeamLines = ecs.component "BeamLines"
-ren.struct("BeamLines", [[
-    u32 line_index;
-    vec3 pos;
-    u32 line_count;
-    u32 line_progress;
-]])
-
-local q = ecs.query.new(BeamLines, Transform)
-print('query:', q)
-
-ecs.query.run(q)
-
-BeamLines.set(e, {
-  pos = vec3(0, 0, 0),
-  line_count = 32,
-  line_progress = 0,
-  line_index = 0
-})
-
-Transform.set(e, {})
-
-local function rand()
-  return math.random() * 2 - 1
-end
-
-local function randomvec3()
-  local scale = 1
-  return vec3(rand() * scale, rand() * scale, rand() * scale)
-end
-
-local function jitter(scale)
-  return vec3(rand() * scale, rand() * scale, rand() * scale)
-end
 
 function update()
-
-  --   ecs.query.run(q)
-  -- print("---- Update ----")
-  local count = 0
-  ecs.query.map(q, function(it)
-    local bs = ffi.cast("BeamLines*", ffi.C.ecs_field_w_size(it, ffi.sizeof("BeamLines"), 0))
-    local ts = ffi.cast("Transform*", ffi.C.ecs_field_w_size(it, ffi.sizeof("Transform"), 1))
-    for i = 0, it.count - 1 do
-      local entity = it.entities[i]
-
-      local beam = bs[i]
-      local pos = ts[i].pos
-
-      -- print(entity, ts[i].pos)
-      local start = beam.pos
-
-      if beam.line_progress == beam.line_count then
-        beam.line_progress = 0
-        beam.line_index = beam.line_index + 1
-      end
-
-      -- set the seed
-      math.randomseed(beam.line_index)
-
-      local count = beam.line_count
-      local color = vec3(1, 1, 1)
-      for i = 1, beam.line_progress do
-        local next = start + randomvec3()
-        debug_line(start, next, color, 0.1)
-        start = next
-      end
-      beam.line_progress = beam.line_progress + 1
-    end
-  end)
-
-  -- print("Updated entities count:", count, delta_time * 1000, "ms")
-
-  -- local beam = BeamLines.get_mut(e)
 end
+
+-- local ecs = require 'ren.ecs'
+-- local e = ecs.spawn("LazerBeam")
+-- local other = ecs.spawn("OtherEntity")
+-- 
+-- -- local BeamLines = ecs.component "BeamLines"
+-- ren.struct("BeamLines", [[
+--     u32 line_index;
+--     vec3 pos;
+--     u32 line_count;
+--     u32 line_progress;
+-- ]])
+-- 
+-- local q = ecs.query.new(Transform)
+-- -- local q = ecs.query.new(BeamLines, Transform)
+-- print('query:', q)
+-- 
+-- ecs.query.run(q)
+-- 
+-- BeamLines.set(e, {
+--   line_count = 32,
+--   line_progress = 0,
+--   line_index = 0
+-- })
+-- 
+-- Transform.set(e, {})
+-- 
+-- local function rand()
+--   return math.random() * 2 - 1
+-- end
+-- 
+-- local function randomvec3()
+--   local scale = 1
+--   return vec3(rand() * scale, rand() * scale, rand() * scale)
+-- end
+-- 
+-- local function jitter(scale)
+--   return vec3(rand() * scale, rand() * scale, rand() * scale)
+-- end
+-- 
+-- local perf = require 'ren.perf'
+-- 
+-- function update_old()
+--   local v = vec2(fps, delta_time)
+--   -- local count = 0
+--   -- local dur = perf.duration(function()
+--   --   ecs.query.map(q, function(it)
+--   --     local ts = ffi.cast("Transform*", ffi.C.ecs_field_w_size(it, ffi.sizeof("Transform"), 0))
+--   --     for i = 0, it.count - 1 do
+--   --       count = count + 1
+--   --       local entity = it.entities[i]
+--   --       local t = ts[i]
+--   --       t.pos = t.pos + jitter(0.01)
+--   --       -- debug_line(vec3.zero, t.pos, vec3(1, 0, 0), 0.1)
+--   --     end
+--   --   end)
+--   -- end)
+-- 
+--   -- ecs.query.map(q, function(it)
+--   --   local bs = ffi.cast("BeamLines*", ffi.C.ecs_field_w_size(it, ffi.sizeof("BeamLines"), 0))
+--   --   local ts = ffi.cast("Transform*", ffi.C.ecs_field_w_size(it, ffi.sizeof("Transform"), 1))
+--   --   for i = 0, it.count - 1 do
+--   --     local entity = it.entities[i]
+-- 
+--   --     local beam = bs[i]
+--   --     local pos = ts[i].pos
+-- 
+--   --     ts[i].pos = pos + jitter(0.01)
+-- 
+--   --     local start = pos
+-- 
+--   --     if beam.line_progress == beam.line_count then
+--   --       beam.line_progress = 0
+--   --       beam.line_index = beam.line_index + 1
+--   --     end
+-- 
+--   --     -- set the seed
+--   --     math.randomseed(beam.line_index)
+-- 
+--   --     local count = beam.line_count
+--   --     local color = vec3(1, 1, 1)
+--   --     for i = 1, beam.line_progress do
+--   --       local next = start + randomvec3()
+--   --       debug_line(start, next, color, 0.1)
+--   --       start = next
+--   --     end
+--   --     beam.line_progress = beam.line_progress + 1
+--   --   end
+--   -- end)
+-- 
+--   -- print("Updated entities count:", count, "in", dur * 1000, "ms")
+-- end
