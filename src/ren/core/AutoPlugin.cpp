@@ -9,7 +9,6 @@ namespace ren {
 
   ren::AutoPlugin::AutoPlugin(const char *name)
       : name(name) {
-    fmt::print("Registering plugin: {}\n", name);
     // Register this plugin in the global set of plugins.
     g_plugins.insert(this);
   }
@@ -17,7 +16,6 @@ namespace ren {
 
   void AutoPlugin::registerPlugins(ren::Application &app) {
     for (auto *plugin : g_plugins) {
-      fmt::println("Loading plugin: {}\n", plugin->name);
       plugin->load(app);
     }
   }
