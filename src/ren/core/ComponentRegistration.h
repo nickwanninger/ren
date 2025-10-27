@@ -35,11 +35,6 @@ namespace ren {
     info.typeSize = sizeof(T);
     info.typeAlignment = alignof(T);
 
-    fmt::println("Registering component: {} (size: {}, alignment: {})", info.typeName,
-                 info.typeSize, info.typeAlignment);
-    if (info.luaName) { fmt::println("  Lua Name: {}", info.luaName); }
-
-
     internal::doRegisterComponent(info);
 
     return true;
@@ -47,12 +42,17 @@ namespace ren {
 
 }  // namespace ren
 
+
+#define REN_COMPREG_CONCAT_IMPL(a, b) a##b
+#define REN_COMPREG_CONCAT(a, b) REN_COMPREG_CONCAT_IMPL(a, b)
+#define REN_COMPREG_UNIQUE_NAME(base) REN_COMPREG_CONCAT(base, __LINE__)
+
 #define ren_register_component(Type, ...)                                                   \
   namespace __compreg {                                                                     \
-    struct __COMPONENT_REGISTRAR_##__LINE__ {                                               \
-      __COMPONENT_REGISTRAR_##__LINE__() { ren::doRegisterComponent<Type>({__VA_ARGS__}); } \
+    struct REN_COMPREG_UNIQUE_NAME(COMPREG) {                                               \
+      REN_COMPREG_UNIQUE_NAME(COMPREG)() { ren::doRegisterComponent<Type>({__VA_ARGS__}); } \
     };                                                                                      \
-    inline __COMPONENT_REGISTRAR_##__LINE__ registrar_instance_##__LINE__;                  \
+    inline REN_COMPREG_UNIQUE_NAME(COMPREG) REN_COMPREG_UNIQUE_NAME(COMPREG_INSTANCE);      \
   }
 
 #define ren_component(name, ...) \
