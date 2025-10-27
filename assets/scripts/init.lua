@@ -34,6 +34,9 @@ ren.struct("vec2", [[
   end,
   dot = function(a, b)
     return a.x * b.x + a.y * b.y
+  end,
+  unpack = function(a)
+    return a.x, a.y
   end
 }, {
   __add = function(a, b)
@@ -61,7 +64,7 @@ ren.struct("vec2", [[
   end,
   __eq = function(a, b)
     return a.x == b.x and a.y == b.y
-  end
+  end,
 })
 
 vec2.up = vec2(0, 1)
@@ -91,6 +94,9 @@ ren.struct("vec3", [[
   end,
   cross = function(a, b)
     return vec3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x)
+  end,
+  unpack = function(a)
+    return a.x, a.y, a.z
   end
 }, {
   __add = function(a, b)
