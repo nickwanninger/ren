@@ -7,14 +7,11 @@
 #include <glm/glm.hpp>
 #include <glm/gtx/quaternion.hpp>
 #include <ren/assets/Mesh.h>
+#include <ren/core/ComponentRegistration.h>
 
 namespace ren {
 
   namespace comp {
-
-
-    // These entities are those which are available to the editor and serialization.
-
 
 
 
@@ -47,6 +44,8 @@ namespace ren {
       Name(std::string&& name)
           : name(std::move(name)) {}
     };
+    ren_register_component(Name, .luaName = "NameComponent");
+
 
     struct Transform {
       glm::vec3 translation = {0.0f, 0.0f, 0.0f};
@@ -74,6 +73,8 @@ namespace ren {
       }
     };
 
+    ren_register_component(Transform, .luaName = "TransformComponent");
+
 
     struct Mesh {
       ref<ren::Mesh> mesh;
@@ -86,6 +87,8 @@ namespace ren {
 
       friend void from_json(const json& j, Mesh& uuid) { abort(); }
     };
+
+    ren_register_component(Mesh, .luaName = "MeshComponent");
 
 
     struct Material {
@@ -100,13 +103,18 @@ namespace ren {
       friend void from_json(const json& j, comp::Material& uuid) { abort(); }
     };
 
-
-    struct DirectionalLight {
-      // NLOHMANN_DEFINE_TYPE_INTRUSIVE(DirectionalLight);
-    };
-
-
+    ren_register_component(Material, .luaName = "MaterialComponent");
 
   }  // namespace comp
+
+
+  struct PositionComponent {
+    glm::vec3 position;
+  };
+  ren_register_component(ren::PositionComponent, .luaName = "PositionComponent");
+
+
+  ren_register_component(std::string, .luaName = "std_string");
+
 
 }  // namespace ren
