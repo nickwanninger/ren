@@ -590,7 +590,6 @@ ecs_entity_t __ren_register_component(const char *name, size_t size, size_t alig
   id = ecs_component_init(world, &componentDesc);
 
   ecs_meta_from_desc(world, id, EcsStructType, desc);
-  fmt::println("Registering component '{}' -> {}", name, id);
   return id;
 }
 

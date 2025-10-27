@@ -128,7 +128,6 @@ namespace ren {
   // Helper function for decompressing gzip data in EmbeddedAssetSource::load
   static int decompress_gzip(const unsigned char* compressed_data, size_t compressed_size,
                              unsigned char* dest, size_t dest_size) {
-    fmt::println("Decompressing gzip data: {} bytes -> {} bytes", compressed_size, dest_size);
     // Skip gzip header (10 bytes minimum, but variable with optional fields)
     // Simple case: skip 10 bytes, ignore 8-byte footer at end
     const unsigned char* deflate_data = compressed_data + 10;
@@ -168,9 +167,6 @@ namespace ren {
           out.clear();
           return false;
         }
-        fmt::println(
-            "[Asset Source] Loaded '{}' ({} bytes compressed, {} bytes) from embedded resources",
-            name, res.size, out.size());
         return true;
       }
     }
@@ -196,7 +192,6 @@ namespace ren {
 extern "C" {
 void __ren_register_embedded_resource(const char* name, const unsigned char* data,
                                       unsigned long size, unsigned long original_size) {
-  fmt::println("Registering embedded resource: {}, ({}B -> {}B)", name, size, original_size);
   ren::getEmbeddedResources().push_back({name, data, size, original_size});
 }
 }
