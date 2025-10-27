@@ -11,6 +11,71 @@
 #include <shaderc/shaderc.hpp>
 #include <ren/assets/AssetManager.h>
 
+// Custom includer for handling #include directives in shaders
+class ShaderIncluder : public shaderc::CompileOptions::IncluderInterface {
+ public:
+  ShaderIncluder() = default;
+
+  // Called when the compiler encounters a #include directive
+  shaderc_include_result* GetInclude(const char* requested_source, shaderc_include_type type,
+                                     const char* requesting_source, size_t include_depth) override {
+    auto result = new shaderc_include_result();
+
+    // Convert the requested source path to a string
+    std::string include_path = requested_source;
+    fmt::println("Loading shader include: {}", include_path);
+
+    // Load the file using ren::loadAssetBytes
+    auto file_contents = new std::vector<u8>();
+    if (!ren::loadAssetBytes(include_path, *file_contents)) {
+      fmt::println("Failed to load shader include: {}", include_path);
+      result->source_name = new char[include_path.length() + 1];
+      strcpy((char*)result->source_name, include_path.c_str());
+      result->source_name_length = include_path.length();
+      result->content = "";
+      result->content_length = 0;
+      return result;
+    }
+
+    // Convert the loaded bytes to a string
+    auto source_str = new std::string(file_contents->begin(), file_contents->end());
+
+    result->source_name = new char[include_path.length() + 1];
+    strcpy((char*)result->source_name, include_path.c_str());
+    result->source_name_length = include_path.length();
+    result->content = source_str->c_str();
+    result->content_length = source_str->length();
+
+    // Store the string to prevent it from being freed
+    m_loaded_sources.push_back(source_str);
+    m_file_contents.push_back(file_contents);
+
+    return result;
+  }
+
+  // Called when the compiler is done with an include
+  void ReleaseInclude(shaderc_include_result* include_result) override {
+    if (include_result) {
+      delete[] include_result->source_name;
+      delete include_result;
+    }
+  }
+
+  ~ShaderIncluder() {
+    // Clean up loaded sources
+    for (auto str : m_loaded_sources) {
+      delete str;
+    }
+    for (auto contents : m_file_contents) {
+      delete contents;
+    }
+  }
+
+ private:
+  std::vector<std::string*> m_loaded_sources;
+  std::vector<std::vector<u8>*> m_file_contents;
+};
+
 ren::Shader::Shader(const std::string_view& file_name, VkShaderStageFlagBits stage)
     : filename(file_name)
     , stage(stage) {
@@ -91,6 +156,9 @@ std::vector<u32> ren::Shader::loadShader(const std::string_view& filename) {
     shaderc::Compiler compiler;
     shaderc::CompileOptions options;
 
+    // Set up the custom includer for #include support
+    options.SetIncluder(std::make_unique<ShaderIncluder>());
+
     // Set compilation options
     options.SetTargetEnvironment(shaderc_target_env_vulkan, shaderc_env_version_vulkan_1_2);
 
@@ -99,8 +167,8 @@ std::vector<u32> ren::Shader::loadShader(const std::string_view& filename) {
     options.SetAutoMapLocations(true);
     options.SetGenerateDebugInfo();  // Preserve debug info for reflection
 
-    // options.SetOptimizationLevel(shaderc_optimization_level_performance);
-    options.SetOptimizationLevel(shaderc_optimization_level_zero);
+    options.SetOptimizationLevel(shaderc_optimization_level_performance);
+    // options.SetOptimizationLevel(shaderc_optimization_level_zero);
 
 
 

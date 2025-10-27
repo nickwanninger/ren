@@ -1,5 +1,9 @@
 #version 450
 
+
+// Pull in the engine constants (defines the UBO)
+#include "shaders/engine.glsl"
+
 layout(location = 0) in vec3 worldNormal;
 layout(location = 1) in vec2 uv;
 layout(location = 2) in vec3 worldPos;
@@ -7,25 +11,9 @@ layout(location = 3) in vec3 worldTangent;
 layout(location = 4) in vec3 worldBitangent;
 
 
-
 // We must emit both albedo and a normal value for postprocessing.
 layout(location = 0) out vec4 outColor;
 layout(location = 1) out vec4 outNormal;
-
-
-
-#define ENGINE_SET 0
-#define PBR_SET 1
-
-layout(set = ENGINE_SET, binding = 0, std140) uniform EngineUBO {
-  mat4 view;
-  mat4 proj;
-  mat4 invViewProj;  // inverse(proj * view)
-
-  vec4 cameraWorldPosition;
-  vec4 lightDirection;
-}
-engine;
 
 
 
@@ -151,13 +139,11 @@ void main() {
   // Simple ambient lighting
   vec3 ambient = vec3(0.1, 0.1, 0.1) * baseColor.rgb;
 
-  // Compute skybox color
-  // vec3 skyboxColor = computeSkyboxColor(normalize(worldPos));
 
   // Final color with skybox contribution
   vec3 color = ambient + (diffuse + specular) * NdotL;
+  // color = material.emissiveFactor.rgb;
   color += material.emissiveFactor.rgb;
-  // color = mix(skyboxColor, color, NdotL);
 
   outColor = vec4(color, baseColor.a);
   outNormal = vec4(N * 0.5 + 0.5, 1.0);

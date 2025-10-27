@@ -28,6 +28,10 @@ namespace ren {
     ShaderProgram(const std::string& vertexShader, const std::string& fragmentShader);
     ~ShaderProgram();
 
+    static inline ref<ShaderProgram> makeFullScreenProgram(const std::string& fragmentShaderPath) {
+      return makeRef<ShaderProgram>("shaders/display.vert", fragmentShaderPath);
+    }
+
     // -- Non-copyable, movable -- //
     ShaderProgram(const ShaderProgram&) = delete;
     ShaderProgram& operator=(const ShaderProgram&) = delete;

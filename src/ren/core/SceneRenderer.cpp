@@ -46,8 +46,7 @@ namespace ren {
 
     opaque.skyboxPSO.depthTest = false;
     opaque.skyboxPSO.depthWrite = false;
-    opaque.skyboxPSO.program =
-        makeRef<ShaderProgram>("shaders/display.vert", "shaders/skybox.frag");
+    opaque.skyboxPSO.program = ShaderProgram::makeFullScreenProgram("shaders/skybox.frag");
     opaque.skyboxPSO.hasVertexBinding = false;
     opaque.skyboxPSO.cullMode = ren::CullMode::None;
   }
@@ -82,7 +81,7 @@ namespace ren {
     if (height < 1) height = 1;
 
 
-    float targetHeight = 768;
+    float targetHeight = 480;
     targetHeight = height;
     float scale = targetHeight / height;
     width *= scale;
@@ -183,6 +182,21 @@ namespace ren {
       engineUBO.proj = pc.proj;
       engineUBO.invViewProj = glm::inverse(pc.proj * pc.view);
       engineUBO.cameraWorldPosition = glm::vec4(camera.position, 1.0);
+
+
+      float azimuth = atan2(engineUBO.lightDirection.x,
+                            engineUBO.lightDirection.y);  // radians, 0 = north, π/2 = east
+      ImGui::Begin("Light Direction");
+      ImGui::DragFloat4("Direction", glm::value_ptr(engineUBO.lightDirection), 0.1f);
+      if (ImGui::DragFloat("Azimuth (radians)", &azimuth, 0.01f)) {
+        float radius =
+            glm::length(glm::vec2(engineUBO.lightDirection.x, engineUBO.lightDirection.y));
+        engineUBO.lightDirection.x = radius * sin(azimuth);
+        engineUBO.lightDirection.y = radius * cos(azimuth);
+      }
+      ImGui::End();
+
+
 
       // ren::debugLine(glm::vec3(0, 0, 0), engineUBO.lightDirection * 512.0f, {1, 0, 1}, 4.0f);
 
