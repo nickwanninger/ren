@@ -5,6 +5,7 @@
 #include <ImGuizmo/GraphEditor.h>
 #include <unordered_map>
 #include <queue>
+#include <chrono>
 
 namespace ren {
 
@@ -238,22 +239,47 @@ namespace ren {
     // Step 1: Find the task that produces the goal resource
     RenderTask *goalTask = getDefiningTask(goalResource);
 
-    fmt::println("Compiling render graph with goal resource {} -> task '{}'", goalResource,
-                 goalTask->name());
-
     // Step 2: Compute dependencies from operand/result relationships
     computeDependencies();
 
-    // Step 3: Topologically sort tasks starting from goal
+    // Step 3: Compute scheduling levels via DFS to determine parallelism
+    // (depth in the dependency DAG from goal to leaves)
+    std::unordered_map<RenderTask *, int> taskLevels;
+    std::function<int(RenderTask *)> computeLevels = [&](RenderTask *task) -> int {
+      if (taskLevels.count(task)) return taskLevels[task];
+
+      int maxDepLevel = 0;
+      for (auto *dep : task->dependencies) {
+        maxDepLevel = std::max(maxDepLevel, computeLevels(dep));
+      }
+
+      int level = maxDepLevel + 1;
+      taskLevels[task] = level;
+      return level;
+    };
+    computeLevels(goalTask);
+
+    // Step 4: Topologically sort tasks starting from goal
     std::vector<RenderTask *> orderedTasks;
     std::unordered_set<RenderTask *> visited;
     topologicalSort(goalTask, orderedTasks, visited);
 
-    // Step 4: Create schedule with ordered tasks
+    // Step 5: Sort tasks by level (ascending) so all tasks of the same level are grouped together.
+    // This allows executing all tasks of a level before moving to the next level.
+    std::sort(orderedTasks.begin(), orderedTasks.end(),
+              [&taskLevels](RenderTask *a, RenderTask *b) {
+                int levelA = taskLevels.count(a) ? taskLevels[a] : 0;
+                int levelB = taskLevels.count(b) ? taskLevels[b] : 0;
+                return levelA < levelB;
+              });
+
+    // Step 6: Create schedule with level-sorted tasks and assign levels
     RenderSchedule schedule(*this);
     for (auto *task : orderedTasks) {
       schedule.addTask(task);
     }
+    // Copy task levels into the schedule
+    schedule.taskLevels = taskLevels;
 
     return schedule;
   }
@@ -264,13 +290,20 @@ namespace ren {
       throw std::runtime_error(fmt::format("Invalid resource handle for runFor: {}", goalResource));
     }
 
-    fmt::println("Running render graph for goal resource {} ('{}')", goalResource, it->second.name);
-
+    auto start = std::chrono::high_resolution_clock::now();
     auto schedule = compile(goalResource);
+    schedule.validate();
+    auto end = std::chrono::high_resolution_clock::now();
 
-    fmt::println("Schedule for goal resource '{}' ({} tasks):", it->second.name,
-                 schedule.getTasks().size());
+    auto durationNs = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
+    fmt::println("Compiled render graph schedule in {} ns", durationNs);
+
+    int currentLevel = 0;
     for (const auto &task : schedule.getTasks()) {
+      if (schedule.getLevel(task) != currentLevel) {
+        currentLevel = schedule.getLevel(task);
+        fmt::println("{:04d}:", currentLevel);
+      }
       fmt::println("  {}", task->toString());
     }
 
@@ -279,12 +312,98 @@ namespace ren {
 
     auto repr = [](RenderTask *task) { return fmt::format("{}.{}", task->name(), (void *)task); };
 
+    for (const auto &task : schedule.getTasks()) {
+      fmt::println("  \"{}\"[label=\"{} | {}\"]", repr(task), task->name(),
+                   schedule.getLevel(task));
+    }
+
     for (const auto &entry : tasks) {
       for (auto *dep : entry.task->dependencies) {
         fmt::println("  \"{}\" -> \"{}\";", repr(dep), repr(entry.task.get()));
       }
     }
     fmt::println("}}");
+  }
+
+  void BarrierTask::run(GraphRunContext &ctx) {
+    // TODO: Implement barrier synchronization logic
+    // This should perform layout transitions and pipeline barriers for the resource
+    // from m_fromAccess to m_toAccess
+    fmt::println("Barrier: transitioning resource {} from {} to {}", m_resource, m_fromAccess,
+                 m_toAccess);
+  }
+
+  BarrierTask *RenderSchedule::createBarrier(GraphHandle resource, GraphAccess fromAccess,
+                                             GraphAccess toAccess) {
+    auto barrier = std::make_shared<BarrierTask>(graph, resource, fromAccess, toAccess);
+    syncTasks.push_back(barrier);
+    return barrier.get();
+  }
+
+  int RenderSchedule::getLevel(RenderTask *task) const {
+    auto it = taskLevels.find(task);
+    if (it == taskLevels.end()) {
+      return -1;  // Task not in this schedule
+    }
+    return it->second;
+  }
+
+  // Helper: check if taskA has a transitive dependency on taskB
+  bool RenderSchedule::dependsOn(RenderTask *taskA, RenderTask *taskB) const {
+    std::unordered_set<RenderTask *> visited;
+    std::function<bool(RenderTask *)> hasPath = [&](RenderTask *task) -> bool {
+      if (task == taskB) return true;
+      if (visited.count(task)) return false;
+      visited.insert(task);
+
+      for (auto *dep : task->dependencies) {
+        if (hasPath(dep)) return true;
+      }
+      return false;
+    };
+
+    return hasPath(taskA);
+  }
+
+  bool RenderSchedule::validate(void) const {
+    // Group tasks by level
+    std::unordered_map<int, std::vector<RenderTask *>> levelTasks;
+    for (const auto &task : tasks) {
+      int level = getLevel(task);
+      if (level >= 0) {  // Skip tasks not in taskLevels
+        levelTasks[level].push_back(task);
+      }
+    }
+
+    // For each level, verify no two tasks have dependencies on each other
+    for (const auto &[level, tasksAtLevel] : levelTasks) {
+      for (size_t i = 0; i < tasksAtLevel.size(); ++i) {
+        for (size_t j = i + 1; j < tasksAtLevel.size(); ++j) {
+          RenderTask *taskA = tasksAtLevel[i];
+          RenderTask *taskB = tasksAtLevel[j];
+
+          // Check if A depends on B
+          if (dependsOn(taskA, taskB)) {
+            throw std::runtime_error(fmt::format(
+                "Schedule validation failed: task '{}' (level {}) depends on task '{}' at the same "
+                "level",
+                taskA->name(), level, taskB->name()));
+          }
+
+          // Check if B depends on A
+          if (dependsOn(taskB, taskA)) {
+            throw std::runtime_error(fmt::format(
+                "Schedule validation failed: task '{}' (level {}) depends on task '{}' at the same "
+                "level",
+                taskB->name(), level, taskA->name()));
+          }
+        }
+      }
+    }
+
+    fmt::println("Schedule validation passed: {} tasks across {} levels", tasks.size(),
+                 levelTasks.size());
+    return true;
   }
 
 
