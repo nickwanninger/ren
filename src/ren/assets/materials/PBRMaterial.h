@@ -14,6 +14,7 @@ namespace ren {
 
     float metallicFactor = 0.0f; // Metallic factor (0.0 to 1.0)
     float roughnessFactor = 1.0f; // Roughness factor (0.0 to 1.0)
+    float occlusionStrength = 1.0f; // Occlusion strength (0.0 to 1.0)
   };
 
 
@@ -38,6 +39,7 @@ namespace ren {
     // GLTF Compatible texture set for pbr metalic roughness model.
     ref<Texture> baseColorTexture;
     ref<Texture> metallicRoughnessTexture;
+    ref<Texture> emissiveTexture;
     ref<Texture> normalTexture;
 
 

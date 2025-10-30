@@ -22,14 +22,14 @@ namespace ren {
 
     this->baseColorTexture = defaultTexture;
     this->metallicRoughnessTexture = defaultTexture;
+    this->emissiveTexture = defaultTexture;
     this->normalTexture = defaultNormalTexture;
 
     if (PBRMaterial::pso.program == nullptr) {
       // If the PSO is not initialized, create it.
-      // PBRMaterial::pso.cullMode = CullMode::None;
       PBRMaterial::pso.program = makeRef<ShaderProgram>("shaders/pbr");
 
-      PBRMaterial::pso.cullMode = ren::CullMode::None;
+      PBRMaterial::pso.cullMode = ren::CullMode::Back;
     }
   }
 
@@ -49,6 +49,7 @@ namespace ren {
     binder.bind("material", this->materialPropsBuffer);
     binder.bind("baseColorTexture", *this->baseColorTexture);
     binder.bind("metallicRoughnessTexture", *this->metallicRoughnessTexture);
+    binder.bind("emissiveTexture", *this->emissiveTexture);
     binder.bind("normalTexture", *this->normalTexture);
     binder.apply();
 
