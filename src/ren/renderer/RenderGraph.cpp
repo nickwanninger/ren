@@ -11,14 +11,112 @@ namespace ren {
   // Implementation of RenderGraph would go here
 
 
+  //
+  struct ImageBarrierInfo {
+    VkPipelineStageFlags stage;
+    VkAccessFlags access;
+    VkImageLayout layout;
+  };
+
+
+  static ImageBarrierInfo getImageBarrierInfoForAccess(GraphAccess access) {
+    ImageBarrierInfo info;
+
+    switch (access) {
+      case GraphAccess::RenderTarget:
+        info.stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        info.access = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        info.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        break;
+      case GraphAccess::DepthTarget:
+        info.stage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+        info.access = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        info.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        break;
+      case GraphAccess::FragmentShaderRead:
+        info.stage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+        info.access = VK_ACCESS_SHADER_READ_BIT;
+        info.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        break;
+      case GraphAccess::VertexShaderRead:
+        info.stage = VK_PIPELINE_STAGE_VERTEX_SHADER_BIT;
+        info.access = VK_ACCESS_SHADER_READ_BIT;
+        info.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        break;
+      case GraphAccess::ComputeShaderRead:
+        info.stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+        info.access = VK_ACCESS_SHADER_READ_BIT;
+        info.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        break;
+      case GraphAccess::ComputeShaderWrite:
+        info.stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+        info.access = VK_ACCESS_SHADER_WRITE_BIT;
+        info.layout = VK_IMAGE_LAYOUT_GENERAL;
+        break;
+      case GraphAccess::ComputeShaderReadWrite:
+        info.stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+        info.access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+        info.layout = VK_IMAGE_LAYOUT_GENERAL;
+        break;
+
+      case GraphAccess::ShaderRead:
+        info.stage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+        info.access = VK_ACCESS_SHADER_READ_BIT;
+        info.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        break;
+    }
+
+
+    return info;
+  }
+
+
+  std::string GraphUse::toString(void) const {
+    auto type = graph.getResourceType(handle);
+    // return fmt::format("{}.{} %{}", type, access, handle);
+    return fmt::format("%{}", handle);
+  }
+
+
+
+
   RenderTask &RenderTask::read(GraphHandle handle, GraphAccess access) {
     m_graph.addRead(*this, handle, access);
+    m_reads.push_back(GraphUse(m_graph, handle, access));
     return *this;
   }
 
   RenderTask &RenderTask::write(GraphHandle handle, GraphAccess access) {
     m_graph.addWrite(*this, handle, access);
+    m_writes.push_back(GraphUse(m_graph, handle, access));
     return *this;
+  }
+
+
+  std::string RenderTask::toString(void) const {
+    // print like an llvm SSA instruction
+    int ind = 0;
+
+    std::stringstream ss;
+
+
+    ind = 0;
+    for (const auto &use : getWrites()) {
+      if (ind++ > 0) ss << ", ";
+      ss << use.toString();
+    }
+
+    ss << " = " << name() << "(";
+
+    ind = 0;
+    for (const auto &use : getReads()) {
+      if (ind++ > 0) ss << ", ";
+      ss << use.toString();
+    }
+
+    ss << ")";
+
+    return ss.str();
   }
 
 
@@ -44,7 +142,7 @@ namespace ren {
     GraphHandle handle = nextHandle++;
 
     ResourceEntry entry;
-    entry.name = std::string(name);
+    entry.name = name;
     entry.type = GraphResourceType::Image;
     entry.initialAccess = initialAccess;
 
@@ -85,9 +183,7 @@ namespace ren {
   }
 
 
-  void RenderGraph::runFor(RenderTask &goalTask) {
-    fmt::println("Running render graph for goal task '{}'", goalTask.name());
-
+  RenderSchedule RenderGraph::compile(RenderTask &goalTask) {
     for (const auto &entry : tasks) {
       entry.task->dependencies.clear();  // Clear the dependencies for each task
     }
@@ -119,9 +215,7 @@ namespace ren {
 
     dfs(&goalTask);
 
-
-    std::vector<RenderTask *> schedule;
-
+    RenderSchedule schedule(*this);
 
     std::map<int, std::vector<RenderTask *>> levelTasks;
     int maxLevel = 0;
@@ -134,19 +228,21 @@ namespace ren {
 
     for (int level = minLevel; level <= maxLevel; ++level) {
       for (auto *task : levelTasks[level]) {
-        schedule.push_back(task);
+        schedule.addTask(task);
       }
     }
+    return schedule;
+  }
+
+  void RenderGraph::runFor(RenderTask &goalTask) {
+    fmt::println("Running render graph for goal task '{}'", goalTask.name());
+
+    auto schedule = compile(goalTask);
 
 
-    // Execute the scheduled tasks
-    for (auto *task : schedule) {
-      fmt::println(" - task '{}' at level {}", task->name(), levels[task]);
-      // GraphRunContext ctx(*this);
-      // ctx.task = task;
-      // task->run(ctx);
+    for (const auto &task : schedule.getTasks()) {
+      fmt::println("  {}", task->toString());
     }
-
 
 
 
@@ -155,9 +251,9 @@ namespace ren {
 
     auto repr = [](RenderTask *task) { return fmt::format("{}.{}", task->name(), (void *)task); };
 
-    for (const auto &[task, level] : levels) {
-      fmt::println("  \"{}\"[label=\"{} {}\"]", repr(task), task->name(), level);
-    }
+    // for (const auto &[task, level] : levels) {
+    //   fmt::println("  \"{}\"[label=\"{} {}\"]", repr(task), task->name(), level);
+    // }
 
     for (const auto &entry : tasks) {
       for (auto *dep : entry.task->dependencies) {
