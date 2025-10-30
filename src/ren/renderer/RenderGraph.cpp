@@ -8,172 +8,164 @@
 
 namespace ren {
 
+  // Implementation of RenderGraph would go here
 
 
-
-  void GraphNode::addInput(const std::string &resourceName, GraphResourceFlags access) {
-    // Add this node to the list of dependants for this resource.
-    auto &dependants = desc.graph.resourceDependants[resourceName];
-    dependants.push_back(getNodeID());
-
-    GraphResourceUsage usage{resourceName, access, 0, 0};
-    inputs.push_back(usage);
+  RenderTask &RenderTask::read(GraphHandle handle, GraphAccess access) {
+    m_graph.addRead(*this, handle, access);
+    return *this;
   }
 
-  void GraphNode::addOutput(const std::string &resourceName, GraphResourceFlags access) {
-    // if (desc.graph.resourceProducers.contains(resourceName)) {
-    //   fmt::print("Error: Resource '{}' already has a producer.\n", resourceName);
-    //   return;
-    // }
-
-
-    // Add this node as the producer for this resource.
-    desc.graph.resourceProducers[resourceName] = getNodeID();
-
-    // Add the output to the list of outputs for this node.
-    GraphResourceUsage usage{resourceName, access, 0, 0};
-    outputs.push_back(usage);
+  RenderTask &RenderTask::write(GraphHandle handle, GraphAccess access) {
+    m_graph.addWrite(*this, handle, access);
+    return *this;
   }
 
 
+  RenderGraph::RenderGraph() {}
 
 
-  ref<GraphNode> RenderGraph::addNode(const std::string &name) {
-    auto uuid = UUID();
-    GraphNodeDesc desc{uuid, name, *this};
-    auto node = makeRef<GraphNode>(desc);
-    nodes[uuid] = node;
+  void RenderGraph::prepare(glm::uvec2 swapchainSize) {
+    this->swapchainSize = swapchainSize;
+    fmt::println("Preparing render graph with swapchain size {}x{}", swapchainSize.x,
+                 swapchainSize.y);
 
-    // fmt::println("Added GraphNode '{}' with ID: {}", name, (u64)uuid);
-
-    return node;
+    // Here we would allocate resources based on the resourceTable and their specs.
+    for (const auto &[handle, resource] : resourceTable) {
+      if (resource.type == GraphResourceType::Image) {
+        fmt::println(" - Preparing image resource '{}' (handle {})", resource.name, handle);
+        // Allocate image here based on its spec.
+      }
+    }
   }
 
-  void RenderGraph::dump() {
-    fmt::println("// https://dreampuf.github.io/GraphvizOnline/?engine=dot");
-    fmt::println("digraph RenderGraph {{");
-    // fmt::println("  rankdir=LR;");
-    fmt::println("  node [shape=box];");
+  GraphHandle RenderGraph::createImage(const std::string_view &name, const GraphImageSpec &spec,
+                                       GraphAccess initialAccess) {
+    GraphHandle handle = nextHandle++;
 
-    for (const auto &[uuid, node] : nodes) {
-      fmt::println("  // {} {}", (u64)uuid, node->desc.name);
+    ResourceEntry entry;
+    entry.name = std::string(name);
+    entry.type = GraphResourceType::Image;
+    entry.initialAccess = initialAccess;
+
+
+    bool relativeScale = not(spec.scale.x == 0.0f and spec.scale.y == 0.0f);
+
+    if (relativeScale) {
+      fmt::println("Creating image '{}' with swapchain-relative scale ({}, {})", name, spec.scale.x,
+                   spec.scale.y);
+    } else {
+      fmt::println("Creating image '{}' with size {}x{}", name, spec.width, spec.height);
     }
 
-    for (const auto &[uuid, node] : nodes) {
-      fmt::println("  subgraph cluster_{} {{ // {}", node->desc.name, (u64)uuid);
-      fmt::println("     style=filled; color=lightgrey; label=\"{}\"", node->desc.name);
-      fmt::println("     rp_{} [label=\"Pass\"];", (u64)uuid);
+    // Here, we would allocate the resource, but I haven't gotten there yet.
 
-      // draw the inputs
-      for (const auto &input : node->inputs) {
-        // the inputs are nodes which point to this node.
-        fmt::println("     input_{}_{} [label=\"{}\"];", input.resourceName, (u64)uuid,
-                     input.resourceName);
-        fmt::println("     input_{}_{} -> rp_{};", input.resourceName, (u64)uuid, (u64)uuid);
-      }
+    return handle;
+  }
 
+  GraphHandle RenderGraph::addRead(RenderTask &task, GraphHandle handle, GraphAccess access) {
+    fmt::println("Task '{}' reads image {} with access {}", task.name(), handle, access);
 
-      for (const auto &output : node->outputs) {
-        // the outputs are nodes which point to this node.
-        fmt::println("     output_{} [label=\"{}\"];", output.resourceName, output.resourceName);
-        fmt::println("     rp_{} -> output_{};", (u64)uuid, output.resourceName);
-      }
-      fmt::println("  }}");
+    auto &entry = resourceTable[handle];
+    entry.readers.insert(&task);
+    return handle;
+  }
+
+  GraphHandle RenderGraph::addWrite(RenderTask &task, GraphHandle handle, GraphAccess access) {
+    fmt::println("Task '{}' writes image {} with access {}", task.name(), handle, access);
+
+    auto &entry = resourceTable[handle];
+    if (entry.writer != nullptr) {
+      throw std::runtime_error(fmt::format("Warning: Image {} already has a writer task '{}'",
+                                           handle, entry.writer->name()));
     }
 
-    // Now draw the dependencies between nodes.
+    entry.writer = &task;
+    return handle;
+  }
 
-    for (auto &[name, uuids] : resourceDependants) {
-      // fmt::println("  // Resource: {}", name);
-      for (const auto &uuid : uuids) {
-        // fmt::println("  {} -> rp_{};", name, (u64)uuid);
-        fmt::println("  output_{} -> input_{}_{} [label=FOOO];", name, name, (u64)uuid);
+
+  void RenderGraph::runFor(RenderTask &goalTask) {
+    fmt::println("Running render graph for goal task '{}'", goalTask.name());
+
+    for (const auto &entry : tasks) {
+      entry.task->dependencies.clear();  // Clear the dependencies for each task
+    }
+
+    // Build dependencies based on resource usage
+    for (const auto &[handle, resource] : resourceTable) {
+      if (resource.writer) {
+        for (auto *reader : resource.readers) {
+          reader->dependencies.insert(resource.writer);
+        }
       }
     }
 
+
+    std::unordered_map<RenderTask *, int> levels;
+
+    std::function<int(RenderTask *)> dfs = [&](RenderTask *task) -> int {
+      if (levels.count(task)) return levels[task];
+
+      int maxPredLevel = 0;
+      for (auto pred : task->dependencies) {
+        maxPredLevel = std::max(maxPredLevel, dfs(pred));
+      }
+
+      int level = maxPredLevel + 1;
+      levels[task] = level;
+      return level;
+    };
+
+    dfs(&goalTask);
+
+
+    std::vector<RenderTask *> schedule;
+
+
+    std::map<int, std::vector<RenderTask *>> levelTasks;
+    int maxLevel = 0;
+    int minLevel = std::numeric_limits<int>::max();
+    for (const auto &[task, level] : levels) {
+      levelTasks[level].push_back(task);
+      maxLevel = std::max(maxLevel, level);
+      minLevel = std::min(minLevel, level);
+    }
+
+    for (int level = minLevel; level <= maxLevel; ++level) {
+      for (auto *task : levelTasks[level]) {
+        schedule.push_back(task);
+      }
+    }
+
+
+    // Execute the scheduled tasks
+    for (auto *task : schedule) {
+      fmt::println(" - task '{}' at level {}", task->name(), levels[task]);
+      // GraphRunContext ctx(*this);
+      // ctx.task = task;
+      // task->run(ctx);
+    }
+
+
+
+
+    // print dependencies for debug
+    fmt::println("digraph {{");
+
+    auto repr = [](RenderTask *task) { return fmt::format("{}.{}", task->name(), (void *)task); };
+
+    for (const auto &[task, level] : levels) {
+      fmt::println("  \"{}\"[label=\"{} {}\"]", repr(task), task->name(), level);
+    }
+
+    for (const auto &entry : tasks) {
+      for (auto *dep : entry.task->dependencies) {
+        fmt::println("  \"{}\" -> \"{}\";", repr(dep), repr(entry.task.get()));
+      }
+    }
     fmt::println("}}");
   }
 
-  void RenderGraph::run() {
-    REN_PROFILE_FUNCTION();
-    // The ready nodes queue is populated with nodes that have no outstanding dependencies.
-    std::queue<ref<GraphNode>> readyNodes;
-    // Initialize the dependency count for each node.
-    for (const auto &[uuid, node] : nodes) {
-      node->outstandingDependencies = node->inputs.size();
-      node->ran = false;
-
-      // If the node has no dependencies, add it to the ready queue.
-      if (node->outstandingDependencies == 0) readyNodes.push(node);
-    }
-
-    auto outputDone = [&](std::string resourceName) {
-      REN_PROFILE_SCOPE("Propegate Outputs");
-      // This function will decrement the dependency
-      // count for all nodes that depend on this resource.
-      for (const auto &nodeUUID : resourceDependants[resourceName]) {
-        auto &node = nodes[nodeUUID];
-        node->outstandingDependencies--;
-
-        // If the node has no outstanding dependencies, add it to the ready queue.
-        if (node->outstandingDependencies == 0 && !node->ran) { readyNodes.push(node); }
-      }
-    };
-
-    // Go through the deps map and find nodes with no dependencies.
-    while (!readyNodes.empty()) {
-      auto node = readyNodes.front();
-      readyNodes.pop();
-
-      // If the node has already run, skip it.
-      if (node->ran) continue;
-
-      // Mark the node as ran.
-      node->ran = true;
-
-      fmt::println("Running node: {} (ID: {})", node->desc.name, (u64)node->getNodeID());
-
-      // Execute the node's logic here.
-      // This is where you would call the node's execute function or similar.
-      // For now, we just simulate it by printing the name.
-      // In a real implementation, you would have a method to execute the node's logic.
-
-      // After running the node, output done for each of its outputs.
-      for (const auto &output : node->outputs) {
-        outputDone(output.resourceName);
-      }
-    }
-  }
-
-
-
-  void RenderGraph::renderImGui() {
-    // draw the render graph using imgui and imguizmo
-    ImGui::Begin("Render Graph");
-
-    ImGui::Text("Render Graph Nodes: %zu", nodes.size());
-    ImGui::Text("Resource Dependants: %zu", resourceDependants.size());
-    ImGui::Text("Resource Producers: %zu", resourceProducers.size());
-    ImGui::Separator();
-    ImGui::Text("Nodes:");
-
-    for (const auto &[uuid, node] : nodes) {
-      ImGui::PushID((u64)uuid);
-      ImGui::Text("Node: %s (ID: %llu)", node->desc.name.c_str(), (u64)uuid);
-      ImGui::Text("Inputs:");
-      for (const auto &input : node->inputs) {
-        ImGui::Text("  - %s (Access: %d)", input.resourceName.c_str(), (int)input.access);
-      }
-      ImGui::Text("Outputs:");
-      for (const auto &output : node->outputs) {
-        ImGui::Text("  - %s (Access: %d)", output.resourceName.c_str(), (int)output.access);
-      }
-      ImGui::PopID();
-    }
-
-
-
-    ImGui::End();
-  }
 
 }  // namespace ren

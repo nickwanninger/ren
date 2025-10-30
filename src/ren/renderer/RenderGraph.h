@@ -6,122 +6,204 @@
 #include <ren/types.h>
 #include <unordered_set>
 #include <ren/core/UUID.h>
+#include <ren/renderer/Image.h>
 
 namespace ren {
+  class RenderGraph;  // Forward declaration
+  class RenderTask;
 
-  class RenderGraph;
 
-  enum class GraphResourceFlags {
-    None = 0,
-    Read = 1 << 0,
-    Write = 1 << 1,
-    ReadWrite = Read | Write
+  // An identifier for a resource in the render graph.
+  using GraphHandle = u32;
+  static constexpr GraphHandle nullGraphHandle = 0;  // 0 is reserved as null.
+
+  // When accessing a resource, what kind of access is performed.
+  enum class GraphAccess : u8 {
+    // The resource is written as a render target (color)
+    RenderTarget,
+    // The resource is written as a depth target
+    DepthTarget,
+
+    // The resource is read in a shader
+    VertexShaderRead,
+    FragmentShaderRead,
+    // Generic read in a shader (vertex|fragment|compute)
+    ShaderRead,
   };
 
-  struct GraphResourceUsage {
-    std::string resourceName;
-    GraphResourceFlags access;
-    u32 pipelineStage;
-    u32 accessMask;
+
+  enum class GraphResourceType : u8 {
+    Image,   // Constructed with GraphImageSpec/createImage
+    Buffer,  // Not yet implemented. For GPU compute.
   };
 
-  struct GraphNodeDesc {
-    UUID node_id;
-    const std::string name;
+
+  // The specification for creating an image in the render graph.
+  struct GraphImageSpec {
+    // Resolution should come from the swapchain size multiplied by this scale factor.
+    // If this value is 0, the size is absolute. (.width, .height)
+    glm::vec2 scale = glm::vec2(0.0f);
+
+    // Absolute width/height.
+    u32 width = 0;
+    u32 height = 0;
+  };
+
+
+
+
+  // Context passed to each task when it is run.
+  struct GraphRunContext {
     RenderGraph &graph;
+    RenderTask *task;  // This is the task being run.
+
+    GraphRunContext(RenderGraph &g)
+        : graph(g) {}
   };
 
-
-
-  class GraphResource {
+  class RenderTask {
    public:
-    enum class Type { Buffer, Texture };
+    RenderTask(RenderGraph &graph)
+        : m_graph(graph) {}
+    virtual ~RenderTask() = default;
 
+    // Run this task in the render graph with a given context.
+    // We pass this GraphContext to allow the growth of functionality in the future.
+    virtual void run(GraphRunContext &ctx) = 0;
 
-    explicit GraphResource(Type type, u32 index)
-        : resourceType(type)
-        , index(index) {}
+    const std::string &name() const { return m_name; }
+    void setName(const std::string &name) { m_name = name; }
 
-
-    u32 getIndex() const { return index; }
-    Type getType() const { return resourceType; }
-
-    const std::unordered_set<u32> &getWrittenIn() const { return writtenIn; }
-    const std::unordered_set<u32> &getReadIn() const { return readIn; }
-
-    void setName(const std::string_view &name) { this->name = name; }
-    const std::string &getName() const { return name; }
+    RenderTask &read(GraphHandle handle, GraphAccess access);
+    RenderTask &write(GraphHandle handle, GraphAccess access);
 
    private:
-    Type resourceType;
-    u32 index;
-
-    // Which passes is a resource read/written in?
-    std::unordered_set<u32> writtenIn;
-    std::unordered_set<u32> readIn;
-
-    std::string name;
-  };
-
-
-  class GraphTextureResource : public GraphResource {
-   public:
-    explicit GraphTextureResource(u32 index)
-        : GraphResource(Type::Texture, index) {}
-  };
-
-
-  // ...
-
-
-  class GraphNode {
-   public:
-    GraphNode(GraphNodeDesc &desc)
-        : desc(desc) {}
-
-    // Resource dependency management
-    void addInput(const std::string &resourceName,
-                  GraphResourceFlags access = GraphResourceFlags::Read);
-    void addOutput(const std::string &resourceName,
-                   GraphResourceFlags access = GraphResourceFlags::Write);
-
-
-    UUID getNodeID(void) const { return desc.node_id; }
-    RenderGraph &getGraph() const { return desc.graph; }
-
+    std::string m_name;
+    RenderGraph &m_graph;
 
 
    protected:
-    friend class RenderGraph;
-    std::vector<GraphResourceUsage> inputs;
-    std::vector<GraphResourceUsage> outputs;
-    GraphNodeDesc desc;
+    friend class RenderGraph;  // Allow RenderGraph to access read/write protected
 
-    // This is updated by the RenderGraph when it is scheduling the graph.
-    // These things are private to the RenderGraph and should not be modified.
-    u32 outstandingDependencies = 0;
-    bool ran = false;
+    // Who must run before me (writes to resources I read)
+    std::unordered_set<RenderTask *> dependencies;
   };
 
-  // This render graph is a simple topological sort with dynamic scheduling.
-  // It allows you to define Passes, attach input/output resources,
-  // and then execute them in the correct order as those dependencies are met.
-  // Resources are globally
+
+  class LambdaRenderTask : public RenderTask {
+   public:
+    using Callback = std::function<void(GraphRunContext &ctx)>;
+
+    LambdaRenderTask(RenderGraph &graph, Callback func)
+        : RenderTask(graph)
+        , m_func(std::move(func)) {}
+
+    void run(GraphRunContext &ctx) override { m_func(ctx); }
+
+   private:
+    Callback m_func;
+  };
+
+
+
+
   class RenderGraph {
    public:
-    void run();
+    RenderGraph();
+    // Add a task of a given type to the render graph
+    template <typename T, typename... Args>
+    T &addTask(const char *name, Args &&...args);
+    // Add a task as a lambda function
+    RenderTask &addTask(const char *name, LambdaRenderTask::Callback &&func);
 
-    ref<GraphNode> addNode(const std::string &name);
 
-    void dump();
-    bool locked = false;  // Once the graph is locked, no more nodes can be added.
+    GraphHandle createImage(const std::string_view &name, const GraphImageSpec &spec,
+                            GraphAccess initialAccess);
 
-    std::map<UUID, ref<GraphNode>> nodes;
+    GraphHandle addRead(RenderTask &task, GraphHandle handle, GraphAccess access);
+    GraphHandle addWrite(RenderTask &task, GraphHandle handle, GraphAccess access);
 
-    // Given a resource name, return the list of nodes which depend on it.
-    std::map<std::string, std::vector<UUID>> resourceDependants;
-    std::map<std::string, UUID> resourceProducers;
 
-    void renderImGui();
+    // create a schedule of tasks to run, using one task as a goal
+    // For example, if the goal is to present to the swapchain, we would pass in the "blit" task,
+    // and schedule according to dependencies.
+    void runFor(RenderTask &goalTask);
+
+
+    // prepare the render graph for execution (allocate resources, etc)
+    void prepare(glm::uvec2 swapchainSize);
+
+   private:
+    struct TaskEntry {
+      std::string name;
+      ren::ref<RenderTask> task;
+    };
+
+
+    struct ResourceEntry {
+      // The resource name, for debug.
+      std::string name;
+      GraphResourceType type;
+      // The access type it should be in at the start of the frame.
+      GraphAccess initialAccess;
+
+      RenderTask *writer;
+      std::unordered_set<RenderTask *> readers;
+    };
+
+
+    struct ImageResource {
+      ImageResource(const GraphImageSpec &spec)
+          : spec(spec) {}
+
+      GraphImageSpec spec;
+
+      ren::ImageRef image;
+    };
+
+
+    std::unordered_map<GraphHandle, ResourceEntry> resourceTable;
+    std::vector<TaskEntry> tasks;
+    GraphHandle nextHandle = 1;
+
+    glm::uvec2 swapchainSize;
   };
+
+
+  template <typename T, typename... Args>
+  inline T &RenderGraph::addTask(const char *name, Args &&...args) {
+    static_assert(
+        std::is_base_of<RenderTask, T>::value,
+        "when adding a task to the render graph, it must be derived from ren::RenderTask");
+    auto task = std::make_shared<T>(*this, std::forward<Args>(args)...);
+    task->setName(name);
+    tasks.push_back({name, task});
+    return *task.get();
+  }
+
+
+  inline RenderTask &RenderGraph::addTask(const char *name, LambdaRenderTask::Callback &&func) {
+    return addTask<LambdaRenderTask>(name, std::move(func));
+  }
+
 }  // namespace ren
+
+
+template <>
+struct fmt::formatter<ren::GraphAccess> : fmt::formatter<std::string_view> {
+  static const char *toString(ren::GraphAccess access) {
+#define CASE_ENUM_TO_STRING(e) \
+  case ren::GraphAccess::e: return #e;
+    switch (access) {
+      CASE_ENUM_TO_STRING(RenderTarget);
+      CASE_ENUM_TO_STRING(DepthTarget);
+      CASE_ENUM_TO_STRING(FragmentShaderRead);
+      CASE_ENUM_TO_STRING(VertexShaderRead);
+      CASE_ENUM_TO_STRING(ShaderRead);
+    }
+  }
+
+  auto format(ren::GraphAccess access, fmt::format_context &ctx) const {
+    return fmt::formatter<std::string_view>::format(toString(access), ctx);
+  }
+};
