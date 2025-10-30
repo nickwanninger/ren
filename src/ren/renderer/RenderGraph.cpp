@@ -71,10 +71,9 @@ namespace ren {
   }
 
 
-  std::string GraphUse::toString(void) const {
-    auto type = graph.getResourceType(handle);
-    // return fmt::format("{}.{} %{}", type, access, handle);
-    return fmt::format("%{}", handle);
+  std::string GraphOperand::toString(void) const {
+    return fmt::format("{} %{}", access, valueHandle);
+    // return fmt::format("%{}", valueHandle);
   }
 
 
@@ -82,36 +81,36 @@ namespace ren {
 
   RenderTask &RenderTask::read(GraphHandle handle, GraphAccess access) {
     m_graph.addRead(*this, handle, access);
-    m_reads.push_back(GraphUse(m_graph, handle, access));
+    GraphResourceType resourceType = m_graph.getResourceType(handle);
+    m_operands.push_back(GraphOperand(handle, access, resourceType));
     return *this;
   }
 
   RenderTask &RenderTask::write(GraphHandle handle, GraphAccess access) {
     m_graph.addWrite(*this, handle, access);
-    m_writes.push_back(GraphUse(m_graph, handle, access));
+    m_results.push_back(handle);
     return *this;
   }
 
 
   std::string RenderTask::toString(void) const {
     // print like an llvm SSA instruction
-    int ind = 0;
-
     std::stringstream ss;
 
-
-    ind = 0;
-    for (const auto &use : getWrites()) {
+    // Results (writes)
+    int ind = 0;
+    for (const auto &resultHandle : getResults()) {
       if (ind++ > 0) ss << ", ";
-      ss << use.toString();
+      ss << fmt::format("%{}", resultHandle);
     }
 
     ss << " = " << name() << "(";
 
+    // Operands (reads)
     ind = 0;
-    for (const auto &use : getReads()) {
+    for (const auto &operand : getOperands()) {
       if (ind++ > 0) ss << ", ";
-      ss << use.toString();
+      ss << operand.toString();
     }
 
     ss << ")";
@@ -146,7 +145,6 @@ namespace ren {
     entry.type = GraphResourceType::Image;
     entry.initialAccess = initialAccess;
 
-
     bool relativeScale = not(spec.scale.x == 0.0f and spec.scale.y == 0.0f);
 
     if (relativeScale) {
@@ -156,104 +154,130 @@ namespace ren {
       fmt::println("Creating image '{}' with size {}x{}", name, spec.width, spec.height);
     }
 
-    // Here, we would allocate the resource, but I haven't gotten there yet.
+    // Store the entry in the resource table so the name persists
+    resourceTable[handle] = entry;
+
+    // Here, we would allocate the actual GPU resource based on its spec.
 
     return handle;
   }
 
   GraphHandle RenderGraph::addRead(RenderTask &task, GraphHandle handle, GraphAccess access) {
-    fmt::println("Task '{}' reads image {} with access {}", task.name(), handle, access);
+    fmt::println("Task '{}' reads resource {} with access {}", task.name(), handle, access);
 
     auto &entry = resourceTable[handle];
-    entry.readers.insert(&task);
+    entry.users.insert(&task);
     return handle;
   }
 
   GraphHandle RenderGraph::addWrite(RenderTask &task, GraphHandle handle, GraphAccess access) {
-    fmt::println("Task '{}' writes image {} with access {}", task.name(), handle, access);
+    fmt::println("Task '{}' writes resource {} with access {}", task.name(), handle, access);
 
     auto &entry = resourceTable[handle];
-    if (entry.writer != nullptr) {
-      throw std::runtime_error(fmt::format("Warning: Image {} already has a writer task '{}'",
-                                           handle, entry.writer->name()));
+    if (entry.definingTask != nullptr) {
+      throw std::runtime_error(fmt::format("Warning: Resource {} already has a defining task '{}'",
+                                           handle, entry.definingTask->name()));
     }
 
-    entry.writer = &task;
+    entry.definingTask = &task;
     return handle;
   }
 
 
-  RenderSchedule RenderGraph::compile(RenderTask &goalTask) {
+  // Compute data dependencies based on operand/result relationships
+  // For each task, its dependencies are the tasks that write to resources it reads.
+  void RenderGraph::computeDependencies(void) {
+    // Clear existing dependencies
     for (const auto &entry : tasks) {
-      entry.task->dependencies.clear();  // Clear the dependencies for each task
+      entry.task->dependencies.clear();
     }
 
-    // Build dependencies based on resource usage
+    // Build dependencies from resource flow:
+    // For each resource, all readers depend on the writer
     for (const auto &[handle, resource] : resourceTable) {
-      if (resource.writer) {
-        for (auto *reader : resource.readers) {
-          reader->dependencies.insert(resource.writer);
+      if (resource.definingTask != nullptr) {
+        for (auto *reader : resource.users) {
+          reader->dependencies.insert(resource.definingTask);
         }
       }
     }
+  }
 
+  RenderTask *RenderGraph::getDefiningTask(GraphHandle resourceHandle) {
+    auto it = resourceTable.find(resourceHandle);
+    if (it == resourceTable.end()) {
+      throw std::runtime_error(fmt::format("Invalid resource handle: {}", resourceHandle));
+    }
 
-    std::unordered_map<RenderTask *, int> levels;
+    auto *definingTask = it->second.definingTask;
+    if (definingTask == nullptr) {
+      throw std::runtime_error(
+          fmt::format("Resource {} ('{}') has no defining task - it was never written to",
+                      resourceHandle, it->second.name));
+    }
 
-    std::function<int(RenderTask *)> dfs = [&](RenderTask *task) -> int {
-      if (levels.count(task)) return levels[task];
+    return definingTask;
+  }
 
-      int maxPredLevel = 0;
-      for (auto pred : task->dependencies) {
-        maxPredLevel = std::max(maxPredLevel, dfs(pred));
-      }
+  // Topological sort: DFS to order tasks respecting dependencies
+  void RenderGraph::topologicalSort(RenderTask *task, std::vector<RenderTask *> &outOrder,
+                                    std::unordered_set<RenderTask *> &visited) {
+    if (task == nullptr || visited.count(task)) return;
+    visited.insert(task);
 
-      int level = maxPredLevel + 1;
-      levels[task] = level;
-      return level;
-    };
+    // Visit all dependencies first (pre-order traversal)
+    for (auto *dep : task->dependencies) {
+      topologicalSort(dep, outOrder, visited);
+    }
 
-    dfs(&goalTask);
+    // Add this task after its dependencies
+    outOrder.push_back(task);
+  }
 
+  RenderSchedule RenderGraph::compile(GraphHandle goalResource) {
+    // Step 1: Find the task that produces the goal resource
+    RenderTask *goalTask = getDefiningTask(goalResource);
+
+    fmt::println("Compiling render graph with goal resource {} -> task '{}'", goalResource,
+                 goalTask->name());
+
+    // Step 2: Compute dependencies from operand/result relationships
+    computeDependencies();
+
+    // Step 3: Topologically sort tasks starting from goal
+    std::vector<RenderTask *> orderedTasks;
+    std::unordered_set<RenderTask *> visited;
+    topologicalSort(goalTask, orderedTasks, visited);
+
+    // Step 4: Create schedule with ordered tasks
     RenderSchedule schedule(*this);
-
-    std::map<int, std::vector<RenderTask *>> levelTasks;
-    int maxLevel = 0;
-    int minLevel = std::numeric_limits<int>::max();
-    for (const auto &[task, level] : levels) {
-      levelTasks[level].push_back(task);
-      maxLevel = std::max(maxLevel, level);
-      minLevel = std::min(minLevel, level);
+    for (auto *task : orderedTasks) {
+      schedule.addTask(task);
     }
 
-    for (int level = minLevel; level <= maxLevel; ++level) {
-      for (auto *task : levelTasks[level]) {
-        schedule.addTask(task);
-      }
-    }
     return schedule;
   }
 
-  void RenderGraph::runFor(RenderTask &goalTask) {
-    fmt::println("Running render graph for goal task '{}'", goalTask.name());
+  void RenderGraph::runFor(GraphHandle goalResource) {
+    auto it = resourceTable.find(goalResource);
+    if (it == resourceTable.end()) {
+      throw std::runtime_error(fmt::format("Invalid resource handle for runFor: {}", goalResource));
+    }
 
-    auto schedule = compile(goalTask);
+    fmt::println("Running render graph for goal resource {} ('{}')", goalResource, it->second.name);
 
+    auto schedule = compile(goalResource);
 
+    fmt::println("Schedule for goal resource '{}' ({} tasks):", it->second.name,
+                 schedule.getTasks().size());
     for (const auto &task : schedule.getTasks()) {
       fmt::println("  {}", task->toString());
     }
 
-
-
-    // print dependencies for debug
+    // Print dependencies for debug
     fmt::println("digraph {{");
 
     auto repr = [](RenderTask *task) { return fmt::format("{}.{}", task->name(), (void *)task); };
-
-    // for (const auto &[task, level] : levels) {
-    //   fmt::println("  \"{}\"[label=\"{} {}\"]", repr(task), task->name(), level);
-    // }
 
     for (const auto &entry : tasks) {
       for (auto *dep : entry.task->dependencies) {

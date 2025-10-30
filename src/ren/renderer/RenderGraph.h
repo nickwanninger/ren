@@ -57,19 +57,18 @@ namespace ren {
   };
 
 
-  // A Use of a resource in the render graph.
-  // This represents a single location where a resource is used, and how it is used.
-  // Think about this like an llvm::Use (its an argument, basically).
-  struct GraphUse {
-    ren::RenderGraph &graph;
-    GraphHandle handle;
+  // An operand of a resource in the render graph.
+  // This represents a single location where a resource is used as an operand (read), and how it is used.
+  // Think about this like an llvm::Use (it's an argument, basically).
+  struct GraphOperand {
+    GraphHandle valueHandle;
     GraphAccess access;
+    GraphResourceType resourceType;
 
-    GraphUse(ren::RenderGraph &g, GraphHandle h, GraphAccess a)
-        : graph(g)
-        , handle(h)
-        , access(a) {}
-
+    GraphOperand(GraphHandle h, GraphAccess a, GraphResourceType type)
+        : valueHandle(h)
+        , access(a)
+        , resourceType(type) {}
 
     std::string toString(void) const;
   };
@@ -113,12 +112,13 @@ namespace ren {
     const std::string &name() const { return m_name; }
     void setName(const std::string &name) { m_name = name; }
 
+    // SSA-style interface: operands (reads) and results (writes)
     RenderTask &read(GraphHandle handle, GraphAccess access);
     RenderTask &write(GraphHandle handle, GraphAccess access);
 
-
-    const auto &getReads(void) const { return m_reads; }
-    const auto &getWrites(void) const { return m_writes; }
+    // Accessors for operands and results
+    const auto &getOperands(void) const { return m_operands; }
+    const auto &getResults(void) const { return m_results; }
 
     std::string toString(void) const;
 
@@ -126,15 +126,20 @@ namespace ren {
     std::string m_name;
     RenderGraph &m_graph;
 
-    std::vector<GraphUse> m_reads;
-    std::vector<GraphUse> m_writes;
+    // SSA operands - inputs to this instruction (resources being read)
+    std::vector<GraphOperand> m_operands;
 
+    // SSA results - outputs from this instruction (resources being written)
+    std::vector<GraphHandle> m_results;
 
    protected:
-    friend class RenderGraph;  // Allow RenderGraph to access read/write protected
+    friend class RenderGraph;  // Allow RenderGraph to access protected members
     friend class RenderSchedule;
 
-    // Who must run before me (writes to resources I read)
+    // Data dependencies: who must run before me.
+    // These are automatically derived from operands:
+    // For each operand, we depend on the task that wrote it.
+    // Updated by RenderGraph after building the graph.
     std::unordered_set<RenderTask *> dependencies;
   };
 
@@ -194,15 +199,17 @@ namespace ren {
     GraphHandle createImage(const std::string_view &name, const GraphImageSpec &spec,
                             GraphAccess initialAccess);
 
+    // Declare a read of a resource by a task (used internally)
     GraphHandle addRead(RenderTask &task, GraphHandle handle, GraphAccess access);
+    // Declare a write of a resource by a task (used internally)
     GraphHandle addWrite(RenderTask &task, GraphHandle handle, GraphAccess access);
     using Schedule = std::vector<RenderTask *>;
 
 
-    // create a schedule of tasks to run, using one task as a goal
-    // For example, if the goal is to present to the swapchain, we would pass in the "blit" task,
-    // and schedule according to dependencies.
-    void runFor(RenderTask &goalTask);
+    // Create a schedule of tasks to run such that a goal resource is produced.
+    // For example, if you want the swapchain to be written, pass the swapchain resource handle.
+    // Internally finds the task that writes this resource and schedules all dependencies.
+    void runFor(GraphHandle goalResource);
 
 
     // prepare the render graph for execution (allocate resources, etc)
@@ -212,9 +219,11 @@ namespace ren {
     // Print the render graph as an SSA form to stdout for debugging.
     void dumpSSA(void);
 
-    // Bake the graph into a schedule of tasks to run.
+    // Compile the graph into a schedule of tasks to run using topological sort.
+    // Starting from the task that writes the goal resource, computes task dependencies
+    // from operand/result relationships, then topologically sorts to create a valid execution order.
     // NOTE: this is slow right now. Will look into caching and invalidating.
-    RenderSchedule compile(RenderTask &goalTask);
+    RenderSchedule compile(GraphHandle goalResource);
 
 
     inline GraphResourceType getResourceType(GraphHandle handle) const {
@@ -223,14 +232,13 @@ namespace ren {
       return it->second.type;
     }
 
-
    private:
     struct TaskEntry {
       std::string name;
       ren::ref<RenderTask> task;
     };
 
-
+    // A value in the SSA graph - represents a resource
     struct ResourceEntry {
       // The resource name, for debug.
       std::string name;
@@ -238,10 +246,13 @@ namespace ren {
       // The access type it should be in at the start of the frame.
       GraphAccess initialAccess;
 
-      RenderTask *writer;
-      std::unordered_set<RenderTask *> readers;
-    };
+      // SSA-style tracking:
+      // The task that defines (writes to) this resource
+      RenderTask *definingTask = nullptr;
 
+      // Tasks that use this resource as an operand (read it)
+      std::unordered_set<RenderTask *> users;
+    };
 
     struct ImageResource {
       ImageResource(const GraphImageSpec &spec)
@@ -252,6 +263,15 @@ namespace ren {
       ren::ImageRef image;
     };
 
+    // Helper: compute dependencies for all tasks based on operand/result relationships
+    void computeDependencies(void);
+
+    // Helper: get the task that defines (writes to) a resource
+    RenderTask *getDefiningTask(GraphHandle resourceHandle);
+
+    // Helper: perform topological sort to produce a valid execution order
+    void topologicalSort(RenderTask *task, std::vector<RenderTask *> &outOrder,
+                         std::unordered_set<RenderTask *> &visited);
 
     std::unordered_map<GraphHandle, ResourceEntry> resourceTable;
     std::vector<TaskEntry> tasks;
