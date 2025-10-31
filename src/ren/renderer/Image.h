@@ -51,6 +51,10 @@ namespace ren {
 
     auto &createInfo() const { return imageCreateInfo; }
 
+
+    void readPixelToBuffer(VkCommandBuffer cmd, glm::vec2 position, VkBuffer stagingBuffer,
+                           VkDeviceSize bufferOffset);
+
    private:
     std::string name;
     VkImage image = VK_NULL_HANDLE;
