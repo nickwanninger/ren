@@ -21,6 +21,14 @@ extern "C" {
 #include <luajit.h>
 }
 
+#ifndef REN_GIT_REVISION
+  #define REN_GIT_REVISION "UNK"
+#endif
+
+#ifndef REN_BUILD_DATE
+  #define REN_BUILD_DATE "UNK"
+#endif
+
 namespace ren {
 
 
@@ -144,7 +152,5 @@ namespace ren {
     return fennel_eval(code);
   }
 
-  static inline auto evalLua(const std::string_view &code) {
-    return ren::sol().script(code);
-  }
+  static inline auto evalLua(const std::string_view &code) { return ren::sol().script(code); }
 }  // namespace ren
