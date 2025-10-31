@@ -70,6 +70,7 @@ namespace ren {
     glm::mat4 model;
     glm::mat4 view;
     glm::mat4 proj;
+    glm::mat4 normalMatrix;
   };
 
   // template <typename K, typename V>

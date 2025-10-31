@@ -17,7 +17,8 @@ namespace ren {
     // These must be vec4 becasue of std140 alignment.
     glm::vec4 cameraWorldPosition;
 
-    glm::vec4 lightDirection = glm::vec4(1.0, 1.0, 0.0, 1.0); // TEMP
+    glm::vec4 lightDirection = glm::vec4(0.0, 1.0, 1.0, 1.0); // TEMP
+    float time;
   };
 
   // This class is used to render a scene from a given camera's viewpoint.

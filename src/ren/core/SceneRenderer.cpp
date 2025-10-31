@@ -10,6 +10,27 @@
 #include <ren/types.h>
 #include <ImGuizmo/ImGuizmo.h>
 #include <ren/assets/MegaMeshBuffer.h>
+#include <imgui/backends/imgui_impl_vulkan.h>
+#include <ren/core/DebugLines.hpp>
+
+
+
+static float half_to_float(uint16_t h) {
+  uint32_t x = (uint32_t)h;
+  uint32_t sign = (x & 0x8000) << 16;
+  uint32_t exponent = (x & 0x7C00) >> 10;
+  uint32_t mantissa = (x & 0x03FF) << 13;
+
+  if (exponent == 0) {
+    return *(float *)&sign;
+  } else if (exponent == 31) {
+    uint32_t bits = sign | 0x7F800000 | mantissa;
+    return *(float *)&bits;
+  } else {
+    uint32_t f = sign | ((exponent + 112) << 23) | mantissa;
+    return *(float *)&f;
+  }
+}
 
 namespace ren {
 
@@ -40,7 +61,19 @@ namespace ren {
     // Initialize the opaque pass description.
     // Albedo/diffuse color data and world space normals.
     opaque.passDesc.addColorAttachment("outColor", VK_FORMAT_R16G16B16A16_SFLOAT);
-    opaque.passDesc.addColorAttachment("outNormal", VK_FORMAT_R16G16B16A16_SNORM);
+
+    auto normalFormat = VK_FORMAT_R16G16B16A16_SNORM;
+    // auto normalFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
+    opaque.passDesc.addColorAttachment("outNormal", normalFormat);
+
+    // !DEBUG!
+    // opaque.passDesc.addColorAttachment("outTangent", normalFormat);
+    // opaque.passDesc.addColorAttachment("outBitangent", normalFormat);
+    // opaque.passDesc.addColorAttachment("outWorldPosition", normalFormat);
+    // opaque.passDesc.addColorAttachment("outComputedNormal", normalFormat);
+    // !DEBUG!
+
+
     opaque.passDesc.addDepthAttachment("depthStencil");
     opaque.pass = R.getRenderPassCache().get(opaque.passDesc);
 
@@ -52,16 +85,7 @@ namespace ren {
   }
 
 
-  void SceneRenderer::initLighting(void) {
-    REN_PROFILE_FUNCTION();
-
-    // Initialize the lighting pass description.
-    lighting.passDesc.name = "Lighting Pass";
-    lighting.passDesc.addColorAttachment("lighting", VK_FORMAT_R8G8B8A8_UNORM);
-    lighting.passDesc.addDepthAttachment("depthStencil");
-
-    lighting.pass = R.getRenderPassCache().get(lighting.passDesc);
-  }
+  void SceneRenderer::initLighting(void) { REN_PROFILE_FUNCTION(); }
 
 
   void SceneRenderer::rebuildRenderTargets(glm::vec2 res) {
@@ -96,6 +120,8 @@ namespace ren {
 
   ref<RenderTarget> SceneRenderer::render(Scene &scene, Camera &camera) {
     REN_PROFILE_FUNCTION();
+
+    static ref<Texture> debugSkyboxTexture = ren::Texture::load("assets/hdri/voortrekker_interior.jpg");
 
 
     // get the current frame data.
@@ -154,7 +180,7 @@ namespace ren {
     }
 
     float renderAspect = (float)renderResolution.x / (float)renderResolution.y;
-    camera.projection = glm::perspective(glm::radians(90.0f), renderAspect, 0.01f, 1000.0f);
+    camera.projection = glm::perspective(glm::radians(90.0f), renderAspect, 0.01f, 100.0f);
     camera.projection[1][1] *= -1;  // Vulkan thing.
 
     // Begin the opaque render pass.
@@ -183,6 +209,8 @@ namespace ren {
       engineUBO.invViewProj = glm::inverse(pc.proj * pc.view);
       engineUBO.cameraWorldPosition = glm::vec4(camera.position, 1.0);
 
+      engineUBO.time = ren::Application::get().timeSeconds;
+
 
       float azimuth = atan2(engineUBO.lightDirection.x,
                             engineUBO.lightDirection.y);  // radians, 0 = north, π/2 = east
@@ -195,6 +223,7 @@ namespace ren {
         engineUBO.lightDirection.y = radius * cos(azimuth);
       }
       ImGui::End();
+
 
 
 
@@ -242,18 +271,17 @@ namespace ren {
 
 
       // TEMP: render a skybox
-
+      this->engineUBOBuffer.update(engineUBO);
 
       {
         R.bind(opaque.skyboxPSO);
-        R.startBinding(0).bind("engine", this->engineUBOBuffer).apply();
+        R.startBinding(0)
+            .bind("engine", this->engineUBOBuffer)
+            .bind("skyboxSampler", *debugSkyboxTexture)
+            .apply();
         vkCmdDraw(cmd, 3, 1, 0, 0);
       }
 
-
-
-
-      this->engineUBOBuffer.update(engineUBO);
 
 
 
@@ -281,6 +309,7 @@ namespace ren {
 
         auto engineBinder = R.startBinding(0);
         engineBinder.bind("engine", this->engineUBOBuffer);
+        engineBinder.bind("skyboxSampler", *debugSkyboxTexture);
         engineBinder.apply();
 
 
@@ -292,6 +321,7 @@ namespace ren {
           for (const auto &transform : transforms) {
             // REN_PROFILE_SCOPE("Draw Call");
             pc.model = transform;
+            pc.normalMatrix = glm::transpose(glm::inverse(pc.model));
             R.setPushConstants(pc);
             auto instanceCount = 1;
             vkCmdDrawIndexed(cmd, entry.indexCount, instanceCount, entry.indexOffset,
@@ -310,7 +340,90 @@ namespace ren {
     frame.perf.end(cmd, "Opaque Pass");
 
 
-    opaque.target->transitionToShaderReadonly(cmd);
+
+    ////////////// DEBUG ////////////////
+    if (0) {
+      ImGui::Begin("Render Targets");
+      static ren::Sampler sampler;
+      struct GPUPixel {
+       public:
+        uint16_t v[4];
+        float r() const { return half_to_float(v[0]); }
+        float g() const { return half_to_float(v[1]); }
+        float b() const { return half_to_float(v[2]); }
+      };
+
+      static ren::FixedUsageTypedBuffer<GPUPixel, VK_BUFFER_USAGE_TRANSFER_DST_BIT>
+          pixelReadbackBuffer(32);
+
+
+      glm::vec2 mousePosition;
+      // get the mouse position in normalized coordinates.
+      {
+        ImGuiIO &io = ImGui::GetIO();
+        mousePosition.x = io.MousePos.x / ImGui::GetMainViewport()->Size.x;
+        mousePosition.y = io.MousePos.y / ImGui::GetMainViewport()->Size.y;
+      }
+
+
+      long off = 0;
+      for (auto &att : opaque.target->getAttachments()) {
+        // schedule the read.
+        att.texture->readPixelToBuffer(cmd, mousePosition, pixelReadbackBuffer.getHandle(),
+                                       off * sizeof(GPUPixel));
+        off++;
+      }
+
+      // ren::getVulkan().waitForIdle();  // BAD!
+
+      // compute a width for the images that fits in the window.
+      float imageWidth = ImGui::GetContentRegionAvail().x;
+      // compute a height based on the render resolution aspect ratio.
+      float aspect = renderResolution.x / renderResolution.y;
+      float imageHeight = imageWidth / aspect;
+      off = 0;
+
+
+      GPUPixel *pixels = pixelReadbackBuffer.map();
+
+
+      std::map<std::string, glm::vec3> values;
+      off = 0;
+      for (auto &att : opaque.target->getAttachments()) {
+        ImGui::Text("%s", att.name.c_str());
+        if (att.imguiTextureID == VK_NULL_HANDLE) {
+          att.imguiTextureID =
+              ImGui_ImplVulkan_AddTexture(sampler.getHandle(), att.texture->getImageView(),
+                                          VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+          continue;
+        }
+
+
+        auto &p = pixels[off++];
+        ImGui::Text("%f %f %f", p.r(), p.g(), p.b());
+        values[att.name] = glm::vec3(p.r(), p.g(), p.b());
+        // ImGui::Image(att.imguiTextureID, ImVec2(imageWidth, imageHeight), ImVec2(0, 0),
+        //              ImVec2(1, 1));
+      }
+
+      auto center = values["outWorldPosition"];
+      ImGui::Text("World Position at center: %f %f %f", center.x, center.y, center.z);
+      debugLine(center, center + glm::normalize(values["outNormal"]), {1, 0, 0}, 5.0f);
+      // debugLine(center, center + glm::normalize(values["outTangent"]), {0, 1, 0}, 5.0f);
+      // debugLine(center, center + glm::normalize(values["outBitangent"]), {0, 0, 1}, 5.0f);
+      // debugLine(center, center + glm::normalize(values["outComputedNormal"]), {1, 0, 1}, 5.0f);
+
+      auto dot = glm::dot(glm::normalize(values["outNormal"]),
+                          glm::normalize(values["outComputedNormal"]));
+      // show a progress bar of the dot product
+      ImGui::ProgressBar(dot, ImVec2(0.0f, 0.0f));
+      // ImGui::Text("Normal vs Computed Normal Dot Product: %f", dot);
+
+
+      pixelReadbackBuffer.unmap();
+      ImGui::End();
+      ////////////// DEBUG ////////////////
+    }
 
     return opaque.target;
 
