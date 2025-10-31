@@ -19,6 +19,8 @@ namespace ren {
     // The texture to render into.
     ren::ImageRef texture = nullptr;
 
+    VkDescriptorSet imguiTextureID = VK_NULL_HANDLE; // TEMP!
+
     // The format of the image attachment.
     VkFormat format = VK_FORMAT_UNDEFINED;
 
