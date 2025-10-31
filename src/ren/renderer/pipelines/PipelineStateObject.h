@@ -16,7 +16,7 @@ namespace ren {
   };
 
   JSON_SERIALIZE_ENUM(Topology, {{Topology::TriangleList, "Triangle list"},
-                                          {Topology::LineList, "Line list"}});
+                                 {Topology::LineList, "Line list"}});
 
   enum class FillMode : u8 {
     Solid,      // Filled polygons
@@ -25,9 +25,9 @@ namespace ren {
   JSON_SERIALIZE_ENUM(FillMode, {{FillMode::Solid, "Solid"}, {FillMode::Wireframe, "Wireframe"}});
 
   enum class CullMode : u8 {
-    None,
-    Back,
-    Front,
+    None,   // No culling
+    Back,   // Cull back-facing polygons
+    Front,  // Cull front-facing polygons
   };
   JSON_SERIALIZE_ENUM(CullMode, {{CullMode::None, "None"},
                                  {CullMode::Back, "Back"},

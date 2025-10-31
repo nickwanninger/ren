@@ -220,11 +220,11 @@ vec3 computeSkyColorSimple(vec3 rayDir, vec3 sunDir) {
 
   if (height >= 0.0) {
     // Minecraft sky: very uniform light blue, barely any gradient
-    vec3 skyColor = vec3(0.52, 0.73, 1.0);  // #85B8FF - Minecraft day sky
+    vec3 skyColor = vec3(0.431, 0.694, 1.0);
 
     // Very subtle darkening toward horizon
     float heightFactor = smoothstep(0.0, 0.3, height);
-    skyColor = mix(vec3(0.68, 0.83, 1.0), skyColor, heightFactor);
+    skyColor = mix(vec3(0.478, 0.722, 1.), skyColor, heightFactor);
 
     // Minecraft sun: bright white circle, hard edge
     float sundot = dot(rayDir, sunDir);
@@ -236,24 +236,75 @@ vec3 computeSkyColorSimple(vec3 rayDir, vec3 sunDir) {
 
     // Subtle sun glow (much subtler than realistic)
     float sunGlow = pow(clamp(sundot, 0.0, 1.0), 512.0);
-    skyColor += vec3(0.8, 0.8, 0.6) * sunGlow * 0.3;
+    skyColor += vec3(1.0) * sunGlow * 0.3;
 
     return skyColor;
   } else {
+    // return vec3(0.17, 0.17, 0.17);  // Dark gray void
     // Minecraft void: dark, desaturated fog color
     float groundDepth = -height;
 
     // Start with fog color at horizon
     vec3 horizonFog = vec3(0.68, 0.83, 1.0);  // Light blue fog
-    vec3 voidColor = vec3(0.17, 0.17, 0.17);  // Dark gray void
+    vec3 voidColor = vec3(0.05);              // Dark gray void
 
     // Sharp transition - Minecraft doesn't blend much
-    return mix(horizonFog, voidColor, pow(groundDepth, 1));
+    return mix(horizonFog, voidColor, pow(groundDepth, 0.15));
   }
 }
 
 
+vec3 getSky(vec2 uv, vec2 uvSun) {
+  float atmosphere = sqrt(1.0 - uv.y);
+  vec3 skyColor = vec3(0.2, 0.4, 0.8);
+
+  float scatter = pow(uvSun.y, 1.0 / 15.0);
+  scatter = 1.0 - clamp(scatter, 0.8, 1.0);
+
+  vec3 scatterColor = mix(vec3(1.0), vec3(1.0, 0.3, 0.0) * 1.5, scatter);
+  return mix(skyColor, vec3(scatterColor), atmosphere / 1.3);
+}
+
+vec3 getSun(vec2 uv, vec2 uvSun) {
+  float sun = 1.0 - distance(uv, uvSun);
+  sun = clamp(sun, 0.0, 1.0);
+
+  float glow = sun;
+  glow = clamp(glow, 0.0, 1.0);
+
+  sun = pow(sun, 100.0);
+  sun *= 100.0;
+  sun = clamp(sun, 0.0, 1.0);
+
+  glow = pow(glow, 6.0) * 1.0;
+  glow = pow(glow, (uv.y));
+  glow = clamp(glow, 0.0, 1.0);
+
+  sun *= pow(dot(uv.y, uv.y), 1.0 / 1.65);
+
+  glow *= pow(dot(uv.y, uv.y), 1.0 / 2.0);
+
+  sun += glow;
+
+  vec3 sunColor = vec3(1.0, 0.6, 0.05) * sun;
+
+  return vec3(sunColor);
+}
+
+
+
 vec3 computeSkyColor(vec3 rayDir, vec3 sunDir) {
+  // convert rayDir into a uv coordinate in a equirectangular map
+  // vec2 uv = vec2(atan(rayDir.z, rayDir.x) / (2.0 * PI) + 0.5, asin(rayDir.y) / PI + 0.5);
+  // uv.y = 1.0 - uv.y;  // flip y coordinate
+  // return texture(skyboxSampler, uv).rgb;
+
+  return vec3(rayDir.y * 0.5 + 0.5) * vec3(0.431, 0.694, 1.0);
+
+
+  // return vec3(0.431, 0.694, 1.0);
+  // return normalize(rayDir);
+  // return normalize(rayDir * 0.5 + 0.5);
   // return computeSkyColorSimple(rayDir, sunDir);
-  return computeSkyColorComplex(rayDir, sunDir);
+  // return computeSkyColorComplex(rayDir, sunDir);
 }

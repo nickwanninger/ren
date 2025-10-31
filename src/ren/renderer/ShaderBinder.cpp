@@ -19,7 +19,7 @@ namespace ren {
   }
 
 
-  void ShaderBinder::bind(const std::string_view &name, const ren::Buffer &buffer) {
+  ShaderBinder &ShaderBinder::bind(const std::string_view &name, const ren::Buffer &buffer) {
     // Find the binding for this name in the shader program.
     const auto *binding = program.getBinding(name);
     if (binding == nullptr) {
@@ -47,9 +47,10 @@ namespace ren {
     newWrite.dstBinding = binding->binding;
 
     writes.push_back(newWrite);
+    return *this;
   }
 
-  void ShaderBinder::bind(const std::string_view &name, const Texture &texture) {
+  ShaderBinder &ShaderBinder::bind(const std::string_view &name, const Texture &texture) {
     // Find the binding for this name in the shader program.
     const auto *binding = program.getBinding(name);
     if (binding == nullptr) {
@@ -77,10 +78,12 @@ namespace ren {
     newWrite.dstBinding = binding->binding;
 
     writes.push_back(newWrite);
+    return *this;
   }
 
 
-  void ShaderBinder::bind(const std::string_view &name, const Image &image, Sampler &sampler) {
+  ShaderBinder &ShaderBinder::bind(const std::string_view &name, const Image &image,
+                                   Sampler &sampler) {
     // Find the binding for this name in the shader program.
     const auto *binding = program.getBinding(name);
     if (binding == nullptr) {
@@ -105,21 +108,22 @@ namespace ren {
     newWrite.dstBinding = binding->binding;
 
     writes.push_back(newWrite);
+    return *this;
   }
 
-  void ShaderBinder::bind(const std::string_view &name, const Image &image,
-                          VkFilter samplerFilter) {
+  ShaderBinder &ShaderBinder::bind(const std::string_view &name, const Image &image,
+                                   VkFilter samplerFilter) {
     auto &R = ren::Renderer::get();
-    bind(name, image, R.getSampler(samplerFilter));
+    return bind(name, image, R.getSampler(samplerFilter));
   }
 
   // ---- Bind by binding index within current set ---- //
-  void ShaderBinder::bind(u32 bindingIndex, const Texture &texture) {
+  ShaderBinder &ShaderBinder::bind(u32 bindingIndex, const Texture &texture) {
     const auto *binding = program.getBinding(set, bindingIndex);
     if (binding == nullptr) {
-      throw std::runtime_error(fmt::format(
-          "Shader binding index {} not found in set {} for program {}", bindingIndex, set,
-          json(program).dump()));
+      throw std::runtime_error(
+          fmt::format("Shader binding index {} not found in set {} for program {}", bindingIndex,
+                      set, json(program).dump()));
     }
     VkWriteDescriptorSet newWrite{};
     newWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -133,14 +137,16 @@ namespace ren {
     newWrite.pImageInfo = imageInfo;
     newWrite.dstBinding = binding->binding;
     writes.push_back(newWrite);
+    return *this;
   }
 
-  void ShaderBinder::bind(u32 bindingIndex, const Image &image, Sampler &sampler) {
+
+  ShaderBinder &ShaderBinder::bind(u32 bindingIndex, const Image &image, Sampler &sampler) {
     const auto *binding = program.getBinding(set, bindingIndex);
     if (binding == nullptr) {
-      throw std::runtime_error(fmt::format(
-          "Shader binding index {} not found in set {} for program {}", bindingIndex, set,
-          json(program).dump()));
+      throw std::runtime_error(
+          fmt::format("Shader binding index {} not found in set {} for program {}", bindingIndex,
+                      set, json(program).dump()));
     }
     VkWriteDescriptorSet newWrite{};
     newWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -154,19 +160,20 @@ namespace ren {
     newWrite.pImageInfo = imageInfo;
     newWrite.dstBinding = binding->binding;
     writes.push_back(newWrite);
+    return *this;
   }
 
-  void ShaderBinder::bind(u32 bindingIndex, const Image &image, VkFilter samplerFilter) {
+  ShaderBinder &ShaderBinder::bind(u32 bindingIndex, const Image &image, VkFilter samplerFilter) {
     auto &R = ren::Renderer::get();
-    bind(bindingIndex, image, R.getSampler(samplerFilter));
+    return bind(bindingIndex, image, R.getSampler(samplerFilter));
   }
 
-  void ShaderBinder::bind(u32 bindingIndex, const ren::Buffer &buffer) {
+  ShaderBinder &ShaderBinder::bind(u32 bindingIndex, const ren::Buffer &buffer) {
     const auto *binding = program.getBinding(set, bindingIndex);
     if (binding == nullptr) {
-      throw std::runtime_error(fmt::format(
-          "Shader binding index {} not found in set {} for program {}", bindingIndex, set,
-          json(program).dump()));
+      throw std::runtime_error(
+          fmt::format("Shader binding index {} not found in set {} for program {}", bindingIndex,
+                      set, json(program).dump()));
     }
     VkWriteDescriptorSet newWrite{};
     newWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -180,6 +187,7 @@ namespace ren {
     newWrite.pBufferInfo = bufferInfo;
     newWrite.dstBinding = binding->binding;
     writes.push_back(newWrite);
+    return *this;
   }
 
 
@@ -188,8 +196,8 @@ namespace ren {
     // build the descriptor sets and write them.
     const auto &layouts = program.getDescriptorSetLayouts();
     if (set >= layouts.size()) {
-      throw std::runtime_error(fmt::format(
-          "Descriptor set {} not available in program ({} sets)", set, layouts.size()));
+      throw std::runtime_error(
+          fmt::format("Descriptor set {} not available in program ({} sets)", set, layouts.size()));
     }
     auto layout = layouts[set];
     if (layout == VK_NULL_HANDLE) {

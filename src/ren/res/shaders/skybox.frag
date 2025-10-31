@@ -1,7 +1,7 @@
 #version 450
 
 #include "shaders/engine.glsl"
-#include "shaders/skylight.frag"
+#include "shaders/skylight.glsl"
 
 layout(location = 0) in vec2 fragUV;
 layout(location = 0) out vec4 outColor;
@@ -34,7 +34,11 @@ vec3 uvToDirection(vec2 uv) {
 }
 
 void main() {
+
+
   vec3 rayDir = getWorldSpaceRay(fragUV);
+
+
   // vec3 rayDir = uvToDirection(fragUV);
   vec3 sunDir = normalize(engine.lightDirection.xyz);
 
@@ -43,7 +47,7 @@ void main() {
 
 
   // Apply exposure.
-  skyColor = 1.0 - exp(-1.0 * skyColor);
+  // skyColor = 1.0 - exp(-1.0 * skyColor);
 
   outColor = vec4(skyColor, 1.0);
 }
