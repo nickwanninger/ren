@@ -350,6 +350,20 @@ namespace ren {
       auto gbufferTarget = sceneRenderer.render(sceneLayer->scene, sceneLayer->camera);
 
       renderer->withPass(*renderer->getDisplayPass(), *frame.renderTarget, [&]() {
+        static struct BlitConfiguration {
+          float exposure = 1.0f;
+          float ditherDivide = 256.0f;
+        } blitConfig;
+
+        ImGui::Begin("Display Settings");
+        ImGui::DragFloat("Exposure", &blitConfig.exposure, 0.01f, 0.0f, 100.0f);
+        ImGui::DragFloat("Dither Divide", &blitConfig.ditherDivide, 1.0f, 1.0f, 1024.0f, "%.0f");
+        ImGui::End();
+
+
+        static ren::UniformBufferSet<BlitConfiguration> blitConfigBuffer(1);
+        blitConfigBuffer.update(&blitConfig, 1, 0);
+
         auto cmd = ren::getFrameData().commandBuffer;
 
         if (true and gbufferTarget) {
@@ -360,14 +374,13 @@ namespace ren {
           renderer->bind(blitPSO);
 
           // begin binding set zero, which is the gbuffer textures.
-          auto textureBinder = renderer->startBinding(0);
+          auto blitBinder = renderer->startBinding(0);
+          blitBinder.bind("config", blitConfigBuffer.currentAsBuffer());
           auto &attachments = gbufferTarget->getAttachments();
           for (auto &attachment : attachments) {
-            if (attachment.name == "outColor") {
-              textureBinder.bind("albedo", *attachment.texture);
-            }
+            if (attachment.name == "outColor") { blitBinder.bind("albedo", *attachment.texture); }
           }
-          textureBinder.apply();
+          blitBinder.apply();
 
           vkCmdDraw(cmd, 3, 1, 0, 0);
           frame.perf.end(cmd, "Blit GBuffer");
@@ -593,6 +606,4 @@ ecs_entity_t __ren_register_component(const char *name, size_t size, size_t alig
   ecs_meta_from_desc(world, id, EcsStructType, desc);
   return id;
 }
-
-
 }
