@@ -120,7 +120,7 @@ namespace ren {
     const auto &getOperands(void) const { return m_operands; }
     const auto &getResults(void) const { return m_results; }
 
-    std::string toString(void) const;
+    virtual std::string toString(void) const;
 
    private:
     std::string m_name;
@@ -175,6 +175,7 @@ namespace ren {
     }
 
     void run(GraphRunContext &ctx) override;
+    std::string toString(void) const override;
 
     GraphHandle getResource() const { return m_resource; }
     GraphAccess getFromAccess() const { return m_fromAccess; }
@@ -298,6 +299,8 @@ namespace ren {
       // SSA-style tracking:
       // The task that defines (writes to) this resource
       RenderTask *definingTask = nullptr;
+      // The access type this resource is written with (what state it's in after the write)
+      GraphAccess writeAccess = GraphAccess::ShaderRead;  // Default; set by addWrite
 
       // Tasks that use this resource as an operand (read it)
       std::unordered_set<RenderTask *> users;

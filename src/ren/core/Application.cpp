@@ -75,8 +75,9 @@ namespace ren {
 
     SDL_WindowFlags window_flags =
         (SDL_WindowFlags)(SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
+    auto windowName = fmt::format("{} -- Ren {} - {}", app_name, REN_GIT_REVISION, REN_BUILD_DATE);
     this->window =
-        SDL_CreateWindow(app_name.c_str(), SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
+        SDL_CreateWindow(windowName.c_str(), SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
                          window_size.x, window_size.y, window_flags);
     if (!this->window) {
       fmt::println("SDL_CreateWindow Error: {}", SDL_GetError());

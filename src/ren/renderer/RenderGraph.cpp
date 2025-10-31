@@ -105,7 +105,7 @@ namespace ren {
       ss << fmt::format("%{}", resultHandle);
     }
 
-    ss << " = " << name() << "(";
+    ss << " ← " << name() << "(";
 
     // Operands (reads)
     ind = 0;
@@ -125,6 +125,7 @@ namespace ren {
 
   void RenderGraph::prepare(glm::uvec2 swapchainSize) {
     this->swapchainSize = swapchainSize;
+    return;
     fmt::println("Preparing render graph with swapchain size {}x{}", swapchainSize.x,
                  swapchainSize.y);
 
@@ -149,10 +150,11 @@ namespace ren {
     bool relativeScale = not(spec.scale.x == 0.0f and spec.scale.y == 0.0f);
 
     if (relativeScale) {
-      fmt::println("Creating image '{}' with swapchain-relative scale ({}, {})", name, spec.scale.x,
-                   spec.scale.y);
+      // fmt::println("Creating image '{}' with swapchain-relative scale ({}, {})", name,
+      // spec.scale.x,
+      //              spec.scale.y);
     } else {
-      fmt::println("Creating image '{}' with size {}x{}", name, spec.width, spec.height);
+      // fmt::println("Creating image '{}' with size {}x{}", name, spec.width, spec.height);
     }
 
     // Store the entry in the resource table so the name persists
@@ -164,7 +166,7 @@ namespace ren {
   }
 
   GraphHandle RenderGraph::addRead(RenderTask &task, GraphHandle handle, GraphAccess access) {
-    fmt::println("Task '{}' reads resource {} with access {}", task.name(), handle, access);
+    // fmt::println("Task '{}' reads resource {} with access {}", task.name(), handle, access);
 
     auto &entry = resourceTable[handle];
     entry.users.insert(&task);
@@ -172,7 +174,7 @@ namespace ren {
   }
 
   GraphHandle RenderGraph::addWrite(RenderTask &task, GraphHandle handle, GraphAccess access) {
-    fmt::println("Task '{}' writes resource {} with access {}", task.name(), handle, access);
+    // fmt::println("Task '{}' writes resource {} with access {}", task.name(), handle, access);
 
     auto &entry = resourceTable[handle];
     if (entry.definingTask != nullptr) {
@@ -181,6 +183,7 @@ namespace ren {
     }
 
     entry.definingTask = &task;
+    entry.writeAccess = access;  // Track what access state this resource is written to
     return handle;
   }
 
@@ -273,11 +276,43 @@ namespace ren {
                 return levelA < levelB;
               });
 
-    // Step 6: Create schedule with level-sorted tasks and assign levels
+    // Step 6: Create schedule with level-sorted tasks, insert barriers, and assign levels
     RenderSchedule schedule(*this);
-    for (auto *task : orderedTasks) {
-      schedule.addTask(task);
+
+    // Track current access state of each resource (initialized from initialAccess)
+    std::unordered_map<GraphHandle, GraphAccess> resourceStates;
+    for (const auto &[handle, entry] : resourceTable) {
+      resourceStates[handle] = entry.initialAccess;
     }
+
+    // Process tasks in order, inserting barriers as needed
+    for (auto *task : orderedTasks) {
+      // Check operands (reads): insert barriers if access state needs to change
+      for (const auto &operand : task->getOperands()) {
+        GraphAccess currentState = resourceStates[operand.valueHandle];
+        GraphAccess neededState = operand.access;
+
+        if (currentState != neededState) {
+          // Insert a barrier to transition the resource
+          auto *barrier = schedule.createBarrier(operand.valueHandle, currentState, neededState);
+          schedule.addTask(barrier);
+
+          // Update resource state after barrier
+          resourceStates[operand.valueHandle] = neededState;
+        }
+      }
+
+      // Add the actual task
+      schedule.addTask(task);
+
+      // Update resource states based on what this task writes (results)
+      for (const auto &resultHandle : task->getResults()) {
+        // Look up the write access from the resource table
+        auto it = resourceTable.find(resultHandle);
+        if (it != resourceTable.end()) { resourceStates[resultHandle] = it->second.writeAccess; }
+      }
+    }
+
     // Copy task levels into the schedule
     schedule.taskLevels = taskLevels;
 
@@ -306,23 +341,6 @@ namespace ren {
       }
       fmt::println("  {}", task->toString());
     }
-
-    // Print dependencies for debug
-    fmt::println("digraph {{");
-
-    auto repr = [](RenderTask *task) { return fmt::format("{}.{}", task->name(), (void *)task); };
-
-    for (const auto &task : schedule.getTasks()) {
-      fmt::println("  \"{}\"[label=\"{} | {}\"]", repr(task), task->name(),
-                   schedule.getLevel(task));
-    }
-
-    for (const auto &entry : tasks) {
-      for (auto *dep : entry.task->dependencies) {
-        fmt::println("  \"{}\" -> \"{}\";", repr(dep), repr(entry.task.get()));
-      }
-    }
-    fmt::println("}}");
   }
 
   void BarrierTask::run(GraphRunContext &ctx) {
@@ -331,6 +349,11 @@ namespace ren {
     // from m_fromAccess to m_toAccess
     fmt::println("Barrier: transitioning resource {} from {} to {}", m_resource, m_fromAccess,
                  m_toAccess);
+  }
+
+  std::string BarrierTask::toString(void) const {
+    // Format as: [BARRIER] %resource: fromAccess → toAccess
+    return fmt::format("barrier %{}: {} → {}", m_resource, m_fromAccess, m_toAccess);
   }
 
   BarrierTask *RenderSchedule::createBarrier(GraphHandle resource, GraphAccess fromAccess,
