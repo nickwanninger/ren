@@ -129,21 +129,6 @@ namespace ren {
     this->sceneLayer = makeRef<SceneLayer>(*this);
     this->layerStack.pushLayer(sceneLayer);
 
-    // Find and open first PS5 controller
-    for (int i = 0; i < SDL_NumJoysticks(); i++) {
-      if (SDL_IsGameController(i)) {
-        SDL_Joystick *joystick = SDL_JoystickOpen(i);
-        if (SDL_JoystickGetVendor(joystick) == 0x054C &&
-            SDL_JoystickGetProduct(joystick) == 0x0CE6) {
-          sceneLayer->camera.controller = SDL_GameControllerOpen(i);
-          SDL_JoystickClose(joystick);
-          break;
-        }
-        SDL_JoystickClose(joystick);
-      }
-    }
-
-
     initImGui();
 
 
@@ -241,6 +226,15 @@ namespace ren {
     glm::vec3 modelPosition(0.0f);
 
     FramerateCounter framerateCounter;
+    ren::RenderGraph G;
+
+    G.createImage("fixed", {.width = 512, .height = 512, .format = VK_FORMAT_R8G8B8A8_UNORM},
+                  ren::GraphAccess::RenderTarget);
+
+    G.createImage("fullres", {.scale = glm::vec2(1.0f), .format = VK_FORMAT_R8G8B8A8_UNORM},
+                  ren::GraphAccess::RenderTarget);
+    G.createImage("halfres", {.scale = glm::vec2(0.5f), .format = VK_FORMAT_R8G8B8A8_UNORM},
+                  ren::GraphAccess::RenderTarget);
 
     while (this->running) {
       int eventsHandled = 0;
@@ -254,12 +248,61 @@ namespace ren {
           REN_PROFILE_SCOPE("SDL Dispatch");
           eventsHandled++;
 
-          if (e.type == SDL_WINDOWEVENT_RESIZED) { fmt::println("resize event"); }
-          // close the window when user alt-f4s or clicks the X button
-          if (e.type == SDL_QUIT) {
-            this->running = false;
-            break;
+
+          switch (e.type) {
+            case SDL_DROPFILE: {
+              // File dropped
+              char *dropped_filedir = e.drop.file;
+              // Process the file path
+              printf("File dropped: %s\n", dropped_filedir);
+              SDL_free(dropped_filedir);  // Must free this!
+              break;
+            }
+
+
+            case SDL_DROPBEGIN: {
+              fmt::println("Drop Begin");
+              // Drop operation beginning (SDL 2.0.5+)
+              break;
+            }
+
+            case SDL_DROPCOMPLETE: {
+              fmt::println("Drop Complete");
+              // Drop operation complete (SDL 2.0.5+)
+              break;
+            }
+
+            case SDL_WINDOWEVENT: {
+              switch (e.window.event) {
+                case SDL_WINDOWEVENT_RESIZED:
+                case SDL_WINDOWEVENT_SIZE_CHANGED: {
+                  // fmt::println("!!!Window resized to {}x{}", e.window.data1, e.window.data2);
+                  windowResized = true;
+                  break;
+                }
+              }
+              break;
+            }
+
+
+            case SDL_QUIT: {
+              this->running = false;
+              break;
+            }
+            default: {
+              // fmt::println("Unhandled SDL Event Type: {}\n", e.type);
+              break;
+            }
           }
+
+
+
+          // if (e.type == SDL_WINDOWEVENT_RESIZED) { fmt::println("resize event"); }
+          // // close the window when user alt-f4s or clicks the X button
+          // if (e.type == SDL_QUIT) {
+          //   this->running = false;
+          //   break;
+          // }
 
           if (ImGui_ImplSDL2_ProcessEvent(&e)) { continue; }
 
@@ -303,6 +346,9 @@ namespace ren {
 
       framerateCounter.addFrame(deltaTime);
 
+
+      G.startFrame(frame.deviceImage);
+
       {
         REN_PROFILE_SCOPE("ImGui New Frame");
         ImGui_ImplVulkan_NewFrame();
@@ -343,6 +389,8 @@ namespace ren {
         world.lookup("scene").scope([&]() { world.progress(deltaTime); });
       }
 
+
+      G.inspect();
 
       ren::resource<neko::luainspector>().draw();
 
@@ -386,9 +434,6 @@ namespace ren {
           frame.perf.end(cmd, "Blit GBuffer");
         }
 
-
-
-
         {
           frame.perf.begin(cmd, "ImGui");
           REN_PROFILE_SCOPE("ImGui Render Draw Data");
@@ -404,8 +449,6 @@ namespace ren {
 
       world.defer_end();
       renderer->endFrame();
-
-
 
       // Update the layers.
       layerStack.onUpdate(deltaTime);

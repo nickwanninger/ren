@@ -276,6 +276,8 @@ namespace ren {
 
     // Print the render graph as an SSA form to stdout for debugging.
     void dumpSSA(void);
+    // Inspect the render graph (in imgui.)
+    void inspect(void);
 
     // Start a new frame with the given swapchain image.
     // This will take the swapchain image size, and use it to update any image resources

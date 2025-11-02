@@ -411,6 +411,209 @@ namespace ren {
     }
   }
 
+
+  void RenderGraph::inspect() {
+    ImGui::SetNextWindowSize(ImVec2(1200, 700), ImGuiCond_FirstUseEver);
+    ImGui::Begin("Render Graph Inspector");
+
+    // Static state for selected task and resource
+    static RenderTask *selectedTask = nullptr;
+    static GraphHandle selectedResource = nullGraphHandle;
+
+    // Draw tab bar
+    if (ImGui::BeginTabBar("InspectorTabs", ImGuiTabBarFlags_None)) {
+      // ==================== TASKS TAB ====================
+      if (ImGui::BeginTabItem("Tasks")) {
+        ImGui::BeginGroup();
+        {
+          // Left panel: Task list
+          ImGui::BeginChild("TaskListPanel", ImVec2(280, -ImGui::GetFrameHeightWithSpacing()),
+                            ImGuiChildFlags_Border);
+          {
+            ImGui::Text("Tasks (%zu)", tasks.size());
+            ImGui::Separator();
+
+            for (const auto &entry : tasks) {
+              RenderTask *task = entry.task.get();
+              bool isSelected = (task == selectedTask);
+              ImGui::PushID(task);
+              if (ImGui::Selectable(entry.name.c_str(), isSelected, ImGuiSelectableFlags_AllowDoubleClick)) {
+                selectedTask = task;
+              }
+              ImGui::PopID();
+            }
+          }
+          ImGui::EndChild();
+        }
+        ImGui::EndGroup();
+
+        ImGui::SameLine();
+
+        // Right panel: Task details
+        ImGui::BeginGroup();
+        {
+          ImGui::BeginChild("TaskDetailsPanel", ImVec2(0, -ImGui::GetFrameHeightWithSpacing()),
+                            ImGuiChildFlags_Border);
+          {
+            if (selectedTask) {
+              ImGui::Text("Task: %s", selectedTask->name().c_str());
+              ImGui::Separator();
+
+              // Operands (reads)
+              const auto &operands = selectedTask->getOperands();
+              if (!operands.empty()) {
+                if (ImGui::TreeNode("Operands (Reads)")) {
+                  for (const auto &op : operands) {
+                    const char *accessStr = fmt::formatter<GraphAccess>::toString(op.access);
+                    const char *typeStr = fmt::formatter<GraphResourceType>::toString(op.resourceType);
+                    ImGui::Text("%%%-3u : %s (type: %s)", op.valueHandle, accessStr, typeStr);
+
+                    // Show resource name if available
+                    auto it = resourceTable.find(op.valueHandle);
+                    if (it != resourceTable.end() && !it->second.name.empty()) {
+                      ImGui::SameLine();
+                      ImGui::TextDisabled("(%s)", it->second.name.c_str());
+                    }
+                  }
+                  ImGui::TreePop();
+                }
+              }
+
+              // Results (writes)
+              const auto &results = selectedTask->getResults();
+              if (!results.empty()) {
+                if (ImGui::TreeNode("Results (Writes)")) {
+                  for (GraphHandle resultHandle : results) {
+                    auto it = resourceTable.find(resultHandle);
+                    if (it != resourceTable.end()) {
+                      ImGui::Text("%%%-3u : %s", resultHandle, it->second.name.c_str());
+                      ImGui::SameLine();
+                      const char *accessStr = fmt::formatter<GraphAccess>::toString(it->second.writeAccess);
+                      ImGui::TextDisabled("(%s)", accessStr);
+                    } else {
+                      ImGui::Text("%%%-3u : <unknown>", resultHandle);
+                    }
+                  }
+                  ImGui::TreePop();
+                }
+              }
+
+              // Dependencies
+              if (!selectedTask->dependencies.empty()) {
+                if (ImGui::TreeNode("Dependencies")) {
+                  for (auto depTask : selectedTask->dependencies) {
+                    ImGui::BulletText("%s", depTask->name().c_str());
+                  }
+                  ImGui::TreePop();
+                }
+              }
+
+              // Custom toString for task
+              ImGui::Separator();
+              ImGui::TextWrapped("SSA Form: %s", selectedTask->toString().c_str());
+
+            } else {
+              ImGui::TextDisabled("(Select a task to view details)");
+            }
+          }
+          ImGui::EndChild();
+        }
+        ImGui::EndGroup();
+
+        ImGui::EndTabItem();
+      }
+
+      // ==================== RESOURCES TAB ====================
+      if (ImGui::BeginTabItem("Resources")) {
+        ImGui::BeginGroup();
+        {
+          // Left panel: Resource list
+          ImGui::BeginChild("ResourceListPanel", ImVec2(280, -ImGui::GetFrameHeightWithSpacing()),
+                            ImGuiChildFlags_Border);
+          {
+            ImGui::Text("Resources (%zu)", resourceTable.size());
+            ImGui::Separator();
+
+            for (const auto &[handle, entry] : resourceTable) {
+              bool isSelected = (handle == selectedResource);
+              ImGui::PushID(handle);
+              if (ImGui::Selectable(entry.name.c_str(), isSelected)) {
+                selectedResource = handle;
+              }
+              ImGui::PopID();
+            }
+          }
+          ImGui::EndChild();
+        }
+        ImGui::EndGroup();
+
+        ImGui::SameLine();
+
+        // Right panel: Resource details
+        ImGui::BeginGroup();
+        {
+          ImGui::BeginChild("ResourceDetailsPanel", ImVec2(0, -ImGui::GetFrameHeightWithSpacing()),
+                            ImGuiChildFlags_Border);
+          {
+            if (selectedResource != nullGraphHandle) {
+              auto it = resourceTable.find(selectedResource);
+              if (it != resourceTable.end()) {
+                const auto &resEntry = it->second;
+                ImGui::Text("Resource Handle: %%%-3u", selectedResource);
+                ImGui::Text("Name: %s", resEntry.name.c_str());
+                const char *typeStr = fmt::formatter<GraphResourceType>::toString(resEntry.type);
+                const char *initialAccessStr = fmt::formatter<GraphAccess>::toString(resEntry.initialAccess);
+                const char *writeAccessStr = fmt::formatter<GraphAccess>::toString(resEntry.writeAccess);
+                ImGui::Text("Type: %s", typeStr);
+                ImGui::Text("Initial Access: %s", initialAccessStr);
+                ImGui::Text("Write Access: %s", writeAccessStr);
+
+                if (resEntry.type == GraphResourceType::Image && resEntry.image) {
+                  ImGui::Separator();
+                  ImGui::Text("Image Details:");
+                  ImGui::Text("  Format: %u", resEntry.imageSpec.format);
+                  ImGui::Text("  Scale: (%.2f, %.2f)", resEntry.imageSpec.scale.x,
+                              resEntry.imageSpec.scale.y);
+                  if (resEntry.imageSpec.scale.x != 0 || resEntry.imageSpec.scale.y != 0) {
+                    ImGui::Text("  Relative to swapchain");
+                  } else {
+                    ImGui::Text("  Absolute size: %u x %u", resEntry.imageSpec.width,
+                                resEntry.imageSpec.height);
+                  }
+                  ImGui::Text("  Actual size: %u x %u", resEntry.image->getWidth(),
+                              resEntry.image->getHeight());
+                }
+
+                ImGui::Separator();
+                if (resEntry.definingTask) {
+                  ImGui::Text("Defined by: %s", resEntry.definingTask->name().c_str());
+                }
+
+                if (!resEntry.users.empty()) {
+                  if (ImGui::TreeNode("Used by:")) {
+                    for (auto userTask : resEntry.users) {
+                      ImGui::BulletText("%s", userTask->name().c_str());
+                    }
+                    ImGui::TreePop();
+                  }
+                }
+              }
+            } else {
+              ImGui::TextDisabled("(Select a resource to view details)");
+            }
+          }
+          ImGui::EndChild();
+        }
+        ImGui::EndGroup();
+
+        ImGui::EndTabItem();
+      }
+
+      ImGui::EndTabBar();
+    }
+    ImGui::End();
+  }
+
   void BarrierTask::run(GraphRunContext &ctx) {
     // TODO: Implement barrier synchronization logic
     // This should perform layout transitions and pipeline barriers for the resource

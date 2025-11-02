@@ -175,8 +175,23 @@ namespace ren {
 
     ren::FrameData *frame = nullptr;
 
+
+    // check if the SDL window is a different size than the swapchain.
+    int width, height;
+    SDL_Vulkan_GetDrawableSize(this->window, &width, &height);
+
+    // bool sizeIncorrect = false;
+    // if (width != (int)this->swapchain->deviceExtent.width ||
+    //     height != (int)this->swapchain->deviceExtent.height) {
+    //       sizeIncorrect = true;
+    //   fmt::println("Window resized from {}x{} to {}x{}. Swapchain invalid!",
+    //                this->swapchain->deviceExtent.width, this->swapchain->deviceExtent.height,
+    //                width, height);
+    // }
+
     do {
       frame = this->swapchain->acquireNextFrame();
+
       if (frame == nullptr) {
         // The swapchain is out of date, so we need to recreate it.
         this->initSwapchain();
