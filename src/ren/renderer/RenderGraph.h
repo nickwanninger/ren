@@ -58,8 +58,8 @@ namespace ren {
 
 
   // An operand of a resource in the render graph.
-  // This represents a single location where a resource is used as an operand (read), and how it is used.
-  // Think about this like an llvm::Use (it's an argument, basically).
+  // This represents a single location where a resource is used as an operand (read), and how it is
+  // used. Think about this like an llvm::Use (it's an argument, basically).
   struct GraphOperand {
     GraphHandle valueHandle;
     GraphAccess access;
@@ -85,6 +85,8 @@ namespace ren {
     // Absolute width/height.
     u32 width = 0;
     u32 height = 0;
+
+    VkFormat format = VK_FORMAT_B8G8R8A8_SRGB;
   };
 
 
@@ -108,6 +110,8 @@ namespace ren {
     // Run this task in the render graph with a given context.
     // We pass this GraphContext to allow the growth of functionality in the future.
     virtual void run(GraphRunContext &ctx) = 0;
+    virtual void prepare() {}    // Prepare the task for execution after graph resources are built.
+    virtual void unprepare() {}  // Clean up any prepared state (maybe temporary resources)
 
     const std::string &name() const { return m_name; }
     void setName(const std::string &name) { m_name = name; }
@@ -141,6 +145,12 @@ namespace ren {
     // For each operand, we depend on the task that wrote it.
     // Updated by RenderGraph after building the graph.
     std::unordered_set<RenderTask *> dependencies;
+  };
+
+
+  class RenderPassTask : public RenderTask {
+   public:
+    //
   };
 
 
@@ -262,18 +272,34 @@ namespace ren {
     void runFor(GraphHandle goalResource);
 
 
-    // prepare the render graph for execution (allocate resources, etc)
-    void prepare(glm::uvec2 swapchainSize);
 
 
     // Print the render graph as an SSA form to stdout for debugging.
     void dumpSSA(void);
 
+    // Start a new frame with the given swapchain image.
+    // This will take the swapchain image size, and use it to update any image resources
+    // which are defined relative to the swapchain size.
+    // This returns true if any resources were reallocated, false otherwise.
+    bool startFrame(ref<ren::Image> image);
+
     // Compile the graph into a schedule of tasks to run using topological sort.
     // Starting from the task that writes the goal resource, computes task dependencies
-    // from operand/result relationships, then topologically sorts to create a valid execution order.
-    // NOTE: this is slow right now. Will look into caching and invalidating.
+    // from operand/result relationships, then topologically sorts to create a valid execution
+    // order. NOTE: this is slow right now. Will look into caching and invalidating.
     RenderSchedule compile(GraphHandle goalResource);
+
+    // Get resources
+    // TODO: store resources in the graph as an abstract "GraphResource" type,
+    // then have images or buffers be that. Then, you `G.get<T>(handle)` to get
+    // a resource of type T.  I would still like to store *anything* in the
+    // graph, without needing inheritance from a base class.  Thus, We might
+    // just have a `GraphResource` that is a base, then a `TypeGraphResource<T>`
+    // that stores a ref to a T.  We'd then have some kind of way to automate
+    // the casting and barrier generation as needed for a given T (maybe via
+    // traits?)
+    template <typename T>
+    ref<T> get(GraphHandle handle);
 
 
     inline GraphResourceType getResourceType(GraphHandle handle) const {
@@ -295,6 +321,12 @@ namespace ren {
       GraphResourceType type;
       // The access type it should be in at the start of the frame.
       GraphAccess initialAccess;
+
+
+      // TODO: move this out to a Resource subclass for all the types.
+      ref<Image> image = nullptr;
+      GraphImageSpec imageSpec;
+      // ------------------
 
       // SSA-style tracking:
       // The task that defines (writes to) this resource
@@ -330,6 +362,7 @@ namespace ren {
     GraphHandle nextHandle = ren::nullGraphHandle + 1;  // Start at the first valid handle.
 
     glm::uvec2 swapchainSize;
+    ref<ren::Image> swapchainImage = nullptr;
   };
 
 

@@ -123,19 +123,86 @@ namespace ren {
   RenderGraph::RenderGraph() {}
 
 
-  void RenderGraph::prepare(glm::uvec2 swapchainSize) {
-    this->swapchainSize = swapchainSize;
-    return;
-    fmt::println("Preparing render graph with swapchain size {}x{}", swapchainSize.x,
-                 swapchainSize.y);
+  bool RenderGraph::startFrame(ref<ren::Image> swapchainImage) {
+    auto newImageSize = glm::uvec2(swapchainImage->getWidth(), swapchainImage->getHeight());
 
-    // Here we would allocate resources based on the resourceTable and their specs.
-    for (const auto &[handle, resource] : resourceTable) {
+    bool swapchainChanged = newImageSize != this->swapchainSize;
+    this->swapchainSize = newImageSize; // update the stored size.
+
+    bool anyReallocated = false;
+
+    // we iterate over every resource and check if any of them need to be updated, despite having
+    // this top level "swapchainChanged" flag. This is to handle iamges being added after the graph
+    // is created, so all resources are present at the start of the frame.
+    for (auto &[handle, resource] : resourceTable) {
       if (resource.type == GraphResourceType::Image) {
-        fmt::println(" - Preparing image resource '{}' (handle {})", resource.name, handle);
-        // Allocate image here based on its spec.
+        auto &spec = resource.imageSpec;
+        // TODO: temporal resources?
+
+        bool relativeScale = !(spec.scale.x == 0.0f && spec.scale.y == 0.0f);
+        // If the image is null (or we need to update because swapchain size changed and it's
+        // relative)
+        if ((resource.image == nullptr || (swapchainChanged && relativeScale))) {
+          u32 width = spec.width;
+          u32 height = spec.height;
+
+          if (relativeScale) {
+            width = static_cast<u32>(newImageSize.x * spec.scale.x);
+            height = static_cast<u32>(newImageSize.y * spec.scale.y);
+          }
+
+          fmt::println("Allocating/reallocating image resource '{}' with size {}x{}", resource.name,
+                       width, height);
+
+          if (resource.image == nullptr) {
+            fmt::println("  (was null, allocating new)");
+          } else {
+            fmt::println("  (swapchain size changed, reallocating)");
+          }
+
+          // Here we would allocate the actual image resource.
+          // For now, we just log it.
+          // In a real implementation, you'd create a ren::Image with the given size and format.
+
+
+          ren::ImageBuilder b(resource.name);
+
+
+
+          switch (resource.initialAccess) {
+            case GraphAccess::RenderTarget:
+              b.setUsage(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
+                         VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT);
+              break;
+            case GraphAccess::DepthTarget:
+              b.setUsage(VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
+                         VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT);
+              break;
+            default:
+              b.setUsage(VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                         VK_IMAGE_USAGE_TRANSFER_DST_BIT);
+              break;
+          }
+
+          b.setWidth(width)
+              .setHeight(height)
+              .setFormat(resource.imageSpec.format)
+              .setTiling(VK_IMAGE_TILING_OPTIMAL)
+              .setSamples(VK_SAMPLE_COUNT_1_BIT)
+              .setMipLevels(1)
+              .setArrayLayers(1)
+              .setInitialLayout(VK_IMAGE_LAYOUT_UNDEFINED);
+
+          resource.image = b.build();
+
+
+          anyReallocated = true;
+        }
       }
     }
+
+
+    return anyReallocated;
   }
 
   GraphHandle RenderGraph::createImage(const std::string_view &name, const GraphImageSpec &spec,
@@ -146,6 +213,7 @@ namespace ren {
     entry.name = name;
     entry.type = GraphResourceType::Image;
     entry.initialAccess = initialAccess;
+    entry.imageSpec = spec;
 
     bool relativeScale = not(spec.scale.x == 0.0f and spec.scale.y == 0.0f);
 
