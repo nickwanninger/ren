@@ -18,5 +18,3 @@ layout(set = ENGINE_SET, binding = 0, std140) uniform EngineUBO {
   float time;
 }
 engine;
-
-layout (set = ENGINE_SET, binding = 1) uniform sampler2D skyboxSampler;

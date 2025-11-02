@@ -121,8 +121,6 @@ namespace ren {
   ref<RenderTarget> SceneRenderer::render(Scene &scene, Camera &camera) {
     REN_PROFILE_FUNCTION();
 
-    static ref<Texture> debugSkyboxTexture = ren::Texture::load("assets/hdri/voortrekker_interior.jpg");
-
 
     // get the current frame data.
     auto &frame = ren::getFrameData();
@@ -277,7 +275,6 @@ namespace ren {
         R.bind(opaque.skyboxPSO);
         R.startBinding(0)
             .bind("engine", this->engineUBOBuffer)
-            .bind("skyboxSampler", *debugSkyboxTexture)
             .apply();
         vkCmdDraw(cmd, 3, 1, 0, 0);
       }
@@ -309,7 +306,6 @@ namespace ren {
 
         auto engineBinder = R.startBinding(0);
         engineBinder.bind("engine", this->engineUBOBuffer);
-        engineBinder.bind("skyboxSampler", *debugSkyboxTexture);
         engineBinder.apply();
 
 
