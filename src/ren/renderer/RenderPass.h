@@ -12,7 +12,9 @@ namespace ren {
 
   // A RenderPass is a description of how render passes should be ordered
   // and what attachments they should use.
-  class RenderPass : public std::enable_shared_from_this<RenderPass>, public ren::HasUUID, public ren::VulkanResource {
+  class RenderPass : public std::enable_shared_from_this<RenderPass>,
+                     public ren::HasUUID,
+                     public ren::VulkanResource {
    public:
     struct Description {
       std::string name = "pass";
@@ -27,11 +29,11 @@ namespace ren {
       u32 depthAttachments = 0;  // We can only have one depth attachment, but we'll just count it.
 
       VkAttachmentDescription &addColorAttachment(
-          const std::string &name, VkFormat format = VK_FORMAT_B8G8R8A8_SRGB,
+          const std::string_view &name, VkFormat format = VK_FORMAT_B8G8R8A8_SRGB,
           VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT);
-      VkAttachmentDescription &addDepthAttachment(const std::string &name = "depth",
-                                                  VkSampleCountFlagBits samples =
-                                                      VK_SAMPLE_COUNT_1_BIT);
+      VkAttachmentDescription &addDepthAttachment(
+          const std::string_view &name = "depth",
+          VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT);
 
       // a hash function for this description
       size_t hash(void) const;

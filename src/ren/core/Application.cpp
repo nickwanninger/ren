@@ -60,6 +60,144 @@ extern "C" {
 //   }
 // }
 
+
+
+
+static void taskRunCallback(ren::GraphRunContext &ctx) {
+  fmt::println("Running {}", ctx.task->name());
+}
+// A more complex deferred rendering pipeline example.
+// Demonstrates: G-buffer rendering, depth pyramid, SSR, deferred lighting, composition.
+ren::GraphHandle buildDeferredPipeline(ren::RenderGraph &G) {
+  // === Stage 1: G-Buffer Rendering ===
+  // Render scene geometry to multiple render targets
+  auto gbufferAlbedo =
+      G.createImage("gbuffer_albedo", {.scale = glm::vec2(1.0f)}, ren::GraphAccess::RenderTarget);
+  auto gbufferNormal =
+      G.createImage("gbuffer_normal", {.scale = glm::vec2(1.0f)}, ren::GraphAccess::RenderTarget);
+  auto gbufferDepth =
+      G.createImage("gbuffer_depth", {.scale = glm::vec2(1.0f)}, ren::GraphAccess::DepthTarget);
+  auto gbufferMaterial =
+      G.createImage("gbuffer_material", {.scale = glm::vec2(1.0f)}, ren::GraphAccess::RenderTarget);
+
+  auto &gbufferPass = G.addTask("gbuffer_render", taskRunCallback);
+  gbufferPass.write(gbufferAlbedo, ren::GraphAccess::RenderTarget);
+  gbufferPass.write(gbufferNormal, ren::GraphAccess::RenderTarget);
+  gbufferPass.write(gbufferDepth, ren::GraphAccess::DepthTarget);
+  gbufferPass.write(gbufferMaterial, ren::GraphAccess::RenderTarget);
+
+  // === Stage 2a: Depth Pyramid (for HZB-based techniques) ===
+  auto depthPyramid = G.createImage("depth_pyramid", {.scale = glm::vec2(1.0f)},
+                                    ren::GraphAccess::ComputeShaderWrite);
+  auto &depthPyramidPass = G.addTask("compute_depth_pyramid", taskRunCallback);
+  depthPyramidPass.read(gbufferDepth, ren::GraphAccess::ComputeShaderRead);
+  depthPyramidPass.write(depthPyramid, ren::GraphAccess::ComputeShaderWrite);
+
+  // === Stage 2b: Screen-Space Reflections (can run in parallel with depth pyramid) ===
+  auto ssrResult =
+      G.createImage("ssr_result", {.scale = glm::vec2(0.5f)}, ren::GraphAccess::ComputeShaderWrite);
+  auto &ssrPass = G.addTask("compute_ssr", taskRunCallback);
+  ssrPass.read(gbufferDepth, ren::GraphAccess::ComputeShaderRead);
+  ssrPass.read(gbufferNormal, ren::GraphAccess::ComputeShaderRead);
+  ssrPass.read(depthPyramid, ren::GraphAccess::ComputeShaderRead);  // depends on depth pyramid
+  ssrPass.write(ssrResult, ren::GraphAccess::ComputeShaderWrite);
+
+  // === Stage 3: Deferred Lighting (reads all G-buffers) ===
+  auto litOutput =
+      G.createImage("lit_output", {.scale = glm::vec2(1.0f)}, ren::GraphAccess::ComputeShaderWrite);
+  auto &deferredLightingPass = G.addTask("compute_deferred_lighting", taskRunCallback);
+  deferredLightingPass.read(gbufferAlbedo, ren::GraphAccess::ComputeShaderRead);
+  deferredLightingPass.read(gbufferNormal, ren::GraphAccess::ComputeShaderRead);
+  deferredLightingPass.read(gbufferMaterial, ren::GraphAccess::ComputeShaderRead);
+  deferredLightingPass.write(litOutput, ren::GraphAccess::ComputeShaderWrite);
+
+  // === Stage 4: Composition (combine lit result with reflections) ===
+  auto compositeOutput =
+      G.createImage("composite_output", {.scale = glm::vec2(1.0f)}, ren::GraphAccess::RenderTarget);
+  auto &compositionPass = G.addTask("composite_pass", taskRunCallback);
+  compositionPass.read(litOutput, ren::GraphAccess::FragmentShaderRead);
+  compositionPass.read(ssrResult, ren::GraphAccess::FragmentShaderRead);
+  compositionPass.write(compositeOutput, ren::GraphAccess::RenderTarget);
+
+  // === Stage 5: Post-processing (FXAA, film grain, etc.) ===
+  auto postProcessOutput = G.createImage("postprocess_output", {.scale = glm::vec2(1.0f)},
+                                         ren::GraphAccess::RenderTarget);
+  auto &postProcessPass = G.addTask("post_process", taskRunCallback);
+  postProcessPass.read(compositeOutput, ren::GraphAccess::FragmentShaderRead);
+  postProcessPass.write(postProcessOutput, ren::GraphAccess::RenderTarget);
+
+  // === Stage 6: Bloom Pass (Multi-scale downsampling + upsampling chain) ===
+  // This demonstrates a common multi-pass technique using procedural graph construction.
+  // Extract bright pixels, downsample to increasing scales, then upsample and accumulate back.
+
+  const int bloomLevels = 4;  // Number of downsampling levels (1/2, 1/4, 1/8, 1/16)
+  std::vector<ren::GraphHandle> bloomDownsamples;
+
+  // Bright pass: extract luminance > threshold
+  auto bloomBright = G.createImage("bloom_bright", {.scale = glm::vec2(1.0f)},
+                                   ren::GraphAccess::ComputeShaderWrite);
+  auto &bloomBrightPass = G.addTask("bloom_bright_pass", taskRunCallback);
+  bloomBrightPass.read(postProcessOutput, ren::GraphAccess::ComputeShaderRead);
+  bloomBrightPass.write(bloomBright, ren::GraphAccess::ComputeShaderWrite);
+
+  // === Downsample chain: progressively shrink ===
+  ren::GraphHandle currentDownsample = bloomBright;
+  for (int level = 0; level < bloomLevels; ++level) {
+    float scaleFactor = 1.0f / (2.0f * (1 << level));  // 0.5, 0.25, 0.125, 0.0625
+    auto bloomDown = G.createImage("bloom_down", {.scale = glm::vec2(scaleFactor)},
+                                   ren::GraphAccess::ComputeShaderWrite);
+    auto &downsamplePass = G.addTask("bloom_downsample", taskRunCallback);
+    downsamplePass.read(currentDownsample, ren::GraphAccess::ComputeShaderRead);
+    downsamplePass.write(bloomDown, ren::GraphAccess::ComputeShaderWrite);
+
+    bloomDownsamples.push_back(bloomDown);
+    currentDownsample = bloomDown;
+  }
+
+  // === Upsample chain: progressively enlarge and accumulate ===
+  ren::GraphHandle currentUpsample = currentDownsample;  // Start from smallest (1/16)
+  for (int level = bloomLevels - 1; level >= 0; --level) {
+    float scaleFactor = 1.0f / (2.0f * (1 << level));  // 0.125, 0.25, 0.5, 1.0
+    auto bloomUp = G.createImage("bloom_up", {.scale = glm::vec2(scaleFactor)},
+                                 ren::GraphAccess::ComputeShaderWrite);
+    auto &upsamplePass = G.addTask("bloom_upsample", taskRunCallback);
+
+    // Read the upsample source (previous level)
+    upsamplePass.read(currentUpsample, ren::GraphAccess::ComputeShaderRead);
+
+    // Read the residual from the corresponding downsample level for blending
+    if (level > 0) {
+      upsamplePass.read(bloomDownsamples[level - 1], ren::GraphAccess::ComputeShaderRead);
+    } else {
+      // Final upsample: blend with original bright pass
+      upsamplePass.read(bloomBright, ren::GraphAccess::ComputeShaderRead);
+    }
+
+    upsamplePass.write(bloomUp, ren::GraphAccess::ComputeShaderWrite);
+
+    currentUpsample = bloomUp;
+  }
+
+  auto bloomFinal = currentUpsample;  // The result of the final upsample is our final bloom
+
+  // === Stage 7: Bloom Composition (blend bloom with post-processed image) ===
+  auto bloomComposed =
+      G.createImage("bloom_composed", {.scale = glm::vec2(1.0f)}, ren::GraphAccess::RenderTarget);
+  auto &bloomComposePass = G.addTask("bloom_composite", taskRunCallback);
+  bloomComposePass.read(postProcessOutput, ren::GraphAccess::FragmentShaderRead);
+  bloomComposePass.read(bloomFinal, ren::GraphAccess::FragmentShaderRead);
+  bloomComposePass.write(bloomComposed, ren::GraphAccess::RenderTarget);
+
+  // === Stage 8: Tonemapping & Final Output ===
+  auto finalOutput =
+      G.createImage("final_output", {.scale = glm::vec2(1.0f)}, ren::GraphAccess::RenderTarget);
+  auto &tonemapPass = G.addTask("tonemap", taskRunCallback);
+  tonemapPass.read(bloomComposed, ren::GraphAccess::FragmentShaderRead);
+  tonemapPass.write(finalOutput, ren::GraphAccess::RenderTarget);
+
+  return finalOutput;
+}
+
 static ren::Application *g_application = nullptr;
 namespace ren {
 
@@ -73,8 +211,7 @@ namespace ren {
     }
 
 
-    SDL_WindowFlags window_flags =
-        (SDL_WindowFlags)(SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
+    SDL_WindowFlags window_flags = (SDL_WindowFlags)(SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
     auto windowName = fmt::format("{} -- Ren {} - {}", app_name, REN_GIT_REVISION, REN_BUILD_DATE);
     this->window =
         SDL_CreateWindow(windowName.c_str(), SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
@@ -228,13 +365,15 @@ namespace ren {
     FramerateCounter framerateCounter;
     ren::RenderGraph G;
 
-    G.createImage("fixed", {.width = 512, .height = 512, .format = VK_FORMAT_R8G8B8A8_UNORM},
-                  ren::GraphAccess::RenderTarget);
+    buildDeferredPipeline(G);
 
-    G.createImage("fullres", {.scale = glm::vec2(1.0f), .format = VK_FORMAT_R8G8B8A8_UNORM},
-                  ren::GraphAccess::RenderTarget);
-    G.createImage("halfres", {.scale = glm::vec2(0.5f), .format = VK_FORMAT_R8G8B8A8_UNORM},
-                  ren::GraphAccess::RenderTarget);
+    // G.createImage("fixed", {.width = 512, .height = 512, .format = VK_FORMAT_R8G8B8A8_UNORM},
+    //               ren::GraphAccess::RenderTarget);
+
+    // G.createImage("fullres", {.scale = glm::vec2(1.0f), .format = VK_FORMAT_R8G8B8A8_UNORM},
+    //               ren::GraphAccess::RenderTarget);
+    // G.createImage("halfres", {.scale = glm::vec2(0.5f), .format = VK_FORMAT_R8G8B8A8_UNORM},
+    //               ren::GraphAccess::RenderTarget);
 
     while (this->running) {
       int eventsHandled = 0;
@@ -348,6 +487,7 @@ namespace ren {
 
 
       G.startFrame(frame.deviceImage);
+
 
       {
         REN_PROFILE_SCOPE("ImGui New Frame");

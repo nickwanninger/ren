@@ -27,6 +27,13 @@ namespace ren {
   class RenderGraph {
    public:
     RenderGraph();
+
+    // No copy, no move
+    RenderGraph(const RenderGraph &) = delete;
+    RenderGraph &operator=(const RenderGraph &) = delete;
+    RenderGraph(RenderGraph &&) = delete;
+    RenderGraph &operator=(RenderGraph &&) = delete;
+
     // Add a task of a given type to the render graph
     template <typename T, typename... Args>
     T &addTask(const char *name, Args &&...args);
@@ -112,11 +119,6 @@ namespace ren {
     }
 
    private:
-    struct TaskEntry {
-      std::string name;
-      ren::ref<RenderTask> task;
-    };
-
     // Helper: compute dependencies for all tasks based on operand/result relationships
     void computeDependencies(void);
 
@@ -128,7 +130,7 @@ namespace ren {
                          std::unordered_set<RenderTask *> &visited);
 
     std::unordered_map<GraphHandle, ref<GraphResource>> resourceTable;
-    std::vector<TaskEntry> tasks;
+    std::vector<ref<RenderTask>> tasks;
     GraphHandle nextHandle = ren::userGraphHandleStart;
 
     glm::uvec2 swapchainSize;
@@ -141,10 +143,10 @@ namespace ren {
     static_assert(
         std::is_base_of<RenderTask, T>::value,
         "when adding a task to the render graph, it must be derived from ren::RenderTask");
-    auto task = std::make_shared<T>(*this, std::forward<Args>(args)...);
+    auto task = makeRef<T>(*this, std::forward<Args>(args)...);
     task->setName(name);
-    tasks.push_back({name, task});
-    return *task.get();
+    tasks.push_back(task);
+    return *task;
   }
 
 

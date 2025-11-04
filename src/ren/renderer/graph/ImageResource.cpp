@@ -68,10 +68,8 @@ namespace ren {
       switch (layout) {
         case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
         case VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL:
-        case VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL:
-          return VK_IMAGE_ASPECT_DEPTH_BIT;
-        default:
-          return VK_IMAGE_ASPECT_COLOR_BIT;
+        case VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL: return VK_IMAGE_ASPECT_DEPTH_BIT;
+        default: return VK_IMAGE_ASPECT_COLOR_BIT;
       }
     }
   }  // namespace
@@ -106,9 +104,7 @@ namespace ren {
       u32 currentWidth = image->getWidth();
       u32 currentHeight = image->getHeight();
 
-      if (currentWidth != expectedWidth || currentHeight != expectedHeight) {
-        needsRebuild = true;
-      }
+      if (currentWidth != expectedWidth || currentHeight != expectedHeight) { needsRebuild = true; }
     }
     // Fixed-size images are never rebuilt once allocated (handled by null check above)
 
@@ -134,7 +130,8 @@ namespace ren {
     if (width < 1) width = 1;
     if (height < 1) height = 1;
 
-    fmt::println("Allocating/reallocating image resource '{}' with size {}x{}", name, width, height);
+    fmt::println("Allocating/reallocating image resource '{}' with size {}x{}", name, width,
+                 height);
 
     if (image == nullptr) {
       fmt::println("  (was null, allocating new)");
@@ -192,6 +189,10 @@ namespace ren {
 
   void ImageResource::emitBarrier(GraphRunContext &ctx, GraphAccess fromAccess,
                                   GraphAccess toAccess) {
+    if (fromAccess == toAccess) {
+      return;  // No barrier needed
+    }
+
     if (!image) {
       return;  // Image not yet allocated
     }
@@ -215,8 +216,8 @@ namespace ren {
     barrier.subresourceRange.baseArrayLayer = 0;
     barrier.subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
 
-    vkCmdPipelineBarrier(ctx.commandBuffer, fromInfo.stage, toInfo.stage, 0, 0, nullptr, 0,
-                         nullptr, 1, &barrier);
+    vkCmdPipelineBarrier(ctx.commandBuffer, fromInfo.stage, toInfo.stage, 0, 0, nullptr, 0, nullptr,
+                         1, &barrier);
   }
 
 }  // namespace ren

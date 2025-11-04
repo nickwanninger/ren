@@ -4,9 +4,12 @@
 #include <imgui/imgui.h>
 #include <ImGuizmo/ImGuizmo.h>
 #include <ImGuizmo/GraphEditor.h>
+
 #include <unordered_map>
+#include <unordered_set>
 #include <queue>
 #include <chrono>
+
 
 namespace ren {
 
@@ -69,17 +72,29 @@ namespace ren {
   bool RenderGraph::startFrame(ref<ren::Image> swapchainImage) {
     auto newImageSize = glm::uvec2(swapchainImage->getWidth(), swapchainImage->getHeight());
 
-    this->swapchainSize = newImageSize; // update the stored size.
+    this->swapchainSize = newImageSize;  // update the stored size.
 
     bool anyReallocated = false;
+    std::unordered_set<RenderTask *> needToPrepare;
 
     // Update all resources with the new swapchain size.
     // Each resource will decide whether it needs to rebuild based on its spec.
     for (auto &[handle, resource] : resourceTable) {
       if (resource->update(*this)) {
         anyReallocated = true;
-      fmt::println("Resource '{}' updated (handle {})", resource->name, handle);
+        fmt::println("Resource '{}' updated (handle {})", resource->name, handle);
+        for (auto *userTask : resource->users) {
+          needToPrepare.insert(userTask);
+        }
       }
+    }
+
+    for (auto *task : needToPrepare) {
+      fmt::println("Re-preparing task '{}'", task->name());
+      task->version++;
+      // Re-prepare tasks whose resources were reallocated
+      task->unprepare();
+      task->prepare();
     }
 
     return anyReallocated;
@@ -88,6 +103,11 @@ namespace ren {
   GraphHandle RenderGraph::createImage(const std::string_view &name, const GraphImageSpec &spec,
                                        GraphAccess initialAccess) {
     GraphHandle handle = nextHandle++;
+
+    // if the spec has 0 scale, and 0 width/height, it's invalid.
+    if (spec.scale == glm::vec2(0.0f) && spec.width == 0 && spec.height == 0) {
+      throw std::runtime_error("Invalid GraphImageSpec: must have non-zero scale or fixed size");
+    }
 
     auto imageResource = makeRef<ImageResource>(spec);
     imageResource->name = std::string(name);
@@ -122,8 +142,8 @@ namespace ren {
   // For each task, its dependencies are the tasks that write to resources it reads.
   void RenderGraph::computeDependencies(void) {
     // Clear existing dependencies
-    for (const auto &entry : tasks) {
-      entry.task->dependencies.clear();
+    for (const auto &task : tasks) {
+      task->dependencies.clear();
     }
 
     // Build dependencies from resource flow:
@@ -295,12 +315,13 @@ namespace ren {
             ImGui::Text("Tasks (%zu)", tasks.size());
             ImGui::Separator();
 
-            for (const auto &entry : tasks) {
-              RenderTask *task = entry.task.get();
-              bool isSelected = (task == selectedTask);
-              ImGui::PushID(task);
-              if (ImGui::Selectable(entry.name.c_str(), isSelected, ImGuiSelectableFlags_AllowDoubleClick)) {
-                selectedTask = task;
+            for (const auto &task : tasks) {
+              RenderTask *taskPtr = task.get();
+              bool isSelected = (taskPtr == selectedTask);
+              ImGui::PushID(taskPtr);
+              if (ImGui::Selectable(task->name().c_str(), isSelected,
+                                    ImGuiSelectableFlags_AllowDoubleClick)) {
+                selectedTask = taskPtr;
               }
               ImGui::PopID();
             }
@@ -318,7 +339,8 @@ namespace ren {
                             ImGuiChildFlags_Border);
           {
             if (selectedTask) {
-              ImGui::Text("Task: %s", selectedTask->name().c_str());
+              ImGui::Text("Task: %s (Version %d)", selectedTask->name().c_str(),
+                          selectedTask->version);
               ImGui::Separator();
 
               // Operands (reads)
@@ -327,7 +349,8 @@ namespace ren {
                 if (ImGui::TreeNode("Operands (Reads)")) {
                   for (const auto &op : operands) {
                     const char *accessStr = fmt::formatter<GraphAccess>::toString(op.access);
-                    const char *typeStr = fmt::formatter<GraphResourceType>::toString(op.resourceType);
+                    const char *typeStr =
+                        fmt::formatter<GraphResourceType>::toString(op.resourceType);
                     ImGui::Text("%%%-3u : %s (type: %s)", op.valueHandle, accessStr, typeStr);
 
                     // Show resource name if available
@@ -350,7 +373,8 @@ namespace ren {
                     if (it != resourceTable.end()) {
                       ImGui::Text("%%%-3u : %s", resultHandle, it->second->name.c_str());
                       ImGui::SameLine();
-                      const char *accessStr = fmt::formatter<GraphAccess>::toString(it->second->writeAccess);
+                      const char *accessStr =
+                          fmt::formatter<GraphAccess>::toString(it->second->writeAccess);
                       ImGui::TextDisabled("(%s)", accessStr);
                     } else {
                       ImGui::Text("%%%-3u : <unknown>", resultHandle);
@@ -424,8 +448,10 @@ namespace ren {
                 ImGui::Text("Resource Handle: %%%-3u", selectedResource);
                 ImGui::Text("Name: %s", resource->name.c_str());
                 const char *typeStr = fmt::formatter<GraphResourceType>::toString(resource->type);
-                const char *initialAccessStr = fmt::formatter<GraphAccess>::toString(resource->initialAccess);
-                const char *writeAccessStr = fmt::formatter<GraphAccess>::toString(resource->writeAccess);
+                const char *initialAccessStr =
+                    fmt::formatter<GraphAccess>::toString(resource->initialAccess);
+                const char *writeAccessStr =
+                    fmt::formatter<GraphAccess>::toString(resource->writeAccess);
                 ImGui::Text("Type: %s", typeStr);
                 ImGui::Text("Initial Access: %s", initialAccessStr);
                 ImGui::Text("Write Access: %s", writeAccessStr);

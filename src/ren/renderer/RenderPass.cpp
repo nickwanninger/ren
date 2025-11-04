@@ -7,7 +7,7 @@ namespace ren {
 
   static std::unordered_set<RenderPass *> allRenderPasses;
   VkAttachmentDescription &RenderPass::Description::addColorAttachment(
-      const std::string &name, VkFormat format, VkSampleCountFlagBits samples) {
+      const std::string_view &name, VkFormat format, VkSampleCountFlagBits samples) {
     VkAttachmentDescription attachment{};
     attachment.format = format;
     attachment.samples = samples;
@@ -26,13 +26,13 @@ namespace ren {
                                  : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
     attachments.push_back(attachment);
-    attachmentNames.push_back(name);
+    attachmentNames.push_back(std::string(name));
     colorAttachments++;
     return attachments.back();
   }
 
   VkAttachmentDescription &RenderPass::Description::addDepthAttachment(
-      const std::string &name, VkSampleCountFlagBits samples) {
+      const std::string_view &name, VkSampleCountFlagBits samples) {
     VkAttachmentDescription attachment{};
     attachment.format = getVulkan().findDepthFormat();
     attachment.samples = samples;
@@ -44,7 +44,7 @@ namespace ren {
     attachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
     attachments.push_back(attachment);
-    attachmentNames.push_back(name);
+    attachmentNames.push_back(std::string(name));
     depthAttachments++;
     return attachments.back();
   }

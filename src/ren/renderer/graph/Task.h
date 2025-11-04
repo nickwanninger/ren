@@ -70,12 +70,17 @@ namespace ren {
     const auto &getResults(void) const { return m_results; }
     virtual std::string toString(void) const;
 
+
+    RenderGraph &graph(void) const { return m_graph; }
+
    private:
     std::string m_name;    ///< Human-readable name of this task
     RenderGraph &m_graph;  ///< Reference to owning render graph
 
     std::vector<GraphOperand> m_operands;
     std::vector<GraphHandle> m_results;
+
+    int version = 1;  // Every time the task is re-prepared, this goes up
 
    protected:
     friend class RenderGraph;
@@ -85,12 +90,6 @@ namespace ren {
   };
 
 
-
-
-  class RenderPassTask : public RenderTask {
-   public:
-    //
-  };
 
 
 }  // namespace ren
