@@ -24,12 +24,12 @@ namespace ren::editor {
       auto comp = compId.entity();
 
       // auto type = comp.type();
-      ImGui::Text("%s #%lu", compId.entity().path(".", "").c_str(), comp.raw_id());
+      ImGui::Text("%s #%llu", compId.entity().path(".", "").c_str(), comp.raw_id());
       const EcsComponent *comp_desc = comp.try_get<EcsComponent>();
       // const void *comp_data = e.try_get(comp);
       if (comp_desc) {
         ImGui::SameLine();
-        ImGui::Text(" sz:%lu al:%lu", comp_desc->size, comp_desc->alignment);
+        ImGui::Text(" sz:%d al:%d", comp_desc->size, comp_desc->alignment);
       }
 
       // ImGui::Text("  Size: %lu bytes", comp_data.size);
@@ -75,8 +75,8 @@ namespace ren::editor {
       auto &comps = ren::getRegisteredComponents();
       for (const auto &comp : comps) {
         ImGui::Text("Registered Component: %s", comp.typeName);
-        ImGui::Text("  Size: %lu bytes", comp.typeSize);
-        ImGui::Text("  Alignment: %lu bytes", comp.typeAlignment);
+        ImGui::Text("  Size: %llu bytes", comp.typeSize);
+        ImGui::Text("  Alignment: %llu bytes", comp.typeAlignment);
       }
 
       ImGui::Separator();
@@ -86,8 +86,8 @@ namespace ren::editor {
 
         for (auto i : it) {
           ImGui::Text("Component: %s", it.entity(i).path().c_str());
-          ImGui::Text("  Size: %lu bytes", comps[i].size);
-          ImGui::Text("  Alignment: %lu bytes", comps[i].alignment);
+          ImGui::Text("  Size: %d bytes", comps[i].size);
+          ImGui::Text("  Alignment: %d bytes", comps[i].alignment);
         }
       }
 
