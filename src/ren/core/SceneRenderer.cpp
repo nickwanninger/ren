@@ -335,6 +335,8 @@ namespace ren {
 
     frame.perf.end(cmd, "Opaque Pass");
 
+    opaque.target->transitionToShaderReadonly(cmd);
+
 
 
     ////////////// DEBUG ////////////////
