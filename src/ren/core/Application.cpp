@@ -15,7 +15,7 @@
 #include <ren/assets/Mesh.h>
 
 #include <ren/renderer/Descriptors.h>
-#include <ren/renderer/RenderGraph.h>
+#include <ren/renderer/graph/RenderGraph.h>
 #include <ren/renderer/Sampler.h>
 #include <ren/misc/resource_usage.h>
 
