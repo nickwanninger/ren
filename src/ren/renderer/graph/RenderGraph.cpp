@@ -1,4 +1,5 @@
 #include <ren/renderer/graph/RenderGraph.h>
+#include <ren/renderer/graph/ImageResource.h>
 
 #include <imgui/imgui.h>
 #include <ImGuizmo/ImGuizmo.h>
@@ -68,86 +69,18 @@ namespace ren {
   bool RenderGraph::startFrame(ref<ren::Image> swapchainImage) {
     auto newImageSize = glm::uvec2(swapchainImage->getWidth(), swapchainImage->getHeight());
 
-    bool swapchainChanged = newImageSize != this->swapchainSize;
     this->swapchainSize = newImageSize; // update the stored size.
 
     bool anyReallocated = false;
 
-    // we iterate over every resource and check if any of them need to be updated, despite having
-    // this top level "swapchainChanged" flag. This is to handle iamges being added after the graph
-    // is created, so all resources are present at the start of the frame.
+    // Update all resources with the new swapchain size.
+    // Each resource will decide whether it needs to rebuild based on its spec.
     for (auto &[handle, resource] : resourceTable) {
-      if (resource.type == GraphResourceType::Image) {
-        auto &spec = resource.imageSpec;
-        // TODO: temporal resources?
-
-        bool relativeScale = !(spec.scale.x == 0.0f && spec.scale.y == 0.0f);
-        // If the image is null (or we need to update because swapchain size changed and it's
-        // relative)
-        if ((resource.image == nullptr || (swapchainChanged && relativeScale))) {
-          u32 width = spec.width;
-          u32 height = spec.height;
-
-          if (relativeScale) {
-            width = static_cast<u32>(newImageSize.x * spec.scale.x);
-            height = static_cast<u32>(newImageSize.y * spec.scale.y);
-          }
-
-
-          if (width < 1) width = 1;
-          if (height < 1) height = 1;
-
-          fmt::println("Allocating/reallocating image resource '{}' with size {}x{}", resource.name,
-                       width, height);
-
-
-          if (resource.image == nullptr) {
-            fmt::println("  (was null, allocating new)");
-          } else {
-            fmt::println("  (swapchain size changed, reallocating)");
-          }
-
-          // Here we would allocate the actual image resource.
-          // For now, we just log it.
-          // In a real implementation, you'd create a ren::Image with the given size and format.
-
-
-          ren::ImageBuilder b(resource.name);
-
-
-
-          switch (resource.initialAccess) {
-            case GraphAccess::RenderTarget:
-              b.setUsage(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
-                         VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT);
-              break;
-            case GraphAccess::DepthTarget:
-              b.setUsage(VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
-                         VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT);
-              break;
-            default:
-              b.setUsage(VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
-                         VK_IMAGE_USAGE_TRANSFER_DST_BIT);
-              break;
-          }
-
-          b.setWidth(width)
-              .setHeight(height)
-              .setFormat(resource.imageSpec.format)
-              .setTiling(VK_IMAGE_TILING_OPTIMAL)
-              .setSamples(VK_SAMPLE_COUNT_1_BIT)
-              .setMipLevels(1)
-              .setArrayLayers(1)
-              .setInitialLayout(VK_IMAGE_LAYOUT_UNDEFINED);
-
-          resource.image = b.build();
-
-
-          anyReallocated = true;
-        }
+      if (resource->update(*this)) {
+        anyReallocated = true;
+      fmt::println("Resource '{}' updated (handle {})", resource->name, handle);
       }
     }
-
 
     return anyReallocated;
   }
@@ -156,45 +89,31 @@ namespace ren {
                                        GraphAccess initialAccess) {
     GraphHandle handle = nextHandle++;
 
-    ResourceEntry entry;
-    entry.name = name;
-    entry.type = GraphResourceType::Image;
-    entry.initialAccess = initialAccess;
-    entry.imageSpec = spec;
+    auto imageResource = makeRef<ImageResource>(spec);
+    imageResource->name = std::string(name);
+    imageResource->initialAccess = initialAccess;
 
-    bool relativeScale = not(spec.scale.x == 0.0f and spec.scale.y == 0.0f);
-
-    if (relativeScale) {
-      // fmt::println("Creating image '{}' with swapchain-relative scale ({}, {})", name,
-      // spec.scale.x,
-      //              spec.scale.y);
-    } else {
-      // fmt::println("Creating image '{}' with size {}x{}", name, spec.width, spec.height);
-    }
-
-    // Store the entry in the resource table so the name persists
-    resourceTable[handle] = entry;
-
-    // Here, we would allocate the actual GPU resource based on its spec.
+    // Image allocation is deferred until startFrame() calls update()
+    resourceTable[handle] = imageResource;
 
     return handle;
   }
 
   GraphHandle RenderGraph::addRead(RenderTask &task, GraphHandle handle, GraphAccess access) {
-    auto &entry = resourceTable[handle];
-    entry.users.insert(&task);
+    auto resource = resourceTable[handle];
+    resource->users.insert(&task);
     return handle;
   }
 
   GraphHandle RenderGraph::addWrite(RenderTask &task, GraphHandle handle, GraphAccess access) {
-    auto &entry = resourceTable[handle];
-    if (entry.definingTask != nullptr) {
+    auto resource = resourceTable[handle];
+    if (resource->definingTask != nullptr) {
       throw std::runtime_error(fmt::format("Warning: Resource {} already has a defining task '{}'",
-                                           handle, entry.definingTask->name()));
+                                           handle, resource->definingTask->name()));
     }
 
-    entry.definingTask = &task;
-    entry.writeAccess = access;  // Track what access state this resource is written to
+    resource->definingTask = &task;
+    resource->writeAccess = access;  // Track what access state this resource is written to
     return handle;
   }
 
@@ -210,9 +129,9 @@ namespace ren {
     // Build dependencies from resource flow:
     // For each resource, all readers depend on the writer
     for (const auto &[handle, resource] : resourceTable) {
-      if (resource.definingTask != nullptr) {
-        for (auto *reader : resource.users) {
-          reader->dependencies.insert(resource.definingTask);
+      if (resource->definingTask != nullptr) {
+        for (auto *reader : resource->users) {
+          reader->dependencies.insert(resource->definingTask);
         }
       }
     }
@@ -224,11 +143,11 @@ namespace ren {
       throw std::runtime_error(fmt::format("Invalid resource handle: {}", resourceHandle));
     }
 
-    auto *definingTask = it->second.definingTask;
+    auto *definingTask = it->second->definingTask;
     if (definingTask == nullptr) {
       throw std::runtime_error(
           fmt::format("Resource {} ('{}') has no defining task - it was never written to",
-                      resourceHandle, it->second.name));
+                      resourceHandle, it->second->name));
     }
 
     return definingTask;
@@ -292,8 +211,8 @@ namespace ren {
 
     // Track current access state of each resource (initialized from initialAccess)
     std::unordered_map<GraphHandle, GraphAccess> resourceStates;
-    for (const auto &[handle, entry] : resourceTable) {
-      resourceStates[handle] = entry.initialAccess;
+    for (const auto &[handle, resource] : resourceTable) {
+      resourceStates[handle] = resource->initialAccess;
     }
 
     // Process tasks in order, inserting barriers as needed
@@ -320,7 +239,7 @@ namespace ren {
       for (const auto &resultHandle : task->getResults()) {
         // Look up the write access from the resource table
         auto it = resourceTable.find(resultHandle);
-        if (it != resourceTable.end()) { resourceStates[resultHandle] = it->second.writeAccess; }
+        if (it != resourceTable.end()) { resourceStates[resultHandle] = it->second->writeAccess; }
       }
     }
 
@@ -413,9 +332,9 @@ namespace ren {
 
                     // Show resource name if available
                     auto it = resourceTable.find(op.valueHandle);
-                    if (it != resourceTable.end() && !it->second.name.empty()) {
+                    if (it != resourceTable.end() && !it->second->name.empty()) {
                       ImGui::SameLine();
-                      ImGui::TextDisabled("(%s)", it->second.name.c_str());
+                      ImGui::TextDisabled("(%s)", it->second->name.c_str());
                     }
                   }
                   ImGui::TreePop();
@@ -429,9 +348,9 @@ namespace ren {
                   for (GraphHandle resultHandle : results) {
                     auto it = resourceTable.find(resultHandle);
                     if (it != resourceTable.end()) {
-                      ImGui::Text("%%%-3u : %s", resultHandle, it->second.name.c_str());
+                      ImGui::Text("%%%-3u : %s", resultHandle, it->second->name.c_str());
                       ImGui::SameLine();
-                      const char *accessStr = fmt::formatter<GraphAccess>::toString(it->second.writeAccess);
+                      const char *accessStr = fmt::formatter<GraphAccess>::toString(it->second->writeAccess);
                       ImGui::TextDisabled("(%s)", accessStr);
                     } else {
                       ImGui::Text("%%%-3u : <unknown>", resultHandle);
@@ -477,10 +396,10 @@ namespace ren {
             ImGui::Text("Resources (%zu)", resourceTable.size());
             ImGui::Separator();
 
-            for (const auto &[handle, entry] : resourceTable) {
+            for (const auto &[handle, resource] : resourceTable) {
               bool isSelected = (handle == selectedResource);
               ImGui::PushID(handle);
-              if (ImGui::Selectable(entry.name.c_str(), isSelected)) {
+              if (ImGui::Selectable(resource->name.c_str(), isSelected)) {
                 selectedResource = handle;
               }
               ImGui::PopID();
@@ -501,40 +420,28 @@ namespace ren {
             if (selectedResource != nullGraphHandle) {
               auto it = resourceTable.find(selectedResource);
               if (it != resourceTable.end()) {
-                const auto &resEntry = it->second;
+                const auto &resource = it->second;
                 ImGui::Text("Resource Handle: %%%-3u", selectedResource);
-                ImGui::Text("Name: %s", resEntry.name.c_str());
-                const char *typeStr = fmt::formatter<GraphResourceType>::toString(resEntry.type);
-                const char *initialAccessStr = fmt::formatter<GraphAccess>::toString(resEntry.initialAccess);
-                const char *writeAccessStr = fmt::formatter<GraphAccess>::toString(resEntry.writeAccess);
+                ImGui::Text("Name: %s", resource->name.c_str());
+                const char *typeStr = fmt::formatter<GraphResourceType>::toString(resource->type);
+                const char *initialAccessStr = fmt::formatter<GraphAccess>::toString(resource->initialAccess);
+                const char *writeAccessStr = fmt::formatter<GraphAccess>::toString(resource->writeAccess);
                 ImGui::Text("Type: %s", typeStr);
                 ImGui::Text("Initial Access: %s", initialAccessStr);
                 ImGui::Text("Write Access: %s", writeAccessStr);
 
-                if (resEntry.type == GraphResourceType::Image && resEntry.image) {
-                  ImGui::Separator();
-                  ImGui::Text("Image Details:");
-                  ImGui::Text("  Format: %u", resEntry.imageSpec.format);
-                  ImGui::Text("  Scale: (%.2f, %.2f)", resEntry.imageSpec.scale.x,
-                              resEntry.imageSpec.scale.y);
-                  if (resEntry.imageSpec.scale.x != 0 || resEntry.imageSpec.scale.y != 0) {
-                    ImGui::Text("  Relative to swapchain");
-                  } else {
-                    ImGui::Text("  Absolute size: %u x %u", resEntry.imageSpec.width,
-                                resEntry.imageSpec.height);
-                  }
-                  ImGui::Text("  Actual size: %u x %u", resEntry.image->getWidth(),
-                              resEntry.image->getHeight());
-                }
+                // Delegate to resource-specific inspection
+                ImGui::Separator();
+                resource->inspect();
 
                 ImGui::Separator();
-                if (resEntry.definingTask) {
-                  ImGui::Text("Defined by: %s", resEntry.definingTask->name().c_str());
+                if (resource->definingTask) {
+                  ImGui::Text("Defined by: %s", resource->definingTask->name().c_str());
                 }
 
-                if (!resEntry.users.empty()) {
+                if (!resource->users.empty()) {
                   if (ImGui::TreeNode("Used by:")) {
-                    for (auto userTask : resEntry.users) {
+                    for (auto userTask : resource->users) {
                       ImGui::BulletText("%s", userTask->name().c_str());
                     }
                     ImGui::TreePop();

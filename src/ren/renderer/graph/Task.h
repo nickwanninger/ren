@@ -1,8 +1,8 @@
 #pragma once
 
-
 #include <ren/renderer/graph/Handle.h>
 #include <ren/renderer/graph/Resource.h>
+#include <ren/renderer/graph/RunContext.h>
 
 #include <unordered_set>
 
@@ -10,32 +10,6 @@ namespace ren {
 
   class RenderGraph;  // Forward declaration
   class RenderTask;   // Forward declaration
-
-
-
-  /**
-   * @struct GraphRunContext
-   * @brief Context information passed to each task during execution.
-   *
-   * This structure provides tasks with access to the render graph and execution context
-   * during the @ref RenderTask::run() callback. It allows tasks to query graph state and
-   * interact with other graph components without needing direct knowledge of implementation
-   * details.
-   *
-   * @note The context is valid only during the task's run() execution. Do not store
-   *       pointers to it for later use.
-   */
-  struct GraphRunContext {
-    ren::RenderGraph &graph;  ///< Reference to the render graph being executed
-    ren::RenderTask *task;    ///< Pointer to the task currently being executed (set by the graph)
-
-    /**
-     * @brief Constructs a GraphRunContext for the given render graph.
-     * @param g Reference to the render graph
-     */
-    GraphRunContext(ren::RenderGraph &g)
-        : graph(g) {}
-  };
 
 
   /**

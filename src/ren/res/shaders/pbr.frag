@@ -288,7 +288,7 @@ void main() {
   vec3 indirectLight = computeIndirectLighting(N, V, baseColor.rgb, metallic, roughness, L);
 
   // Combine all lighting
-  vec3 color = directLight; // indirectLight + directLight;
+  vec3 color = indirectLight + directLight;
 
   // Add emissive
   color += texture(emissiveTexture, uv).rgb * material.emissiveFactor.rgb;

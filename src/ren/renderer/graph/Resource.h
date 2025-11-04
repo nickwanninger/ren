@@ -1,9 +1,12 @@
 #pragma once
 
-
 #include <ren/renderer/graph/Handle.h>
+#include <ren/renderer/graph/RunContext.h>
+#include <unordered_set>
 
 namespace ren {
+  class RenderTask;  // Forward declaration
+  class RenderGraph; // Forward declaration
 
 
   // Definitions for Graph Resources.
@@ -78,6 +81,54 @@ namespace ren {
         , resourceType(type) {}
 
     std::string toString(void) const;
+  };
+
+
+
+
+  /**
+   * @brief The base class for all resources managed by the render graph.
+   *
+   * This class serves as a common interface for different types of resources
+   * (e.g., images, buffers) that are tracked and managed within the render graph.
+   * Each subclass is responsible for implementing resource-specific synchronization
+   * and barrier emission during schedule execution.
+   */
+  class GraphResource {
+   public:
+    virtual ~GraphResource() = default;
+
+    /**
+     * @brief Update the resource state when the graph state changes.
+     * Called when swapchain resizes or other graph-level events occur.
+     * @param G Reference to the render graph
+     * @return true if the resource was modified/rebuilt, false otherwise
+     */
+    virtual bool update(RenderGraph &G) = 0;
+
+    /**
+     * @brief Emit synchronization barriers to transition resource access state.
+     * Called during schedule execution to record barriers into the command buffer.
+     * @param ctx Execution context containing command buffer and graph reference
+     * @param fromAccess The current access state of the resource
+     * @param toAccess The desired access state for the next operation
+     */
+    virtual void emitBarrier(GraphRunContext &ctx, GraphAccess fromAccess,
+                             GraphAccess toAccess) = 0;
+
+    /**
+     * @brief Display resource details in ImGui inspector.
+     * Each resource type implements its own inspection UI.
+     */
+    virtual void inspect() const = 0;
+
+    std::string name;           ///< Human-readable name of the resource
+    GraphResourceType type;     ///< The type of the resource (Image, Buffer, etc.)
+    GraphAccess initialAccess;  ///< The initial access state of the resource
+    RenderTask *definingTask;   ///< The task that defines (writes to) this resource
+    GraphAccess writeAccess;    ///< The access state after the defining task writes to it
+
+    std::unordered_set<RenderTask *> users;  ///< Tasks that read/use this resource
   };
 
 }  // namespace ren

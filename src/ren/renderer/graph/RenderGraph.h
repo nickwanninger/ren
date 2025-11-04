@@ -10,7 +10,9 @@
 
 
 #include <ren/renderer/graph/Handle.h>
+#include <ren/renderer/graph/RunContext.h>
 #include <ren/renderer/graph/Resource.h>
+#include <ren/renderer/graph/ImageResource.h>
 #include <ren/renderer/graph/Task.h>
 #include <ren/renderer/graph/Schedule.h>
 
@@ -19,20 +21,7 @@ namespace ren {
   class RenderTask;
 
 
-  // Construct a task from a lambda function
-  class LambdaRenderTask : public RenderTask {
-   public:
-    using Callback = std::function<void(GraphRunContext &ctx)>;
-
-    LambdaRenderTask(RenderGraph &graph, Callback func)
-        : RenderTask(graph)
-        , m_func(std::move(func)) {}
-
-    void run(GraphRunContext &ctx) override { m_func(ctx); }
-
-   private:
-    Callback m_func;
-  };
+  using RenderTaskLambda = std::function<void(GraphRunContext &ctx)>;
 
 
   class RenderGraph {
@@ -42,11 +31,16 @@ namespace ren {
     template <typename T, typename... Args>
     T &addTask(const char *name, Args &&...args);
     // Add a task as a lambda function
-    RenderTask &addTask(const char *name, LambdaRenderTask::Callback &&func);
+    RenderTask &addTask(const char *name, RenderTaskLambda &&func);
 
 
     GraphHandle createImage(const std::string_view &name, const GraphImageSpec &spec,
                             GraphAccess initialAccess);
+    // Get the Image resource for a given handle.
+    ren::ImageRef getImage(GraphHandle handle) const {
+      return get<ren::ImageResource>(handle)->image;
+    }
+
 
     // Declare a read of a resource by a task (used internally)
     GraphHandle addRead(RenderTask &task, GraphHandle handle, GraphAccess access);
@@ -74,68 +68,53 @@ namespace ren {
     // This returns true if any resources were reallocated, false otherwise.
     bool startFrame(ref<ren::Image> image);
 
+    /**
+     * @brief Get the current swapchain size.
+     * @return The dimensions of the swapchain in pixels
+     */
+    glm::uvec2 getSwapchainSize() const { return swapchainSize; }
+
     // Compile the graph into a schedule of tasks to run using topological sort.
     // Starting from the task that writes the goal resource, computes task dependencies
     // from operand/result relationships, then topologically sorts to create a valid execution
     // order. NOTE: this is slow right now. Will look into caching and invalidating.
     RenderSchedule compile(GraphHandle goalResource);
 
-    // Get resources
-    // TODO: store resources in the graph as an abstract "GraphResource" type,
-    // then have images or buffers be that. Then, you `G.get<T>(handle)` to get
-    // a resource of type T.  I would still like to store *anything* in the
-    // graph, without needing inheritance from a base class.  Thus, We might
-    // just have a `GraphResource` that is a base, then a `TypeGraphResource<T>`
-    // that stores a ref to a T.  We'd then have some kind of way to automate
-    // the casting and barrier generation as needed for a given T (maybe via
-    // traits?)
-    template <typename T>
-    ref<T> get(GraphHandle handle);
 
+    /**
+     * @brief Get a resource of a specific type from the graph.
+     * @tparam T The resource type to retrieve (e.g., ImageResource, BufferResource, or
+     * GraphResource)
+     * @param handle The resource handle
+     * @return A ref to the resource cast to type T
+     * @throws std::runtime_error if handle is invalid or type doesn't match
+     */
+    template <typename T>
+    ref<T> get(GraphHandle handle) const {
+      auto it = resourceTable.find(handle);
+      if (it == resourceTable.end()) {
+        throw std::runtime_error(fmt::format("Invalid graph handle: {}", handle));
+      }
+
+      auto casted = std::dynamic_pointer_cast<T>(it->second);
+      if (!casted) {
+        throw std::runtime_error(fmt::format(
+            "Resource {} has type {} but requested type does not match", handle, it->second->type));
+      }
+
+      return casted;
+    }
 
     inline GraphResourceType getResourceType(GraphHandle handle) const {
       auto it = resourceTable.find(handle);
       if (it == resourceTable.end()) { throw std::runtime_error("Invalid graph handle"); }
-      return it->second.type;
+      return it->second->type;
     }
 
    private:
     struct TaskEntry {
       std::string name;
       ren::ref<RenderTask> task;
-    };
-
-    // A value in the SSA graph - represents a resource
-    struct ResourceEntry {
-      // The resource name, for debug.
-      std::string name;
-      GraphResourceType type;
-      // The access type it should be in at the start of the frame.
-      GraphAccess initialAccess;
-
-
-      // TODO: move this out to a Resource subclass for all the types.
-      ref<Image> image = nullptr;
-      GraphImageSpec imageSpec;
-      // ------------------
-
-      // SSA-style tracking:
-      // The task that defines (writes to) this resource
-      RenderTask *definingTask = nullptr;
-      // The access type this resource is written with (what state it's in after the write)
-      GraphAccess writeAccess = GraphAccess::ShaderRead;  // Default; set by addWrite
-
-      // Tasks that use this resource as an operand (read it)
-      std::unordered_set<RenderTask *> users;
-    };
-
-    struct ImageResource {
-      ImageResource(const GraphImageSpec &spec)
-          : spec(spec) {}
-
-      GraphImageSpec spec;
-
-      ren::ImageRef image;
     };
 
     // Helper: compute dependencies for all tasks based on operand/result relationships
@@ -148,7 +127,7 @@ namespace ren {
     void topologicalSort(RenderTask *task, std::vector<RenderTask *> &outOrder,
                          std::unordered_set<RenderTask *> &visited);
 
-    std::unordered_map<GraphHandle, ResourceEntry> resourceTable;
+    std::unordered_map<GraphHandle, ref<GraphResource>> resourceTable;
     std::vector<TaskEntry> tasks;
     GraphHandle nextHandle = ren::userGraphHandleStart;
 
@@ -169,10 +148,25 @@ namespace ren {
   }
 
 
-  inline RenderTask &RenderGraph::addTask(const char *name, LambdaRenderTask::Callback &&func) {
+
+  // Construct a task from a lambda function
+  class LambdaRenderTask : public RenderTask {
+   public:
+    using Callback = RenderTaskLambda;
+
+    LambdaRenderTask(RenderGraph &graph, Callback func)
+        : RenderTask(graph)
+        , m_func(std::move(func)) {}
+
+    void run(GraphRunContext &ctx) override { m_func(ctx); }
+
+   private:
+    Callback m_func;
+  };
+
+
+  inline RenderTask &RenderGraph::addTask(const char *name, RenderTaskLambda &&func) {
     return addTask<LambdaRenderTask>(name, std::move(func));
   }
 
 }  // namespace ren
-
-

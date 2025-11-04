@@ -1,0 +1,29 @@
+#pragma once
+
+#include <vulkan/vulkan.h>
+
+namespace ren {
+  class RenderGraph;
+  class RenderTask;
+
+  /**
+   * @struct GraphRunContext
+   * @brief Execution context passed to tasks and resource barriers during schedule execution.
+   *
+   * This struct carries state needed for recording commands and synchronization during the
+   * execution phase. It's designed to be extensible as the render graph system evolves
+   * (e.g., adding framebuffer, device references, timing data, etc.).
+   */
+  struct GraphRunContext {
+    ren::RenderGraph &graph;           ///< Reference to the render graph being executed
+    ren::RenderTask *task;             ///< Pointer to the task currently being executed
+    VkCommandBuffer commandBuffer;     ///< Command buffer for recording barriers and commands
+
+    /**
+     * @brief Constructs a GraphRunContext for the given render graph.
+     * @param g Reference to the render graph
+     */
+    GraphRunContext(ren::RenderGraph &g)
+        : graph(g), task(nullptr), commandBuffer(VK_NULL_HANDLE) {}
+  };
+}  // namespace ren

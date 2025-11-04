@@ -1,73 +1,15 @@
 #include <ren/renderer/graph/Schedule.h>
-
+#include <ren/renderer/graph/RenderGraph.h>
 
 namespace ren {
 
   namespace {
 
-    struct ImageBarrierInfo {
-      VkPipelineStageFlags stage;
-      VkAccessFlags access;
-      VkImageLayout layout;
-    };
-
-
-    static ImageBarrierInfo getImageBarrierInfoForAccess(GraphAccess access) {
-      ImageBarrierInfo info;
-
-      switch (access) {
-        case GraphAccess::RenderTarget:
-          info.stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-          info.access = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-          info.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-          break;
-        case GraphAccess::DepthTarget:
-          info.stage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-          info.access = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-          info.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-          break;
-        case GraphAccess::FragmentShaderRead:
-          info.stage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-          info.access = VK_ACCESS_SHADER_READ_BIT;
-          info.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-          break;
-        case GraphAccess::VertexShaderRead:
-          info.stage = VK_PIPELINE_STAGE_VERTEX_SHADER_BIT;
-          info.access = VK_ACCESS_SHADER_READ_BIT;
-          info.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-          break;
-        case GraphAccess::ComputeShaderRead:
-          info.stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
-          info.access = VK_ACCESS_SHADER_READ_BIT;
-          info.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-          break;
-        case GraphAccess::ComputeShaderWrite:
-          info.stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
-          info.access = VK_ACCESS_SHADER_WRITE_BIT;
-          info.layout = VK_IMAGE_LAYOUT_GENERAL;
-          break;
-        case GraphAccess::ComputeShaderReadWrite:
-          info.stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
-          info.access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
-          info.layout = VK_IMAGE_LAYOUT_GENERAL;
-          break;
-
-        case GraphAccess::ShaderRead:
-          info.stage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
-          info.access = VK_ACCESS_SHADER_READ_BIT;
-          info.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-          break;
-      }
-
-
-      return info;
-    }
-
-
     // A barrier task for transitioning a resource's access state.
     // This task is created and owned by RenderSchedule during compilation.
     // It represents a synchronization point where a resource transitions from one
     // GraphAccess state to another (e.g., from RenderTarget to ShaderRead).
+    // Each resource type handles its own barrier emission via emitBarrier().
     // This is technically private to RenderSchedule.
     class BarrierTask : public RenderTask {
      public:
@@ -81,10 +23,11 @@ namespace ren {
       }
 
       void run(GraphRunContext &ctx) override {
-        // TODO: hand this off to the resource directly.
-        fmt::println("Barrier: transitioning resource {} from {} to {}", m_resource, m_fromAccess,
-                     m_toAccess);
+        // Delegate to the resource to emit its specific barrier type
+        auto resource = ctx.graph.get<ren::GraphResource>(m_resource);
+        resource->emitBarrier(ctx, m_fromAccess, m_toAccess);
       }
+
       std::string toString(void) const override {
         return fmt::format("barrier %{}: {} → {}", m_resource, m_fromAccess, m_toAccess);
       }
