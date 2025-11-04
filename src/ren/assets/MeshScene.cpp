@@ -450,7 +450,6 @@ namespace ren {
       //   material->props.specularColor = glm::vec4(color.r, color.g, color.b, 1.0f);
       // }
       if (assimpMaterial->Get(AI_MATKEY_COLOR_EMISSIVE, color) == aiReturn_SUCCESS) {
-        fmt::println("Emissive color: {}, {}, {}, {}", color.r, color.g, color.b, color.a);
         material->props.emissive = glm::vec4(color.r, color.g, color.b, color.a);
       }
 
