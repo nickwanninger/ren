@@ -35,6 +35,7 @@ namespace ren {
     /// Virtual destructor for safe polymorphic deletion
     virtual ~RenderTask() = default;
 
+
     /**
      * @brief Executes the task's rendering operations.
      *
@@ -47,6 +48,9 @@ namespace ren {
      *            during this function call.
      */
     virtual void run(GraphRunContext &ctx) = 0;
+    virtual void preRun(GraphRunContext &ctx) {}
+    virtual void postRun(GraphRunContext &ctx) {}
+
 
     /**
      * @brief Prepares the task for execution after graph resources are allocated.
@@ -73,6 +77,19 @@ namespace ren {
 
     RenderGraph &graph(void) const { return m_graph; }
 
+
+
+    /**
+     * @brief Executes the task within the given context. This method is called
+     * by the render graph schedule.
+     */
+    void execute(GraphRunContext &ctx);
+
+    inline float averageTimeNs(void) {
+      if (numExecutions == 0) return 0.0f;
+      return static_cast<float>(totalTimeNs / static_cast<double>(numExecutions));
+    }
+
    private:
     std::string m_name;    ///< Human-readable name of this task
     RenderGraph &m_graph;  ///< Reference to owning render graph
@@ -82,12 +99,29 @@ namespace ren {
 
     int version = 1;  // Every time the task is re-prepared, this goes up
 
+    double totalTimeNs = 0.0;
+    u64 numExecutions = 0;
+
    protected:
     friend class RenderGraph;
     friend class RenderSchedule;
 
     std::unordered_set<RenderTask *> dependencies;
   };
+
+
+
+  inline void RenderTask::execute(GraphRunContext &ctx) {
+    auto start = std::chrono::high_resolution_clock::now();
+    preRun(ctx);
+    run(ctx);
+    postRun(ctx);
+    auto end = std::chrono::high_resolution_clock::now();
+    float durationNs = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
+
+    totalTimeNs += durationNs;
+    numExecutions++;
+  }
 
 
 
