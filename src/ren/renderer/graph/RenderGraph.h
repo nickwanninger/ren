@@ -59,7 +59,7 @@ namespace ren {
     // Create a schedule of tasks to run such that a goal resource is produced.
     // For example, if you want the swapchain to be written, pass the swapchain resource handle.
     // Internally finds the task that writes this resource and schedules all dependencies.
-    void runFor(GraphHandle goalResource);
+    void runFor(GraphHandle goalResource, class Renderer &renderer);
 
 
 

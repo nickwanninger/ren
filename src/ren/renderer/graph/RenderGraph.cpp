@@ -1,5 +1,6 @@
 #include <ren/renderer/graph/RenderGraph.h>
 #include <ren/renderer/graph/ImageResource.h>
+#include <ren/renderer/Swapchain.h>
 
 #include <imgui/imgui.h>
 #include <ImGuizmo/ImGuizmo.h>
@@ -269,27 +270,35 @@ namespace ren {
     return schedule;
   }
 
-  void RenderGraph::runFor(GraphHandle goalResource) {
+  void RenderGraph::runFor(GraphHandle goalResource, class Renderer &renderer) {
     auto it = resourceTable.find(goalResource);
     if (it == resourceTable.end()) {
       throw std::runtime_error(fmt::format("Invalid resource handle for runFor: {}", goalResource));
     }
 
-    auto start = std::chrono::high_resolution_clock::now();
+    // auto start = std::chrono::high_resolution_clock::now();
     auto schedule = compile(goalResource);
-    schedule.validate();
-    auto end = std::chrono::high_resolution_clock::now();
+    // schedule.validate();
+    // auto end = std::chrono::high_resolution_clock::now();
 
-    auto durationNs = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
-    fmt::println("Compiled render graph schedule in {} ns", durationNs);
+    // auto durationNs = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
+    // fmt::println("Compiled render graph schedule in {} ns", durationNs);
 
     int currentLevel = 0;
     for (const auto &task : schedule.getTasks()) {
       if (schedule.getLevel(task) != currentLevel) {
         currentLevel = schedule.getLevel(task);
-        fmt::println("{:04d}:", currentLevel);
+        // fmt::println("{:04d}:", currentLevel);
       }
-      fmt::println("  {}", task->toString());
+      // fmt::println("  {}", task->toString());
+    }
+
+    // Execute the schedule with the provided renderer
+    GraphRunContext ctx(*this, renderer);
+    ctx.cmd = ren::getFrameData().commandBuffer;
+    for (const auto &task : schedule.getTasks()) {
+      ctx.task = task;
+      task->execute(ctx);
     }
   }
 
@@ -312,8 +321,8 @@ namespace ren {
           ImGui::BeginChild("TaskListPanel", ImVec2(280, -ImGui::GetFrameHeightWithSpacing()),
                             ImGuiChildFlags_Border);
           {
-            ImGui::Text("Tasks (%zu)", tasks.size());
-            ImGui::Separator();
+            // ImGui::Text("Tasks (%zu)", tasks.size());
+            // ImGui::Separator();
 
             for (const auto &task : tasks) {
               RenderTask *taskPtr = task.get();
@@ -342,6 +351,8 @@ namespace ren {
               ImGui::Text("Task: %s (Version %d)", selectedTask->name().c_str(),
                           selectedTask->version);
               ImGui::Separator();
+              ImGui::Text("Average Execution Time: %.2f ns over %llu runs",
+                          selectedTask->averageTimeNs(), selectedTask->numExecutions);
 
               // Operands (reads)
               const auto &operands = selectedTask->getOperands();
