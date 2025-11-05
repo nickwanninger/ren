@@ -46,6 +46,7 @@ namespace ren {
     u32 getWidth(void) const { return imageCreateInfo.extent.width; }
     u32 getHeight(void) const { return imageCreateInfo.extent.height; }
     u32 getDepth(void) const { return imageCreateInfo.extent.depth; }
+    auto getFormat() const { return imageCreateInfo.format; }
 
     inline bool isFramebuffer() const { return memory == VK_NULL_HANDLE; }
 
