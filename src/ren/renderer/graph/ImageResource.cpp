@@ -216,8 +216,11 @@ namespace ren {
     barrier.subresourceRange.baseArrayLayer = 0;
     barrier.subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
 
-    vkCmdPipelineBarrier(ctx.commandBuffer, fromInfo.stage, toInfo.stage, 0, 0, nullptr, 0, nullptr,
-                         1, &barrier);
+    // fmt::println("Emitting image barrier for resource '{}' from access {} to {}", this->name,
+    //              static_cast<u32>(fromAccess), static_cast<u32>(toAccess));
+
+    vkCmdPipelineBarrier(ctx.cmd, fromInfo.stage, toInfo.stage, 0, 0, nullptr, 0, nullptr, 1,
+                         &barrier);
   }
 
 }  // namespace ren
