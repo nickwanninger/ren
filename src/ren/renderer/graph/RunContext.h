@@ -5,6 +5,7 @@
 namespace ren {
   class RenderGraph;
   class RenderTask;
+  class Renderer;
 
   /**
    * @struct GraphRunContext
@@ -15,15 +16,20 @@ namespace ren {
    * (e.g., adding framebuffer, device references, timing data, etc.).
    */
   struct GraphRunContext {
-    ren::RenderGraph &graph;           ///< Reference to the render graph being executed
-    ren::RenderTask *task;             ///< Pointer to the task currently being executed
-    VkCommandBuffer commandBuffer;     ///< Command buffer for recording barriers and commands
+    ren::RenderGraph &graph;  ///< Reference to the render graph being executed
+    ren::Renderer &renderer;  ///< Reference to the renderer for render pass operations
+    ren::RenderTask *task;    ///< Pointer to the task currently being executed
+    VkCommandBuffer cmd;      ///< Command buffer for recording barriers and commands
 
     /**
-     * @brief Constructs a GraphRunContext for the given render graph.
+     * @brief Constructs a GraphRunContext for the given render graph and renderer.
      * @param g Reference to the render graph
+     * @param r Reference to the renderer
      */
-    GraphRunContext(ren::RenderGraph &g)
-        : graph(g), task(nullptr), commandBuffer(VK_NULL_HANDLE) {}
+    GraphRunContext(ren::RenderGraph &g, ren::Renderer &r)
+        : graph(g)
+        , renderer(r)
+        , task(nullptr)
+        , cmd(VK_NULL_HANDLE) {}
   };
 }  // namespace ren
