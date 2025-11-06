@@ -21,10 +21,11 @@ namespace ren {
     // Single-sample colors use PRESENT (used both for swapchain resolve targets and as a sentinel
     // for offscreen color we later transition to SHADER_READ_ONLY). Multisampled colors remain in
     // COLOR_ATTACHMENT_OPTIMAL and are resolved in-subpass.
-    attachment.finalLayout = (samples == VK_SAMPLE_COUNT_1_BIT)
-                                 ? VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
-                                 : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    // attachment.finalLayout = (samples == VK_SAMPLE_COUNT_1_BIT)
+    //                              ? VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
+    //                              : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
+    attachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
     attachments.push_back(attachment);
     attachmentNames.push_back(std::string(name));
     colorAttachments++;
