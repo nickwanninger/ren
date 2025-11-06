@@ -16,6 +16,7 @@
 
 #include <ren/renderer/Descriptors.h>
 #include <ren/renderer/graph/RenderGraph.h>
+#include <ren/renderer/graph/RenderPassTask.h>
 #include <ren/renderer/Sampler.h>
 #include <ren/misc/resource_usage.h>
 
@@ -29,8 +30,8 @@
 #include <ren/core/SceneRenderer.h>
 #include <ren/assets/MegaMeshBuffer.h>
 
+#include <ren/renderer/ShaderProgram.h>
 #include <ren/scripting/imgui_lua_inspector.hpp>
-
 
 extern "C" {
 #include <luajit.h>
@@ -38,165 +39,38 @@ extern "C" {
 #include <lauxlib.h>
 }
 
-// static void dumpstack(lua_State *L) {
-//   int top = lua_gettop(L);
-//   for (int i = 1; i <= top; i++) {
-//     printf("%d\t%s\t", i, luaL_typename(L, i));
-//     int type = lua_type(L, i);
-//     switch (type) {
-//       case LUA_TNUMBER: printf("num  %g\n", lua_tonumber(L, i)); break;
-//       case LUA_TSTRING: printf("str  %s\n", lua_tostring(L, i)); break;
-//       case LUA_TBOOLEAN: printf("bool %s\n", (lua_toboolean(L, i) ? "true" : "false")); break;
-//       case LUA_TNIL: printf("nil  %s\n", "nil"); break;
-//       default: {
-//         uint64_t v = *(uint64_t*)lua_topointer(L, i);
-//         printf("%-4d ptr  %p 0x%llx\n", type, lua_topointer(L, i), v);
+// TEMP: Test RenderPassTask implementation (will remove later)
+namespace {
+  class TestPass : public ren::RenderPassTask {
+   public:
+    ren::GraphHandle colorOut;
 
+    ren::PipelineStateObject pso;
 
-//       }
+    TestPass(ren::RenderGraph &graph)
+        : ren::RenderPassTask(graph) {
+      colorOut = addColorAttachment(
+          "test_color", {.width = 512, .height = 512, .format = VK_FORMAT_R8G8B8A8_SRGB});
 
-//       break;
-//     }
-//   }
-// }
-
-
-
-
-static void taskRunCallback(ren::GraphRunContext &ctx) {
-  fmt::println("Running {}", ctx.task->name());
-}
-// A more complex deferred rendering pipeline example.
-// Demonstrates: G-buffer rendering, depth pyramid, SSR, deferred lighting, composition.
-ren::GraphHandle buildDeferredPipeline(ren::RenderGraph &G) {
-  // === Stage 1: G-Buffer Rendering ===
-  // Render scene geometry to multiple render targets
-  auto gbufferAlbedo =
-      G.createImage("gbuffer_albedo", {.scale = glm::vec2(1.0f)}, ren::GraphAccess::RenderTarget);
-  auto gbufferNormal =
-      G.createImage("gbuffer_normal", {.scale = glm::vec2(1.0f)}, ren::GraphAccess::RenderTarget);
-  auto gbufferDepth =
-      G.createImage("gbuffer_depth", {.scale = glm::vec2(1.0f)}, ren::GraphAccess::DepthTarget);
-  auto gbufferMaterial =
-      G.createImage("gbuffer_material", {.scale = glm::vec2(1.0f)}, ren::GraphAccess::RenderTarget);
-
-  auto &gbufferPass = G.addTask("gbuffer_render", taskRunCallback);
-  gbufferPass.write(gbufferAlbedo, ren::GraphAccess::RenderTarget);
-  gbufferPass.write(gbufferNormal, ren::GraphAccess::RenderTarget);
-  gbufferPass.write(gbufferDepth, ren::GraphAccess::DepthTarget);
-  gbufferPass.write(gbufferMaterial, ren::GraphAccess::RenderTarget);
-
-  // === Stage 2a: Depth Pyramid (for HZB-based techniques) ===
-  auto depthPyramid = G.createImage("depth_pyramid", {.scale = glm::vec2(1.0f)},
-                                    ren::GraphAccess::ComputeShaderWrite);
-  auto &depthPyramidPass = G.addTask("compute_depth_pyramid", taskRunCallback);
-  depthPyramidPass.read(gbufferDepth, ren::GraphAccess::ComputeShaderRead);
-  depthPyramidPass.write(depthPyramid, ren::GraphAccess::ComputeShaderWrite);
-
-  // === Stage 2b: Screen-Space Reflections (can run in parallel with depth pyramid) ===
-  auto ssrResult =
-      G.createImage("ssr_result", {.scale = glm::vec2(0.5f)}, ren::GraphAccess::ComputeShaderWrite);
-  auto &ssrPass = G.addTask("compute_ssr", taskRunCallback);
-  ssrPass.read(gbufferDepth, ren::GraphAccess::ComputeShaderRead);
-  ssrPass.read(gbufferNormal, ren::GraphAccess::ComputeShaderRead);
-  ssrPass.read(depthPyramid, ren::GraphAccess::ComputeShaderRead);  // depends on depth pyramid
-  ssrPass.write(ssrResult, ren::GraphAccess::ComputeShaderWrite);
-
-  // === Stage 3: Deferred Lighting (reads all G-buffers) ===
-  auto litOutput =
-      G.createImage("lit_output", {.scale = glm::vec2(1.0f)}, ren::GraphAccess::ComputeShaderWrite);
-  auto &deferredLightingPass = G.addTask("compute_deferred_lighting", taskRunCallback);
-  deferredLightingPass.read(gbufferAlbedo, ren::GraphAccess::ComputeShaderRead);
-  deferredLightingPass.read(gbufferNormal, ren::GraphAccess::ComputeShaderRead);
-  deferredLightingPass.read(gbufferMaterial, ren::GraphAccess::ComputeShaderRead);
-  deferredLightingPass.write(litOutput, ren::GraphAccess::ComputeShaderWrite);
-
-  // === Stage 4: Composition (combine lit result with reflections) ===
-  auto compositeOutput =
-      G.createImage("composite_output", {.scale = glm::vec2(1.0f)}, ren::GraphAccess::RenderTarget);
-  auto &compositionPass = G.addTask("composite_pass", taskRunCallback);
-  compositionPass.read(litOutput, ren::GraphAccess::FragmentShaderRead);
-  compositionPass.read(ssrResult, ren::GraphAccess::FragmentShaderRead);
-  compositionPass.write(compositeOutput, ren::GraphAccess::RenderTarget);
-
-  // === Stage 5: Post-processing (FXAA, film grain, etc.) ===
-  auto postProcessOutput = G.createImage("postprocess_output", {.scale = glm::vec2(1.0f)},
-                                         ren::GraphAccess::RenderTarget);
-  auto &postProcessPass = G.addTask("post_process", taskRunCallback);
-  postProcessPass.read(compositeOutput, ren::GraphAccess::FragmentShaderRead);
-  postProcessPass.write(postProcessOutput, ren::GraphAccess::RenderTarget);
-
-  // === Stage 6: Bloom Pass (Multi-scale downsampling + upsampling chain) ===
-  // This demonstrates a common multi-pass technique using procedural graph construction.
-  // Extract bright pixels, downsample to increasing scales, then upsample and accumulate back.
-
-  const int bloomLevels = 4;  // Number of downsampling levels (1/2, 1/4, 1/8, 1/16)
-  std::vector<ren::GraphHandle> bloomDownsamples;
-
-  // Bright pass: extract luminance > threshold
-  auto bloomBright = G.createImage("bloom_bright", {.scale = glm::vec2(1.0f)},
-                                   ren::GraphAccess::ComputeShaderWrite);
-  auto &bloomBrightPass = G.addTask("bloom_bright_pass", taskRunCallback);
-  bloomBrightPass.read(postProcessOutput, ren::GraphAccess::ComputeShaderRead);
-  bloomBrightPass.write(bloomBright, ren::GraphAccess::ComputeShaderWrite);
-
-  // === Downsample chain: progressively shrink ===
-  ren::GraphHandle currentDownsample = bloomBright;
-  for (int level = 0; level < bloomLevels; ++level) {
-    float scaleFactor = 1.0f / (2.0f * (1 << level));  // 0.5, 0.25, 0.125, 0.0625
-    auto bloomDown = G.createImage("bloom_down", {.scale = glm::vec2(scaleFactor)},
-                                   ren::GraphAccess::ComputeShaderWrite);
-    auto &downsamplePass = G.addTask("bloom_downsample", taskRunCallback);
-    downsamplePass.read(currentDownsample, ren::GraphAccess::ComputeShaderRead);
-    downsamplePass.write(bloomDown, ren::GraphAccess::ComputeShaderWrite);
-
-    bloomDownsamples.push_back(bloomDown);
-    currentDownsample = bloomDown;
-  }
-
-  // === Upsample chain: progressively enlarge and accumulate ===
-  ren::GraphHandle currentUpsample = currentDownsample;  // Start from smallest (1/16)
-  for (int level = bloomLevels - 1; level >= 0; --level) {
-    float scaleFactor = 1.0f / (2.0f * (1 << level));  // 0.125, 0.25, 0.5, 1.0
-    auto bloomUp = G.createImage("bloom_up", {.scale = glm::vec2(scaleFactor)},
-                                 ren::GraphAccess::ComputeShaderWrite);
-    auto &upsamplePass = G.addTask("bloom_upsample", taskRunCallback);
-
-    // Read the upsample source (previous level)
-    upsamplePass.read(currentUpsample, ren::GraphAccess::ComputeShaderRead);
-
-    // Read the residual from the corresponding downsample level for blending
-    if (level > 0) {
-      upsamplePass.read(bloomDownsamples[level - 1], ren::GraphAccess::ComputeShaderRead);
-    } else {
-      // Final upsample: blend with original bright pass
-      upsamplePass.read(bloomBright, ren::GraphAccess::ComputeShaderRead);
+      pso.program = ren::ShaderProgram::makeFullScreenProgram("shaders/debug/uv.frag");
+      pso.cullMode = ren::CullMode::None;
+      pso.depthTest = false;
+      pso.depthWrite = false;
+      pso.hasVertexBinding = false;
     }
 
-    upsamplePass.write(bloomUp, ren::GraphAccess::ComputeShaderWrite);
+    void run(ren::GraphRunContext &ctx) override {
+      ctx.renderer.bind(pso);
+      vkCmdDraw(ctx.cmd, 3, 1, 0, 0);
+    }
 
-    currentUpsample = bloomUp;
-  }
+    void inspect(void) override {
+      pso.program->inspect();
+    }
+  };
+}  // namespace
 
-  auto bloomFinal = currentUpsample;  // The result of the final upsample is our final bloom
 
-  // === Stage 7: Bloom Composition (blend bloom with post-processed image) ===
-  auto bloomComposed =
-      G.createImage("bloom_composed", {.scale = glm::vec2(1.0f)}, ren::GraphAccess::RenderTarget);
-  auto &bloomComposePass = G.addTask("bloom_composite", taskRunCallback);
-  bloomComposePass.read(postProcessOutput, ren::GraphAccess::FragmentShaderRead);
-  bloomComposePass.read(bloomFinal, ren::GraphAccess::FragmentShaderRead);
-  bloomComposePass.write(bloomComposed, ren::GraphAccess::RenderTarget);
-
-  // === Stage 8: Tonemapping & Final Output ===
-  auto finalOutput =
-      G.createImage("final_output", {.scale = glm::vec2(1.0f)}, ren::GraphAccess::RenderTarget);
-  auto &tonemapPass = G.addTask("tonemap", taskRunCallback);
-  tonemapPass.read(bloomComposed, ren::GraphAccess::FragmentShaderRead);
-  tonemapPass.write(finalOutput, ren::GraphAccess::RenderTarget);
-
-  return finalOutput;
-}
 
 static ren::Application *g_application = nullptr;
 namespace ren {
@@ -365,7 +239,34 @@ namespace ren {
     FramerateCounter framerateCounter;
     ren::RenderGraph G;
 
-    buildDeferredPipeline(G);
+    // TEMP: Create test RenderPassTask for validation (will remove later)
+    auto &testPass = G.addTask<TestPass>("TestPass");
+
+
+    GraphHandle outputImage;
+    outputImage = testPass.colorOut;
+    if (1) {
+      ren::PipelineStateObject pso;
+      pso.debugName = "TestPass PSO";
+      pso.program = ren::ShaderProgram::makeFullScreenProgram("shaders/debug/uv.frag");
+      pso.cullMode = ren::CullMode::None;
+      pso.depthTest = false;
+      pso.depthWrite = false;
+      pso.hasVertexBinding = false;
+
+      auto &lt = G.addTask<RenderPassTaskLambda>("LambdaPass",
+                                                 [pso = std::move(pso)](ren::GraphRunContext &ctx) {
+                                                   ctx.renderer.bind(pso);
+                                                   vkCmdDraw(ctx.cmd, 3, 1, 0, 0);
+                                                 });
+      outputImage = lt.addColorAttachment("lambda_color", {// .scale = glm::vec2(1.0f),
+                                                           .width = 256,
+                                                           .height = 128,
+                                                           .format = VK_FORMAT_R8G8B8A8_SRGB});
+
+
+      lt.read(testPass.colorOut, ren::GraphAccess::ShaderRead);
+    }
 
     // G.createImage("fixed", {.width = 512, .height = 512, .format = VK_FORMAT_R8G8B8A8_UNORM},
     //               ren::GraphAccess::RenderTarget);
@@ -449,6 +350,8 @@ namespace ren {
           layerStack.dispatchEvent(renEvent);
         }
 
+        if (windowResized) fmt::println("Window resized");
+
         REN_PROFILE_COUNTER("SDL Events", eventsHandled);
       }
 
@@ -488,6 +391,12 @@ namespace ren {
 
       G.startFrame(frame.deviceImage);
 
+      // TEMP: Execute test RenderPassTask for validation
+      try {
+        G.runFor(outputImage, *renderer);
+      } catch (const std::exception &e) {
+        fmt::println("✗ RenderPassTask execution failed: {}", e.what());
+      }
 
       {
         REN_PROFILE_SCOPE("ImGui New Frame");

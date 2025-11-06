@@ -2,6 +2,7 @@
 
 #include <ren/renderer/Image.h>
 #include <ren/renderer/graph/Resource.h>
+#include <ren/renderer/Sampler.h>
 
 namespace ren {
 
@@ -27,8 +28,7 @@ namespace ren {
      */
     bool update(ren::RenderGraph &G) override;
 
-    void emitBarrier(GraphRunContext &ctx, GraphAccess fromAccess,
-                     GraphAccess toAccess) override;
+    void emitBarrier(GraphRunContext &ctx, GraphAccess fromAccess, GraphAccess toAccess) override;
 
     void inspect() const override;
 
@@ -40,5 +40,9 @@ namespace ren {
 
     GraphImageSpec spec;
     ren::ImageRef image;
+
+    ren::Sampler sampler;
+
+    mutable VkDescriptorSet imguiTextureID = VK_NULL_HANDLE;
   };
 }  // namespace ren

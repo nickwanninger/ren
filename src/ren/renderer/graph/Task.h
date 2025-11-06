@@ -62,6 +62,11 @@ namespace ren {
      */
     virtual void unprepare() {}
 
+    /**
+     * @brief Inspect the task in the imgui-based inspector.
+     */
+    virtual void inspect(void) {}
+
     const std::string &name() const { return m_name; }
 
     void setName(const std::string &name) { m_name = name; }

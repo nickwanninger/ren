@@ -7,7 +7,6 @@
 #include <ren/misc/json_serialize.h>
 
 #include <vector>
-#include <unordered_map>
 
 namespace ren {
 
@@ -51,6 +50,9 @@ namespace ren {
 
     const std::vector<VkDescriptorSetLayout>& getDescriptorSetLayouts() const { return setLayouts; }
 
+
+    // Inspect the shader program in imgui.
+    void inspect(void);
 
     // Serialization is currently simple. We need to be smarter about reading this back out, though.
     JSON_SERIALIZE(ShaderProgram, vertexShaderPath, fragmentShaderPath);

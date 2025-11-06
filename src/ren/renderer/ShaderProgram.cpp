@@ -2,7 +2,7 @@
 #include <algorithm>
 #include <ren/assets/AssetManager.h>
 #include <fmt/format.h>
-
+#include <imgui/imgui.h>
 
 namespace ren {
 
@@ -92,7 +92,8 @@ namespace ren {
       desc.set = binding->set;
       desc.binding = binding->binding;
       desc.type = static_cast<VkDescriptorType>(binding->descriptor_type);
-      // If reflection reports 0 (runtime array), use 1 for layout creation; actual arraying handled by user
+      // If reflection reports 0 (runtime array), use 1 for layout creation; actual arraying handled
+      // by user
       desc.count = binding->count == 0 ? 1u : binding->count;
       desc.stages = stage;
       // Some compilers may emit null/empty names; synthesize a stable name in that case
@@ -115,7 +116,9 @@ namespace ren {
       u32 binding;
       bool operator==(const Key& o) const { return set == o.set && binding == o.binding; }
     };
-    struct KeyHash { size_t operator()(const Key& k) const { return (size_t(k.set) << 16) ^ k.binding; } };
+    struct KeyHash {
+      size_t operator()(const Key& k) const { return (size_t(k.set) << 16) ^ k.binding; }
+    };
 
     std::unordered_map<Key, ShaderBinding, KeyHash> mergedMap;
     for (const auto& b : bindings) {
@@ -127,9 +130,9 @@ namespace ren {
         auto& m = it->second;
         // Validate descriptor type and count are consistent across stages
         if (m.type != b.type) {
-          throw std::runtime_error(fmt::format(
-              "Descriptor type mismatch for set {} binding {} across stages ({} vs {})",
-              m.set, m.binding, (int)m.type, (int)b.type));
+          throw std::runtime_error(
+              fmt::format("Descriptor type mismatch for set {} binding {} across stages ({} vs {})",
+                          m.set, m.binding, (int)m.type, (int)b.type));
         }
         if (m.count != b.count) {
           // Take the max to be conservative
@@ -147,7 +150,8 @@ namespace ren {
     // Rebuild sorted list for stable ordering (by set then binding); allow sparse sets
     std::vector<ShaderBinding> out;
     out.reserve(mergedMap.size());
-    for (auto& [k, v] : mergedMap) out.push_back(v);
+    for (auto& [k, v] : mergedMap)
+      out.push_back(v);
     std::sort(out.begin(), out.end(), [](const ShaderBinding& a, const ShaderBinding& b) {
       if (a.set != b.set) return a.set < b.set;
       return a.binding < b.binding;
@@ -165,11 +169,15 @@ namespace ren {
     printf("Baking shader program.\nBinding listing (sparse supported):\n");
     for (const auto& binding : bindings) {
       const char* typeName = "???";
-      if (binding.type == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER) typeName = "SAMPLER";
-      else if (binding.type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER) typeName = "UNIFORM";
-      else if (binding.type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER) typeName = "STORAGE";
-      printf(" %d.%d   %-25s : %-8s x%-2u  %c%c\n", binding.set, binding.binding, binding.name.c_str(),
-             typeName, binding.count, binding.stages & VK_SHADER_STAGE_VERTEX_BIT ? 'v' : '-',
+      if (binding.type == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
+        typeName = "SAMPLER";
+      else if (binding.type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
+        typeName = "UNIFORM";
+      else if (binding.type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+        typeName = "STORAGE";
+      printf(" %d.%d   %-25s : %-8s x%-2u  %c%c\n", binding.set, binding.binding,
+             binding.name.c_str(), typeName, binding.count,
+             binding.stages & VK_SHADER_STAGE_VERTEX_BIT ? 'v' : '-',
              binding.stages & VK_SHADER_STAGE_FRAGMENT_BIT ? 'f' : '-');
     }
 
@@ -249,5 +257,15 @@ namespace ren {
     return nullptr;
   }
 
+
+
+  void ShaderProgram::inspect(void) {
+    ImGui::Text("Shader Program: %s", vertexShaderPath.c_str());
+    ImGui::Text("Fragment Shader: %s", fragmentShaderPath.c_str());
+    ImGui::Text("Bindings: %zu", bindings.size());
+    for (const auto& binding : bindings) {
+      ImGui::Text("  %s: %d.%d", binding.name.c_str(), binding.set, binding.binding);
+    }
+  }
 
 }  // namespace ren

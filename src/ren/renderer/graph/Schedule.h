@@ -33,9 +33,6 @@ namespace ren {
     // Throws std::runtime_error if validation fails. Returns true if valid.
     bool validate(void) const;
 
-    // dump the schedule as SSA form to stdout for debugging.
-    void dump(void);
-
    private:
     ren::RenderGraph &graph;
     std::vector<RenderTask *> tasks;

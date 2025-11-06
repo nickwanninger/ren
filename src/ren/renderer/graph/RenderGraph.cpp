@@ -264,6 +264,18 @@ namespace ren {
       }
     }
 
+    // afterwards, add barriers to convert all resources into FragmentShaderRead for presentation
+    // TODO: this should only happen if we want to read them in the ImGui debug.
+    for (const auto &[handle, resource] : resourceTable) {
+      GraphAccess currentState = resourceStates[handle];
+      GraphAccess neededState = GraphAccess::FragmentShaderRead;
+      if (currentState != neededState) {
+        auto *barrier = schedule.createBarrier(handle, currentState, neededState);
+        schedule.addTask(barrier);
+        resourceStates[handle] = neededState;
+      }
+    }
+
     // Copy task levels into the schedule
     schedule.taskLevels = taskLevels;
 
@@ -288,9 +300,9 @@ namespace ren {
     for (const auto &task : schedule.getTasks()) {
       if (schedule.getLevel(task) != currentLevel) {
         currentLevel = schedule.getLevel(task);
-        // fmt::println("{:04d}:", currentLevel);
+        fmt::println("{:04d}:", currentLevel);
       }
-      // fmt::println("  {}", task->toString());
+      fmt::println("  {}", task->toString());
     }
 
     // Execute the schedule with the provided renderer
@@ -408,6 +420,10 @@ namespace ren {
               // Custom toString for task
               ImGui::Separator();
               ImGui::TextWrapped("SSA Form: %s", selectedTask->toString().c_str());
+
+              ImGui::Separator();
+
+              selectedTask->inspect();
 
             } else {
               ImGui::TextDisabled("(Select a task to view details)");

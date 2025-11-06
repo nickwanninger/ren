@@ -2,7 +2,10 @@
 #include <ren/renderer/graph/RenderGraph.h>
 #include <fmt/core.h>
 #include <vulkan/vulkan.h>
+
+
 #include <imgui/imgui.h>
+#include <imgui/backends/imgui_impl_vulkan.h>
 
 namespace ren {
 
@@ -185,6 +188,14 @@ namespace ren {
     } else {
       ImGui::TextDisabled("  (not yet allocated)");
     }
+    if (imguiTextureID == VK_NULL_HANDLE) {
+      imguiTextureID = ImGui_ImplVulkan_AddTexture(sampler.getHandle(), image->getImageView(),
+                                                   VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+      // ImGui::TextDisabled("  (no ImGui texture ID)");
+    }
+
+    ImGui::Image((ImTextureID)imguiTextureID,
+                 ImVec2(256, 256 * ((float)image->getHeight() / (float)image->getWidth())));
   }
 
   void ImageResource::emitBarrier(GraphRunContext &ctx, GraphAccess fromAccess,
