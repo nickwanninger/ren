@@ -13,10 +13,6 @@ layout(location = 4) in vec3 worldBitangent;
 // We must emit both albedo and a normal value for postprocessing.
 layout(location = 0) out vec4 outColor;
 layout(location = 1) out vec4 outNormal;
-// layout(location = 2) out vec4 outTangent;         // DEBUG!
-// layout(location = 3) out vec4 outBitangent;       // DEBUG!
-// layout(location = 4) out vec4 outWorldPosition;   // DEBUG!
-// layout(location = 5) out vec4 outComputedNormal;  // DEBUG!
 
 layout(set = PBR_SET, binding = 0, std140) uniform MaterialUBO {
   vec4 baseColorFactor;
@@ -240,16 +236,6 @@ vec3 computeWorldNormal() {
   mat3 TBN = mat3(T, cross(N, T), N);
 
   vec3 outN = normalize(TBN * normal);
-
-
-  // outTangent = vec4(T, 1.0);               // DEBUG!
-  // outBitangent = vec4(B, 1.0);             // DEBUG!
-  // outNormal = vec4(N, 1.0);                // DEBUG!
-  // outWorldPosition = vec4(worldPos, 1.0);  // DEBUG!
-  // outComputedNormal = vec4(outN, 1.0);     // DEBUG!
-
-  // if outN is not in the same hemisphere as N, flip it
-  // if (dot(outN, N) < 0.0) { outN = -outN; }
 
   return outN;
 }
