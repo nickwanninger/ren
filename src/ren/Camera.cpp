@@ -4,6 +4,17 @@
 #include <SDL2/SDL.h>
 #include <ren/core/Instrumentation.h>
 
+
+static ren::Camera *g_camera; // TODO: NUKE ME
+
+ren::Camera::Camera(void) {
+  g_camera = this;
+}
+
+ren::Camera &ren::Camera::get(void) {
+  return *g_camera;
+}
+
 void ren::Camera::update(float dt) {
   REN_PROFILE_FUNCTION();
 

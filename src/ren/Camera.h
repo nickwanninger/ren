@@ -17,6 +17,8 @@ namespace ren {
     SDL_GameController *controller = nullptr;
 
 
+    Camera(void);
+
     inline glm::mat4 view_matrix() const {
       REN_PROFILE_FUNCTION();
       float pitch = angles.x;
@@ -37,6 +39,8 @@ namespace ren {
     }
 
     void update(float dt);
+
+    static Camera &get(void); // TODO: remove me!
   };
 
 }  // namespace ren
