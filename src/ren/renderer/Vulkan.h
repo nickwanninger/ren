@@ -138,8 +138,8 @@ namespace ren {
     VkFormat findSupportedFormat(const std::vector<VkFormat> &candidates, VkImageTiling tiling,
                                  VkFormatFeatureFlags features);
     static VkSampleCountFlagBits getMaxUsableSampleCount(const VkPhysicalDeviceProperties &props) {
-      VkSampleCountFlags counts = props.limits.framebufferColorSampleCounts &
-                                 props.limits.framebufferDepthSampleCounts;
+      VkSampleCountFlags counts =
+          props.limits.framebufferColorSampleCounts & props.limits.framebufferDepthSampleCounts;
       if (counts & VK_SAMPLE_COUNT_8_BIT) return VK_SAMPLE_COUNT_8_BIT;
       if (counts & VK_SAMPLE_COUNT_4_BIT) return VK_SAMPLE_COUNT_4_BIT;
       if (counts & VK_SAMPLE_COUNT_2_BIT) return VK_SAMPLE_COUNT_2_BIT;

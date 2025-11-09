@@ -6,9 +6,9 @@
 #include <ren/renderer/pipelines/PipelineCache.h>
 #include <ren/misc/hash.h>
 
-#include <imgui/imgui.h>
-#include <imgui/backends/imgui_impl_vulkan.h>
-#include <imgui/backends/imgui_impl_sdl2.h>
+#include <imgui.h>
+#include <backends/imgui_impl_vulkan.h>
+#include <backends/imgui_impl_sdl2.h>
 #include <ImGuizmo/ImGuizmo.h>
 
 #include <ren/core/Entity.h>
@@ -17,6 +17,8 @@
 #include <ren/renderer/Descriptors.h>
 #include <ren/renderer/graph/RenderGraph.h>
 #include <ren/renderer/graph/RenderPassTask.h>
+#include <ren/renderer/graph/tasks/DepthPrepassTask.h>
+#include <ren/renderer/graph/tasks/SSAOTask.h>
 #include <ren/renderer/Sampler.h>
 #include <ren/misc/resource_usage.h>
 
@@ -64,9 +66,7 @@ namespace {
       vkCmdDraw(ctx.cmd, 3, 1, 0, 0);
     }
 
-    void inspect(void) override {
-      pso.program->inspect();
-    }
+    void inspect(void) override { pso.program->inspect(); }
   };
 }  // namespace
 
@@ -239,8 +239,20 @@ namespace ren {
     FramerateCounter framerateCounter;
     ren::RenderGraph G;
 
-    // TEMP: Create test RenderPassTask for validation (will remove later)
+
+    ren::GraphHandle dpp_depth, dpp_normal;
+    ren::GraphHandle ssao;
+
+    ren::addDepthPrepass(G, dpp_depth, dpp_normal);
+
+    ren::addSSAO(G, dpp_depth, dpp_normal, ssao);
+
     auto &testPass = G.addTask<TestPass>("TestPass");
+    testPass.read(dpp_depth, GraphAccess::ShaderRead);
+    testPass.read(dpp_normal, GraphAccess::ShaderRead);
+    testPass.read(ssao, GraphAccess::ShaderRead);
+
+
 
 
     GraphHandle outputImage;
@@ -405,7 +417,7 @@ namespace ren {
 
         ImGui::NewFrame();
         ImGuizmo::BeginFrame();
-        ImGuizmo::SetDrawlist(ImGui::GetBackgroundDrawList());
+        ImGuizmo::SetDrawlist(ImGui::GetBackgroundDrawList(ImGui::GetMainViewport()));
 
         int windowWidth, windowHeight;
         SDL_GetWindowSize(ren::Application::get().getWindow(), &windowWidth, &windowHeight);

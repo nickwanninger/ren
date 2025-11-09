@@ -40,7 +40,15 @@ namespace ren {
 
     void update(float dt);
 
-    static Camera &get(void); // TODO: remove me!
+    static Camera &get(void);  // TODO: remove me!
+
+
+    inline static glm::mat4 projectionMatrix(float renderWidth, float renderHeight) {
+      float renderAspect = renderWidth / renderHeight;
+      auto projection = glm::perspective(glm::radians(90.0f), renderAspect, 0.01f, 100.0f);
+      projection[1][1] *= -1;  // Vulkan thing.
+      return projection;
+    }
   };
 
 }  // namespace ren

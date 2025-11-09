@@ -47,17 +47,18 @@ namespace ren {
     // Step 1: Get or create the cached VkRenderPass from the description
     // This uses hash-based deduplication, so multiple tasks with identical
     // attachments share the same VkRenderPass (zero-cost abstraction).
-    Renderer &renderer = Renderer::get();
-    this->pass = renderer.getRenderPassCache().get(desc);
 
     // Step 2: Build RenderTargetDescription from graph image resources
     // We iterate through our stored attachment handles and fetch the actual
     // Image objects from the render graph.
     RenderTargetDescription targetDesc;
 
+    fmt::println("RenderPassTask '{}' preparing RenderTarget with attachments:", this->name());
+
     for (const auto &[name, handle] : this->attachmentHandles) {
       // Get the image resource from the graph
       ren::ImageRef image = graph().getImage(handle);
+      fmt::println(" - Attachment '{}' -> Image {}", name, (void *)image->getImage());
 
       // Get the resource metadata to determine attachment type
       auto resource = graph().get<ren::GraphResource>(handle);
@@ -70,6 +71,8 @@ namespace ren {
           RenderTargetAttachment(attachmentType, image, image->getFormat(), name));
     }
 
+    Renderer &renderer = Renderer::get();
+    this->pass = renderer.getRenderPassCache().get(desc);
     // Step 3: Create the RenderTarget
     // The RenderTarget stores attachments and manages VkFramebuffer caching
     // (framebuffers are cached per RenderPass UUID for efficiency).

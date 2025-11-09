@@ -70,12 +70,11 @@ namespace ren {
     }
 
     // Helper: determine aspect mask based on layout
-    static VkImageAspectFlags getAspectMask(VkImageLayout layout) {
-      switch (layout) {
-        case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
-        case VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL:
-        case VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL: return VK_IMAGE_ASPECT_DEPTH_BIT;
-        default: return VK_IMAGE_ASPECT_COLOR_BIT;
+    static VkImageAspectFlags getAspectMask(GraphAccess initialAccess) {
+      if (initialAccess == ren::GraphAccess::DepthTarget) {
+        return VK_IMAGE_ASPECT_DEPTH_BIT;
+      } else {
+        return VK_IMAGE_ASPECT_COLOR_BIT;
       }
     }
   }  // namespace
@@ -156,6 +155,7 @@ namespace ren {
       case GraphAccess::DepthTarget:
         b.setUsage(VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
                    VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT);
+        b.setViewAspectMask(VK_IMAGE_ASPECT_DEPTH_BIT);
         break;
       default:
         b.setUsage(VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
@@ -172,6 +172,14 @@ namespace ren {
         .setArrayLayers(1)
         .setInitialLayout(VK_IMAGE_LAYOUT_UNDEFINED);
 
+    if (this->imguiTextureID != VK_NULL_HANDLE) {
+      // If we had an ImGui texture ID, we need to remove it, as the image is changing.
+      ImGui_ImplVulkan_RemoveTexture(this->imguiTextureID);
+      this->imguiTextureID = VK_NULL_HANDLE;
+    }
+
+
+
     image = b.build();
   }
 
@@ -179,6 +187,7 @@ namespace ren {
     ImGui::Text("Image Details:");
     ImGui::Text("  Format: %u", spec.format);
     ImGui::Text("  Scale: (%.2f, %.2f)", spec.scale.x, spec.scale.y);
+    ImGui::Text("  Handle: %p %p", (void *)image->getImage(), (void*)image->getImageView());
 
     if (spec.scale.x != 0 || spec.scale.y != 0) {
       ImGui::Text("  Relative to swapchain");
@@ -196,16 +205,25 @@ namespace ren {
                                                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
       // ImGui::TextDisabled("  (no ImGui texture ID)");
     }
+    ImGui::Text("  ImGui Texture ID: %p", (void *)imguiTextureID);
 
-    ImGui::Image((ImTextureID)imguiTextureID,
-                 ImVec2(256, 256 * ((float)image->getHeight() / (float)image->getWidth())));
+    // Calculate the width to fit the remaining container space
+    float containerWidth = ImGui::GetContentRegionAvail().x;
+    float aspectRatio = (float)image->getHeight() / (float)image->getWidth();
+    float imageWidth = containerWidth;
+    float imageHeight = containerWidth * aspectRatio;
+
+    ImGui::Image((ImTextureID)imguiTextureID, ImVec2(imageWidth, imageHeight));
+
+    // ImGui::Image((ImTextureID)imguiTextureID,
+    //              ImVec2(256, 256 * ((float)image->getHeight() / (float)image->getWidth())));
   }
 
   void ImageResource::emitBarrier(GraphRunContext &ctx, GraphAccess fromAccess,
                                   GraphAccess toAccess) {
-    if (fromAccess == toAccess) {
-      return;  // No barrier needed
-    }
+    // if (fromAccess == toAccess) {
+    //   return;  // No barrier needed
+    // }
 
     if (!image) {
       return;  // Image not yet allocated
@@ -224,14 +242,14 @@ namespace ren {
     barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     barrier.image = image->getImage();
-    barrier.subresourceRange.aspectMask = getAspectMask(toInfo.layout);
+    barrier.subresourceRange.aspectMask = getAspectMask(this->initialAccess);
     barrier.subresourceRange.baseMipLevel = 0;
     barrier.subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
     barrier.subresourceRange.baseArrayLayer = 0;
     barrier.subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
 
-    // fmt::println("Emitting image barrier for resource '{}' ({}) from access {} to {}", (void*)image->getImage(), this->name,
-    //              fromAccess, toAccess);
+    // fmt::println("Emitting image barrier for resource '{}' ({}) from access {} to {}",
+    //              (void *)image->getImage(), this->name, fromAccess, toAccess);
 
     vkCmdPipelineBarrier(ctx.cmd, fromInfo.stage, toInfo.stage, 0, 0, nullptr, 0, nullptr, 1,
                          &barrier);

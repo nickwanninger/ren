@@ -178,8 +178,7 @@ namespace ren {
     }
 
     float renderAspect = (float)renderResolution.x / (float)renderResolution.y;
-    camera.projection = glm::perspective(glm::radians(90.0f), renderAspect, 0.01f, 100.0f);
-    camera.projection[1][1] *= -1;  // Vulkan thing.
+    camera.projection = ren::Camera::projectionMatrix(renderResolution.x, renderResolution.y);
 
     // Begin the opaque render pass.
     frame.perf.begin(cmd, "Opaque Pass");
@@ -273,9 +272,7 @@ namespace ren {
 
       {
         R.bind(opaque.skyboxPSO);
-        R.startBinding(0)
-            .bind("engine", this->engineUBOBuffer)
-            .apply();
+        R.startBinding(0).bind("engine", this->engineUBOBuffer).apply();
         vkCmdDraw(cmd, 3, 1, 0, 0);
       }
 
@@ -286,10 +283,6 @@ namespace ren {
 
       megaMesh.bind(cmd);
 
-      auto &indBuf = megaMesh.getIndexBuffer();
-      u32 *inds = (u32 *)indBuf.map();
-
-      auto *verts = (Vertex *)megaMesh.getVertexBuffer().map();
 
       ren::Material *lastMaterial = nullptr;
       ren::Mesh *lastMesh = nullptr;
@@ -315,7 +308,6 @@ namespace ren {
 
           int calls = -1;
           for (const auto &transform : transforms) {
-            // REN_PROFILE_SCOPE("Draw Call");
             pc.model = transform;
             pc.normalMatrix = glm::transpose(glm::inverse(pc.model));
             R.setPushConstants(pc);
@@ -326,8 +318,6 @@ namespace ren {
         }
       }
 
-      megaMesh.getVertexBuffer().unmap();
-      indBuf.unmap();
 
 
       ren::emit<DebugDrawEvent>({pc.view, pc.proj});

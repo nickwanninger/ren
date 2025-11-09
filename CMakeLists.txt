@@ -65,6 +65,18 @@ string(TIMESTAMP TODAY "%Y.%m.%d")
 add_compile_definitions(-DREN_BUILD_DATE="${TODAY}")
 
 
+# configure CXX flags on gcc or msvc differently
+if(MSVC)
+    # I have no idea what to put here yet.
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+else()
+    # add -O3 in release
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-unused-function -Wno-unused-const-variable ")
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-unused-function -Wno-deprecated-volatile -Wno-unused-function")
+endif()
+
+
 # Disable assimp tests, we don't need them, gonna trust it works.
 set(ASSIMP_BUILD_TESTS OFF)
 set(ASSIMP_BUILD_STATIC_LIB ON)
@@ -76,18 +88,12 @@ set(ASSIMP_BUILD_FBX_IMPORTER ON)
 set(ASSIMP_BUILD_PLY_IMPORTER ON)
 add_subdirectory(lib/assimp)
 
-# configure CXX flags on gcc or msvc differently
-if(MSVC)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
-else()
-    # add -O3 in release
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-unused-function ")
-    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-unused-function -Wno-deprecated-volatile -Wno-unused-function")
-endif()
 
-
-
+# if on mac...
+if(APPLE)
+  # add -Wno-unused-const-variable to assimp. I think the compiler is new enough
+  target_compile_options(assimp PRIVATE -Wno-unused-const-variable)
+endif(APPLE)
 
 
 

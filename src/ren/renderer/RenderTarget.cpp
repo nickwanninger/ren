@@ -40,7 +40,8 @@ namespace ren {
     // We should really batch these up!
     for (auto &attachment : attachments) {
       if (attachment.type == RenderTargetAttachmentTypeColor) {
-        // Only transition single-sample color attachments. MSAA colors are resolve sources and not sampled.
+        // Only transition single-sample color attachments. MSAA colors are resolve sources and not
+        // sampled.
         if (attachment.texture->createInfo().samples == VK_SAMPLE_COUNT_1_BIT) {
           vulkan.transitionImageLayout(cmd, attachment.texture->getImage(), attachment.format,
                                        VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
@@ -89,6 +90,9 @@ namespace ren {
       }
 
       VkFramebuffer framebuffer = VK_NULL_HANDLE;
+
+      fmt::println("Creating framebuffer w:{} h:{} for RenderTarget {}", width, height,
+                   (void *)this);
 
       VkFramebufferCreateInfo framebufferInfo = {};
       framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
