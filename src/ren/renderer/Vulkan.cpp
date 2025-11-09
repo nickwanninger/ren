@@ -22,6 +22,12 @@
 #include <imgui/backends/imgui_impl_sdl2.h>
 #include <imgui/backends/imgui_impl_vulkan.h>
 
+#include <ren/core/Flag.h>
+
+
+static ren::Flag<bool> validationLayers("validation-layers", true,
+                                        "Enable Vulkan validation layers");
+
 
 
 #include <tracy/tracy/TracyVulkan.hpp>
@@ -96,9 +102,10 @@ void ren::VulkanInstance::init_instance(void) {
   REN_PROFILE_FUNCTION();
   vkb::InstanceBuilder builder;
 
+  fmt::println("Enabling validation layers: {}", validationLayers.get() ? "Yes" : "No");
   // make the vulkan instance, with basic debug features
   auto inst_ret = builder.set_app_name("Example Vulkan Application")
-                      .request_validation_layers(true)
+                      .request_validation_layers(validationLayers.get())
                       .require_api_version(1, 3, 0)
                       .build();
 

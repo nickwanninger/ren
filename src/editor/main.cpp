@@ -5,6 +5,10 @@
 #include <ren/core/Application.h>
 #include <ren/renderer/graph/RenderGraph.h>
 
+#include <ren/core/Flag.h>
+
+ren::Flag<std::string> loadArg("load", "assets/test/meshes/simple_scene.glb", "Path to a mesh to load at startup");
+
 void loadMeshIntoScene(const char *path, float scaleChange = 0.0f) {
   fmt::println("Loading {}...", path);
   auto mesh = ren::MeshScene::load(path);
@@ -28,6 +32,7 @@ static void taskRunCallback(ren::GraphRunContext &ctx) {
 
 
 int main(int argc, char *argv[]) {
+  ren::parseFlags(argc, argv);
   glm::uvec2 res;
   res.x = 1920;
   res.y = 1080;
@@ -37,13 +42,7 @@ int main(int argc, char *argv[]) {
 
   ren::Application app("Editor", res);
 
-  if (argc == 1) {
-    loadMeshIntoScene("assets/test/meshes/simple_scene.glb");
-  } else {
-    for (int i = 1; i < argc; ++i) {
-      loadMeshIntoScene(argv[i]);
-    }
-  }
+  loadMeshIntoScene(loadArg.get().c_str());
 
   app.run();
 

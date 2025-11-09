@@ -5,6 +5,9 @@
 #include <vkb/VkBootstrap.h>
 #include <ren/core/Instrumentation.h>
 #include <ren/core/Application.h>
+#include <ren/core/Flag.h>
+
+static ren::Flag<bool> vsyncFlag("vsync", true, "Enable VSync for the swapchain");
 
 
 static ren::FrameData *g_frameData = nullptr;
@@ -40,7 +43,7 @@ namespace ren {
     // ---- Allocate the Swapchain for device target rendering ---- //
     vkb::SwapchainBuilder swapchain_builder(vulkan.physical_device, vulkan.device, vulkan.surface);
 
-    bool vsync = true;
+    bool vsync = vsyncFlag.get();
 
     vkb::Swapchain vkb_swapchain =
         swapchain_builder.use_default_format_selection()
