@@ -22,27 +22,6 @@ layout(location = 2) out vec3 worldPos;
 layout(location = 3) out vec3 worldTangent;
 layout(location = 4) out vec3 worldBitangent;
 
-// PS1-style vertex snapping parameters
-const float SNAP_PIXELS = 240.0;  // Number of vertical pixels (e.g. 240 for PS1)
-
-vec4 ps1SnapVertex(vec4 clip) {
-  // Perspective divide to NDC
-  vec3 ndc = clip.xyz / clip.w;
-
-  // Snap step in NDC space
-  float snapStep = 2.0 / SNAP_PIXELS;  // NDC goes from -1 to 1
-
-  // Snap X and Y (optionally only Y for vertical snap)
-  ndc.x = round(ndc.x / snapStep) * snapStep;
-  ndc.y = round(ndc.y / snapStep) * snapStep;
-
-  // Convert back to clip space
-  clip.xyz = ndc * clip.w;
-  return clip;
-}
-
-
-
 void main() {
   vec4 clip = pc.proj * pc.view * pc.model * vec4(inPosition, 1.0f);
 

@@ -256,16 +256,26 @@ void main() {
   vec4 baseColor = texture(baseColorTexture, uv) * material.baseColorFactor;
   if (baseColor.a < 0.01) discard;
 
+  // Compute lighting vectors
+  vec3 N = computeWorldNormal();
+  vec3 V = normalize(engine.cameraWorldPosition.xyz - worldPos);
+  vec3 L = normalize(engine.lightDirection.xyz);
+
+  float lightIntensity = max(dot(N, engine.lightDirection.xyz), 0.0) * 0.5 + 0.5;
+  float toonStep = step(0.5, lightIntensity) + step(0.75, lightIntensity);
+  vec3 toonColor = baseColor.rgb * toonStep;
+  outColor = vec4(toonColor, baseColor.a);
+  outNormal = vec4(N * 0.5 + 0.5, 1.0);
+  return;
+
+
   vec3 metallicRoughnessSample = texture(metallicRoughnessTexture, uv).rgb;
   float occlusion = metallicRoughnessSample.r;
   float metallic = saturate(metallicRoughnessSample.b * material.metallicFactor);
   float roughness = saturate(metallicRoughnessSample.g * material.roughnessFactor);
   roughness = max(roughness, 0.04);  // Clamp to avoid division by zero
 
-  // Compute lighting vectors
-  vec3 N = computeWorldNormal();
-  vec3 V = normalize(engine.cameraWorldPosition.xyz - worldPos);
-  vec3 L = normalize(engine.lightDirection.xyz);
+
 
   // Direct lighting from sun
   vec3 directLight = computeDirectLighting(N, V, L, baseColor.rgb, metallic, roughness);
