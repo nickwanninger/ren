@@ -2,6 +2,7 @@
 #include <ren/renderer/Vulkan.h>
 #include <ren/assets/Vertex.h>
 #include <ren/misc/hash.h>
+#include <vulkan/vulkan_core.h>
 
 namespace ren {
 
@@ -12,6 +13,7 @@ namespace ren {
     attachment.format = format;
     attachment.samples = samples;
     attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    // attachment.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     // MSAA color attachments don't need to be stored if resolved
     attachment.storeOp = (samples == VK_SAMPLE_COUNT_1_BIT) ? VK_ATTACHMENT_STORE_OP_STORE
                                                             : VK_ATTACHMENT_STORE_OP_DONT_CARE;
@@ -38,7 +40,7 @@ namespace ren {
     attachment.format = getVulkan().findDepthFormat();
     attachment.samples = samples;
     attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    attachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
