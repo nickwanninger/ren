@@ -90,12 +90,15 @@ namespace ren {
       }
     }
 
-    for (auto *task : needToPrepare) {
-      fmt::println("Re-preparing task '{}'", task->name());
-      task->version++;
-      // Re-prepare tasks whose resources were reallocated
-      task->unprepare();
-      task->prepare();
+    if (needToPrepare.size() > 0) {
+      getVulkan().waitForIdle(); // TEST
+      for (auto *task : needToPrepare) {
+        fmt::println("Re-preparing task '{}'", task->name());
+        task->version++;
+        // Re-prepare tasks whose resources were reallocated
+        task->unprepare();
+        task->prepare();
+      }
     }
 
     return anyReallocated;
@@ -268,7 +271,7 @@ namespace ren {
     // TODO: this should only happen if we want to read them in the ImGui debug.
     for (const auto &[handle, resource] : resourceTable) {
       GraphAccess currentState = resourceStates[handle];
-      GraphAccess neededState = GraphAccess::FragmentShaderRead;
+      GraphAccess neededState = GraphAccess::ShaderRead;
       if (currentState != neededState) {
         auto *barrier = schedule.createBarrier(handle, currentState, neededState);
         schedule.addTask(barrier);
@@ -288,14 +291,16 @@ namespace ren {
       throw std::runtime_error(fmt::format("Invalid resource handle for runFor: {}", goalResource));
     }
 
-    // auto start = std::chrono::high_resolution_clock::now();
+    // fmt::println("Starting frame.");
+    auto scheduleStart = std::chrono::high_resolution_clock::now();
     auto schedule = compile(goalResource);
     // schedule.validate();
-    // auto end = std::chrono::high_resolution_clock::now();
+    auto scheduleEnd = std::chrono::high_resolution_clock::now();
 
     // auto durationNs = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
     // fmt::println("Compiled render graph schedule in {} ns", durationNs);
 
+#if 0
     int currentLevel = 0;
     for (const auto &task : schedule.getTasks()) {
       if (schedule.getLevel(task) != currentLevel) {
@@ -304,7 +309,9 @@ namespace ren {
       }
       fmt::println("  {}", task->toString());
     }
+#endif
 
+    auto runStart = std::chrono::high_resolution_clock::now();
     // Execute the schedule with the provided renderer
     GraphRunContext ctx(*this, renderer);
     ctx.cmd = ren::getFrameData().commandBuffer;
@@ -312,6 +319,13 @@ namespace ren {
       ctx.task = task;
       task->execute(ctx);
     }
+    auto runEnd = std::chrono::high_resolution_clock::now();
+
+    this->compileTimeUs +=
+        std::chrono::duration_cast<std::chrono::microseconds>(scheduleEnd - scheduleStart).count();
+    this->totalRuntimeUs +=
+        std::chrono::duration_cast<std::chrono::microseconds>(runEnd - runStart).count();
+    this->numRuns++;
   }
 
 
@@ -509,6 +523,20 @@ namespace ren {
         }
         ImGui::EndGroup();
 
+
+
+
+        ImGui::EndTabItem();
+      }
+
+
+      // Statistics tab.
+      if (ImGui::BeginTabItem("Statistics")) {
+        ImGui::Text("Runs: %llu", numRuns);
+        double avgCompileMs = numRuns > 0 ? (double)compileTimeUs / numRuns / 1000.0 : 0.0;
+        double avgRuntimeMs = numRuns > 0 ? (double)totalRuntimeUs / numRuns / 1000.0 : 0.0;
+        ImGui::Text("Average Compile Time: %.3f ms", avgCompileMs);
+        ImGui::Text("Average Runtime: %.3f ms", avgRuntimeMs);
         ImGui::EndTabItem();
       }
 

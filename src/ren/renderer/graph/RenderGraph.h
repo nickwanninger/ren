@@ -1,8 +1,6 @@
 #pragma once
 
-#include <string>
 #include <vector>
-#include <map>
 #include <ren/types.h>
 #include <unordered_set>
 #include <ren/core/UUID.h>
@@ -135,6 +133,14 @@ namespace ren {
 
     glm::uvec2 swapchainSize;
     ref<ren::Image> swapchainImage = nullptr;
+
+
+    // Total time spent compiling the graph across all runs.
+    u64 compileTimeUs = 0;
+    // Total time spent running the graph across all runs.
+    u64 totalRuntimeUs = 0;
+    // Total number of runs.
+    u64 numRuns = 0;
   };
 
 
