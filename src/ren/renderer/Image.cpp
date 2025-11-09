@@ -18,7 +18,6 @@ namespace ren {
   }
 
   Image::~Image(void) {
-    fmt::println("Destroying Image {} v:{}", (void *)image, (void *)imageView);
     s_images.erase(this);
     auto &vulkan = ren::getVulkan();
 

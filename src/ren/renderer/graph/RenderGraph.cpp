@@ -87,6 +87,9 @@ namespace ren {
         for (auto *userTask : resource->users) {
           needToPrepare.insert(userTask);
         }
+        // Re-prepare the defining task as well, in case it needs to recreate things like
+        // framebuffers.
+        if (resource->definingTask != nullptr) needToPrepare.insert(resource->definingTask);
       }
     }
 
