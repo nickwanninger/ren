@@ -63,6 +63,8 @@ namespace ren {
 
     // The surface is the window that we render to (we link against SDL2)
     VkSurfaceKHR surface = VK_NULL_HANDLE;
+
+    // Debug messenger for validation layer output (only used when validation enabled)
     VkDebugUtilsMessengerEXT debug_messenger = VK_NULL_HANDLE;
 
     // ---- Swapchain ---- //

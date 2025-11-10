@@ -91,9 +91,6 @@ namespace ren {
 
       VkFramebuffer framebuffer = VK_NULL_HANDLE;
 
-      fmt::println("Creating framebuffer w:{} h:{} for RenderTarget {}", width, height,
-                   (void *)this);
-
       VkFramebufferCreateInfo framebufferInfo = {};
       framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
       framebufferInfo.renderPass = pass.getHandle();

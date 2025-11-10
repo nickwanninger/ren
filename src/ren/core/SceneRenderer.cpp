@@ -139,10 +139,6 @@ namespace ren {
     glm::vec2 currentRenderResolution = outputResolution * renderScale;
 
     if (currentRenderResolution != this->renderResolution) {
-      fmt::println("Output resolution: {}x{}", outputResolution.x, outputResolution.y);
-      fmt::println("Current render resolution: {}x{} ({})", currentRenderResolution.x,
-                   currentRenderResolution.y, renderScale);
-
       // Rebuild the render targets if the resolution has changed.
       rebuildRenderTargets(currentRenderResolution);
     }

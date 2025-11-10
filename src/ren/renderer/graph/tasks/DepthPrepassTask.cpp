@@ -9,7 +9,7 @@ namespace ren {
 
   DepthPrepassTask::DepthPrepassTask(ren::RenderGraph &G)
       : ren::RenderPassTask(G) {
-    auto scale = glm::vec2(0.125);
+    auto scale = glm::vec2(1.0);
     this->depthOut = addDepthAttachment("dpp_depth", {.scale = scale});
     this->normalOut = addColorAttachment("dpp_normal", {.scale = scale});
 

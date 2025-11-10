@@ -15,8 +15,7 @@ namespace ren {
     attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     // attachment.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     // MSAA color attachments don't need to be stored if resolved
-    attachment.storeOp = (samples == VK_SAMPLE_COUNT_1_BIT) ? VK_ATTACHMENT_STORE_OP_STORE
-                                                            : VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;

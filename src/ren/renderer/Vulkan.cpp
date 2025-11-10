@@ -25,8 +25,101 @@
 #include <ren/core/Flag.h>
 
 
-static ren::Flag<bool> validationLayers("validation-layers", true,
+static ren::Flag<bool> validationLayers("validation", true,
                                         "Enable Vulkan validation layers");
+
+
+// ---- Custom Vulkan Validation Layer Callback ---- //
+// This provides formatted, color-coded validation messages with severity filtering.
+// Integrates with vkb's debug messenger setup via set_debug_callback().
+
+namespace {
+  // ANSI color codes for terminal output
+  constexpr const char* COLOR_RESET   = "\033[0m";
+  constexpr const char* COLOR_RED     = "\033[1;31m";  // Errors
+  constexpr const char* COLOR_YELLOW  = "\033[1;33m";  // Warnings
+  constexpr const char* COLOR_BLUE    = "\033[1;34m";  // Info
+  constexpr const char* COLOR_CYAN    = "\033[1;36m";  // Verbose/Debug
+  constexpr const char* COLOR_MAGENTA = "\033[1;35m";  // Performance warnings
+
+  const char* getSeverityColor(VkDebugUtilsMessageSeverityFlagBitsEXT severity) {
+    switch (severity) {
+      case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT:   return COLOR_RED;
+      case VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT: return COLOR_YELLOW;
+      case VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT:    return COLOR_BLUE;
+      case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT: return COLOR_CYAN;
+      default: return COLOR_RESET;
+    }
+  }
+
+  const char* getSeverityLabel(VkDebugUtilsMessageSeverityFlagBitsEXT severity) {
+    switch (severity) {
+      case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT:   return "ERROR";
+      case VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT: return "WARNING";
+      case VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT:    return "INFO";
+      case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT: return "VERBOSE";
+      default: return "UNKNOWN";
+    }
+  }
+
+  const char* getMessageTypeLabel(VkDebugUtilsMessageTypeFlagsEXT type) {
+    // Can have multiple bits set, prioritize validation > performance > general
+    if (type & VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT) {
+      return "VALIDATION";
+    }
+    if (type & VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT) {
+      return "PERFORMANCE";
+    }
+    if (type & VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT) {
+      return "GENERAL";
+    }
+    return "UNKNOWN";
+  }
+}
+
+// Custom debug callback - called by validation layers
+static VKAPI_ATTR VkBool32 VKAPI_CALL vulkanDebugCallback(
+    VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+    VkDebugUtilsMessageTypeFlagsEXT messageType,
+    const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
+    void* pUserData) {
+
+  // Skip verbose messages unless specifically debugging
+  if (messageSeverity < VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT) {
+    return VK_FALSE;
+  }
+
+  const char* color = getSeverityColor(messageSeverity);
+  const char* severityLabel = getSeverityLabel(messageSeverity);
+  const char* typeLabel = getMessageTypeLabel(messageType);
+
+  // Use performance-specific color for performance warnings
+  if (messageType & VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT) {
+    color = COLOR_MAGENTA;
+  }
+
+  // Format: [SEVERITY: TYPE] MessageID
+  // Message content
+  // (with color coding)
+  fmt::print("{}[{}: {}]{} {}\n",
+             color, severityLabel, typeLabel, COLOR_RESET,
+             pCallbackData->pMessageIdName ? pCallbackData->pMessageIdName : "");
+
+  // Print the actual message with indentation for readability
+  if (pCallbackData->pMessage) {
+    fmt::print("  {}\n", pCallbackData->pMessage);
+  }
+
+  // For errors, add extra visibility
+  if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
+    fmt::print("{}  ^^^ VALIDATION ERROR - This may cause crashes or incorrect rendering ^^^{}\n",
+               COLOR_RED, COLOR_RESET);
+  }
+
+  // Return VK_FALSE to continue execution (VK_TRUE would abort the Vulkan call)
+  // Only validation layer should ever return VK_TRUE, and only in specific cases
+  return VK_FALSE;
+}
 
 
 
@@ -103,9 +196,17 @@ void ren::VulkanInstance::init_instance(void) {
   vkb::InstanceBuilder builder;
 
   fmt::println("Enabling validation layers: {}", validationLayers.get() ? "Yes" : "No");
-  // make the vulkan instance, with basic debug features
+
+  // Configure validation layers with custom debug callback
   auto inst_ret = builder.set_app_name("Example Vulkan Application")
                       .request_validation_layers(validationLayers.get())
+                      .set_debug_callback(vulkanDebugCallback)  // Custom callback for formatted output
+                      .set_debug_messenger_severity(
+                          VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+                          VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT |
+                          VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT)  // Skip verbose by default
+                      .add_debug_messenger_type(VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT)
+                      .add_debug_messenger_type(VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT)
                       .require_api_version(1, 3, 0)
                       .build();
 
@@ -123,6 +224,9 @@ void ren::VulkanInstance::init_instance(void) {
 
   // grab the instance and store it away in the VulkanInstance class
   this->instance = vkb_inst.instance;
+
+  // Store the debug messenger handle for proper cleanup (only present when validation enabled)
+  this->debug_messenger = vkb_inst.debug_messenger;
 
   // Create the vulkan surface from SDL
   SDL_Vulkan_CreateSurface(window, instance, &surface);
@@ -232,6 +336,16 @@ ren::VulkanInstance::~VulkanInstance() {
 
 
   vkDestroyDevice(device, nullptr);
+
+  // Destroy debug messenger if validation layers were enabled
+  if (debug_messenger != VK_NULL_HANDLE) {
+    auto vkDestroyDebugUtilsMessengerEXT =
+        reinterpret_cast<PFN_vkDestroyDebugUtilsMessengerEXT>(
+            vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT"));
+    if (vkDestroyDebugUtilsMessengerEXT) {
+      vkDestroyDebugUtilsMessengerEXT(instance, debug_messenger, nullptr);
+    }
+  }
 
   // Cleanup code for the Vulkan instance
   vkDestroyInstance(instance, nullptr);

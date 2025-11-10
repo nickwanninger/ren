@@ -4,6 +4,7 @@
 #include <ren/renderer/Image.h>
 #include <ren/core/Instrumentation.h>
 #include <ren/assets/Asset.h>
+#include <glm/glm.hpp>
 
 namespace ren {
 

@@ -240,45 +240,54 @@ namespace ren {
     ren::RenderGraph G;
 
 
+    ren::GraphHandle outputImage;
     ren::GraphHandle dpp_depth, dpp_normal;
     ren::GraphHandle ssao;
 
     ren::addDepthPrepass(G, dpp_depth, dpp_normal);
 
+    // outputImage = dpp_depth;
+    // outputImage = dpp_normal;
+
+
     ren::addSSAO(G, dpp_depth, dpp_normal, ssao);
 
-    auto &testPass = G.addTask<TestPass>("TestPass");
-    testPass.read(dpp_depth, GraphAccess::ShaderRead);
-    testPass.read(dpp_normal, GraphAccess::ShaderRead);
-    testPass.read(ssao, GraphAccess::ShaderRead);
+    ren::Sampler outSampler(VK_FILTER_NEAREST);
+    outputImage = ssao;
+
+
+    // auto &testPass = G.addTask<TestPass>("TestPass");
+    // testPass.read(dpp_depth, GraphAccess::ShaderRead);
+    // testPass.read(dpp_normal, GraphAccess::ShaderRead);
+    // testPass.read(ssao, GraphAccess::ShaderRead);
 
 
 
 
-    GraphHandle outputImage;
-    outputImage = testPass.colorOut;
-    if (1) {
-      ren::PipelineStateObject pso;
-      pso.debugName = "TestPass PSO";
-      pso.program = ren::ShaderProgram::makeFullScreenProgram("shaders/debug/uv.frag");
-      pso.cullMode = ren::CullMode::None;
-      pso.depthTest = false;
-      pso.depthWrite = false;
-      pso.hasVertexBinding = false;
+    // outputImage = testPass.colorOut;
+    // if (1) {
+    //   ren::PipelineStateObject pso;
+    //   pso.debugName = "TestPass PSO";
+    //   pso.program = ren::ShaderProgram::makeFullScreenProgram("shaders/debug/uv.frag");
+    //   pso.cullMode = ren::CullMode::None;
+    //   pso.depthTest = false;
+    //   pso.depthWrite = false;
+    //   pso.hasVertexBinding = false;
 
-      auto &lt = G.addTask<RenderPassTaskLambda>("LambdaPass",
-                                                 [pso = std::move(pso)](ren::GraphRunContext &ctx) {
-                                                   ctx.renderer.bind(pso);
-                                                   vkCmdDraw(ctx.cmd, 3, 1, 0, 0);
-                                                 });
-      outputImage = lt.addColorAttachment("lambda_color", {// .scale = glm::vec2(1.0f),
-                                                           .width = 256,
-                                                           .height = 128,
-                                                           .format = VK_FORMAT_R8G8B8A8_SRGB});
+    //   auto &lt = G.addTask<RenderPassTaskLambda>("LambdaPass",
+    //                                              [pso = std::move(pso)](ren::GraphRunContext
+    //                                              &ctx) {
+    //                                                ctx.renderer.bind(pso);
+    //                                                vkCmdDraw(ctx.cmd, 3, 1, 0, 0);
+    //                                              });
+    //   outputImage = lt.addColorAttachment("lambda_color", {// .scale = glm::vec2(1.0f),
+    //                                                        .width = 256,
+    //                                                        .height = 128,
+    //                                                        .format = VK_FORMAT_R8G8B8A8_SRGB});
 
 
-      lt.read(testPass.colorOut, ren::GraphAccess::ShaderRead);
-    }
+    //   lt.read(testPass.colorOut, ren::GraphAccess::ShaderRead);
+    // }
 
     // G.createImage("fixed", {.width = 512, .height = 512, .format = VK_FORMAT_R8G8B8A8_UNORM},
     //               ren::GraphAccess::RenderTarget);
@@ -486,6 +495,9 @@ namespace ren {
           auto blitBinder = renderer->startBinding(0);
           blitBinder.bind("config", blitConfigBuffer.currentAsBuffer());
           auto &attachments = gbufferTarget->getAttachments();
+
+          // blitBinder.bind("albedo", *G.getImage(outputImage), outSampler);
+          blitBinder.bind("ssao", *G.getImage(outputImage), VK_FILTER_LINEAR);
           for (auto &attachment : attachments) {
             if (attachment.name == "outColor") { blitBinder.bind("albedo", *attachment.texture); }
           }

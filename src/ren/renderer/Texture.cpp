@@ -6,6 +6,7 @@
 
 #include <stb/stb_image.h>
 #include <imgui/backends/imgui_impl_vulkan.h>
+#include <glm/glm.hpp>
 
 
 static std::vector<ren::Texture *> g_all_textures;

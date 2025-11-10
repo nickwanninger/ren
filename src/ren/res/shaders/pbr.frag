@@ -261,10 +261,11 @@ void main() {
   vec3 V = normalize(engine.cameraWorldPosition.xyz - worldPos);
   vec3 L = normalize(engine.lightDirection.xyz);
 
-  float lightIntensity = max(dot(N, engine.lightDirection.xyz), 0.0) * 0.5 + 0.5;
-  float toonStep = step(0.5, lightIntensity) + step(0.75, lightIntensity);
-  vec3 toonColor = baseColor.rgb * toonStep;
-  outColor = vec4(toonColor, baseColor.a);
+  float lightIntensity = max(dot(N, engine.lightDirection.xyz), 0.0) + 0.1;
+  // float toonStep = step(0.5, lightIntensity) + step(0.75, lightIntensity) + 0.05;
+  // vec3 toonColor = baseColor.rgb * toonStep;
+  // outColor = vec4(toonColor, baseColor.a);
+  outColor = vec4(baseColor.rgb * lightIntensity, baseColor.a);
   outNormal = vec4(N * 0.5 + 0.5, 1.0);
   return;
 
