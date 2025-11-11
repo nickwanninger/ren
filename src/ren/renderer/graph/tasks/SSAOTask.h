@@ -14,14 +14,15 @@ namespace ren {
 
 
     struct SSAOUniform {
-      glm::mat4 projection;      // offset 0, 64 bytes
-      glm::mat4 inv_projection;  // offset 64, 64 bytes
-      glm::vec4 samples[64];     // offset 128, 1024 bytes (each vec3 padded to 16 bytes)
-      glm::vec2 screen_size;     // offset 1152, 8 bytes
-      float radius;              // offset 1160, 4 bytes
-      float bias;                // offset 1164, 4 bytes
-      int num_samples;           // offset 1168, 4 bytes
-      int _padding;              // offset 1172, 4 bytes (explicit padding)
+      glm::mat4 projection;
+      glm::mat4 inv_projection;
+      glm::mat4 normal_matrix; // used to convert from world space normals to view space.
+      glm::vec4 samples[64];
+      glm::vec2 screen_size;
+      float radius = 1.0f;
+      float bias = 0.025f;
+      int num_samples = 12;
+      float noise_divide = 4.0f;
     };
     UniformBufferSet<SSAOUniform> uSSAO;
     SSAOUniform ssao;
@@ -67,13 +68,11 @@ namespace ren {
 
   inline void addSSAO(RenderGraph &G, ren::GraphHandle depthHandle, ren::GraphHandle normalHandle,
                       ren::GraphHandle &ssaoOut) {
-    float scale = 0.5f;
-    auto &ssao = G.addTask<SSAOTask>("ssao", scale, depthHandle, normalHandle);
-    auto &blur = G.addTask<SSAOBlurTask>("ssao_blur", scale, ssao.out.ssao);
+    auto &ssao = G.addTask<SSAOTask>("ssao", 0.5f, depthHandle, normalHandle);
+    auto &blur = G.addTask<SSAOBlurTask>("ssao_blur", 1.0f, ssao.out.ssao);
 
-
+    // Output the blurred SSAO
     ssaoOut = blur.out.ssao_blurred;
-    // ssaoOut = blur.out.ssao_blurred;
   }
 
 }  // namespace ren

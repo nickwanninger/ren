@@ -64,23 +64,15 @@ void main() {
   vec3 hdr_color = texture(albedo, uv).rgb;
   hdr_color *= texture(ssao, uv).r;
 
-  // hdr_color = vec3(linearize_depth(hdr_color.r, 0.1, 100.0));
   hdr_color *= config.exposure;
 
   vec3 tonemapped = aces(hdr_color);
-  tonemapped = hdr_color;
 
   vec3 srgb = linear_to_srgb(tonemapped);
 
   // Apply ordered dithering to reduce banding
   // Dither value is scaled to 1/256 which is imperceptible but effective at breaking up bands
   srgb += (bayer2x2(gl_FragCoord.xy) - 0.5) / config.ditherDivide;
-
-  // srgb = ordered_dither_1bit_4x4(srgb.r, ivec2(gl_FragCoord.xy)) * vec3(0, 1, 0);
-
-  // float blackpoint = 0.1;  // minimum brightness threshold
-  // srgb = clamp((srgb - blackpoint) / (1.0 - blackpoint), 0.0, 1.0);
-
 
 
 

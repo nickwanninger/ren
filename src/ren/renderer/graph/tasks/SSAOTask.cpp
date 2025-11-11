@@ -11,6 +11,8 @@
 
 namespace ren {
 
+  constexpr VkFormat ssaoFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
+
   static ref<ren::Image> createSSAONoiseTexture(void) {
     const u32 noiseSize = 4;
     glm::vec4 noiseData[noiseSize * noiseSize];
@@ -19,7 +21,7 @@ namespace ren {
     std::default_random_engine generator;
     for (u32 i = 0; i < noiseSize * noiseSize; ++i) {
       glm::vec4 noise(randomFloats(generator) * 2.0 - 1.0, randomFloats(generator) * 2.0 - 1.0,
-                      0.0f, 1.0f);
+                      randomFloats(generator) * 2.0 - 1.0, 1.0f);
       noiseData[i] = glm::normalize(noise);
     }
 
@@ -71,8 +73,7 @@ namespace ren {
 
     auto scale = glm::vec2(fscale);
     // Not sure about the format right now.
-    this->out.ssao =
-        addColorAttachment("ssao", {.scale = scale, .format = VK_FORMAT_R8G8B8A8_UNORM});
+    this->out.ssao = addColorAttachment("ssao", {.scale = scale, .format = ssaoFormat});
 
     this->read(in.depth, ren::GraphAccess::ShaderRead);
     this->read(in.normal, ren::GraphAccess::ShaderRead);
@@ -83,9 +84,6 @@ namespace ren {
     pso.depthWrite = false;
     pso.hasVertexBinding = false;
 
-    ssao.radius = 0.06f;
-    ssao.bias = 0.025f;
-    ssao.num_samples = 12;
 
     this->noiseTexture = createSSAONoiseTexture();
   }
@@ -97,31 +95,34 @@ namespace ren {
     auto &cam = ren::Camera::get();
     auto width = graph().getImage(out.ssao)->getWidth();
     auto height = graph().getImage(out.ssao)->getHeight();
+    ssao.normal_matrix = glm::transpose(glm::inverse(cam.view_matrix()));
     ssao.projection = ren::Camera::projectionMatrix(width, height);
     ssao.inv_projection = glm::inverse(ssao.projection);
     ssao.screen_size = glm::vec2(width, height);
-
-
 
     std::uniform_real_distribution<float> randomFloats(0.0,
                                                        1.0);  // random floats between [0.0, 1.0]
     std::default_random_engine generator;
     for (unsigned int i = 0; i < ssao.num_samples; ++i) {
+      // Generate a random sample vector in tangent space pointing up the hemisphere
       glm::vec4 sample(randomFloats(generator) * 2.0 - 1.0, randomFloats(generator) * 2.0 - 1.0,
-                       randomFloats(generator) * 2.0 - 1.0, 0.0);
+                       randomFloats(generator), 0.0);
 
       sample = glm::normalize(sample);
       sample *= randomFloats(generator);
 
-      float scale = float(i) / 64;
+      float scale = float(i) / (float)ssao.num_samples;
       scale = lerp(0.1f, 1.0f, scale * scale);
       sample *= scale;
+
       ssao.samples[i] = sample;
     }
 
+
+
     uSSAO.update(ssao);
 
-    VkFilter filter = VK_FILTER_LINEAR;
+    VkFilter filter = VK_FILTER_NEAREST;
 
     auto binder = ctx.renderer.startBinding(0);
     binder.bind("ssao", uSSAO);
@@ -142,6 +143,10 @@ namespace ren {
     ImGui::DragFloat("Radius", &ssao.radius, 0.01f, 0.0f, 10.0f);
     ImGui::DragFloat("Bias", &ssao.bias, 0.001f, 0.0f, 1.0f);
     ImGui::DragInt("Num Samples", &ssao.num_samples, 1, 1, 64);
+    ImGui::DragFloat("Noise Divide", &ssao.noise_divide, 0.1f, 1.0f, 20.0f);
+
+
+    graph().getResource(out.ssao)->inspect();
   }
 
 
@@ -155,7 +160,7 @@ namespace ren {
 
     auto scale = glm::vec2(fscale);
     this->out.ssao_blurred =
-        addColorAttachment("ssao_blurred", {.scale = scale, .format = VK_FORMAT_R8G8B8A8_UNORM});
+        addColorAttachment("ssao_blurred", {.scale = scale, .format = ssaoFormat});
 
     this->read(in.ssao, ren::GraphAccess::ShaderRead);
 

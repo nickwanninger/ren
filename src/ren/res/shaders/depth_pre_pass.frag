@@ -6,6 +6,6 @@ layout(location = 0) out vec4 outNormal;
 
 
 void main() {
-  vec3 normal = normalize(worldNormal) * 0.5 + 0.5;
+  vec3 normal = normalize(gl_FrontFacing ? worldNormal : -worldNormal) * 0.5 + 0.5;
   outNormal = vec4(normal, 1.0);
 }

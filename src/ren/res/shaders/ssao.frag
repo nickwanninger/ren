@@ -7,13 +7,15 @@ layout(set = 0, binding = 1) uniform sampler2D normal_sampler;
 layout(set = 0, binding = 2) uniform sampler2D noise_sampler;
 
 layout(set = 0, binding = 3, std140) uniform SSAOUniform {
-  mat4 projection;      // offset 0, 64 bytes
-  mat4 inv_projection;  // offset 64, 64 bytes
-  vec3 samples[64];     // offset 128, 1024 bytes (each vec3 padded to 16 bytes)
-  vec2 screen_size;     // offset 1152, 8 bytes
-  float radius;         // offset 1160, 4 bytes
-  float bias;           // offset 1164, 4 bytes
-  int num_samples;      // offset 1168, 4 bytes
+  mat4 projection;
+  mat4 inv_projection;
+  mat4 normal_matrix;
+  vec3 samples[64];
+  vec2 screen_size;
+  float radius;
+  float bias;
+  int num_samples;
+  float noise_divide;
   // implicit padding: 4 bytes (std140 requires alignment to 16 bytes for struct)
 }
 ssao;
@@ -30,13 +32,23 @@ vec3 random_vec3(vec2 uv) {
   return fract((p3.xxy + p3.yzz) * p3.zyx);
 }
 
-
-//(ZaOniRinku, 2021) Use depth to obtain normal data
-vec3 depthToPositions(vec2 tc) {
-  float depth = texture(depth_sampler, tc).x;
-  vec4 clipSpace = vec4(tc * 2.0 - 1.0, depth, 1.0);
+vec3 depthToPosition(float depth, vec2 uc) {
+  vec4 clipSpace = vec4(uc * 2.0 - 1.0, depth, 1.0);
   vec4 viewSpace = ssao.inv_projection * clipSpace;
   return viewSpace.xyz / viewSpace.w;
+}
+
+//(ZaOniRinku, 2021) Use depth to obtain normal data
+vec3 samplePosition(vec2 uc) {
+  float depth = texture(depth_sampler, uc).x;
+  return depthToPosition(depth, uc);
+}
+
+
+vec3 getRandomVec(vec2 uv) {
+  vec2 noiseScale = ssao.screen_size / ssao.noise_divide;
+  vec3 randomVec = normalize(texture(noise_sampler, uv * noiseScale).xyz);
+  return randomVec;
 }
 
 
@@ -46,42 +58,61 @@ void main() {
   float bias = ssao.bias;
 
   // Obtain the fragment view space position
-  vec3 viewSpacePositions = depthToPositions(uv);
+  float depth = texture(depth_sampler, uv).x;
+  // If something is *really* far away, assume no occlusion.
+  if (depth >= 0.99999) {
+    out_color = vec4(1.0);  // No occlusion
+    return;
+  }
+
+  vec3 viewSpacePos = depthToPosition(depth, uv);
+
+
   // Obtain the fragment normal position from view space
-  vec4 viewSpaceNormals = texture(normal_sampler, uv) * 2.0 - 1.0;
 
-  vec2 noiseScale = ssao.screen_size / 4.0;
+  vec3 worldNormal = texture(normal_sampler, uv).xyz * 2.0 - 1.0;
+  vec3 viewSpaceNormal = normalize(mat3(ssao.normal_matrix) * worldNormal);
 
+  // out_color = vec4(viewSpaceNormal * 0.5 + 0.5, 1.0);
+  // return;
+  //
   // vec3 randomVec = normalize(random_vec3(uv));
-  vec3 randomVec = texture(noise_sampler, uv * noiseScale).xyz;
+  vec3 randomVec = getRandomVec(uv);
+
+  // out_color = vec4(randomVec, 1.0);
+  // return;
 
 
   //(Joey De Vries, 2020) Create a TBN matrix to convert the sample from tangent-space to view-space
-  vec3 tangent = normalize(randomVec - viewSpaceNormals.xyz * dot(randomVec, viewSpaceNormals.xyz));
-  vec3 bitangent = cross(viewSpaceNormals.xyz, tangent);
-  mat3 TBN = mat3(tangent, bitangent, viewSpaceNormals.xyz);
+  vec3 tangent = normalize(randomVec - viewSpaceNormal.xyz * dot(randomVec, viewSpaceNormal.xyz));
+  vec3 bitangent = cross(viewSpaceNormal.xyz, tangent);
+  mat3 TBN = mat3(tangent, bitangent, viewSpaceNormal.xyz);
 
-  vec3 plane = texture(noise_sampler, uv * noiseScale).xyz - vec3(1.0);
+  vec3 plane = getRandomVec(uv) - vec3(1.0);
 
   float occlusion = 0.0;
   for (int i = 0; i < ssao.num_samples; ++i) {
-    vec3 samplePos = reflect(ssao.samples[i].xyz, plane);  // reflect the sample
-    samplePos = TBN * samplePos;                           // convert sample to view-space
-    samplePos = viewSpacePositions + samplePos * radius;  // offset current position with sample pos
+    vec3 samplePos = ssao.samples[i].xyz;           // reflect the sample
+    samplePos = TBN * samplePos;                    // convert sample to view-space
+    samplePos = viewSpacePos + samplePos * radius;  // offset current position with sample pos
 
     vec4 offset = vec4(samplePos, 1.0);
     offset = ssao.projection * offset;  // convert .to clip space
     offset.xyz /= offset.w;             // perspective divide
     offset.xy = offset.xy * 0.5 + 0.5;  // convert to texture coordinate (0,1)
 
-    float sampleDepth = depthToPositions(offset.xy).z;  // obtain sample pos depth value
-    float rangeCheck = (samplePos.z - sampleDepth) < radius
-                           ? 1.0
-                           : 0.0;  // range check to ensure within radius
-    occlusion += (sampleDepth >= samplePos.z + bias ? 1.0 : 0.0) *
-                 rangeCheck;  // check if depth > z pos to determine occlusion
+    // if it is outside the screen, skip
+    if (offset.x < 0.0 || offset.y < 0.0 || offset.x > 1.0 || offset.y > 1.0) { continue; }
+
+    // obtain sample position depth value
+    float sampleDepth = samplePosition(offset.xy).z;
+    // Range check to ensure within radius
+    // float rangeCheck = (samplePos.z - sampleDepth) < radius ? 1.0 : 0.0;
+    float rangeCheck = abs(samplePos.z - sampleDepth) < radius ? 1.0 : 0.0;
+    // Accumulate occlusion
+    occlusion += (sampleDepth >= samplePos.z + bias ? 1.0 : 0.0) * rangeCheck;
   }
   // subtract 1.0 to allow AO to be used with other lighting calculations
-  occlusion = 1.0 - (occlusion / ssao.num_samples);
+  occlusion = 1.0 - (occlusion / float(ssao.num_samples));
   out_color = vec4(vec3(occlusion), 1.0);
 }
