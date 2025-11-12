@@ -144,7 +144,7 @@ namespace ren {
     ImGui::DragFloat("Bias", &ssao.bias, 0.001f, 0.0f, 1.0f);
     ImGui::DragInt("Num Samples", &ssao.num_samples, 1, 1, 64);
     ImGui::DragFloat("Noise Divide", &ssao.noise_divide, 0.1f, 1.0f, 20.0f);
-
+    ImGui::DragFloat("Intensity", &ssao.intensity, 0.1f, 0.1f, 10.0f);
 
     graph().getResource(out.ssao)->inspect();
   }

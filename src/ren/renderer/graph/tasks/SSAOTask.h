@@ -16,10 +16,11 @@ namespace ren {
     struct SSAOUniform {
       glm::mat4 projection;
       glm::mat4 inv_projection;
-      glm::mat4 normal_matrix; // used to convert from world space normals to view space.
+      glm::mat4 normal_matrix;  // used to convert from world space normals to view space.
       glm::vec4 samples[64];
       glm::vec2 screen_size;
       float radius = 1.0f;
+      float intensity = 1.0f;  // WARNING: artistic control! (BAD)
       float bias = 0.025f;
       int num_samples = 12;
       float noise_divide = 4.0f;
