@@ -9,6 +9,7 @@
 #include <random>
 
 
+
 namespace ren {
 
   constexpr VkFormat ssaoFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
@@ -92,14 +93,16 @@ namespace ren {
     ctx.renderer.bind(pso);
 
 
+
     auto &cam = ren::Camera::get();
+    auto viewMatrix = cam.view_matrix();
+
     auto width = graph().getImage(out.ssao)->getWidth();
     auto height = graph().getImage(out.ssao)->getHeight();
-    ssao.normal_matrix = glm::transpose(glm::inverse(cam.view_matrix()));
+    ssao.normal_matrix = glm::transpose(glm::inverse(viewMatrix));
     ssao.projection = ren::Camera::projectionMatrix(width, height);
     ssao.inv_projection = glm::inverse(ssao.projection);
     ssao.screen_size = glm::vec2(width, height);
-
     std::uniform_real_distribution<float> randomFloats(0.0,
                                                        1.0);  // random floats between [0.0, 1.0]
     std::default_random_engine generator;

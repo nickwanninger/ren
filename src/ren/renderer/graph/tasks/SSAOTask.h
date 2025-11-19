@@ -5,13 +5,14 @@
 #include <ren/renderer/pipelines/PipelineStateObject.h>
 #include <ren/renderer/graph/RenderGraph.h>
 #include <ren/renderer/Buffer.h>
+#include "ShadowMapTask.h"
+#include <ren/renderer/graph/tasks/ShadowMapTask.h>
 
 namespace ren {
 
   class SSAOTask : public ren::RenderPassTask {
    public:
     ren::PipelineStateObject pso;
-
 
     struct SSAOUniform {
       glm::mat4 projection;
@@ -67,13 +68,16 @@ namespace ren {
   };
 
 
-  inline void addSSAO(RenderGraph &G, ren::GraphHandle depthHandle, ren::GraphHandle normalHandle,
-                      ren::GraphHandle &ssaoOut) {
+  inline auto &addSSAO(RenderGraph &G, ren::GraphHandle depthHandle, ren::GraphHandle normalHandle,
+                       ren::GraphHandle &ssaoOut) {
     auto &ssao = G.addTask<SSAOTask>("ssao", 0.5f, depthHandle, normalHandle);
     auto &blur = G.addTask<SSAOBlurTask>("ssao_blur", 1.0f, ssao.out.ssao);
 
     // Output the blurred SSAO
     ssaoOut = blur.out.ssao_blurred;
+    // ssaoOut = ssao.out.ssao;
+
+    return ssao;  // TEMP
   }
 
 }  // namespace ren

@@ -2,6 +2,7 @@
 #include <ren/core/Application.h>
 #include "ren/renderer/ShaderProgram.h"
 #include <ren/renderer/graph/RenderGraph.h>
+#include <ren/renderer/RenderWorld.h>
 
 #include <ren/Camera.h>
 
@@ -11,31 +12,15 @@ namespace ren {
       : ren::RenderPassTask(G) {
     auto scale = glm::vec2(1.0);
     this->depthOut = addDepthAttachment("dpp_depth", {.scale = scale});
-    this->normalOut = addColorAttachment("dpp_normal", {.scale = scale});
+    this->normalOut =
+        addColorAttachment("dpp_normal", {.scale = scale, .format = VK_FORMAT_R16G16B16A16_SFLOAT});
 
     pso.program = makeRef<ShaderProgram>("shaders/depth_pre_pass");
     pso.depthWrite = true;
+    pso.cullMode = ren::CullMode::None;
   }
 
   void DepthPrepassTask::run(ren::GraphRunContext &ctx) {
-    std::unordered_set<ren::Mesh *> uniqueMeshes;
-
-    std::vector<std::pair<ren::Mesh *, glm::mat4>> toDraw;
-
-
-    ren::world()
-        .query<comp::Mesh, comp::Transform, comp::Material>("ren::core::renderer::BatchBuildQuery")
-        .each([&](const comp::Mesh &mesh, const comp::Transform &transform,
-                  const comp::Material &material) {
-          uniqueMeshes.insert(mesh.mesh.get());
-          // Create a batch for each mesh instance.
-          // batch.mesh = mesh.mesh;
-          // batch.transform = transform.transformMatrix;
-          // batch.material = material.material;
-
-          toDraw.push_back({mesh.mesh.get(), transform.transformMatrix});
-        });
-
     auto &camera = ren::Camera::get();
 
     auto &megaMesh = ren::world().get_mut<ren::MegaMeshBuffer>();
@@ -46,13 +31,17 @@ namespace ren {
 
     ren::MeshPushConstants pc;
 
+    ren::RenderWorld rw(camera);
+    rw.extractFromECS(ren::world());
+
 
     pc.view = camera.view_matrix();
     pc.proj = projection;
     ctx.renderer.bind(pso);
-    for (auto &[mesh, position] : toDraw) {
-      auto &entry = megaMesh.getEntry(mesh->megaHandle);
-      pc.model = position;
+
+    for (auto &r : rw.renderables) {
+      auto &entry = megaMesh.getEntry(r.mesh->megaHandle);
+      pc.model = r.transform;
       pc.normalMatrix = glm::transpose(glm::inverse(pc.model));
 
       ctx.renderer.setPushConstants(pc);

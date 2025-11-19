@@ -17,7 +17,7 @@ namespace ren {
     this->write(handle, GraphAccess::RenderTarget);
 
     // Store the attachment handle for later construction of RenderTarget
-    this->attachmentHandles[std::string(name)] = handle;
+    this->attachmentHandles.emplace_back(std::string(name), handle);
 
     // Update the render pass description for VkRenderPass creation
     this->desc.addColorAttachment(name, spec.format);
@@ -34,7 +34,7 @@ namespace ren {
     this->write(handle, GraphAccess::DepthTarget);
 
     // Store the attachment handle for later construction of RenderTarget
-    this->attachmentHandles[std::string(name)] = handle;
+    this->attachmentHandles.emplace_back(std::string(name), handle);
 
     // Update the render pass description for VkRenderPass creation
     this->desc.addDepthAttachment(name);
@@ -58,10 +58,13 @@ namespace ren {
     for (const auto &[name, handle] : this->attachmentHandles) {
       // Get the image resource from the graph
       ren::ImageRef image = graph().getImage(handle);
-      fmt::println(" - Attachment '{}' -> Image {}", name, (void *)image->getImage());
 
       // Get the resource metadata to determine attachment type
       auto resource = graph().get<ren::GraphResource>(handle);
+
+      fmt::println(" - Attachment '{}' -> Image {}  - {}", name, (void *)image->getImage(),
+                   resource->writeAccess == GraphAccess::DepthTarget ? "Depth" : "Color");
+
       RenderTargetAttachmentType attachmentType =
           (resource->writeAccess == GraphAccess::DepthTarget) ? RenderTargetAttachmentTypeDepth
                                                               : RenderTargetAttachmentTypeColor;

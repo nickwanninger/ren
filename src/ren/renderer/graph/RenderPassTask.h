@@ -79,7 +79,7 @@ namespace ren {
     ref<RenderTarget> target;
 
     // Maps attachment names to their graph resource handles
-    std::map<std::string, GraphHandle> attachmentHandles;
+    std::vector<std::pair<std::string, GraphHandle>> attachmentHandles;
   };
 
 

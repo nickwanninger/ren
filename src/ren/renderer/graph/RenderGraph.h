@@ -46,6 +46,8 @@ namespace ren {
       return get<ren::ImageResource>(handle)->image;
     }
 
+    auto getResource(GraphHandle handle) const { return resourceTable.at(handle); }
+
 
     // Declare a read of a resource by a task (used internally)
     GraphHandle addRead(RenderTask &task, GraphHandle handle, GraphAccess access);
@@ -71,7 +73,7 @@ namespace ren {
     // This will take the swapchain image size, and use it to update any image resources
     // which are defined relative to the swapchain size.
     // This returns true if any resources were reallocated, false otherwise.
-    bool startFrame(ref<ren::Image> image);
+    bool startFrame(glm::uvec2 renderSize);
 
     /**
      * @brief Get the current swapchain size.

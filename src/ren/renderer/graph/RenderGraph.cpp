@@ -70,8 +70,8 @@ namespace ren {
   RenderGraph::RenderGraph() {}
 
 
-  bool RenderGraph::startFrame(ref<ren::Image> swapchainImage) {
-    auto newImageSize = glm::uvec2(swapchainImage->getWidth(), swapchainImage->getHeight());
+  bool RenderGraph::startFrame(glm::uvec2 newImageSize) {
+    // auto newImageSize = glm::uvec2(swapchainImage->getWidth(), swapchainImage->getHeight());
 
     this->swapchainSize = newImageSize;  // update the stored size.
 
@@ -347,7 +347,7 @@ namespace ren {
         ImGui::BeginGroup();
         {
           // Left panel: Task list
-          ImGui::BeginChild("TaskListPanel", ImVec2(280, -ImGui::GetFrameHeightWithSpacing()),
+          ImGui::BeginChild("TaskListPanel", ImVec2(150, -ImGui::GetFrameHeightWithSpacing()),
                             ImGuiChildFlags_Border);
           {
             // ImGui::Text("Tasks (%zu)", tasks.size());
@@ -380,8 +380,8 @@ namespace ren {
               ImGui::Text("Task: %s (Version %d)", selectedTask->name().c_str(),
                           selectedTask->version);
               ImGui::Separator();
-              ImGui::Text("Average Execution Time: %.2f ns over %llu runs",
-                          selectedTask->averageTimeNs(), selectedTask->numExecutions);
+              ImGui::Text("Average Execution Time: %.8f ms over %llu runs",
+                          selectedTask->averageTimeNs() / 1024.0f / 1024.0f, selectedTask->numExecutions);
 
               // Operands (reads)
               const auto &operands = selectedTask->getOperands();
