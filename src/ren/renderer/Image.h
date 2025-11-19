@@ -6,6 +6,7 @@
 #include <vulkan/vulkan_core.h>
 #include <unordered_set>
 
+#include <ren/core/Builder.h>
 #include <ren/renderer/Vulkan.h>
 
 namespace ren {
@@ -47,11 +48,24 @@ namespace ren {
     u32 getHeight(void) const { return imageCreateInfo.extent.height; }
     u32 getDepth(void) const { return imageCreateInfo.extent.depth; }
     auto getFormat() const { return imageCreateInfo.format; }
+    u32 getMipLevels(void) const { return imageCreateInfo.mipLevels; }
 
     inline bool isFramebuffer() const { return memory == VK_NULL_HANDLE; }
 
     auto &createInfo() const { return imageCreateInfo; }
 
+    // Calculate the number of mip levels for given dimensions
+    static u32 calculateMipLevels(u32 width, u32 height);
+
+    // Generate mipmaps for this image. Image must have been created with mipLevels > 1
+    // and with VK_IMAGE_USAGE_TRANSFER_SRC_BIT usage flag.
+    // If cmd is VK_NULL_HANDLE, creates a single-time command buffer.
+    void generateMipmaps(VkCommandBuffer cmd = VK_NULL_HANDLE);
+
+    // Debug function: save each mipmap level as a PNG file.
+    // Files are saved to the current directory with names like "image_mip0.png", "image_mip1.png",
+    // etc. Only works for RGBA8 formats. Requires TRANSFER_SRC_BIT usage flag.
+    void saveDebug(const std::string &outputDir = ".") const;
 
     void readPixelToBuffer(VkCommandBuffer cmd, glm::vec2 position, VkBuffer stagingBuffer,
                            VkDeviceSize bufferOffset);
@@ -72,38 +86,33 @@ namespace ren {
    public:
     ImageBuilder(const std::string &name);
 
-#define IMAGE_BUILDER_SETTER(name, type, member) \
-  ImageBuilder &set##name(type newValue) {       \
-    this->member = newValue;                     \
-    return *this;                                \
-  }
 
     // Image Settings
-    IMAGE_BUILDER_SETTER(Type, VkImageType, imageInfo.imageType)
-    IMAGE_BUILDER_SETTER(Extent, VkExtent3D, imageInfo.extent)
-    IMAGE_BUILDER_SETTER(Width, u32, imageInfo.extent.width)
-    IMAGE_BUILDER_SETTER(Height, u32, imageInfo.extent.height)
-    IMAGE_BUILDER_SETTER(Depth, u32, imageInfo.extent.depth)
+    BUILDER_SETTER(Type, VkImageType, imageInfo.imageType)
+    BUILDER_SETTER(Extent, VkExtent3D, imageInfo.extent)
+    BUILDER_SETTER(Width, u32, imageInfo.extent.width)
+    BUILDER_SETTER(Height, u32, imageInfo.extent.height)
+    BUILDER_SETTER(Depth, u32, imageInfo.extent.depth)
 
-    IMAGE_BUILDER_SETTER(MipLevels, u32, imageInfo.mipLevels)
-    IMAGE_BUILDER_SETTER(ArrayLayers, u32, imageInfo.arrayLayers)
-    IMAGE_BUILDER_SETTER(Samples, VkSampleCountFlagBits, imageInfo.samples)
-    IMAGE_BUILDER_SETTER(Tiling, VkImageTiling, imageInfo.tiling)
-    IMAGE_BUILDER_SETTER(Usage, VkImageUsageFlags, imageInfo.usage)
-    IMAGE_BUILDER_SETTER(SharingMode, VkSharingMode, imageInfo.sharingMode)
-    IMAGE_BUILDER_SETTER(InitialLayout, VkImageLayout, imageInfo.initialLayout)
+    BUILDER_SETTER(MipLevels, u32, imageInfo.mipLevels)
+    BUILDER_SETTER(ArrayLayers, u32, imageInfo.arrayLayers)
+    BUILDER_SETTER(Samples, VkSampleCountFlagBits, imageInfo.samples)
+    BUILDER_SETTER(Tiling, VkImageTiling, imageInfo.tiling)
+    BUILDER_SETTER(Usage, VkImageUsageFlags, imageInfo.usage)
+    BUILDER_SETTER(SharingMode, VkSharingMode, imageInfo.sharingMode)
+    BUILDER_SETTER(InitialLayout, VkImageLayout, imageInfo.initialLayout)
 
     // Image View Settings
-    IMAGE_BUILDER_SETTER(ViewType, VkImageViewType, viewInfo.viewType)
-    IMAGE_BUILDER_SETTER(ViewAspectMask, VkImageAspectFlags, viewInfo.subresourceRange.aspectMask)
-    IMAGE_BUILDER_SETTER(ViewBaseMipLevel, u32, viewInfo.subresourceRange.baseMipLevel)
-    IMAGE_BUILDER_SETTER(ViewLevelCount, u32, viewInfo.subresourceRange.levelCount)
-    IMAGE_BUILDER_SETTER(ViewBaseArrayLayer, u32, viewInfo.subresourceRange.baseArrayLayer)
-    IMAGE_BUILDER_SETTER(ViewLayerCount, u32, viewInfo.subresourceRange.layerCount)
+    BUILDER_SETTER(ViewType, VkImageViewType, viewInfo.viewType)
+    BUILDER_SETTER(ViewAspectMask, VkImageAspectFlags, viewInfo.subresourceRange.aspectMask)
+    BUILDER_SETTER(ViewBaseMipLevel, u32, viewInfo.subresourceRange.baseMipLevel)
+    BUILDER_SETTER(ViewLevelCount, u32, viewInfo.subresourceRange.levelCount)
+    BUILDER_SETTER(ViewBaseArrayLayer, u32, viewInfo.subresourceRange.baseArrayLayer)
+    BUILDER_SETTER(ViewLayerCount, u32, viewInfo.subresourceRange.layerCount)
 
     // Allocation settings
-    IMAGE_BUILDER_SETTER(AllocationUsage, VmaMemoryUsage, allocCreateInfo.usage)
-    IMAGE_BUILDER_SETTER(AllocationFlags, VmaAllocationCreateFlags, allocCreateInfo.flags)
+    BUILDER_SETTER(AllocationUsage, VmaMemoryUsage, allocCreateInfo.usage)
+    BUILDER_SETTER(AllocationFlags, VmaAllocationCreateFlags, allocCreateInfo.flags)
 
     // Some custom ones
     ImageBuilder &setFormat(VkFormat format) {
@@ -111,11 +120,6 @@ namespace ren {
       viewInfo.format = format;  // Ensure the view format matches the image format.
       return *this;
     }
-
-
-
-#undef IMAGE_BUILDER_SETTER
-
 
     Image::Ref build(void);
 
