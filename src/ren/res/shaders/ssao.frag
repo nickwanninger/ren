@@ -13,6 +13,7 @@ layout(set = 0, binding = 3, std140) uniform SSAOUniform {
   vec3 samples[64];
   vec2 screen_size;
   float radius;
+  float intensity;
   float bias;
   int num_samples;
   float noise_divide;
@@ -67,23 +68,15 @@ void main() {
 
   vec3 viewSpacePos = depthToPosition(depth, uv);
 
+  vec3 worldSpacePos = vec3(ssao.inv_view * vec4(viewSpacePos, 1.0));
 
   // Obtain the fragment normal position from view space
 
   vec3 worldNormal = texture(normal_sampler, uv).xyz * 2.0 - 1.0;
   vec3 viewSpaceNormal = normalize(mat3(ssao.normal_matrix) * worldNormal);
 
-  // out_color = vec4(viewSpaceNormal * 0.5 + 0.5, 1.0);
-  // return;
-  //
-  // vec3 randomVec = normalize(random_vec3(uv));
   vec3 randomVec = getRandomVec(uv);
 
-  // out_color = vec4(randomVec, 1.0);
-  // return;
-
-
-  //(Joey De Vries, 2020) Create a TBN matrix to convert the sample from tangent-space to view-space
   vec3 tangent = normalize(randomVec - viewSpaceNormal.xyz * dot(randomVec, viewSpaceNormal.xyz));
   vec3 bitangent = cross(viewSpaceNormal.xyz, tangent);
   mat3 TBN = mat3(tangent, bitangent, viewSpaceNormal.xyz);
@@ -112,7 +105,10 @@ void main() {
     // Accumulate occlusion
     occlusion += (sampleDepth >= samplePos.z + bias ? 1.0 : 0.0) * rangeCheck;
   }
+
+
   // subtract 1.0 to allow AO to be used with other lighting calculations
   occlusion = 1.0 - (occlusion / float(ssao.num_samples));
+  occlusion = pow(occlusion, ssao.intensity);
   out_color = vec4(vec3(occlusion), 1.0);
 }

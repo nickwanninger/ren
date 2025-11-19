@@ -11,6 +11,8 @@ layout(set = 0, binding = 2) uniform BlitConfig {
 }
 config;
 
+
+
 vec3 aces(vec3 x) {
   float a = 2.51;
   float b = 0.03;
