@@ -88,13 +88,33 @@ namespace ren {
 
     // Convert to our format with basic hardening
     for (const auto* binding : reflectionBindings) {
+      fmt::println("Binding {} (set {}):", binding->binding, binding->set);
+      // fmt::println("  Type: {}", binding->descriptor_type);
+      fmt::println("  Count: {}", binding->count);
+
+      // Check if it's an array
+      if (binding->array.dims_count > 0) {
+        fmt::println("  Array dimensions: {}", binding->array.dims_count);
+        for (uint32_t i = 0; i < binding->array.dims_count; i++) {
+          if (binding->array.dims[i] == 0) {
+            fmt::println("    Dimension {}: RUNTIME-SIZED (unbounded)", i);
+          } else {
+            fmt::println("    Dimension {}: {}", i, binding->array.dims[i]);
+          }
+        }
+      } else {
+        fmt::println("  Not an array (single descriptor)");
+      }
+
+      fmt::println("");
+
       ShaderBinding desc;
       desc.set = binding->set;
       desc.binding = binding->binding;
       desc.type = static_cast<VkDescriptorType>(binding->descriptor_type);
       // If reflection reports 0 (runtime array), use 1 for layout creation; actual arraying handled
       // by user
-      desc.count = binding->count == 0 ? 1u : binding->count;
+      desc.count = binding->count == 0 ? 16384u : binding->count;
       desc.stages = stage;
       // Some compilers may emit null/empty names; synthesize a stable name in that case
       if (binding->name && binding->name[0] != '\0') {
@@ -211,6 +231,7 @@ namespace ren {
       for (const auto& [setIndex, bindings] : setBindings) {
         VkDescriptorSetLayoutCreateInfo layoutInfo{};
         layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        layoutInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
         layoutInfo.bindingCount = static_cast<u32>(bindings.size());
         layoutInfo.pBindings = bindings.data();
 
