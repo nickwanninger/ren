@@ -7,6 +7,11 @@
 #include <stb/stb_image.h>
 #include <imgui/backends/imgui_impl_vulkan.h>
 #include <glm/glm.hpp>
+#include <ren/core/Flag.h>
+
+
+static ren::Flag<bool> enableMipmaps("texture-mipmaps",
+                                     "Enable mipmap generation for loaded textures");
 
 
 static std::vector<ren::Texture *> g_all_textures;
@@ -24,8 +29,17 @@ ren::Texture::Texture(const std::string_view &name, u32 width, u32 height, u8 *p
 
   VkFormat format = VK_FORMAT_R8G8B8A8_UNORM;
 
+  u32 mipLevels = ren::Image::calculateMipLevels(width, height);
+
+  if (!enableMipmaps.get()) {
+    mipLevels = 1;  // disable mipmaps for now.
+  }
+
+  fmt::println("Creating texture '{}' ({}x{}, {} mip levels)", name, width, height, mipLevels);
   ib.setFormat(format);
-  ib.setUsage(VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+  ib.setMipLevels(mipLevels);
+  ib.setUsage(VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
+              VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
   ib.setAllocationUsage(VMA_MEMORY_USAGE_GPU_ONLY);
 
 
@@ -46,6 +60,12 @@ ren::Texture::Texture(const std::string_view &name, u32 width, u32 height, u8 *p
 
   vulkan.copyBufferToImage(stagingBuffer.getHandle(), image->getImage(),
                            static_cast<uint32_t>(width), static_cast<uint32_t>(height));
+
+
+  // Generate mipmaps
+  if (mipLevels > 1) { image->generateMipmaps(); }
+  // image->saveDebug("debug/");
+
 
   vulkan.transitionImageLayout(image->getImage(), format, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
@@ -71,7 +91,7 @@ ren::Texture::Texture(const std::string_view &name, u32 width, u32 height, u8 *p
   samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
   samplerInfo.mipLodBias = 0.0f;
   samplerInfo.minLod = 0.0f;
-  samplerInfo.maxLod = 0.0f;
+  samplerInfo.maxLod = static_cast<float>(mipLevels - 1);
 
   if (vkCreateSampler(vulkan.device, &samplerInfo, nullptr, &sampler) != VK_SUCCESS) {
     throw std::runtime_error("failed to create texture sampler!");
@@ -119,6 +139,9 @@ ren::Texture::Texture(ren::ImageRef image) {
   samplerInfo.minLod = 0.0f;
   samplerInfo.maxLod = 0.0f;
 
+
+  fmt::println("Creating texture '{}' from existing image", name);
+
   if (vkCreateSampler(vulkan.device, &samplerInfo, nullptr, &sampler) != VK_SUCCESS) {
     throw std::runtime_error("failed to create texture sampler!");
   }
@@ -131,7 +154,8 @@ ren::Texture::Texture(ren::ImageRef image) {
 
 
 ren::Texture::~Texture(void) {
-  g_all_textures.erase(std::remove(g_all_textures.begin(), g_all_textures.end(), this), g_all_textures.end());
+  g_all_textures.erase(std::remove(g_all_textures.begin(), g_all_textures.end(), this),
+                       g_all_textures.end());
   auto &vulkan = ren::getVulkan();
   // Remove the imgui texture ID first,
   if (imguiTextureID != VK_NULL_HANDLE) { ImGui_ImplVulkan_RemoveTexture(imguiTextureID); }

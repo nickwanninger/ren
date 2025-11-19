@@ -2,6 +2,7 @@
 
 #include <ren/types.h>
 #include <ren/renderer/Image.h>
+#include <ren/core/Builder.h>
 #include <ren/core/Instrumentation.h>
 #include <ren/assets/Asset.h>
 #include <glm/glm.hpp>
@@ -69,5 +70,16 @@ namespace ren {
   };
 
   using TextureRef = ref<Texture>;
+
+
+
+
+  class TextureBuilder : public ren::ImageBuilder {
+   public:
+    using ren::ImageBuilder::ImageBuilder;
+
+
+    ref<Texture> build(void);
+  };
 
 }  // namespace ren
