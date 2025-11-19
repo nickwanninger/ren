@@ -25,8 +25,7 @@
 #include <ren/core/Flag.h>
 
 
-static ren::Flag<bool> validationLayers("validation", true,
-                                        "Enable Vulkan validation layers");
+static ren::Flag<bool> validationLayers("validation", true, "Enable Vulkan validation layers");
 
 
 // ---- Custom Vulkan Validation Layer Callback ---- //
@@ -35,18 +34,18 @@ static ren::Flag<bool> validationLayers("validation", true,
 
 namespace {
   // ANSI color codes for terminal output
-  constexpr const char* COLOR_RESET   = "\033[0m";
-  constexpr const char* COLOR_RED     = "\033[1;31m";  // Errors
-  constexpr const char* COLOR_YELLOW  = "\033[1;33m";  // Warnings
-  constexpr const char* COLOR_BLUE    = "\033[1;34m";  // Info
-  constexpr const char* COLOR_CYAN    = "\033[1;36m";  // Verbose/Debug
+  constexpr const char* COLOR_RESET = "\033[0m";
+  constexpr const char* COLOR_RED = "\033[1;31m";      // Errors
+  constexpr const char* COLOR_YELLOW = "\033[1;33m";   // Warnings
+  constexpr const char* COLOR_BLUE = "\033[1;34m";     // Info
+  constexpr const char* COLOR_CYAN = "\033[1;36m";     // Verbose/Debug
   constexpr const char* COLOR_MAGENTA = "\033[1;35m";  // Performance warnings
 
   const char* getSeverityColor(VkDebugUtilsMessageSeverityFlagBitsEXT severity) {
     switch (severity) {
-      case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT:   return COLOR_RED;
+      case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT: return COLOR_RED;
       case VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT: return COLOR_YELLOW;
-      case VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT:    return COLOR_BLUE;
+      case VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT: return COLOR_BLUE;
       case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT: return COLOR_CYAN;
       default: return COLOR_RESET;
     }
@@ -54,9 +53,9 @@ namespace {
 
   const char* getSeverityLabel(VkDebugUtilsMessageSeverityFlagBitsEXT severity) {
     switch (severity) {
-      case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT:   return "ERROR";
+      case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT: return "ERROR";
       case VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT: return "WARNING";
-      case VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT:    return "INFO";
+      case VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT: return "INFO";
       case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT: return "VERBOSE";
       default: return "UNKNOWN";
     }
@@ -64,51 +63,36 @@ namespace {
 
   const char* getMessageTypeLabel(VkDebugUtilsMessageTypeFlagsEXT type) {
     // Can have multiple bits set, prioritize validation > performance > general
-    if (type & VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT) {
-      return "VALIDATION";
-    }
-    if (type & VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT) {
-      return "PERFORMANCE";
-    }
-    if (type & VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT) {
-      return "GENERAL";
-    }
+    if (type & VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT) { return "VALIDATION"; }
+    if (type & VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT) { return "PERFORMANCE"; }
+    if (type & VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT) { return "GENERAL"; }
     return "UNKNOWN";
   }
-}
+}  // namespace
 
 // Custom debug callback - called by validation layers
-static VKAPI_ATTR VkBool32 VKAPI_CALL vulkanDebugCallback(
-    VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
-    VkDebugUtilsMessageTypeFlagsEXT messageType,
-    const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
-    void* pUserData) {
-
+static VKAPI_ATTR VkBool32 VKAPI_CALL
+vulkanDebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+                    VkDebugUtilsMessageTypeFlagsEXT messageType,
+                    const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData) {
   // Skip verbose messages unless specifically debugging
-  if (messageSeverity < VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT) {
-    return VK_FALSE;
-  }
+  if (messageSeverity < VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT) { return VK_FALSE; }
 
   const char* color = getSeverityColor(messageSeverity);
   const char* severityLabel = getSeverityLabel(messageSeverity);
   const char* typeLabel = getMessageTypeLabel(messageType);
 
   // Use performance-specific color for performance warnings
-  if (messageType & VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT) {
-    color = COLOR_MAGENTA;
-  }
+  if (messageType & VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT) { color = COLOR_MAGENTA; }
 
   // Format: [SEVERITY: TYPE] MessageID
   // Message content
   // (with color coding)
-  fmt::print("{}[{}: {}]{} {}\n",
-             color, severityLabel, typeLabel, COLOR_RESET,
+  fmt::print("{}[{}: {}]{} {}\n", color, severityLabel, typeLabel, COLOR_RESET,
              pCallbackData->pMessageIdName ? pCallbackData->pMessageIdName : "");
 
   // Print the actual message with indentation for readability
-  if (pCallbackData->pMessage) {
-    fmt::print("  {}\n", pCallbackData->pMessage);
-  }
+  if (pCallbackData->pMessage) { fmt::print("  {}\n", pCallbackData->pMessage); }
 
   // For errors, add extra visibility
   if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
@@ -130,9 +114,9 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL vulkanDebugCallback(
 #include "vk_mem_alloc.h"
 
 
-static ren::VulkanInstance *g_vulkan_instance = nullptr;
+static ren::VulkanInstance* g_vulkan_instance = nullptr;
 
-ren::VulkanInstance &ren::getVulkan(void) {
+ren::VulkanInstance& ren::getVulkan(void) {
   if (g_vulkan_instance == nullptr) { throw std::runtime_error("Vulkan instance not initialized"); }
   return *g_vulkan_instance;
 }
@@ -142,7 +126,7 @@ ren::ref<ren::VulkanInstance> ren::getVulkanRef(void) {
   return g_vulkan_instance->shared_from_this();
 }
 
-ren::VulkanInstance::VulkanInstance(SDL_Window *window) {
+ren::VulkanInstance::VulkanInstance(SDL_Window* window) {
   this->window = window;
   if (g_vulkan_instance != nullptr) {
     throw std::runtime_error("Vulkan instance already initialized");
@@ -198,17 +182,18 @@ void ren::VulkanInstance::init_instance(void) {
   fmt::println("Enabling validation layers: {}", validationLayers.get() ? "Yes" : "No");
 
   // Configure validation layers with custom debug callback
-  auto inst_ret = builder.set_app_name("Example Vulkan Application")
-                      .request_validation_layers(validationLayers.get())
-                      .set_debug_callback(vulkanDebugCallback)  // Custom callback for formatted output
-                      .set_debug_messenger_severity(
-                          VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
-                          VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT |
-                          VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT)  // Skip verbose by default
-                      .add_debug_messenger_type(VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT)
-                      .add_debug_messenger_type(VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT)
-                      .require_api_version(1, 3, 0)
-                      .build();
+  auto inst_ret =
+      builder.set_app_name("Example Vulkan Application")
+          .request_validation_layers(validationLayers.get())
+          .set_debug_callback(vulkanDebugCallback)  // Custom callback for formatted output
+          .set_debug_messenger_severity(
+              VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+              VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT |
+              VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT)  // Skip verbose by default
+          .add_debug_messenger_type(VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT)
+          .add_debug_messenger_type(VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT)
+          .require_api_version(1, 3, 0)
+          .build();
 
   if (!inst_ret) {
     std::cerr << "Failed to create Vulkan instance: " << inst_ret.error() << std::endl;
@@ -238,6 +223,18 @@ void ren::VulkanInstance::init_instance(void) {
   // requiredFeatures.geometryShader = VK_FALSE;    // Enable geometry shaders
   requiredFeatures.samplerAnisotropy = VK_TRUE;  // Enable anisotropic filtering
   requiredFeatures.fillModeNonSolid = VK_TRUE;
+
+  // Request the specific features you need
+  VkPhysicalDeviceVulkan12Features indexing_features{
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
+      .shaderSampledImageArrayNonUniformIndexing = VK_TRUE,
+      .descriptorBindingSampledImageUpdateAfterBind = VK_TRUE,
+      .descriptorBindingPartiallyBound = VK_TRUE,
+      .runtimeDescriptorArray = VK_TRUE,
+  };
+  selector.add_required_extension(VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME);
+  selector.set_required_features_12(indexing_features);
+
 
 
   auto physicalDeviceResult = selector.set_minimum_version(1, 2)
@@ -339,9 +336,8 @@ ren::VulkanInstance::~VulkanInstance() {
 
   // Destroy debug messenger if validation layers were enabled
   if (debug_messenger != VK_NULL_HANDLE) {
-    auto vkDestroyDebugUtilsMessengerEXT =
-        reinterpret_cast<PFN_vkDestroyDebugUtilsMessengerEXT>(
-            vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT"));
+    auto vkDestroyDebugUtilsMessengerEXT = reinterpret_cast<PFN_vkDestroyDebugUtilsMessengerEXT>(
+        vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT"));
     if (vkDestroyDebugUtilsMessengerEXT) {
       vkDestroyDebugUtilsMessengerEXT(instance, debug_messenger, nullptr);
     }
@@ -520,7 +516,7 @@ void ren::VulkanInstance::copyBufferToImage(VkBuffer buffer, VkImage image, uint
 
 
 
-VkFormat ren::VulkanInstance::findSupportedFormat(const std::vector<VkFormat> &candidates,
+VkFormat ren::VulkanInstance::findSupportedFormat(const std::vector<VkFormat>& candidates,
                                                   VkImageTiling tiling,
                                                   VkFormatFeatureFlags features) {
   for (VkFormat format : candidates) {
@@ -579,8 +575,8 @@ VkImageView ren::VulkanInstance::create_image_view(VkImage image, VkFormat forma
 
 void ren::VulkanInstance::create_image(uint32_t width, uint32_t height, VkFormat format,
                                        VkImageTiling tiling, VkImageUsageFlags usage,
-                                       VkMemoryPropertyFlags properties, VkImage &image,
-                                       VkDeviceMemory &imageMemory) {
+                                       VkMemoryPropertyFlags properties, VkImage& image,
+                                       VkDeviceMemory& imageMemory) {
   VkImageCreateInfo imageInfo{};
   imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
   imageInfo.imageType = VK_IMAGE_TYPE_2D;
@@ -659,8 +655,8 @@ void ren::VulkanInstance::update_uniform_buffer(u32 current_frame) {
 
 
 void ren::VulkanInstance::create_buffer(VkDeviceSize size, VkBufferUsageFlags usage,
-                                        VkMemoryPropertyFlags properties, VkBuffer &buffer,
-                                        VkDeviceMemory &bufferMemory) {
+                                        VkMemoryPropertyFlags properties, VkBuffer& buffer,
+                                        VkDeviceMemory& bufferMemory) {
   VkBufferCreateInfo bufferInfo{};
   bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
   bufferInfo.size = size;
@@ -721,11 +717,11 @@ void ren::VulkanInstance::cleanup_swapchain(void) { abort(); }
 
 
 
-VkShaderModule ren::VulkanInstance::create_shader_module(const std::vector<u8> &code) {
+VkShaderModule ren::VulkanInstance::create_shader_module(const std::vector<u8>& code) {
   VkShaderModuleCreateInfo createInfo{};
   createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
   createInfo.codeSize = code.size();
-  createInfo.pCode = reinterpret_cast<const uint32_t *>(code.data());
+  createInfo.pCode = reinterpret_cast<const uint32_t*>(code.data());
 
   VkShaderModule shaderModule;
   if (vkCreateShaderModule(device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS) {
@@ -737,7 +733,7 @@ VkShaderModule ren::VulkanInstance::create_shader_module(const std::vector<u8> &
 
 
 
-VkShaderModule ren::VulkanInstance::load_shader_module(const std::string &filename) {
+VkShaderModule ren::VulkanInstance::load_shader_module(const std::string& filename) {
   std::vector<u8> code;
 
   // Load the shader code from the file
@@ -748,7 +744,7 @@ VkShaderModule ren::VulkanInstance::load_shader_module(const std::string &filena
   std::streamsize size = file.tellg();
   file.seekg(0, std::ios::beg);
   code.resize(size);
-  if (!file.read(reinterpret_cast<char *>(code.data()), size)) {
+  if (!file.read(reinterpret_cast<char*>(code.data()), size)) {
     throw std::runtime_error(fmt::format("Failed to read shader file: {}", filename));
   }
   file.close();
