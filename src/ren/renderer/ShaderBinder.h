@@ -6,6 +6,9 @@
 #include <ren/renderer/Descriptors.h>
 #include <ren/renderer/Sampler.h>
 #include <ren/renderer/Buffer.h>
+#include <ren/core/Arena.h>
+#include <span>
+#include <utility>
 
 namespace ren {
 
@@ -19,24 +22,42 @@ namespace ren {
     ShaderBinder(ShaderProgram &program, u32 set);
     ~ShaderBinder() = default;
 
-    ShaderBinder &bind(const std::string_view &name, const Texture &texture);
-    ShaderBinder &bind(const std::string_view &name, const Image &image, Sampler &sampler);
-    ShaderBinder &bind(const std::string_view &name, const Image &image,
+
+    // The main interface is to bind a resource to a binding by name. We go through this packing
+    // indirection so we can have one implementation of each ::bind method, but also let you bind by
+    // index
+    template <typename... T>
+    ShaderBinder &bind(const std::string_view &name, const T &...resources) {
+      const auto *binding = program.getBinding(name);
+      if (binding == nullptr)
+        throw std::runtime_error(fmt::format("Shader binding '{}' not found in program '{}'", name,
+                                             json(program).dump()));
+      return this->bind(*binding, resources...);
+    }
+
+    // Optionally, bind by binding index within the current set.
+    template <typename... T>
+    ShaderBinder &bind(u32 bindingIndex, const T &...resources) {
+      const auto *binding = program.getBinding(this->set, bindingIndex);
+      if (binding == nullptr)
+        throw std::runtime_error(fmt::format("Shader binding '{}.{}' not found in program '{}'", set, bindingIndex,
+                                             json(program).dump()));
+      return this->bind(*binding, resources...);
+    }
+
+    ShaderBinder &bind(const ShaderBinding &binding, const Texture &texture);
+    ShaderBinder &bind(const ShaderBinding &binding, const std::span<ref<Texture>> &textures);
+    ShaderBinder &bind(const ShaderBinding &binding, const Image &image, Sampler &sampler);
+    ShaderBinder &bind(const ShaderBinding &binding, const Image &image,
                        VkFilter samplerFilter = VK_FILTER_NEAREST);
 
-    ShaderBinder &bind(const std::string_view &name, const ren::Buffer &bufferHandle);
+    ShaderBinder &bind(const ShaderBinding &binding, const ren::Buffer &bufferHandle);
 
-    // Bind by binding index within the current set (useful when reflection names are absent)
-    ShaderBinder &bind(u32 bindingIndex, const Texture &texture);
-    ShaderBinder &bind(u32 bindingIndex, const Image &image, Sampler &sampler);
-    ShaderBinder &bind(u32 bindingIndex, const Image &image,
-                       VkFilter samplerFilter = VK_FILTER_NEAREST);
-    ShaderBinder &bind(u32 bindingIndex, const ren::Buffer &bufferHandle);
-
+    // UBO set binding.
     template <typename T>
-    ShaderBinder &bind(const std::string_view &name, const UniformBufferSet<T> &UBS) {
+    ShaderBinder &bind(const ShaderBinding &binding, const UniformBufferSet<T> &UBS) {
       // Bind a uniform buffer set to the shader.
-      this->bind(name, UBS.currentAsBuffer());
+      this->bind(binding, UBS.currentAsBuffer());
       return *this;
     }
 
@@ -50,10 +71,10 @@ namespace ren {
 
     ShaderProgram &program;
 
-    // To bind image views, we need to keep track of the VkDescriptorImageInfo values we want to
-    // bind.
-    std::vector<VkDescriptorImageInfo> imageInfos;
-    std::vector<VkDescriptorBufferInfo> bufferInfos;
+    // This arena is where we allocate things like VkDescriptorImageInfo and
+    // VkDescriptorBufferInfo to avoid them moving (if they were stored in a
+    // vector that resizes, for example).
+    ren::Arena arena{512, true};
   };
 
 
