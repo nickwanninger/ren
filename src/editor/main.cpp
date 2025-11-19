@@ -7,7 +7,12 @@
 
 #include <ren/core/Flag.h>
 
-ren::Flag<std::string> loadArg("load", "assets/test/meshes/simple_scene.glb", "Path to a mesh to load at startup");
+ren::Flag<std::string> loadArg("load", "assets/test/meshes/simple_scene.glb",
+                               "Path to a mesh to load at startup");
+
+
+ren::Flag<float> scaleArg("load-scale", 1.0f, "Uniform scale to apply to the loaded mesh");
+
 
 void loadMeshIntoScene(const char *path, float scaleChange = 0.0f) {
   fmt::println("Loading {}...", path);
@@ -30,7 +35,6 @@ static void taskRunCallback(ren::GraphRunContext &ctx) {
 
 
 
-
 int main(int argc, char *argv[]) {
   ren::parseFlags(argc, argv);
   glm::uvec2 res;
@@ -42,7 +46,21 @@ int main(int argc, char *argv[]) {
 
   ren::Application app("Editor", res);
 
-  loadMeshIntoScene(loadArg.get().c_str());
+  // auto &vulkan = ren::getVulkan();
+  // print_descriptor_indexing_limits(vulkan.physical_device);
+  // return 0;
+
+  if (loadArg.get() == "SPONZA") {
+    loadMeshIntoScene("/Users/nick/Downloads/main_sponza/NewSponza_Main_glTF_003.gltf",
+                      scaleArg.get());
+    loadMeshIntoScene("/Users/nick/Downloads/pkg_a_curtains/NewSponza_Curtains_glTF.gltf",
+                      scaleArg.get());
+    loadMeshIntoScene("/Users/nick/Downloads/pkg_b_ivy/NewSponza_IvyGrowth_glTF.gltf",
+                      scaleArg.get());
+  } else {
+    loadMeshIntoScene(loadArg.get().c_str(), scaleArg.get());
+  }
+
 
   app.run();
 
