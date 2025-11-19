@@ -1,0 +1,87 @@
+#include "GBufferTask.h"
+#include <ren/Camera.h>
+#include <ren/renderer/RenderWorld.h>
+#include <ren/core/Application.h>
+
+namespace ren {
+
+  GBufferTask::GBufferTask(ren::RenderGraph &G)
+      : ren::RenderPassTask(G) {
+    // Location 0
+    this->out.albedo = addColorAttachment(
+        "gbufferAlbedo", {.scale = glm::vec2(1.0f), .format = VK_FORMAT_R16G16B16A16_SFLOAT});
+    // Location 1
+    this->out.normal = addColorAttachment(
+        "gbufferNormal", {.scale = glm::vec2(1.0f), .format = VK_FORMAT_R16G16B16A16_SFLOAT});
+    // Location 2
+    this->out.metallicRoughness = addColorAttachment(
+        "gbufferMetallicRoughness", {.scale = glm::vec2(1.0f), .format = VK_FORMAT_R8G8B8A8_UNORM});
+    this->out.depth = addDepthAttachment(
+        "gbufferDepth", {.scale = glm::vec2(1.0f), .format = VK_FORMAT_D32_SFLOAT});
+  }
+
+
+  void GBufferTask::run(ren::GraphRunContext &ctx) {
+    auto &cam = ren::Camera::get();
+    auto viewMatrix = cam.view_matrix();
+
+    // Grab an image for width/height.
+    auto image = ctx.graph.getImage(out.depth);
+    auto projection = ren::Camera::projectionMatrix(image->getWidth(), image->getHeight());
+
+
+    auto &megaMesh = ren::world().get_mut<ren::MegaMeshBuffer>();
+    // Bind the MegaMesh buffer for rendering geometry.
+    megaMesh.bind(ctx.cmd);
+
+    // TODO: BATCH RENDERING
+
+    ren::MeshPushConstants pc;
+
+    ren::RenderWorld rw(cam);
+    rw.extractFromECS(ren::world());
+
+
+
+
+    pc.view = viewMatrix;
+    pc.proj = projection;
+    // ctx.renderer.bind(pso);
+    //
+
+
+    engineUBO.view = pc.view;
+    engineUBO.proj = pc.proj;
+    engineUBO.invViewProj = glm::inverse(pc.proj * pc.view);
+    engineUBO.cameraWorldPosition = glm::vec4(cam.position, 1.0);
+
+    engineUBO.time = ren::Application::get().timeSeconds;
+    this->engineUBOBuffer.update(engineUBO);
+
+    for (auto &r : rw.renderables) {
+      auto &mesh = r.mesh;
+      auto &mat = r.material;
+
+
+      if (!mat->bind(ctx.renderer)) {
+        continue;  // Skip this renderable if the material is not ready.
+      }
+
+
+      auto engineBinder = ctx.renderer.startBinding(0);
+      engineBinder.bind("engine", this->engineUBOBuffer);
+      engineBinder.apply();
+
+
+      auto &meshEntry = megaMesh.getEntry(r.mesh->megaHandle);
+      pc.model = r.transform;
+      pc.normalMatrix = glm::transpose(glm::inverse(pc.model));
+
+      ctx.renderer.setPushConstants(pc);
+
+      int instanceCount = 1;
+      vkCmdDrawIndexed(ctx.cmd, meshEntry.indexCount, instanceCount, meshEntry.indexOffset,
+                       meshEntry.vertexOffset, 0);
+    }
+  }
+}  // namespace ren

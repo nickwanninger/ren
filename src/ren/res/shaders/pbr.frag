@@ -10,10 +10,15 @@ layout(location = 2) in vec3 worldPos;
 layout(location = 3) in vec3 worldTangent;
 layout(location = 4) in vec3 worldBitangent;
 
-// We must emit both albedo and a normal value for postprocessing.
-layout(location = 0) out vec4 outColor;
-layout(location = 1) out vec4 outNormal;
 
+
+// -- GBUFFER --
+#include "shaders/gbuffer/out.glsl"  // Grab the gbuffer outputs
+// -- GBUFFER --
+
+
+
+// -- PBR --
 layout(set = PBR_SET, binding = 0, std140) uniform MaterialUBO {
   vec4 baseColorFactor;
   vec4 emissiveFactor;
@@ -27,15 +32,14 @@ layout(set = PBR_SET, binding = 1) uniform sampler2D baseColorTexture;
 layout(set = PBR_SET, binding = 2) uniform sampler2D metallicRoughnessTexture;
 layout(set = PBR_SET, binding = 3) uniform sampler2D emissiveTexture;
 layout(set = PBR_SET, binding = 4) uniform sampler2D normalTexture;
-// ─────────────────────────────────────────────────────────────────────────────
-// PBR Constants and Utility Functions
-// ─────────────────────────────────────────────────────────────────────────────
+
+layout(set = PBR_SET, binding = 5) uniform sampler2D textures[16];
+layout(set = PBR_SET, binding = 6) uniform sampler2D texturesBindless[];
+
+// -- PBR --
+
 
 float saturate(float value) { return clamp(value, 0.0, 1.0); }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Cook-Torrance BRDF Components
-// ─────────────────────────────────────────────────────────────────────────────
 
 // Fresnel-Schlick approximation
 vec3 fresnelSchlick(float cosTheta, vec3 F0) {
@@ -247,27 +251,15 @@ vec3 computeWorldNormal() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 void main() {
-  // outColor = vec4(normalize(worldTangent), 1.0);
-  // outNormal = vec4(normalize(worldBitangent), 1.0);
-  // return;
-  // TEMP
-
   // Sample and prepare textures
-  vec4 baseColor = texture(baseColorTexture, uv) * material.baseColorFactor;
+  vec4 baseColor = texture(textures[0], uv) * material.baseColorFactor;
+  // vec4 baseColor = texture(baseColorTexture, uv) * material.baseColorFactor;
   if (baseColor.a < 0.01) discard;
 
   // Compute lighting vectors
   vec3 N = computeWorldNormal();
   vec3 V = normalize(engine.cameraWorldPosition.xyz - worldPos);
   vec3 L = normalize(engine.lightDirection.xyz);
-
-  float lightIntensity = max(dot(N, engine.lightDirection.xyz), 0.0) + 0.1;
-  // float toonStep = step(0.5, lightIntensity) + step(0.75, lightIntensity) + 0.05;
-  // vec3 toonColor = baseColor.rgb * toonStep;
-  // outColor = vec4(toonColor, baseColor.a);
-  outColor = vec4(baseColor.rgb * lightIntensity, baseColor.a);
-  outNormal = vec4(N * 0.5 + 0.5, 1.0);
-  return;
 
 
   vec3 metallicRoughnessSample = texture(metallicRoughnessTexture, uv).rgb;
@@ -276,20 +268,27 @@ void main() {
   float roughness = saturate(metallicRoughnessSample.g * material.roughnessFactor);
   roughness = max(roughness, 0.04);  // Clamp to avoid division by zero
 
+  outColor = vec4(baseColor.rgb, 0.5);
+
+  outNormal = vec4(N * 0.5 + 0.5, 1.0);
+  outMetallicRoughness = vec4(metallic, roughness, 0.0, 1.0);
+  return;
+
+
 
 
   // Direct lighting from sun
   vec3 directLight = computeDirectLighting(N, V, L, baseColor.rgb, metallic, roughness);
 
   // Indirect lighting from environment
-  vec3 indirectLight = computeIndirectLighting(N, V, baseColor.rgb, metallic, roughness, L);
+  // vec3 indirectLight = computeIndirectLighting(N, V, baseColor.rgb, metallic, roughness, L);
 
   // Combine all lighting
-  vec3 color = indirectLight + directLight;
+  vec3 color = directLight; // indirectLight + directLight;
 
   // Add emissive
   color += texture(emissiveTexture, uv).rgb * material.emissiveFactor.rgb;
 
   outColor = vec4(color, baseColor.a);
-  outNormal = vec4(N * 0.5 + 0.5, 1.0);
+  // outNormal = vec4(N * 0.5 + 0.5, 1.0);
 }
