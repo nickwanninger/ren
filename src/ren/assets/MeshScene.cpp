@@ -316,7 +316,7 @@ namespace ren {
     // Load a mesh scene using assimp, not tinygltf.
     Assimp::Importer importer;
     unsigned int flags = 0;
-    // flags |= aiProcess_Triangulate;               // Ensure all meshes are triangulated
+    flags |= aiProcess_Triangulate;            // Ensure all meshes are triangulated
     flags |= aiProcess_FlipUVs;                // Flip UVs to match Vulkan's
     flags |= aiProcess_EmbedTextures;          // Embed textures in the scene
     flags |= aiProcess_JoinIdenticalVertices;  // Join identical vertices
@@ -482,9 +482,7 @@ namespace ren {
 
       int twoSided;
       if (assimpMaterial->Get(AI_MATKEY_TWOSIDED, twoSided) == AI_SUCCESS) {
-        if (twoSided) {
-          material->getPSO().cullMode = ren::CullMode::None;
-        }
+        if (twoSided) { material->getPSO().cullMode = ren::CullMode::None; }
       }
 
 

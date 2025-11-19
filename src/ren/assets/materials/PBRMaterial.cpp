@@ -29,6 +29,8 @@ namespace ren {
       // If the PSO is not initialized, create it.
       PBRMaterial::pso.program = makeRef<ShaderProgram>("shaders/pbr");
 
+      PBRMaterial::pso.blendMode = ren::BlendMode::Alpha;
+
       PBRMaterial::pso.cullMode = ren::CullMode::Back;
     }
   }
@@ -51,6 +53,11 @@ namespace ren {
     binder.bind("metallicRoughnessTexture", *this->metallicRoughnessTexture);
     binder.bind("emissiveTexture", *this->emissiveTexture);
     binder.bind("normalTexture", *this->normalTexture);
+
+
+    std::vector<ref<Texture>> textures = {this->baseColorTexture, this->metallicRoughnessTexture,
+                                          this->emissiveTexture, this->normalTexture};
+    binder.bind("textures", std::span{textures});
     binder.apply();
 
     return true;
