@@ -218,51 +218,6 @@ namespace ren {
       ImGui::End();
 
 
-
-
-      // ren::debugLine(glm::vec3(0, 0, 0), engineUBO.lightDirection * 512.0f, {1, 0, 1}, 4.0f);
-
-
-      // // TEMPORARY
-      // ren::world()
-      //     .query<ren::comp::Transform, ren::comp::Mesh>("Transform Editor")
-      //     .each([&](ren::comp::Transform &transform, ren::comp::Mesh &mesh) {
-      //       // Get the draw list for the current window
-      //       ImDrawList *draw_list = ImGui::GetBackgroundDrawList();
-
-
-      //       auto ProjectToScreen = [&](const glm::vec3 &point, const glm::mat4 &view,
-      //                                  const glm::mat4 &proj) {
-      //         glm::vec4 clipSpace = proj * view * glm::vec4(point, 1.0f);
-      //         clipSpace /= clipSpace.w;
-      //         return ImVec2{(clipSpace.x + 1.0f) * 0.5f * ImGui::GetIO().DisplaySize.x,
-      //                       (clipSpace.y + 1.0f) * 0.5f * ImGui::GetIO().DisplaySize.y};
-      //       };
-
-      //       // Project your 3D points to screen coordinates
-      //       ImVec2 p1_screen = ProjectToScreen(glm::vec3(1, 1, 1), pc.view, pc.proj);
-      //       ImVec2 p2_screen = ProjectToScreen(glm::vec3(0, 0, 0), pc.view, pc.proj);
-      //       fmt::println("Truth: {} {}, {} {}", p1_screen.x, p1_screen.y, p2_screen.x,
-      //       p2_screen.y); draw_list->AddLine(p1_screen, p2_screen, IM_COL32(255, 0, 0, 255), 2);
-
-      //       // ImGuizmo::PushID(&transform);
-      //       // auto tmat = transform.getTransform();
-      //       // ImGuizmo::Manipulate(glm::value_ptr(guizmo_view), glm::value_ptr(guizmo_proj),
-      //       //                      ImGuizmo::TRANSLATE | ImGuizmo::ROTATE | ImGuizmo::BOUNDS,
-      //       //                      ImGuizmo::WORLD, glm::value_ptr(tmat));
-
-      //       // // decompose
-      //       // glm::vec3 skew;
-      //       // glm::vec4 perspective;
-      //       // glm::decompose(tmat, transform.scale, transform.rotation, transform.translation,
-      //       skew,
-      //       //                perspective);
-      //       // ImGuizmo::PopID();
-      //     });
-
-
-
-
       // TEMP: render a skybox
       this->engineUBOBuffer.update(engineUBO);
 

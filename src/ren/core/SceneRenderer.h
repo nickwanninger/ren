@@ -5,21 +5,9 @@
 #include <ren/renderer/pipelines/PipelineStateObject.h>
 #include <ren/core/Scene.h>
 #include <ren/Camera.h>
+#include <ren/core/EngineUBO.h>
 
 namespace ren {
-
-
-  struct EngineUBO {
-    glm::mat4 view;
-    glm::mat4 proj;
-    glm::mat4 invViewProj; // inverse(proj * view)
-
-    // These must be vec4 becasue of std140 alignment.
-    glm::vec4 cameraWorldPosition;
-
-    glm::vec4 lightDirection = glm::vec4(0.0, 1.0, 1.0, 1.0); // TEMP
-    float time;
-  };
 
   // This class is used to render a scene from a given camera's viewpoint.
   // The output of this renderer is a framebuffer texture containing the
