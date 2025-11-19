@@ -19,6 +19,8 @@
 #include <ren/renderer/graph/RenderPassTask.h>
 #include <ren/renderer/graph/tasks/DepthPrepassTask.h>
 #include <ren/renderer/graph/tasks/SSAOTask.h>
+#include <ren/renderer/graph/tasks/ShadowMapTask.h>
+#include <ren/renderer/graph/tasks/GBufferTask.h>
 #include <ren/renderer/Sampler.h>
 #include <ren/misc/resource_usage.h>
 
@@ -240,62 +242,20 @@ namespace ren {
     ren::RenderGraph G;
 
 
-    ren::GraphHandle outputImage;
-    ren::GraphHandle dpp_depth, dpp_normal;
+    ren::GraphHandle nullHandleOut;
+
     ren::GraphHandle ssao;
+    ren::GraphHandle gbufferAlbedo, gbufferNormal, gbufferMaterial, gbufferDepth;
+    auto &gbp = ren::addGBuffer(G, gbufferAlbedo, gbufferNormal, gbufferMaterial, gbufferDepth);
 
-    ren::addDepthPrepass(G, dpp_depth, dpp_normal);
+    // ren::GraphHandle shadowMap;                          // TEMP
+    // ren::addShadowMap(G, 64, shadowMap);      // TEMP
+    // gbp.read(shadowMap, ren::GraphAccess::DepthTarget);  // FORCE, TEMP
 
-    // outputImage = dpp_depth;
-    // outputImage = dpp_normal;
-
-
-    ren::addSSAO(G, dpp_depth, dpp_normal, ssao);
-
-    ren::Sampler outSampler(VK_FILTER_NEAREST);
-    outputImage = ssao;
-
-
-    // auto &testPass = G.addTask<TestPass>("TestPass");
-    // testPass.read(dpp_depth, GraphAccess::ShaderRead);
-    // testPass.read(dpp_normal, GraphAccess::ShaderRead);
-    // testPass.read(ssao, GraphAccess::ShaderRead);
+    ren::addSSAO(G, gbufferDepth, gbufferNormal, ssao);
 
 
 
-
-    // outputImage = testPass.colorOut;
-    // if (1) {
-    //   ren::PipelineStateObject pso;
-    //   pso.debugName = "TestPass PSO";
-    //   pso.program = ren::ShaderProgram::makeFullScreenProgram("shaders/debug/uv.frag");
-    //   pso.cullMode = ren::CullMode::None;
-    //   pso.depthTest = false;
-    //   pso.depthWrite = false;
-    //   pso.hasVertexBinding = false;
-
-    //   auto &lt = G.addTask<RenderPassTaskLambda>("LambdaPass",
-    //                                              [pso = std::move(pso)](ren::GraphRunContext
-    //                                              &ctx) {
-    //                                                ctx.renderer.bind(pso);
-    //                                                vkCmdDraw(ctx.cmd, 3, 1, 0, 0);
-    //                                              });
-    //   outputImage = lt.addColorAttachment("lambda_color", {// .scale = glm::vec2(1.0f),
-    //                                                        .width = 256,
-    //                                                        .height = 128,
-    //                                                        .format = VK_FORMAT_R8G8B8A8_SRGB});
-
-
-    //   lt.read(testPass.colorOut, ren::GraphAccess::ShaderRead);
-    // }
-
-    // G.createImage("fixed", {.width = 512, .height = 512, .format = VK_FORMAT_R8G8B8A8_UNORM},
-    //               ren::GraphAccess::RenderTarget);
-
-    // G.createImage("fullres", {.scale = glm::vec2(1.0f), .format = VK_FORMAT_R8G8B8A8_UNORM},
-    //               ren::GraphAccess::RenderTarget);
-    // G.createImage("halfres", {.scale = glm::vec2(0.5f), .format = VK_FORMAT_R8G8B8A8_UNORM},
-    //               ren::GraphAccess::RenderTarget);
 
     while (this->running) {
       int eventsHandled = 0;
@@ -410,11 +370,28 @@ namespace ren {
       framerateCounter.addFrame(deltaTime);
 
 
-      G.startFrame(frame.deviceImage);
+
+
+      float width = frame.deviceImage->getWidth();
+      float height = frame.deviceImage->getHeight();
+
+
+      float targetHeight = 480;
+      targetHeight = height;
+      float scale = targetHeight / height;
+      width *= scale;
+      height *= scale;
+
+
+      auto renderSize = glm::uvec2(width, height);
+
+
+
+      G.startFrame(renderSize);
 
       // TEMP: Execute test RenderPassTask for validation
       try {
-        G.runFor(outputImage, *renderer);
+        G.runFor(ssao, *renderer);
       } catch (const std::exception &e) {
         fmt::println("✗ RenderPassTask execution failed: {}", e.what());
       }
@@ -465,7 +442,7 @@ namespace ren {
       ren::resource<neko::luainspector>().draw();
 
       world.defer_begin();
-      auto gbufferTarget = sceneRenderer.render(sceneLayer->scene, sceneLayer->camera);
+      // auto gbufferTarget = sceneRenderer.render(sceneLayer->scene, sceneLayer->camera);
 
       renderer->withPass(*renderer->getDisplayPass(), *frame.renderTarget, [&]() {
         static struct BlitConfiguration {
@@ -478,13 +455,12 @@ namespace ren {
         ImGui::DragFloat("Dither Divide", &blitConfig.ditherDivide, 1.0f, 1.0f, 1024.0f, "%.0f");
         ImGui::End();
 
-
         static ren::UniformBufferSet<BlitConfiguration> blitConfigBuffer(1);
         blitConfigBuffer.update(&blitConfig, 1, 0);
 
         auto cmd = ren::getFrameData().commandBuffer;
 
-        if (true and gbufferTarget) {
+        {
           REN_PROFILE_SCOPE("Blit GBuffer");
           // Blit the gbuffer to the screen temporarily.
 
@@ -494,13 +470,9 @@ namespace ren {
           // begin binding set zero, which is the gbuffer textures.
           auto blitBinder = renderer->startBinding(0);
           blitBinder.bind("config", blitConfigBuffer.currentAsBuffer());
-          auto &attachments = gbufferTarget->getAttachments();
 
-          // blitBinder.bind("albedo", *G.getImage(outputImage), outSampler);
-          blitBinder.bind("ssao", *G.getImage(outputImage), VK_FILTER_LINEAR);
-          for (auto &attachment : attachments) {
-            if (attachment.name == "outColor") { blitBinder.bind("albedo", *attachment.texture); }
-          }
+          blitBinder.bind("albedo", *G.getImage(gbufferAlbedo), VK_FILTER_NEAREST);
+          blitBinder.bind("ssao", *G.getImage(ssao), VK_FILTER_LINEAR);
           blitBinder.apply();
 
           vkCmdDraw(cmd, 3, 1, 0, 0);
@@ -528,6 +500,7 @@ namespace ren {
     }
     renderer->waitForIdle();
   }
+
 
 
   void Application::initImGui() {
@@ -656,43 +629,6 @@ namespace ren {
          }) {
       colors[style] = themeColor;
     }
-
-
-    // auto sys = ren::system::onUpdate("ren::Application::RenderStats").run([](flecs::iter &it) {
-    //   auto &state = ren::resource<ren::Application::ImGuiState>();
-    //   float deltaTime = ren::deltaTime();
-    //   state.framerateCounter.addFrame(deltaTime);
-
-    //   float fps = state.framerateCounter.getAverageFramerate();
-    //   ImGui::Begin("Debug State");
-    //   ImGui::Text("Delta Time: %.3f ms", deltaTime * 1000.0f);
-    //   ImGui::Text("FPS: %.1f", fps);
-    //   ImGui::Text("RSS: %.2f MB", ren::getCurrentProcessRSS() / (1024.0f * 1024.0f));
-
-    //   // Display SDL window size and swapchain size.
-    //   auto &app = ren::Application::get();
-    //   auto &vulkan = ren::getVulkan();
-    //   int sdlWidth, sdlHeight;
-    //   SDL_GetWindowSize(app.getWindow(), &sdlWidth, &sdlHeight);
-    //   ImGui::Text("SDL Window Size: %dx%d", sdlWidth, sdlHeight);
-    //   SDL_Vulkan_GetDrawableSize(app.getWindow(), &sdlWidth, &sdlHeight);
-    //   ImGui::Text("SDL Drawable Size: %dx%d", sdlWidth, sdlHeight);
-    //   float dpiScaleX, dpiScaleY;
-    //   SDL_GetDisplayDPI(0, nullptr, &dpiScaleX, &dpiScaleY);
-    //   ImGui::Text("DPI Scale: %.2f, %.2f", dpiScaleX, dpiScaleY);
-
-    //   auto &R = ren::Renderer::get();
-    //   auto renderExtent = R.getSwapchain().renderExtent;
-    //   auto deviceExtent = R.getSwapchain().deviceExtent;
-    //   ImGui::Text("Swapchain Render Extent: %dx%d", renderExtent.width, renderExtent.height);
-    //   ImGui::Text("Swapchain Device Extent: %dx%d", deviceExtent.width, deviceExtent.height);
-
-
-    //   auto &instr = ren::Instrumentor::Get();
-    //   ImGui::Text("Instrument: %zu, %.2f MB", (size_t)instr.profileEvents,
-    //               instr.profileBytes / (1024.0f * 1024.0f));
-    //   ImGui::End();
-    // });
   }
 
 
