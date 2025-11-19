@@ -109,5 +109,5 @@ void main() {
 
   // subtract 1.0 to allow AO to be used with other lighting calculations
   occlusion = 1.0 - (occlusion / float(ssao.num_samples));
-  out_color = vec4(pow(occlusion, ssao.intensity));
+  out_color = vec4(occlusion);
 }
