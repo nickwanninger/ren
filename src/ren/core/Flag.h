@@ -145,6 +145,41 @@ namespace ren {
     void set(int v) { value = v; }
   };
 
+  template <>
+  class Flag<float> : public FlagBase {
+   private:
+    float value;
+    float defaultValue;
+
+   public:
+    Flag(const std::string &name, float defaultVal, const std::string &desc = "")
+        : FlagBase(name, desc)
+        , value(defaultVal)
+        , defaultValue(defaultVal) {}
+
+    bool parseValue(const std::string &value) override {
+      try {
+        this->value = std::stof(value);
+        fmt::println("Parsed float flag {} = {}", name, this->value);
+        return true;
+      } catch (...) { return false; }
+    }
+
+    void printHelp() const override {
+      if (!description.empty()) {
+        fmt::print("  --{:<30} {:<40} (default: {})\n", name, description, defaultValue);
+      } else {
+        fmt::print("  --{:<30} <value>           (default: {})\n", name, defaultValue);
+      }
+    }
+
+    operator float() const { return value; }
+    float operator*() const { return value; }
+    float get() const { return value; }
+
+    void set(float v) { value = v; }
+  };
+
   // Specialization for std::string
   template <>
   class Flag<std::string> : public FlagBase {
