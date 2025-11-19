@@ -85,7 +85,7 @@ namespace ren {
     float depthBiasClamp = 0.0f;
     float depthSlopeFactor = 0.0f;
 
-    // Color blending mode. Currently does nothing.
+    // Color blending mode. Controls how fragment colors blend with framebuffer colors.
     BlendMode blendMode = BlendMode::None;
 
     // TODO: abstract me!
