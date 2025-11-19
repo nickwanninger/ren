@@ -68,7 +68,7 @@ void main() {
 
   vec3 viewSpacePos = depthToPosition(depth, uv);
 
-  vec3 worldSpacePos = vec3(ssao.inv_view * vec4(viewSpacePos, 1.0));
+  // vec3 worldSpacePos = vec3(ssao.inv_view * vec4(viewSpacePos, 1.0));
 
   // Obtain the fragment normal position from view space
 
@@ -109,6 +109,5 @@ void main() {
 
   // subtract 1.0 to allow AO to be used with other lighting calculations
   occlusion = 1.0 - (occlusion / float(ssao.num_samples));
-  occlusion = pow(occlusion, ssao.intensity);
-  out_color = vec4(vec3(occlusion), 1.0);
+  out_color = vec4(pow(occlusion, ssao.intensity));
 }

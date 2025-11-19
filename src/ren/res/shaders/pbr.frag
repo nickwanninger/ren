@@ -268,8 +268,7 @@ void main() {
   float roughness = saturate(metallicRoughnessSample.g * material.roughnessFactor);
   roughness = max(roughness, 0.04);  // Clamp to avoid division by zero
 
-  outColor = vec4(baseColor.rgb, 0.5);
-
+  outColor = baseColor;
   outNormal = vec4(N * 0.5 + 0.5, 1.0);
   outMetallicRoughness = vec4(metallic, roughness, 0.0, 1.0);
   return;
