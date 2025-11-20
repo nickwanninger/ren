@@ -19,6 +19,14 @@ namespace ren {
       ref<Material> material;
       glm::mat4 transform;
     };
+
+    struct PointLight {
+      glm::vec3 position;  // World position
+      glm::vec3 color;
+      float intensity;
+      float radius;
+    };
+
     void extractFromECS(flecs::world &world);
 
     inline RenderWorld(ren::Camera &cam)
@@ -33,6 +41,7 @@ namespace ren {
     ~RenderWorld() = default;
 
     std::vector<Renderable> renderables;
+    std::vector<PointLight> pointLights;
 
    private:
     ren::Camera &camera;

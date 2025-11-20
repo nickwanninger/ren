@@ -53,6 +53,7 @@ namespace ren {
 
   void RenderWorld::extractFromECS(flecs::world &world) {
     renderables.clear();
+    pointLights.clear();
 
     // Query the ECS for entities with Mesh and Transform components
     world
@@ -73,6 +74,21 @@ namespace ren {
           renderables.push_back(std::move(r));
         });
 
+
+    // Gather point lights from the ECS using the transform and PointLightComponent
+    world
+        .query<comp::Transform, ren::PointLightComponent>(
+            "ren::core::RenderWorld::extractPointLights")
+        .each([&](const comp::Transform &transform, const ren::PointLightComponent &plc) {
+          PointLight pl;
+          pl.position = glm::vec3(transform.transformMatrix[3]);
+          pl.color = plc.color;
+          pl.intensity = plc.intensity;
+          pl.radius = plc.radius;
+          pointLights.push_back(std::move(pl));
+        });
+    fmt::println("Extracted {} renderables and {} point lights from ECS", renderables.size(),
+                 pointLights.size());
 
     // sort renderables by distance to camera
     glm::vec3 cameraPos = glm::inverse(camera.view_matrix())[3];

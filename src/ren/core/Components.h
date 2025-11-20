@@ -117,4 +117,13 @@ namespace ren {
   ren_register_component(std::string, .luaName = "std_string");
 
 
+
+  struct PointLightComponent {
+    glm::vec3 color = glm::vec3(1.0f);
+    float intensity = 1.0f;
+    float radius = 5.0f;
+  };
+  ren_register_component(PointLightComponent, .luaName = "PointLightComponent");
+
+
 }  // namespace ren

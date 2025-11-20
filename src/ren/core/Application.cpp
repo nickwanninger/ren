@@ -21,6 +21,7 @@
 #include <ren/renderer/graph/tasks/SSAOTask.h>
 #include <ren/renderer/graph/tasks/ShadowMapTask.h>
 #include <ren/renderer/graph/tasks/GBufferTask.h>
+#include <ren/core/DebugLines.hpp>
 #include <ren/renderer/Sampler.h>
 #include <ren/misc/resource_usage.h>
 
@@ -389,12 +390,8 @@ namespace ren {
 
       G.startFrame(renderSize);
 
-      // TEMP: Execute test RenderPassTask for validation
-      try {
-        G.runFor(ssao, *renderer);
-      } catch (const std::exception &e) {
-        fmt::println("✗ RenderPassTask execution failed: {}", e.what());
-      }
+
+
 
       {
         REN_PROFILE_SCOPE("ImGui New Frame");
@@ -436,6 +433,13 @@ namespace ren {
         world.lookup("scene").scope([&]() { world.progress(deltaTime); });
       }
 
+
+      // TEMP: Execute test RenderPassTask for validation
+      try {
+        G.runFor(ssao, *renderer);
+      } catch (const std::exception &e) {
+        fmt::println("✗ RenderPassTask execution failed: {}", e.what());
+      }
 
       G.inspect();
 
