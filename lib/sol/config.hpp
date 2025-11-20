@@ -29,9 +29,12 @@
 
 // beginning of sol/config.hpp
 
+#define SOL_ALL_SAFETIES_ON 1
+#define SOL_USING_CXX_LUAJIT 1
+
 // #define SOL_LUAJIT 1
 // #define SOL_LUA_VERSION 501
-// #include <luajit-2.1/lua.hpp>     // from LuaJIT, not PUC-Lua’s <lua.h>
+// #include <lua.hpp>     // from LuaJIT, not PUC-Lua's <lua.h>
 // #define SOL_NO_COMPAT 1
 
 
