@@ -1,0 +1,3 @@
+# Slang binaries (downloaded automatically during CMake configuration)
+bin/
+*.tar.gz
