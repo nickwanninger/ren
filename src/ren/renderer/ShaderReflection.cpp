@@ -289,6 +289,72 @@ static BindingType mapDescriptorType(SpvReflectDescriptorType type) {
 }
 
 // ============================================================================
+// Helper Functions for Parsing Block Variables
+// ============================================================================
+
+// Forward declaration
+static void parseBlockVariableMembers(const SpvReflectBlockVariable* var,
+                                      BaseNode* parent_node,
+                                      std::vector<box<INode>>& allNodes);
+
+// Recursively parse members of a block variable (struct, array, etc.)
+static void parseBlockVariableMembers(const SpvReflectBlockVariable* var,
+                                      BaseNode* parent_node,
+                                      std::vector<box<INode>>& allNodes) {
+  if (!var || !parent_node || var->member_count == 0) {
+    return;
+  }
+
+  for (uint32_t i = 0; i < var->member_count; ++i) {
+    const auto* member = &var->members[i];
+    if (!member || !member->name) continue;
+
+    // Check if this member is an array
+    if (member->array.dims_count > 0) {
+      u32 array_size = member->array.dims[0];
+      // Determine the element type of the array
+      BindingType element_type = Unknown;
+      if (member->type_description) {
+        element_type = mapDescriptorType(
+            SPV_REFLECT_DESCRIPTOR_TYPE_STORAGE_BUFFER);  // Default placeholder
+      }
+
+      auto array_node = makeBox<ArrayNode>(member->name, array_size,
+                                           element_type, std::nullopt);
+      INode* array_ptr = array_node.get();
+      allNodes.push_back(std::move(array_node));
+      parent_node->m_members.push_back(array_ptr);
+    }
+    // Check if this member is a struct type
+    else if (member->type_description &&
+             member->type_description->op == SpvOpTypeStruct &&
+             member->member_count > 0) {
+      // Create a struct node for this nested type
+      auto struct_node = makeBox<StructNode>(member->name,
+                                             std::optional<u32>(member->size));
+      INode* struct_ptr = struct_node.get();
+      allNodes.push_back(std::move(struct_node));
+      parent_node->m_members.push_back(struct_ptr);
+
+      // Recursively parse the struct's members
+      BaseNode* struct_base =
+          const_cast<BaseNode*>(dynamic_cast<const BaseNode*>(struct_ptr));
+      if (struct_base) {
+        parseBlockVariableMembers(member, struct_base, allNodes);
+      }
+    }
+    // Regular field (scalar, vector, matrix, etc.)
+    else {
+      auto field =
+          makeBox<FieldNode>(member->name, member->offset, member->size);
+      INode* field_ptr = field.get();
+      allNodes.push_back(std::move(field));
+      parent_node->m_members.push_back(field_ptr);
+    }
+  }
+}
+
+// ============================================================================
 // ShaderReflection::parseFromSpirv Implementation
 // ============================================================================
 
@@ -346,50 +412,11 @@ void ShaderReflection::parseFromSpirv(const u8* spirvData,
         INode* buffer_ptr = buffer_node.get();
         allNodes.push_back(std::move(buffer_node));
 
-        // Parse buffer members
-        if (binding->block.member_count > 0) {
-          for (uint32_t i = 0; i < binding->block.member_count; ++i) {
-            const auto* member = &binding->block.members[i];
-            if (member->type_description &&
-                member->type_description->op == SpvOpTypeStruct &&
-                member->member_count > 0) {
-              // Nested struct
-              auto struct_node = makeBox<StructNode>(
-                  member->name, std::optional<u32>(member->size));
-              INode* struct_ptr = struct_node.get();
-              allNodes.push_back(std::move(struct_node));
-
-              // Cast and add to buffer
-              BaseNode* buffer_base = const_cast<BaseNode*>(
-                  dynamic_cast<const BaseNode*>(buffer_ptr));
-              if (buffer_base) {
-                buffer_base->m_members.push_back(struct_ptr);
-
-                // Add struct members
-                for (uint32_t j = 0; j < member->member_count; ++j) {
-                  auto field = makeBox<FieldNode>(member->members[j].name,
-                                                  member->members[j].offset,
-                                                  member->members[j].size);
-                  INode* field_ptr = field.get();
-                  allNodes.push_back(std::move(field));
-                  buffer_base->m_members.push_back(field_ptr);
-                }
-              }
-            } else {
-              // Regular field
-              auto field = makeBox<FieldNode>(member->name, member->offset,
-                                              member->size);
-              INode* field_ptr = field.get();
-              allNodes.push_back(std::move(field));
-
-              // Cast and add to buffer
-              BaseNode* buffer_base = const_cast<BaseNode*>(
-                  dynamic_cast<const BaseNode*>(buffer_ptr));
-              if (buffer_base) {
-                buffer_base->m_members.push_back(field_ptr);
-              }
-            }
-          }
+        // Parse buffer members (recursively handles nested structs and arrays)
+        BaseNode* buffer_base =
+            const_cast<BaseNode*>(dynamic_cast<const BaseNode*>(buffer_ptr));
+        if (buffer_base) {
+          parseBlockVariableMembers(&binding->block, buffer_base, allNodes);
         }
 
         // Cast and add to root
@@ -425,24 +452,11 @@ void ShaderReflection::parseFromSpirv(const u8* spirvData,
     INode* pc_ptr = pc_node.get();
     allNodes.push_back(std::move(pc_node));
 
-    // Parse push constant members
-    if (pc_block->member_count > 0) {
-      for (uint32_t j = 0; j < pc_block->member_count; ++j) {
-        const auto* member = &pc_block->members[j];
-        if (member->name) {
-          auto field =
-              makeBox<FieldNode>(member->name, member->offset, member->size);
-          INode* field_ptr = field.get();
-          allNodes.push_back(std::move(field));
-
-          // Cast and add to push constant
-          BaseNode* pc_base =
-              const_cast<BaseNode*>(dynamic_cast<const BaseNode*>(pc_ptr));
-          if (pc_base) {
-            pc_base->m_members.push_back(field_ptr);
-          }
-        }
-      }
+    // Parse push constant members (recursively handles nested structs and arrays)
+    BaseNode* pc_base =
+        const_cast<BaseNode*>(dynamic_cast<const BaseNode*>(pc_ptr));
+    if (pc_base) {
+      parseBlockVariableMembers(pc_block, pc_base, allNodes);
     }
 
     // Cast and add to root
