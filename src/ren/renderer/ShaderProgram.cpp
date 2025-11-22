@@ -86,28 +86,7 @@ namespace ren {
       throw std::runtime_error("Failed to get descriptor reflectionBindings");
     }
 
-    // Convert to our format with basic hardening
     for (const auto* binding : reflectionBindings) {
-      fmt::println("Binding {} (set {}):", binding->binding, binding->set);
-      // fmt::println("  Type: {}", binding->descriptor_type);
-      fmt::println("  Count: {}", binding->count);
-
-      // Check if it's an array
-      if (binding->array.dims_count > 0) {
-        fmt::println("  Array dimensions: {}", binding->array.dims_count);
-        for (uint32_t i = 0; i < binding->array.dims_count; i++) {
-          if (binding->array.dims[i] == 0) {
-            fmt::println("    Dimension {}: RUNTIME-SIZED (unbounded)", i);
-          } else {
-            fmt::println("    Dimension {}: {}", i, binding->array.dims[i]);
-          }
-        }
-      } else {
-        fmt::println("  Not an array (single descriptor)");
-      }
-
-      fmt::println("");
-
       ShaderBinding desc;
       desc.set = binding->set;
       desc.binding = binding->binding;
