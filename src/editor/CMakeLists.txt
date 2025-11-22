@@ -5,4 +5,5 @@ add_executable(editor ${SOURCE_FILES})
 target_link_libraries(editor PUBLIC
       # $<LINK_LIBRARY:WHOLE_ARCHIVE:ren>
       ren
+      slang
       )

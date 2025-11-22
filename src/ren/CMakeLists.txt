@@ -51,7 +51,7 @@ target_compile_features(ren
   cxx_std_20
 )
 
-# target_include_directories(ren INTERFACE ${LuaJIT_INCLUDE_DIRS})
+target_include_directories(ren BEFORE PRIVATE ${slang_INCLUDE_DIRS})
 
 # Link libraries
 target_link_libraries(ren
@@ -62,6 +62,8 @@ target_link_libraries(ren
   PkgConfig::LuaJIT
 
   assimp
+
+  slang
 
   Vulkan::Vulkan # Vulkan SDK
   GPUOpen::VulkanMemoryAllocator # Vulkan Memory Allocator

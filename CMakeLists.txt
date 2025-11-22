@@ -49,6 +49,8 @@ add_subdirectory(lib/VulkanMemoryAllocator)
 add_subdirectory(lib/fmt)
 
 
+# Slang shader compiler - using distributed binaries
+add_subdirectory(lib/slang)
 
 # configure CXX flags on gcc or msvc differently
 if(MSVC)
