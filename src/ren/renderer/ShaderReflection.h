@@ -1,6 +1,6 @@
 #pragma once
 
-
+#include <slang/slang.h>
 #include <ren/types.h>
 
 // This file implements an abstraction over various shader resource binding
@@ -22,6 +22,8 @@ namespace ren {
 
 
     void parseFromSpirv(const u8* spirvData, size_t spirvSize);
+
+    void parseFromSlang(slang::ProgramLayout* programLayout);
 
 
 

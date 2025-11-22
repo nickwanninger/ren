@@ -474,4 +474,192 @@ void ShaderReflection::parseFromSpirv(const u8* spirvData,
   this->root = root_ptr;
 }
 
+// ============================================================================
+// Helper Functions for Parsing Slang Reflection
+// ============================================================================
+
+// Forward declaration
+static void parseSlangVariableLayout(slang::VariableLayoutReflection* varLayout,
+                                     BaseNode* parent_node,
+                                     std::vector<box<INode>>& allNodes);
+
+// Map Slang type kind to our BindingType
+static BindingType mapSlangTypeKind(slang::TypeReflection::Kind kind,
+                                    slang::TypeLayoutReflection* typeLayout) {
+  switch (kind) {
+    case slang::TypeReflection::Kind::ConstantBuffer:
+      return UniformBuffer;
+    case slang::TypeReflection::Kind::ShaderStorageBuffer:
+      return StorageBuffer;
+    case slang::TypeReflection::Kind::Resource: {
+      // Determine resource type based on traits
+      auto shape = typeLayout->getType()->getResourceShape();
+      // For now, default to Texture. Could refine based on shape.
+      return Texture;
+    }
+    case slang::TypeReflection::Kind::SamplerState:
+      return Sampler;
+    case slang::TypeReflection::Kind::Struct:
+      return Struct;
+    case slang::TypeReflection::Kind::Array:
+      return Array;
+    default:
+      return Field;
+  }
+}
+
+// Recursively parse a Slang variable layout
+static void parseSlangVariableLayout(slang::VariableLayoutReflection* varLayout,
+                                     BaseNode* parent_node,
+                                     std::vector<box<INode>>& allNodes) {
+  if (!varLayout || !parent_node) {
+    return;
+  }
+
+  const char* var_name = varLayout->getName();
+  if (!var_name) {
+    return;
+  }
+
+  auto typeLayout = varLayout->getTypeLayout();
+  if (!typeLayout) {
+    return;
+  }
+
+  auto typeReflection = typeLayout->getType();
+  auto kind = typeLayout->getKind();
+
+  // Get binding information (set/binding index)
+  auto binding_index = varLayout->getBindingIndex();
+  auto binding_space = varLayout->getBindingSpace();
+
+  switch (kind) {
+    case slang::TypeReflection::Kind::ConstantBuffer:
+    case slang::TypeReflection::Kind::ShaderStorageBuffer: {
+      // Create buffer node
+      BindingType buffer_type = (kind == slang::TypeReflection::Kind::ConstantBuffer)
+                                    ? UniformBuffer
+                                    : StorageBuffer;
+      size_t buffer_size =
+          typeLayout->getSize(slang::ParameterCategory::Uniform);
+
+      auto buffer_node = makeBox<BufferNode>(var_name, binding_space,
+                                             binding_index, buffer_size, buffer_type);
+      INode* buffer_ptr = buffer_node.get();
+      allNodes.push_back(std::move(buffer_node));
+      parent_node->m_members.push_back(buffer_ptr);
+
+      // Recurse into element type (the struct/data inside the buffer)
+      auto elementVarLayout = typeLayout->getElementVarLayout();
+      if (elementVarLayout) {
+        BaseNode* buffer_base =
+            const_cast<BaseNode*>(dynamic_cast<const BaseNode*>(buffer_ptr));
+        if (buffer_base) {
+          parseSlangVariableLayout(elementVarLayout, buffer_base, allNodes);
+        }
+      }
+      break;
+    }
+
+    case slang::TypeReflection::Kind::Resource: {
+      // Resource (texture, image, etc.)
+      auto resource_node = makeBox<ResourceNode>(var_name, binding_space,
+                                                 binding_index, Texture);
+      INode* resource_ptr = resource_node.get();
+      allNodes.push_back(std::move(resource_node));
+      parent_node->m_members.push_back(resource_ptr);
+      break;
+    }
+
+    case slang::TypeReflection::Kind::SamplerState: {
+      // Sampler
+      auto sampler_node = makeBox<ResourceNode>(var_name, binding_space,
+                                                binding_index, Sampler);
+      INode* sampler_ptr = sampler_node.get();
+      allNodes.push_back(std::move(sampler_node));
+      parent_node->m_members.push_back(sampler_ptr);
+      break;
+    }
+
+    case slang::TypeReflection::Kind::Struct: {
+      // Struct type
+      auto structTypeLayout = typeLayout;
+      u32 field_count = structTypeLayout->getFieldCount();
+
+      auto struct_node = makeBox<StructNode>(
+          var_name, std::optional<u32>(structTypeLayout->getSize(
+                       slang::ParameterCategory::Uniform)));
+      INode* struct_ptr = struct_node.get();
+      allNodes.push_back(std::move(struct_node));
+      parent_node->m_members.push_back(struct_ptr);
+
+      // Parse struct fields
+      BaseNode* struct_base =
+          const_cast<BaseNode*>(dynamic_cast<const BaseNode*>(struct_ptr));
+      if (struct_base) {
+        for (u32 i = 0; i < field_count; ++i) {
+          auto field = structTypeLayout->getFieldByIndex(i);
+          if (field) {
+            parseSlangVariableLayout(field, struct_base, allNodes);
+          }
+        }
+      }
+      break;
+    }
+
+    case slang::TypeReflection::Kind::Array: {
+      // Array type
+      u32 element_count = (u32)typeLayout->getElementCount();
+      auto array_node = makeBox<ArrayNode>(var_name, element_count, Field, std::nullopt);
+      INode* array_ptr = array_node.get();
+      allNodes.push_back(std::move(array_node));
+      parent_node->m_members.push_back(array_ptr);
+      break;
+    }
+
+    default: {
+      // Scalar, Vector, Matrix, or other primitive field
+      size_t field_offset = varLayout->getOffset(slang::ParameterCategory::Uniform);
+      size_t field_size = typeLayout->getSize(slang::ParameterCategory::Uniform);
+
+      auto field_node =
+          makeBox<FieldNode>(var_name, (u32)field_offset, (u32)field_size);
+      INode* field_ptr = field_node.get();
+      allNodes.push_back(std::move(field_node));
+      parent_node->m_members.push_back(field_ptr);
+      break;
+    }
+  }
+}
+
+// ============================================================================
+// ShaderReflection::parseFromSlang Implementation
+// ============================================================================
+
+void ShaderReflection::parseFromSlang(slang::ProgramLayout* programLayout) {
+  if (!programLayout) {
+    std::cerr << "Invalid ProgramLayout pointer" << std::endl;
+    return;
+  }
+
+  // Create root node
+  auto root = makeBox<RootNode>();
+  INode* root_ptr = root.get();
+  allNodes.push_back(std::move(root));
+
+  // Parse global parameters
+  u32 param_count = programLayout->getParameterCount();
+  for (u32 i = 0; i < param_count; ++i) {
+    auto param = programLayout->getParameterByIndex(i);
+    if (param) {
+      parseSlangVariableLayout(param, const_cast<BaseNode*>(
+                                         dynamic_cast<const BaseNode*>(root_ptr)),
+                               allNodes);
+    }
+  }
+
+  // Set root node
+  this->root = root_ptr;
+}
+
 }  // namespace ren
