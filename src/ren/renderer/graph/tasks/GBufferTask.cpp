@@ -42,14 +42,14 @@ namespace ren {
     ren::RenderWorld rw(cam);
     rw.extractFromECS(ren::world());
 
-    for (auto &pl : rw.pointLights) {
-      fmt::println("Point Light at {},{},{} with radius {}", pl.position.x, pl.position.y,
-                   pl.position.z, pl.radius);
-      DebugScribe s;
-      s.drawSphere(pl.position, pl.radius, pl.color, 0.1f);
-      s.drawSphere(pl.position, 0.1f, pl.color, 1.0f);
-      // ren::debugLine(glm::vec3(0, 0, 0), pl.position, pl.color, 2.0f);
-    }
+    // for (auto &pl : rw.pointLights) {
+    //   fmt::println("Point Light at {},{},{} with radius {}", pl.position.x, pl.position.y,
+    //                pl.position.z, pl.radius);
+    //   DebugScribe s;
+    //   s.drawSphere(pl.position, pl.radius, pl.color, 0.1f);
+    //   s.drawSphere(pl.position, 0.1f, pl.color, 1.0f);
+    //   // ren::debugLine(glm::vec3(0, 0, 0), pl.position, pl.color, 2.0f);
+    // }
 
 
     pc.view = viewMatrix;
