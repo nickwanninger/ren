@@ -123,17 +123,6 @@ namespace ren {
 
 
    private:
-    // template <typename T>
-    // void register_destructor(T* ptr) {
-    //   if (!std::is_trivially_destructible<T>::value) {
-    //     DtorNode* node = (DtorNode*)push(sizeof(DtorNode));
-    //     node->dtor = [](void* p) { static_cast<T*>(p)->~T(); };
-    //     node->ptr = ptr;
-    //     node->next = m_dtor_list;
-    //     m_dtor_list = node;
-    //   }
-    // }
-
     Block* new_block(size_t required_size) {
       size_t block_size = m_arena_size;
       if (required_size + sizeof(Block) > block_size) {
