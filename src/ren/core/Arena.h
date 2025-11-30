@@ -25,17 +25,25 @@ namespace ren {
         used += size;
         return ptr;
       }
+
       void clear() { used = 0; }
+    };
+
+    struct DtorNode {
+      DtorNode* next;
+      void (*dtor)(void*);
+      char data[0];
     };
 
    public:
     static const size_t DEFAULT_ARENA_SIZE = 4096 * 512;
     Arena(size_t arena_size = DEFAULT_ARENA_SIZE, bool can_grow = true)
         : m_arena_size(arena_size)
-        , m_can_grow(can_grow) {
-    }
+        , m_can_grow(can_grow) {}
 
     ~Arena() {
+      clear();
+
       Block* block = m_current_block;
       while (block) {
         Block* next = block->next;
@@ -66,11 +74,22 @@ namespace ren {
       return ptr;
     }
 
-    template <typename T>
-    inline T* push() {
-      auto p = (T*)push(sizeof(T));
-      ::new (p) T();
-      return p;
+    template <typename T, typename... Args>
+    inline T* push(Args&&... args) {
+      if constexpr (std::is_trivially_destructible<T>::value) {
+        // no destructor needed
+        T* p = (T*)push(sizeof(T));
+        ::new (p) T(std::forward<Args>(args)...);
+        return p;
+      } else {
+        auto* node = (DtorNode*)push(sizeof(DtorNode) + sizeof(T));
+        T* p = (T*)node->data;
+        ::new (p) T(std::forward<Args>(args)...);
+        node->dtor = [](void* obj) { static_cast<T*>(obj)->~T(); };
+        node->next = m_dtor_list;
+        m_dtor_list = node;
+        return p;
+      }
     }
 
     template <typename T>
@@ -87,6 +106,14 @@ namespace ren {
     inline size_t remaining(void) const { return m_current_block->size - m_current_block->used; }
 
     void clear(void) {
+      // Run destructors
+      while (m_dtor_list) {
+        DtorNode* node = m_dtor_list;
+        node->dtor(node->data);
+        m_dtor_list = node->next;
+      }
+
+      // Clear blocks
       Block* block = m_current_block;
       while (block) {
         block->clear();
@@ -96,6 +123,17 @@ namespace ren {
 
 
    private:
+    // template <typename T>
+    // void register_destructor(T* ptr) {
+    //   if (!std::is_trivially_destructible<T>::value) {
+    //     DtorNode* node = (DtorNode*)push(sizeof(DtorNode));
+    //     node->dtor = [](void* p) { static_cast<T*>(p)->~T(); };
+    //     node->ptr = ptr;
+    //     node->next = m_dtor_list;
+    //     m_dtor_list = node;
+    //   }
+    // }
+
     Block* new_block(size_t required_size) {
       size_t block_size = m_arena_size;
       if (required_size + sizeof(Block) > block_size) {
@@ -111,6 +149,8 @@ namespace ren {
     }
 
     Block* m_current_block = nullptr;
+    DtorNode* m_dtor_list = nullptr;
+
     size_t m_arena_size = 0;
     bool m_can_grow = 0;
   };
