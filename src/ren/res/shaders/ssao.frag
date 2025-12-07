@@ -25,14 +25,6 @@ ssao;
 layout(location = 0) in vec2 uv;
 layout(location = 0) out vec4 out_color;
 
-
-
-vec3 random_vec3(vec2 uv) {
-  vec3 p3 = fract(vec3(uv.xyx) * vec3(0.1031, 0.1030, 0.0973));
-  p3 += dot(p3, p3.yzx + 33.33);
-  return fract((p3.xxy + p3.yzz) * p3.zyx);
-}
-
 vec3 depthToPosition(float depth, vec2 uc) {
   vec4 clipSpace = vec4(uc * 2.0 - 1.0, depth, 1.0);
   vec4 viewSpace = ssao.inv_projection * clipSpace;
@@ -48,7 +40,7 @@ vec3 samplePosition(vec2 uc) {
 
 vec3 getRandomVec(vec2 uv) {
   vec2 noiseScale = ssao.screen_size / ssao.noise_divide;
-  vec3 randomVec = normalize(texture(noise_sampler, uv * noiseScale).xyz);
+  vec3 randomVec = normalize(texture(noise_sampler, uv * noiseScale).xyz * 2.0 - 1.0);
   return randomVec;
 }
 

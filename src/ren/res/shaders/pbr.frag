@@ -33,9 +33,6 @@ layout(set = PBR_SET, binding = 2) uniform sampler2D metallicRoughnessTexture;
 layout(set = PBR_SET, binding = 3) uniform sampler2D emissiveTexture;
 layout(set = PBR_SET, binding = 4) uniform sampler2D normalTexture;
 
-layout(set = PBR_SET, binding = 5) uniform sampler2D textures[16];
-layout(set = PBR_SET, binding = 6) uniform sampler2D texturesBindless[];
-
 // -- PBR --
 
 
@@ -246,14 +243,29 @@ vec3 computeWorldNormal() {
 
 
 
+// Spheremap Transform from https://aras-p.info/texts/CompactNormalStorage.html
+vec2 EncodeNormal(vec3 n) {
+  float f = sqrt(n.z * 8.0 + 8.0);
+  return n.xy / f + 0.5;
+}
+
+vec3 DecodeNormal(vec2 enc) {
+  vec2 fenc = enc * 4.0 - 2.0;
+  float f = dot(fenc, fenc);
+  float g = sqrt(1.0 - f / 4.0);
+  vec3 n;
+  n.xy = fenc * g;
+  n.z = 1.0 - f / 2.0;
+  return n;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Main
 // ─────────────────────────────────────────────────────────────────────────────
 
 void main() {
   // Sample and prepare textures
-  vec4 baseColor = texture(textures[0], uv) * material.baseColorFactor;
-  // vec4 baseColor = texture(baseColorTexture, uv) * material.baseColorFactor;
+  vec4 baseColor = texture(baseColorTexture, uv) * material.baseColorFactor;
   if (baseColor.a < 0.01) discard;
 
   // Compute lighting vectors
@@ -270,6 +282,7 @@ void main() {
 
   outColor = baseColor;
   outNormal = vec4(N * 0.5 + 0.5, 1.0);
+  // outNormal = vec4(EncodeNormal(N), metallic, roughness);
   outMetallicRoughness = vec4(metallic, roughness, 0.0, 1.0);
   return;
 
@@ -283,7 +296,7 @@ void main() {
   // vec3 indirectLight = computeIndirectLighting(N, V, baseColor.rgb, metallic, roughness, L);
 
   // Combine all lighting
-  vec3 color = directLight; // indirectLight + directLight;
+  vec3 color = directLight;  // indirectLight + directLight;
 
   // Add emissive
   color += texture(emissiveTexture, uv).rgb * material.emissiveFactor.rgb;

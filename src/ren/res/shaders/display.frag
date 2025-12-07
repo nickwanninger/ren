@@ -29,6 +29,36 @@ vec3 linear_to_srgb(vec3 linear) {
   return pow(linear, vec3(gamma));
 }
 
+#define RETRO_FILTER_SIZE 4
+#define RETRO_FILTER_DEPTH 17
+
+float Bayer2(vec2 a) {
+  a = floor(a);
+  return fract(a.x * 0.5 + a.y * a.y * 0.75);
+}
+
+#define Bayer4(a) (Bayer2(a * 0.5) * 0.25 + Bayer2(a))
+#define Bayer8(a) (Bayer4(a * 0.5) * 0.25 + Bayer2(a))
+
+float BayerCloud2(vec2 a) {
+  a = floor(a);
+  return fract(a.x * 0.5 + a.y * 0.75);
+}
+
+#define BayerCloud4(a) (BayerCloud2(a * 0.5) * 0.25 + BayerCloud2(a))
+#define BayerCloud8(a) (BayerCloud4(a * 0.5) * 0.25 + BayerCloud2(a))
+
+
+
+void RetroDither(inout vec3 color, float dither, vec3 noVignetteColor) {
+  vec3 multiplier = color / noVignetteColor;
+
+  noVignetteColor *= 1.005;
+  noVignetteColor = floor(noVignetteColor * RETRO_FILTER_DEPTH + dither) / RETRO_FILTER_DEPTH;
+
+  color = noVignetteColor * multiplier;
+}
+
 
 // Ordered dithering to reduce banding - uses Bayer matrix
 float bayer2x2(vec2 pixel_pos) {
@@ -68,13 +98,19 @@ void main() {
 
   hdr_color *= config.exposure;
 
+
+  // float dither = Bayer4(gl_FragChoord.xy / RETRO_FILTER_SIZE);
+  // RetroDither(hdr_color, dither, dr_color);
+
   vec3 tonemapped = aces(hdr_color);
 
   vec3 srgb = linear_to_srgb(tonemapped);
 
+
   // Apply ordered dithering to reduce banding
   // Dither value is scaled to 1/256 which is imperceptible but effective at breaking up bands
   srgb += (bayer2x2(gl_FragCoord.xy) - 0.5) / config.ditherDivide;
+
 
 
 
