@@ -11,6 +11,8 @@ namespace ren {
       : m_UUID(s_UniformDistribution(s_Engine)) {}
 
   UUID::UUID(uint64_t uuid)
-      : m_UUID(uuid) {}
+      : m_UUID(uuid) {
+    throw std::runtime_error("Created UUID from u64");
+  }
 
 }  // namespace ren
