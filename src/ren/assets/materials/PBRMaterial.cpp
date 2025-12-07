@@ -30,6 +30,7 @@ namespace ren {
       PBRMaterial::pso.program = makeRef<ShaderProgram>("shaders/pbr");
 
       PBRMaterial::pso.blendMode = ren::BlendMode::Alpha;
+      // PBRMaterial::pso.fillMode = ren::FillMode::Wireframe;
 
       PBRMaterial::pso.cullMode = ren::CullMode::Back;
     }
@@ -55,9 +56,9 @@ namespace ren {
     binder.bind("normalTexture", *this->normalTexture);
 
 
-    std::vector<ref<Texture>> textures = {this->baseColorTexture, this->metallicRoughnessTexture,
-                                          this->emissiveTexture, this->normalTexture};
-    binder.bind("textures", std::span{textures});
+    // std::vector<ref<Texture>> textures = {this->baseColorTexture, this->metallicRoughnessTexture,
+    //                                       this->emissiveTexture, this->normalTexture};
+    // binder.bind("textures", std::span{textures});
     binder.apply();
 
     return true;
@@ -88,16 +89,6 @@ namespace ren {
 
     ImGui::Text("Normal Texture");
     ImGui::Image(normalTexture->getImGui(), ImVec2(100, 100));
-
-    if (ImGui::Button("Reload Vertex")) {
-      // Reload the vertex shader.
-      PBRMaterial::pso.program->getVertexShader()->reload();
-    }
-
-    if (ImGui::Button("Reload Fragment")) {
-      // Reload the fragment shader.
-      PBRMaterial::pso.program->getFragmentShader()->reload();
-    }
   }
 
 

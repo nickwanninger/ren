@@ -2,7 +2,7 @@
 
 #include <vector>
 
-#include <ren/renderer/Shader.h>
+#include <ren/renderer/ShaderModule.h>
 #include <ren/renderer/ShaderProgram.h>
 #include <ren/misc/json_serialize.h>
 

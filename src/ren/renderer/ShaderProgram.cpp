@@ -1,4 +1,6 @@
 #include <ren/renderer/ShaderProgram.h>
+#include <ren/renderer/ShaderReflection.h>
+#include <ren/renderer/Swapchain.h>
 #include <algorithm>
 #include <ren/assets/AssetManager.h>
 #include <fmt/format.h>
@@ -12,11 +14,11 @@ namespace ren {
   ShaderProgram::ShaderProgram(const std::string& vertexPath, const std::string& fragmentPath)
       : vertexShaderPath(vertexPath)
       , fragmentShaderPath(fragmentPath) {
-    this->vertexShader = ren::getAsset<VertexShader>(vertexPath);
-    this->fragmentShader = ren::getAsset<FragmentShader>(fragmentPath);
+    shaders.push_back(ren::getAsset<VertexShader>(vertexPath));
+    shaders.push_back(ren::getAsset<FragmentShader>(fragmentPath));
 
-    assert(vertexShader != NULL);
-    assert(fragmentShader != NULL);
+    // assert(vertexShader != NULL);
+    // assert(fragmentShader != NULL);
 
     reflectShaders();
     bakeLayouts();
@@ -48,16 +50,16 @@ namespace ren {
 
 
   void ShaderProgram::reflectShaders() {
-    // Reflect vertex shader
-    const auto& vertexCode = vertexShader->getCode();
-    reflectShader(vertexCode, VK_SHADER_STAGE_VERTEX_BIT);
-
-    // Reflect fragment shader
-    const auto& fragmentCode = fragmentShader->getCode();
-    reflectShader(fragmentCode, VK_SHADER_STAGE_FRAGMENT_BIT);
+    this->reflection = makeRef<ren::ShaderReflection>();
+    // TODO: use ren::ShaderRefleciton
+    for (auto& shader : shaders) {
+      reflectShader(shader->getCode(), shader->getStage());
+      reflection->parseFromSpirv(reinterpret_cast<const u8*>(shader->getCode().data()),
+                                shader->getCode().size() * sizeof(u32));
+    }
 
     // Merge and deduplicate bindings
-    mergeDescriptorBindings();
+    // mergeDescriptorBindings();
   }
 
 
@@ -210,7 +212,7 @@ namespace ren {
       for (const auto& [setIndex, bindings] : setBindings) {
         VkDescriptorSetLayoutCreateInfo layoutInfo{};
         layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        layoutInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
+        layoutInfo.flags = 0; // VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
         layoutInfo.bindingCount = static_cast<u32>(bindings.size());
         layoutInfo.pBindings = bindings.data();
 
@@ -228,7 +230,7 @@ namespace ren {
     // this push constant range takes up the size of a MeshPushConstants struct
     pushConstants.size = sizeof(ren::MeshPushConstants);
     // this push constant range is accessible only in the vertex shader
-    pushConstants.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    pushConstants.stageFlags = VK_SHADER_STAGE_ALL;
 
     // Create pipeline layout
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
@@ -260,12 +262,50 @@ namespace ren {
 
 
   void ShaderProgram::inspect(void) {
-    ImGui::Text("Shader Program: %s", vertexShaderPath.c_str());
-    ImGui::Text("Fragment Shader: %s", fragmentShaderPath.c_str());
+    ImGui::Text("ShaderModule Program: %s", vertexShaderPath.c_str());
+    ImGui::Text("Fragment ShaderModule: %s", fragmentShaderPath.c_str());
     ImGui::Text("Bindings: %zu", bindings.size());
     for (const auto& binding : bindings) {
       ImGui::Text("  %s: %d.%d", binding.name.c_str(), binding.set, binding.binding);
     }
+  }
+
+
+
+  ref<ShaderObject> ShaderProgram::instantiate() {
+    auto& frame = getFrameData();
+    return makeRef<ShaderObject>(this->shared_from_this(), frame.descriptorAllocator);
+  }
+
+
+  ShaderObject::ShaderObject(ref<ShaderProgram> program, DescriptorAllocator& descAlloc)
+      : program(program) {
+    const auto& layouts = program->getDescriptorSetLayouts();
+
+    for (size_t i = 0; i < layouts.size(); i++) {
+      if (layouts[i] == VK_NULL_HANDLE) {
+        sets.push_back(VK_NULL_HANDLE);
+        continue;
+      }
+
+      VkDescriptorSet descriptorSet;
+      bool success = descAlloc.allocate(&descriptorSet, layouts[i]);
+      if (!success) {
+        throw std::runtime_error("Failed to allocate descriptor set");
+      }
+      sets.push_back(descriptorSet);
+    }
+  }
+
+
+  ShaderObject::~ShaderObject() {
+    auto& vulkan = ren::getVulkan();
+
+    // Descriptor sets are freed when the descriptor pool is reset.
+
+    // That said, if we ever wanted to free them individually, we could do so here:
+    // But I'm not sure we want to do that just yet.
+    // vkFreeDescriptorSets(vulkan.device, vulkan.descriptorPool, sets.size(), sets.data());
   }
 
 }  // namespace ren

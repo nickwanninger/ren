@@ -16,14 +16,13 @@ namespace ren {
 
 
   // This class is the base class for all Vulkan shaders in the engine.
-  // It's mainly responsible for manging the lifetime of teh VkShaderModule
+  // It's mainly responsible for managing the lifetime of the VkShaderModule
   // and providing the shader stage so the pipeline can use it.
-  // They should be obtained from a ShaderCache or similar system instead of
-  // being created directly.
-  class Shader : public ren::VulkanResource, public ren::ShaderAsset {
+  // ShaderProgram should be used instead of this class in most cases.
+  class ShaderModule : public ren::VulkanResource, public ren::ShaderAsset {
    public:
-    Shader(const std::string_view &filename, VkShaderStageFlagBits stage);
-    virtual ~Shader();
+    ShaderModule(const std::string_view &filename, VkShaderStageFlagBits stage);
+    virtual ~ShaderModule();
 
     static VkShaderStageFlagBits getStageFromFilename(const std::string_view &filename);
 
@@ -46,10 +45,10 @@ namespace ren {
 
 
   template <VkShaderStageFlagBits Stage>
-  class VulkanStageShader : public Shader {
+  class VulkanStageShader : public ShaderModule {
    public:
     VulkanStageShader(const std::string &file_name)
-        : Shader(file_name, Stage) {}
+        : ShaderModule(file_name, Stage) {}
     virtual ~VulkanStageShader() = default;
   };
 

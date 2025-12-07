@@ -1,27 +1,44 @@
 #pragma once
 
 #include <ren/types.h>
-#include <ren/renderer/Shader.h>
+#include <ren/renderer/ShaderModule.h>
 #include <ren/renderer/Vulkan.h>
+#include <ren/renderer/Descriptors.h>
 #include <spirv_reflect/spirv_reflect.h>
 #include <ren/misc/json_serialize.h>
-
+#include <ren/core/File.h>
+#include <ren/renderer/ShaderReflection.h>
 #include <vector>
 
 namespace ren {
 
+  /**
+   * The shader system in REN has three main parts.
+   *
+   * - ShaderProgram: represents a set of shaders which are all bound together to form a pipeline
+   * - ShaderModule: represents a single Vulkan shader module (VkShaderModule) loaded from SPIR-V
+   * - ShaderObject: represents a single instance of a shader (in particular, its descriptor sets
+   *                 and any per-instance state.)
+   */
+
+
+
   // A binding is a shader resource with a set and binding index, a type, and a name.
   struct ShaderBinding {
-  std::string name;
+    std::string name;
     u32 set, binding, count;
     VkDescriptorType type;
     VkShaderStageFlags stages;
   };
 
-  // A ShaderProgram is a collection of shaders that can be used to describe a
-  // pipeline.  For now, we just have a vertex and fragment shader, but we can
-  // extend this later if we want compute shaders.
-  class ShaderProgram : public ren::VulkanResource, public ren::HasUUID {
+  class ShaderObject;
+
+  // A shader program represents a set of shaders that are linked together
+  // to form a pipeline.  It is responsible for reflecting the shader resources
+  // and creating the pipeline layout.
+  class ShaderProgram : public ren::VulkanResource,
+                        public ren::HasUUID,
+                        public std::enable_shared_from_this<ShaderProgram> {
    public:
     ShaderProgram(const std::string& shaderPrefix);
     ShaderProgram(const std::string& vertexShader, const std::string& fragmentShader);
@@ -38,17 +55,20 @@ namespace ren {
     ShaderProgram& operator=(ShaderProgram&&) = default;
 
 
+    ref<ShaderObject> instantiate();
+
+
     // -- Getters -- //
     VkPipelineLayout getPipelineLayout() const { return pipelineLayout; }
-    ref<Shader> getVertexShader() const { return vertexShader; }
-    ref<Shader> getFragmentShader() const { return fragmentShader; }
     // TODO: abstract me! We want to also handle compute shaders perhaps!
-    std::vector<ref<Shader>> getShaders() const { return {vertexShader, fragmentShader}; }
+    const std::vector<ref<ShaderModule>>& getShaders() const { return shaders; }
     const std::vector<ShaderBinding>& getBindings() const { return bindings; }
     const ShaderBinding* getBinding(const std::string_view& name) const;
     const ShaderBinding* getBinding(u32 set, u32 binding) const;
 
     const std::vector<VkDescriptorSetLayout>& getDescriptorSetLayouts() const { return setLayouts; }
+
+    auto getReflection() const { return reflection; }
 
 
     // Inspect the shader program in imgui.
@@ -63,16 +83,38 @@ namespace ren {
     void reflectShaders();
     void reflectShader(const std::vector<u32>& spirv, VkShaderStageFlagBits stage);
 
+
     void mergeDescriptorBindings();
     void bakeLayouts();
 
     std::vector<ShaderBinding> bindings;
+    ref<ren::ShaderReflection> reflection;
 
     // Eventually, we generate a pipeline layout from the shader reflection.
     std::vector<VkDescriptorSetLayout> setLayouts;
     VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
 
-    ref<VertexShader> vertexShader = nullptr;
-    ref<FragmentShader> fragmentShader = nullptr;
+    std::vector<ref<ShaderModule>> shaders;
   };
+
+
+  class ShaderObject {
+   public:
+    ShaderObject(ref<ShaderProgram> program, DescriptorAllocator& descAlloc);
+    ~ShaderObject();
+
+
+    VkPipelineLayout getLayout() const { return program->getPipelineLayout(); }
+
+    const std::vector<VkDescriptorSet>& getDescriptorSets() const { return sets; }
+
+    auto getReflection(void) const { return program->getReflection(); }
+
+   private:
+    ref<ShaderProgram> program;
+    std::vector<VkDescriptorSet> sets;
+  };
+
+
+
 }  // namespace ren

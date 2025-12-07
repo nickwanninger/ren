@@ -1,6 +1,6 @@
 
 
-#include <ren/renderer/Shader.h>
+#include <ren/renderer/ShaderModule.h>
 #include <ren/renderer/Vulkan.h>
 #include "vulkan/vulkan_core.h"
 #include <fstream>
@@ -76,7 +76,7 @@ class ShaderIncluder : public shaderc::CompileOptions::IncluderInterface {
   std::vector<std::vector<u8>*> m_file_contents;
 };
 
-ren::Shader::Shader(const std::string_view& file_name, VkShaderStageFlagBits stage)
+ren::ShaderModule::ShaderModule(const std::string_view& file_name, VkShaderStageFlagBits stage)
     : filename(file_name)
     , stage(stage) {
   if (!reload()) {
@@ -86,7 +86,7 @@ ren::Shader::Shader(const std::string_view& file_name, VkShaderStageFlagBits sta
 }
 
 
-ren::Shader::~Shader() {
+ren::ShaderModule::~ShaderModule() {
   auto& vulkan = ren::getVulkan();
   if (shaderModule) {
     vkDestroyShaderModule(vulkan.device, shaderModule, nullptr);
@@ -95,7 +95,7 @@ ren::Shader::~Shader() {
 }
 
 
-bool ren::Shader::reload() {
+bool ren::ShaderModule::reload() {
   try {
     auto code = loadShader(this->filename);
     initShader(code);
@@ -106,7 +106,7 @@ bool ren::Shader::reload() {
   }
 }
 
-VkShaderStageFlagBits ren::Shader::getStageFromFilename(const std::string_view& filename) {
+VkShaderStageFlagBits ren::ShaderModule::getStageFromFilename(const std::string_view& filename) {
 #define CASE(ext, stage) \
   if (filename.ends_with(ext) || filename.ends_with(ext ".spv")) return stage;
 
@@ -120,7 +120,7 @@ VkShaderStageFlagBits ren::Shader::getStageFromFilename(const std::string_view& 
 }
 
 
-std::vector<u32> ren::Shader::loadShader(const std::string_view& filename) {
+std::vector<u32> ren::ShaderModule::loadShader(const std::string_view& filename) {
   REN_PROFILE_SCOPE("Load Shader");
   // This is the output code that will be returned.
   // It is either loaded from a .spv file, or compiled on the fly from GLSL.
@@ -213,7 +213,7 @@ std::vector<u32> ren::Shader::loadShader(const std::string_view& filename) {
   return code;
 }
 
-void ren::Shader::initShader(const std::vector<u32>& spirv) {
+void ren::ShaderModule::initShader(const std::vector<u32>& spirv) {
   this->code = spirv;
   //////////////
 
