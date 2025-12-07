@@ -228,7 +228,7 @@ namespace ren {
 
 
     std::vector<VkPipelineShaderStageCreateInfo> shaderStages;
-    std::vector<ref<Shader>> shaders = pso.program->getShaders();
+    std::vector<ref<ShaderModule>> shaders = pso.program->getShaders();
 
     for (auto &shader : shaders) {
       VkPipelineShaderStageCreateInfo stageInfo{};

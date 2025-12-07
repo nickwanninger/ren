@@ -135,15 +135,6 @@ namespace ren {
     if (width < 1) width = 1;
     if (height < 1) height = 1;
 
-    fmt::println("Allocating/reallocating image resource '{}' with size {}x{}", name, width,
-                 height);
-
-    if (image == nullptr) {
-      fmt::println("  (was null, allocating new)");
-    } else {
-      fmt::println("  (swapchain size changed, reallocating)");
-    }
-
     ren::ImageBuilder b(name);
 
     // Set usage flags based on initial access type

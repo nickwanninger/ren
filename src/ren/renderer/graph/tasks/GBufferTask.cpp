@@ -92,4 +92,12 @@ namespace ren {
                        meshEntry.vertexOffset, 0);
     }
   }
+
+
+  void GBufferTask::inspect(void) {
+    graph().getResource(out.albedo)->inspect();
+    graph().getResource(out.normal)->inspect();
+    graph().getResource(out.metallicRoughness)->inspect();
+    graph().getResource(out.depth)->inspect();
+  }
 }  // namespace ren

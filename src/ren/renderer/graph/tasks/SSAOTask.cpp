@@ -8,23 +8,60 @@
 #include <imgui/imgui.h>
 #include <random>
 
-
+#include <stb/stb_image.h>
 
 namespace ren {
 
   constexpr VkFormat ssaoFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
 
+  static const u32 ssaoNoiseSize = 8;
   static ref<ren::Image> createSSAONoiseTexture(void) {
-    const u32 noiseSize = 4;
-    glm::vec4 noiseData[noiseSize * noiseSize];
-    std::uniform_real_distribution<float> randomFloats(0.0,
-                                                       1.0);  // random floats between [0.0, 1.0]
-    std::default_random_engine generator;
-    for (u32 i = 0; i < noiseSize * noiseSize; ++i) {
-      glm::vec4 noise(randomFloats(generator) * 2.0 - 1.0, randomFloats(generator) * 2.0 - 1.0,
-                      randomFloats(generator) * 2.0 - 1.0, 1.0f);
-      noiseData[i] = glm::normalize(noise);
+    auto &am = ren::getAssetManager();
+    // TODO: load textures correctly!
+    std::vector<u8> noiseBytes;
+    if (am.load("shaders/noise/bluenoise64.png", noiseBytes) == false) {
+      throw std::runtime_error("Failed to load SSAO noise texture");
     }
+
+
+
+    int texWidth, texHeight, texChannels;
+    stbi_uc *pixels = nullptr;
+
+
+    pixels = stbi_load_from_memory((stbi_uc *)noiseBytes.data(), (int)noiseBytes.size(), &texWidth,
+                                   &texHeight, &texChannels, STBI_rgb_alpha);
+
+
+    glm::vec4 noiseData[texWidth * texHeight];
+
+    for (u32 y = 0; y < (u32)texHeight; ++y) {
+      for (u32 x = 0; x < (u32)texWidth; ++x) {
+        u32 index = y * texWidth + x;
+        u8 r = pixels[index * 4 + 0];
+        u8 g = pixels[index * 4 + 1];
+        u8 b = pixels[index * 4 + 2];
+        // Map from [0,255] to [-1,1]
+        glm::vec4 noise((r / 255.0f) * 2.0f - 1.0f, (g / 255.0f) * 2.0f - 1.0f,
+                        (b / 255.0f) * 2.0f - 1.0f, 1.0f);
+        noiseData[index] = noise;
+      }
+    }
+
+    
+    stbi_image_free(pixels);
+
+    fmt::println("SSAONoise texture size: {}x{}, channels: {}", texWidth, texHeight, texChannels);
+
+    // glm::vec4 noiseData[ssaoNoiseSize * ssaoNoiseSize];
+    // std::uniform_real_distribution<float> randomFloats(0.0,
+    //                                                    1.0);  // random floats between [0.0, 1.0]
+    // std::default_random_engine generator;
+    // for (u32 i = 0; i < ssaoNoiseSize * ssaoNoiseSize; ++i) {
+    //   glm::vec4 noise(randomFloats(generator) * 2.0 - 1.0, randomFloats(generator) * 2.0 - 1.0,
+    //                   randomFloats(generator) * 2.0 - 1.0, 1.0f);
+    //   noiseData[i] = glm::normalize(noise);
+    // }
 
 
 
@@ -40,8 +77,8 @@ namespace ren {
     ren::ImageBuilder b("ssao_noise_texture");
     VkFormat format = VK_FORMAT_R32G32B32A32_SFLOAT;
     b.setFormat(format);
-    b.setWidth(noiseSize);
-    b.setHeight(noiseSize);
+    b.setWidth(texWidth);
+    b.setHeight(texHeight);
     b.setUsage(VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT);
     b.setAllocationUsage(VMA_MEMORY_USAGE_GPU_ONLY);
 
@@ -55,7 +92,8 @@ namespace ren {
                                  VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 
     vulkan.copyBufferToImage(stagingBuffer.getHandle(), image->getImage(),
-                             static_cast<uint32_t>(noiseSize), static_cast<uint32_t>(noiseSize));
+                             static_cast<uint32_t>(texWidth),
+                             static_cast<uint32_t>(texHeight));
 
     vulkan.transitionImageLayout(image->getImage(), format, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                                  VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
@@ -86,7 +124,9 @@ namespace ren {
     pso.hasVertexBinding = false;
 
 
+
     this->noiseTexture = createSSAONoiseTexture();
+    ssao.noise_divide = 64;  // this->noiseTexture->getWidth();
   }
 
   void SSAOTask::run(ren::GraphRunContext &ctx) {
@@ -97,8 +137,10 @@ namespace ren {
     auto &cam = ren::Camera::get();
     auto viewMatrix = cam.view_matrix();
 
-    auto width = graph().getImage(out.ssao)->getWidth();
-    auto height = graph().getImage(out.ssao)->getHeight();
+    auto ssaoImage = graph().getImage(out.ssao);
+    auto width = ssaoImage->getWidth();
+    auto height = ssaoImage->getHeight();
+
     ssao.normal_matrix = glm::transpose(glm::inverse(viewMatrix));
     ssao.projection = ren::Camera::projectionMatrix(width, height);
     ssao.inv_projection = glm::inverse(ssao.projection);
@@ -131,7 +173,7 @@ namespace ren {
     binder.bind("ssao", uSSAO);
     binder.bind("depth_sampler", *graph().getImage(in.depth), filter);
     binder.bind("normal_sampler", *graph().getImage(in.normal), filter);
-    binder.bind("noise_sampler", *noiseTexture, filter);
+    binder.bind("noise_sampler", *noiseTexture, VK_FILTER_NEAREST);
     binder.apply();
 
 
@@ -156,10 +198,12 @@ namespace ren {
 
 
   /// Blur task
-  SSAOBlurTask::SSAOBlurTask(ren::RenderGraph &G, float fscale, GraphHandle ssaoHandle)
+  SSAOBlurTask::SSAOBlurTask(ren::RenderGraph &G, float fscale, GraphHandle ssaoHandle,
+                             GraphHandle depthHandle, GraphHandle normalHandle)
       : ren::RenderPassTask(G) {
     this->in.ssao = ssaoHandle;
-
+    this->in.depth = depthHandle;
+    this->in.normal = normalHandle;
 
     auto scale = glm::vec2(fscale);
     this->out.ssao_blurred =
@@ -182,6 +226,8 @@ namespace ren {
 
     auto binder = ctx.renderer.startBinding(0);
     binder.bind("ssao", *graph().getImage(in.ssao), filter);
+    binder.bind("depth", *graph().getImage(in.depth), VK_FILTER_NEAREST);
+    binder.bind("normal", *graph().getImage(in.normal), VK_FILTER_NEAREST);
     binder.apply();
 
     vkCmdDraw(ctx.cmd, 3, 1, 0, 0);

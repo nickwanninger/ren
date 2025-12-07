@@ -17,7 +17,7 @@ namespace ren {
 
     pso.program = makeRef<ShaderProgram>("shaders/depth_pre_pass");
     pso.depthWrite = true;
-    pso.cullMode = ren::CullMode::None;
+    pso.cullMode = ren::CullMode::Back;
   }
 
   void DepthPrepassTask::run(ren::GraphRunContext &ctx) {

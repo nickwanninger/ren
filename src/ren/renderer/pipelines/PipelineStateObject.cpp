@@ -29,8 +29,9 @@ namespace ren {
     u64 state = 0;
     // ren::hash(state, (u64)program->getUUID());
 
-    ren::hash(state, (u64)program->getVertexShader()->getHandle());
-    ren::hash(state, (u64)program->getFragmentShader()->getHandle());
+    for (const auto& shader : program->getShaders()) {
+      ren::hash(state, (u64)shader->getHandle());
+    }
     ren::hash(state, topology);
     ren::hash(state, depthTest);
     ren::hash(state, depthWrite);

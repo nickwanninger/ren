@@ -1,6 +1,7 @@
 #pragma once
 
 #include <vulkan/vulkan.h>
+#include <ren/renderer/CommandEncoder.h>
 
 namespace ren {
   class RenderGraph;
@@ -17,19 +18,23 @@ namespace ren {
    */
   struct GraphRunContext {
     ren::RenderGraph &graph;  ///< Reference to the render graph being executed
-    ren::Renderer &renderer;  ///< Reference to the renderer for render pass operations
     ren::RenderTask *task;    ///< Pointer to the task currently being executed
+    // TODO: REMOVE
+    ren::Renderer &renderer;  ///< Reference to the renderer for render pass operations
+    // TODO: REMOVE
     VkCommandBuffer cmd;      ///< Command buffer for recording barriers and commands
+    CommandEncoder &encoder;  ///< Command encoder for higher-level command recording
 
     /**
      * @brief Constructs a GraphRunContext for the given render graph and renderer.
      * @param g Reference to the render graph
      * @param r Reference to the renderer
      */
-    GraphRunContext(ren::RenderGraph &g, ren::Renderer &r)
+    GraphRunContext(ren::RenderGraph &g, ren::Renderer &r, CommandEncoder &e)
         : graph(g)
-        , renderer(r)
         , task(nullptr)
-        , cmd(VK_NULL_HANDLE) {}
+        , renderer(r)
+        , cmd(VK_NULL_HANDLE)
+        , encoder(e) {}
   };
 }  // namespace ren

@@ -54,15 +54,17 @@ namespace ren {
    public:
     ren::PipelineStateObject pso;
 
-    struct {
+    struct In {
       GraphHandle ssao;
+      GraphHandle depth, normal; // For joint bilateral blur
     } in;
 
-    struct {
+    struct Out {
       GraphHandle ssao_blurred;
     } out;
 
-    SSAOBlurTask(ren::RenderGraph &G, float scale, GraphHandle ssaoHandle);
+    SSAOBlurTask(ren::RenderGraph &G, float scale, GraphHandle ssaoHandle, GraphHandle depthHandle,
+                 GraphHandle normalHandle);
 
     void run(ren::GraphRunContext &ctx) override;
   };
@@ -71,7 +73,7 @@ namespace ren {
   inline auto &addSSAO(RenderGraph &G, ren::GraphHandle depthHandle, ren::GraphHandle normalHandle,
                        ren::GraphHandle &ssaoOut) {
     auto &ssao = G.addTask<SSAOTask>("ssao", 0.5f, depthHandle, normalHandle);
-    auto &blur = G.addTask<SSAOBlurTask>("ssao_blur", 1.0f, ssao.out.ssao);
+    auto &blur = G.addTask<SSAOBlurTask>("ssao_blur", 1.0f, ssao.out.ssao, depthHandle, normalHandle);
 
     // Output the blurred SSAO
     ssaoOut = blur.out.ssao_blurred;
