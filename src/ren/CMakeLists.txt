@@ -7,12 +7,15 @@ collect_sources(SOURCE_FILES "${CMAKE_CURRENT_SOURCE_DIR}")
 
 
 set(IMGUI_DIR ${CMAKE_SOURCE_DIR}/lib/imgui)
+set(IMNODES_DIR ${CMAKE_SOURCE_DIR}/lib/imnodes)
 set(IMGUI_SOURCES
    ${IMGUI_DIR}/imgui.cpp
    ${IMGUI_DIR}/imgui_demo.cpp
    ${IMGUI_DIR}/imgui_draw.cpp
    ${IMGUI_DIR}/imgui_tables.cpp
    ${IMGUI_DIR}/imgui_widgets.cpp
+
+    ${IMNODES_DIR}/imnodes.cpp
    
    ${IMGUI_DIR}/backends/imgui_impl_sdl2.cpp
    ${IMGUI_DIR}/backends/imgui_impl_vulkan.cpp
