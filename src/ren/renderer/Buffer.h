@@ -163,8 +163,6 @@ namespace ren {
     VkBuffer getHandle() const { return getCurrentBuffer()->getHandle(); }
     const Buffer &currentAsBuffer() const { return *getCurrentBuffer(); }
 
-   private:
-    size_t expectedArrayLength = 1;
     inline auto &getCurrentBuffer() const {
       auto index = ren::getFrameIndex();
       auto &buffer = buffers[index];
@@ -176,6 +174,9 @@ namespace ren {
       }
       return buffer;
     }
+
+   private:
+    size_t expectedArrayLength = 1;
     std::vector<ref<UniformBuffer<T>>> buffers;
   };
 

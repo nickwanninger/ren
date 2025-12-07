@@ -1,7 +1,7 @@
 #include <ren/assets/AssetManager.h>
 
 #include <ren/renderer/Texture.h>
-#include <ren/renderer/Shader.h>
+#include <ren/renderer/ShaderModule.h>
 #include <ren/core/Application.h>
 #include <imgui/imgui.h>
 #include <ren/misc/hash.h>
@@ -127,8 +127,8 @@ namespace ren {
       case AssetType::Shader: {
         fmt::print("Importing shader asset from {}\n", path);
         // Load the shader from the file
-        auto stage = Shader::getStageFromFilename(path);
-        auto shader = makeRef<Shader>(path, stage);
+        auto stage = ShaderModule::getStageFromFilename(path);
+        auto shader = makeRef<ShaderModule>(path, stage);
         if (shader) {
           // Register the shader asset
           shader->setAssetID(info.id);

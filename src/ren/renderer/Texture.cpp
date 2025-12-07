@@ -73,8 +73,8 @@ ren::Texture::Texture(const std::string_view &name, u32 width, u32 height, u8 *p
   // Texture Sampler
   VkSamplerCreateInfo samplerInfo{};
   samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-  // samplerInfo.magFilter = samplerInfo.minFilter = VK_FILTER_NEAREST;
-  samplerInfo.magFilter = samplerInfo.minFilter = VK_FILTER_LINEAR;
+  samplerInfo.magFilter = samplerInfo.minFilter = VK_FILTER_NEAREST;
+  // samplerInfo.magFilter = samplerInfo.minFilter = VK_FILTER_LINEAR;
 
   samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
   samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;

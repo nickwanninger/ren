@@ -49,7 +49,6 @@ namespace ren {
 
     this->currentPass = pass.shared_from_this();
 
-    auto &frame = ren::getFrameData();
     auto cmd = getCommandBuffer();
 
     // Begin the render pass.

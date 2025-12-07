@@ -1,5 +1,5 @@
 #include <ren/renderer/Vulkan.h>
-#include <ren/renderer/Shader.h>
+#include <ren/renderer/ShaderModule.h>
 #include <ren/core/Instrumentation.h>
 
 

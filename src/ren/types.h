@@ -99,6 +99,8 @@ namespace ren {
 
   template <typename T>
   using ref = std::shared_ptr<T>;
+  template <typename T>
+  using weak_ref = std::weak_ptr<T>;
 
   template <typename T, typename... Args>
   ref<T> makeRef(Args&&... args) {

@@ -21,13 +21,8 @@ extern "C" {
 #include <luajit.h>
 }
 
-#ifndef REN_GIT_REVISION
-  #define REN_GIT_REVISION "UNK"
-#endif
+#define REN_VERSION "0.0.1"
 
-#ifndef REN_BUILD_DATE
-  #define REN_BUILD_DATE "UNK"
-#endif
 
 namespace ren {
 

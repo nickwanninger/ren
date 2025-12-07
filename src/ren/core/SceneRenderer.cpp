@@ -177,7 +177,6 @@ namespace ren {
     camera.projection = ren::Camera::projectionMatrix(renderResolution.x, renderResolution.y);
 
     // Begin the opaque render pass.
-    frame.perf.begin(cmd, "Opaque Pass");
 
     u64 vertsDrawn = 0;
 
@@ -274,7 +273,6 @@ namespace ren {
       ren::emit<DebugDrawEvent>({pc.view, pc.proj});
     });
 
-    frame.perf.end(cmd, "Opaque Pass");
 
     opaque.target->transitionToShaderReadonly(cmd);
 

@@ -2,7 +2,7 @@
 
 #include <map>
 #include <ren/assets/Asset.h>
-#include <ren/renderer/Shader.h>
+#include <ren/renderer/ShaderModule.h>
 #include <ren/assets/AssetSource.h>
 #include <sol/sol.hpp>
 

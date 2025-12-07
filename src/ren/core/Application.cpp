@@ -4,12 +4,14 @@
 
 #include <ren/renderer/pipelines/PipelineStateObject.h>
 #include <ren/renderer/pipelines/PipelineCache.h>
+#include <ren/renderer/ShaderCursor.h>
 #include <ren/misc/hash.h>
 
 #include <imgui.h>
 #include <backends/imgui_impl_vulkan.h>
 #include <backends/imgui_impl_sdl2.h>
 #include <ImGuizmo/ImGuizmo.h>
+#include <imnodes/imnodes.h>
 
 #include <ren/core/Entity.h>
 #include <ren/assets/Mesh.h>
@@ -35,6 +37,7 @@
 #include <ren/core/SceneRenderer.h>
 #include <ren/assets/MegaMeshBuffer.h>
 
+#include <ren/core/Flag.h>
 #include <ren/renderer/ShaderProgram.h>
 #include <ren/scripting/imgui_lua_inspector.hpp>
 
@@ -44,34 +47,10 @@ extern "C" {
 #include <lauxlib.h>
 }
 
-// TEMP: Test RenderPassTask implementation (will remove later)
-namespace {
-  class TestPass : public ren::RenderPassTask {
-   public:
-    ren::GraphHandle colorOut;
+#include <ren/core/NodeEditorTest.h>
 
-    ren::PipelineStateObject pso;
-
-    TestPass(ren::RenderGraph &graph)
-        : ren::RenderPassTask(graph) {
-      colorOut = addColorAttachment(
-          "test_color", {.width = 512, .height = 512, .format = VK_FORMAT_R8G8B8A8_SRGB});
-
-      pso.program = ren::ShaderProgram::makeFullScreenProgram("shaders/debug/uv.frag");
-      pso.cullMode = ren::CullMode::None;
-      pso.depthTest = false;
-      pso.depthWrite = false;
-      pso.hasVertexBinding = false;
-    }
-
-    void run(ren::GraphRunContext &ctx) override {
-      ctx.renderer.bind(pso);
-      vkCmdDraw(ctx.cmd, 3, 1, 0, 0);
-    }
-
-    void inspect(void) override { pso.program->inspect(); }
-  };
-}  // namespace
+static ren::Flag<int> kMaxFPS("max-fps", 0,
+                              "Maximum framerate for the application, 0 = vsync or uncapped.");
 
 
 
@@ -89,7 +68,7 @@ namespace ren {
 
 
     SDL_WindowFlags window_flags = (SDL_WindowFlags)(SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
-    auto windowName = fmt::format("{} -- Ren {} - {}", app_name, REN_GIT_REVISION, REN_BUILD_DATE);
+    auto windowName = fmt::format("{} - Ren {}", app_name, REN_VERSION);
     this->window =
         SDL_CreateWindow(windowName.c_str(), SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
                          window_size.x, window_size.y, window_flags);
@@ -104,12 +83,14 @@ namespace ren {
 
     // world.set_threads(6);
 
+    if (kMaxFPS.get() > 0) { world.set_target_fps(kMaxFPS.get()); }
 
     this->globalEventEntity = world.entity("ren::events");
 
     // Enable the flecs world rest api
     ren::world().set<flecs::Rest>({});
     ren::world().import <flecs::stats>();
+
 
     ren::initPhases(ren::world());
 
@@ -187,6 +168,7 @@ namespace ren {
 
       ImGui_ImplVulkan_Shutdown();
       ImGui_ImplSDL2_Shutdown();
+      ImNodes::DestroyContext();
       ImGui::DestroyContext();
     }
 
@@ -255,6 +237,8 @@ namespace ren {
 
     ren::addSSAO(G, gbufferDepth, gbufferNormal, ssao);
 
+    float renderScaleTemp = 1.0f;
+    ren::NodeGraphEditor nodeEditor;
 
 
 
@@ -366,8 +350,6 @@ namespace ren {
       renderer->beginFrame();
       auto &frame = ren::getFrameData();
 
-      auto frameStats = frame.perf.nextFrame(frame.commandBuffer);
-
       framerateCounter.addFrame(deltaTime);
 
 
@@ -378,18 +360,16 @@ namespace ren {
 
 
       float targetHeight = 480;
-      targetHeight = height;
+      // targetHeight = height;
+      targetHeight = height * renderScaleTemp;
       float scale = targetHeight / height;
+      scale *= renderScaleTemp;
       width *= scale;
       height *= scale;
 
 
+
       auto renderSize = glm::uvec2(width, height);
-
-
-
-      G.startFrame(renderSize);
-
 
 
 
@@ -411,6 +391,15 @@ namespace ren {
         ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport(),
                                      ImGuiDockNodeFlags_PassthruCentralNode);
       }
+
+
+
+      G.startFrame(renderSize);
+
+
+
+
+      ImGui::DragFloat("Render Scale", &renderScaleTemp, 0.01f, 0.1f, 2.0f);
 
 
       // Update lua globals
@@ -445,6 +434,10 @@ namespace ren {
 
       ren::resource<neko::luainspector>().draw();
 
+      // ImGui::Begin("Nodes");
+      // nodeEditor.display();
+      // ImGui::End();
+
       world.defer_begin();
       // auto gbufferTarget = sceneRenderer.render(sceneLayer->scene, sceneLayer->camera);
 
@@ -468,7 +461,6 @@ namespace ren {
           REN_PROFILE_SCOPE("Blit GBuffer");
           // Blit the gbuffer to the screen temporarily.
 
-          frame.perf.begin(cmd, "Blit GBuffer");
           renderer->bind(blitPSO);
 
           // begin binding set zero, which is the gbuffer textures.
@@ -480,20 +472,22 @@ namespace ren {
           blitBinder.apply();
 
           vkCmdDraw(cmd, 3, 1, 0, 0);
-          frame.perf.end(cmd, "Blit GBuffer");
         }
 
         {
-          frame.perf.begin(cmd, "ImGui");
           REN_PROFILE_SCOPE("ImGui Render Draw Data");
           ImGui::Render();
           ImGui::UpdatePlatformWindows();
           ImGui::RenderPlatformWindowsDefault();
           // Gross leakage.
           ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), ren::getFrameData().commandBuffer);
-          frame.perf.end(cmd, "ImGui");
         }
+
       });
+
+
+      // renderer->withPass(*renderer->getDisplayPass(), *frame.renderTarget, [&]() {
+      // });
 
 
       world.defer_end();
@@ -540,6 +534,7 @@ namespace ren {
 
     // this initializes the core structures of imgui
     ImGui::CreateContext();
+    ImNodes::CreateContext();
 
     auto &io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;  //  | ImGuiConfigFlags_ViewportsEnable;
