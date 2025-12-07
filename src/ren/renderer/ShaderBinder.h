@@ -1,7 +1,7 @@
 #pragma once
 
 #include <ren/renderer/ShaderProgram.h>
-#include <ren/renderer/Shader.h>
+#include <ren/renderer/ShaderModule.h>
 #include <ren/renderer/Texture.h>
 #include <ren/renderer/Descriptors.h>
 #include <ren/renderer/Sampler.h>
@@ -30,7 +30,7 @@ namespace ren {
     ShaderBinder &bind(const std::string_view &name, const T &...resources) {
       const auto *binding = program.getBinding(name);
       if (binding == nullptr)
-        throw std::runtime_error(fmt::format("Shader binding '{}' not found in program '{}'", name,
+        throw std::runtime_error(fmt::format("ShaderModule binding '{}' not found in program '{}'", name,
                                              json(program).dump()));
       return this->bind(*binding, resources...);
     }
@@ -40,7 +40,7 @@ namespace ren {
     ShaderBinder &bind(u32 bindingIndex, const T &...resources) {
       const auto *binding = program.getBinding(this->set, bindingIndex);
       if (binding == nullptr)
-        throw std::runtime_error(fmt::format("Shader binding '{}.{}' not found in program '{}'", set, bindingIndex,
+        throw std::runtime_error(fmt::format("ShaderModule binding '{}.{}' not found in program '{}'", set, bindingIndex,
                                              json(program).dump()));
       return this->bind(*binding, resources...);
     }

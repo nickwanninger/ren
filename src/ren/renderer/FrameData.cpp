@@ -3,7 +3,7 @@
 #include <ren/renderer/Swapchain.h>
 #include <ren/core/Application.h>
 #include <fmt/core.h>
-
+#include <ren/renderer/CommandEncoder.h>
 
 namespace ren {
   FrameData::FrameData(u32 frameIndex, Swapchain &sc, VkImage swapchainImage,
@@ -88,6 +88,8 @@ namespace ren {
 
     VkCommandBuffer commandBuffer;
     vkAllocateCommandBuffers(vulkan.device, &allocInfo, &this->commandBuffer);
+
+    this->commandEncoder = makeRef<CommandEncoder>(this->commandBuffer);
 
     // Create timestamp query pool
     VkQueryPoolCreateInfo queryPoolInfo = {};

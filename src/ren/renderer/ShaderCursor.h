@@ -4,6 +4,7 @@
 #include <ren/renderer/Image.h>
 #include <ren/renderer/Buffer.h>
 #include <ren/renderer/Sampler.h>
+#include <ren/renderer/ShaderProgram.h>
 #include <string_view>
 
 #include <slang.h>
@@ -16,9 +17,9 @@ namespace ren {
 
   class ShaderCursor {
    public:
-    ShaderCursor(VkCommandBuffer cmd, slang::TypeLayoutReflection *typeLayout)
-        : m_cmd(cmd)
-        , m_typeLayout(typeLayout) {}
+    ShaderCursor(ShaderObject &shaderObject)
+        : obj(shaderObject)
+        , refl(obj.getReflection()->getRoot()) {}
 
     // Navigation
     // Given a cursor that points to a location with some aggregate type (a
@@ -26,8 +27,13 @@ namespace ren {
     // aggregate: a field of a struct or an element of an array. The
     // corresponding operations are:
     ShaderCursor field(const char *name);
-    ShaderCursor field(int index);
-    ShaderCursor element(int index);
+    ShaderCursor field(u32 index);
+    ShaderCursor element(u32 index);
+
+
+    ShaderCursor operator[](const char *name) { return field(name); }
+    ShaderCursor operator[](u32 index) { return element(index); }
+
 
     // Writing
     // Once a cursor has been formed that points to a small enough piece of
@@ -46,16 +52,21 @@ namespace ren {
     }
 
 
+   protected:
+    VkWriteDescriptorSet createWrite();
+
    private:
-    // A command buffer used for buffer updates
-    // and anything that needs to be recorded.
-    VkCommandBuffer m_cmd;
+    ShaderObject &obj;
+    ShaderReflection::Node *refl;
+    // // A command buffer used for buffer updates
+    // // and anything that needs to be recorded.
+    // VkCommandBuffer m_cmd;
 
     // A shader cursor acts much like a pointer, but the type of the data being
     // pointed to is determined dynamically rather than statically. Thus, rather
     // than having a template paramter like a C++ smart pointer would, this
     // shader cursor implementation stores the type (and layout) as a field
-    slang::TypeLayoutReflection *m_typeLayout = nullptr;
+    // slang::TypeLayoutReflection *m_typeLayout = nullptr;
 
     // State
     // - Location
@@ -71,12 +82,12 @@ namespace ren {
     // state to represent a location to write to for each of these parameter
     // passing mechanisms.
 
-    ref<Buffer> m_buffer = nullptr;
-    u8 *m_bufferData = nullptr;  // Mapped pointer to buffer data
-    size_t m_byteOffset = 0;
-    VkDescriptorSet m_descriptorSet = VK_NULL_HANDLE;
-    u32 m_bindingIndex;
-    u32 m_bindingArrayElement;
+    // ref<Buffer> m_buffer = nullptr;
+    // u8 *m_bufferData = nullptr;  // Mapped pointer to buffer data
+    // size_t m_byteOffset = 0;
+    // VkDescriptorSet m_descriptorSet = VK_NULL_HANDLE;
+    // u32 m_bindingIndex;
+    // u32 m_bindingArrayElement;
 
     // Here our example ShaderCursor type has members to represent a location
     // for each of the two parameter-passing mechanisms mentioned above. For
