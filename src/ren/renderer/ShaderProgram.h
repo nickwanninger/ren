@@ -45,7 +45,7 @@ namespace ren {
     ~ShaderProgram();
 
     static inline ref<ShaderProgram> makeFullScreenProgram(const std::string& fragmentShaderPath) {
-      return makeRef<ShaderProgram>("shaders/display.vert", fragmentShaderPath);
+      return make<ShaderProgram>("shaders/display.vert", fragmentShaderPath);
     }
 
     // -- Non-copyable, movable -- //

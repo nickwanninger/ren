@@ -41,7 +41,7 @@ namespace ren {
 
   Image::Ref Image::create(const std::string &name, VkImage image, VkImageView imageView,
                            VmaAllocation memory, VkImageCreateInfo &createInfo) {
-    return makeRef<Image>(name, image, imageView, memory, createInfo);
+    return make<Image>(name, image, imageView, memory, createInfo);
   }
 
   u32 Image::calculateMipLevels(u32 width, u32 height) {

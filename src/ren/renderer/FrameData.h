@@ -5,6 +5,7 @@
 #include <ren/renderer/Texture.h>
 #include <ren/renderer/RenderTarget.h>
 #include <ren/renderer/Descriptors.h>
+#include <ren/renderer/Fence.h>
 
 namespace ren {
 
@@ -12,7 +13,7 @@ namespace ren {
   // TODO: Move me elsewhere!
 
 
-  class CommandEncoder; // forward declare
+  class CommandEncoder;  // forward declare
 
   struct UniformBufferObject {
     glm::mat4 model;
@@ -44,7 +45,7 @@ namespace ren {
     VkSemaphore renderFinishedSemaphore = VK_NULL_HANDLE;
     // Fence to ensure that the GPU has finished rendering before we can
     // submit the next frame.
-    VkFence inFlightFence = VK_NULL_HANDLE;
+    ref<Fence> inFlightFence = Fence::make(true);
 
     // ---- Per frame data, reset at the start of each frame ---- //
     // The command buffer that we record the rendering commands into.

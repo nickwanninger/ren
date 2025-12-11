@@ -175,6 +175,9 @@ namespace ren {
   // This ensures that any vulkan resources are destroyed *after* the vulkan
   // instance is destroyed.
   class VulkanResource {
+   public:
+    VulkanInstance &getVulkan() const { return *vulkanInstance; }
+
    private:
     ref<VulkanInstance> vulkanInstance = getVulkanRef();
   };

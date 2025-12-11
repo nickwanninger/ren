@@ -114,7 +114,7 @@ namespace ren {
       if (it != samplers.end()) {
         return *it->second;
       } else {
-        samplers.insert({filter, makeRef<Sampler>(filter)});
+        samplers.insert({filter, make<Sampler>(filter)});
         return *samplers[filter];
       }
     }

@@ -15,7 +15,7 @@ namespace ren {
     this->normalOut =
         addColorAttachment("dpp_normal", {.scale = scale, .format = VK_FORMAT_R16G16B16A16_SFLOAT});
 
-    pso.program = makeRef<ShaderProgram>("shaders/depth_pre_pass");
+    pso.program = make<ShaderProgram>("shaders/depth_pre_pass");
     pso.depthWrite = true;
     pso.cullMode = ren::CullMode::Back;
   }

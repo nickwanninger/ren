@@ -62,7 +62,7 @@ namespace ren {
     }
 
 
-    this->renderTarget = makeRef<RenderTarget>(renderTargetDesc);
+    this->renderTarget = make<RenderTarget>(renderTargetDesc);
 
 
     // ---- Allocate the semaphores and fence for this frame ---- //
@@ -76,8 +76,6 @@ namespace ren {
     VkFenceCreateInfo fenceInfo{};
     fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
     fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;  // Start signaled
-    VK_CHECK(vkCreateFence(vulkan.device, &fenceInfo, nullptr, &this->inFlightFence));
-
 
     // ---- Allocate the command buffer for this frame ---- //
     VkCommandBufferAllocateInfo allocInfo{};
@@ -89,7 +87,7 @@ namespace ren {
     VkCommandBuffer commandBuffer;
     vkAllocateCommandBuffers(vulkan.device, &allocInfo, &this->commandBuffer);
 
-    this->commandEncoder = makeRef<CommandEncoder>(this->commandBuffer);
+    this->commandEncoder = make<CommandEncoder>(this->commandBuffer);
 
     // Create timestamp query pool
     VkQueryPoolCreateInfo queryPoolInfo = {};
@@ -118,7 +116,6 @@ namespace ren {
     // vkDestroyDescriptorPool(vulkan.device, this->descriptorPool, nullptr);
     vkDestroySemaphore(vulkan.device, this->imageAvailableSemaphore, nullptr);
     vkDestroySemaphore(vulkan.device, this->renderFinishedSemaphore, nullptr);
-    vkDestroyFence(vulkan.device, this->inFlightFence, nullptr);
   }
 
   std::vector<u64> FrameData::getQueryResults(void) {

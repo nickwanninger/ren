@@ -103,8 +103,7 @@ namespace ren {
     // assert(frameData->frameIndex == frameIndex);
     {
       REN_PROFILE_SCOPE("Wait for fences");
-      vkWaitForFences(vulkan.device, 1, &frameData->inFlightFence, VK_TRUE, UINT64_MAX);
-      vkResetFences(vulkan.device, 1, &frameData->inFlightFence);
+      frameData->inFlightFence->awaitCompletion(true);
     }
 
     // Reset the command buffer for this frame.

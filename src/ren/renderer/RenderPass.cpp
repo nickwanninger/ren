@@ -36,7 +36,7 @@ namespace ren {
   VkAttachmentDescription &RenderPass::Description::addDepthAttachment(
       const std::string_view &name, VkSampleCountFlagBits samples) {
     VkAttachmentDescription attachment{};
-    attachment.format = getVulkan().findDepthFormat();
+    attachment.format = ren::getVulkan().findDepthFormat();
     attachment.samples = samples;
     attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -166,7 +166,7 @@ namespace ren {
     }
 
     // Create the render target with the render pass reference.
-    return makeRef<RenderTarget>(rtDesc);
+    return make<RenderTarget>(rtDesc);
   }
 
   void RenderPass::build(void) {

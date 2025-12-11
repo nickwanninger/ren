@@ -29,7 +29,7 @@ namespace ren {
 
     static inline ref<Texture> create(const std::string_view &name, u32 width, u32 height,
                                       u8 *data = nullptr) {
-      return makeRef<Texture>(name, width, height, data);
+      return make<Texture>(name, width, height, data);
     }
 
     static ref<Texture> createSinglePixel(const std::string_view &name, u8 r, u8 g, u8 b, u8 a);

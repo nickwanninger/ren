@@ -169,6 +169,6 @@ namespace ren {
     Node* root = nullptr;
     // The nodes of the reflection tree are owned by this object.
     // We use raw pointers in the tree itself for simplicity.
-    std::vector<box<Node>> allNodes;
+    std::vector<Box<Node>> allNodes;
   };
 }  // namespace ren

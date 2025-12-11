@@ -102,17 +102,35 @@ namespace ren {
   template <typename T>
   using weak_ref = std::weak_ptr<T>;
 
+
+  template <typename T>
+  class RefCounted : public std::enable_shared_from_this<T> {
+   public:
+    using Ref = ref<T>;
+    using WeakRef = weak_ref<T>;
+
+    template <typename... Args>
+    static Ref make(Args... args) {
+      // Bit of a trick to access private constructors
+      struct Enabler : public T {
+        Enabler(Args... args)
+            : T(std::forward<Args>(args)...) {}
+      };
+      return std::make_shared<Enabler>(std::forward<Args>(args)...);
+    }
+  };
+
   template <typename T, typename... Args>
-  ref<T> makeRef(Args&&... args) {
+  ref<T> make(Args&&... args) {
     REN_PROFILE_FUNCTION();
     return std::make_shared<T>(std::forward<Args>(args)...);
   }
 
   template <typename T>
-  using box = std::unique_ptr<T>;
+  using Box = std::unique_ptr<T>;
 
   template <typename T, typename... Args>
-  box<T> makeBox(Args&&... args) {
+  Box<T> makeBox(Args&&... args) {
     REN_PROFILE_FUNCTION();
     return std::make_unique<T>(std::forward<Args>(args)...);
   }

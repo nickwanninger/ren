@@ -116,7 +116,7 @@ namespace ren {
       throw std::runtime_error("Invalid GraphImageSpec: must have non-zero scale or fixed size");
     }
 
-    auto imageResource = makeRef<ImageResource>(spec);
+    auto imageResource = make<ImageResource>(spec);
     imageResource->name = std::string(name);
     imageResource->initialAccess = initialAccess;
 

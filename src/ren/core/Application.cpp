@@ -15,7 +15,9 @@
 
 #include <ren/core/Entity.h>
 #include <ren/assets/Mesh.h>
+#include <ren/assets/MeshBuilder.h>
 
+#include <ren/renderer/Buffer.h>
 #include <ren/renderer/Descriptors.h>
 #include <ren/renderer/graph/RenderGraph.h>
 #include <ren/renderer/graph/RenderPassTask.h>
@@ -34,7 +36,6 @@
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
 #include <ren/core/Systems.h>
-#include <ren/core/SceneRenderer.h>
 #include <ren/assets/MegaMeshBuffer.h>
 
 #include <ren/core/Flag.h>
@@ -67,7 +68,9 @@ namespace ren {
     }
 
 
-    SDL_WindowFlags window_flags = (SDL_WindowFlags)(SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
+    SDL_WindowFlags window_flags =
+        (SDL_WindowFlags)(SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
+
     auto windowName = fmt::format("{} - Ren {}", app_name, REN_VERSION);
     this->window =
         SDL_CreateWindow(windowName.c_str(), SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
@@ -79,7 +82,7 @@ namespace ren {
 
     // This initializes the Vulkan instance and all the necessary Vulkan objects.
     // TODO: make this a resource instead of a value on Application.
-    this->renderer = makeRef<Renderer>(this->window);
+    this->renderer = make<Renderer>(this->window);
 
     // world.set_threads(6);
 
@@ -117,11 +120,8 @@ namespace ren {
 
     world.emplace<neko::luainspector>(ren::lua());
 
-
     auto scene = ren::world().entity("scene");
-
-
-    this->sceneLayer = makeRef<SceneLayer>(*this);
+    this->sceneLayer = make<SceneLayer>(*this);
     this->layerStack.pushLayer(sceneLayer);
 
     initImGui();
@@ -189,29 +189,20 @@ namespace ren {
     SDL_Event e;
 
 
-    SceneRenderer sceneRenderer(*this->renderer);
-
-
     ren::PipelineCache pipelineCache;
     auto &vulkan = ren::getVulkan();
-
-
-
 
     int pixelScale = 3;
     float fov = 90.0f;
 
-
     // now make a render target for the gbuffer.
     float renderAspect = 0.0f;
     bool targetValid = false;
-    ref<RenderTarget> gbufferTarget = nullptr;
-
 
 
     ren::PipelineStateObject blitPSO;
     blitPSO.debugName = "GBuffer Blit PSO";
-    blitPSO.program = makeRef<ShaderProgram>("shaders/display");
+    blitPSO.program = make<ShaderProgram>("shaders/display");
     blitPSO.cullMode = ren::CullMode::None;
     blitPSO.hasVertexBinding = false;
 
@@ -222,6 +213,7 @@ namespace ren {
     glm::vec3 modelPosition(0.0f);
 
     FramerateCounter framerateCounter;
+    FramerateCounter allocationCounter;
     ren::RenderGraph G;
 
 
@@ -230,10 +222,6 @@ namespace ren {
     ren::GraphHandle ssao;
     ren::GraphHandle gbufferAlbedo, gbufferNormal, gbufferMaterial, gbufferDepth;
     auto &gbp = ren::addGBuffer(G, gbufferAlbedo, gbufferNormal, gbufferMaterial, gbufferDepth);
-
-    // ren::GraphHandle shadowMap;                          // TEMP
-    // ren::addShadowMap(G, 64, shadowMap);      // TEMP
-    // gbp.read(shadowMap, ren::GraphAccess::DepthTarget);  // FORCE, TEMP
 
     ren::addSSAO(G, gbufferDepth, gbufferNormal, ssao);
 
@@ -268,13 +256,11 @@ namespace ren {
 
             case SDL_DROPBEGIN: {
               fmt::println("Drop Begin");
-              // Drop operation beginning (SDL 2.0.5+)
               break;
             }
 
             case SDL_DROPCOMPLETE: {
               fmt::println("Drop Complete");
-              // Drop operation complete (SDL 2.0.5+)
               break;
             }
 
@@ -282,7 +268,6 @@ namespace ren {
               switch (e.window.event) {
                 case SDL_WINDOWEVENT_RESIZED:
                 case SDL_WINDOWEVENT_SIZE_CHANGED: {
-                  // fmt::println("!!!Window resized to {}x{}", e.window.data1, e.window.data2);
                   windowResized = true;
                   break;
                 }
@@ -296,19 +281,11 @@ namespace ren {
               break;
             }
             default: {
-              // fmt::println("Unhandled SDL Event Type: {}\n", e.type);
               break;
             }
           }
 
 
-
-          // if (e.type == SDL_WINDOWEVENT_RESIZED) { fmt::println("resize event"); }
-          // // close the window when user alt-f4s or clicks the X button
-          // if (e.type == SDL_QUIT) {
-          //   this->running = false;
-          //   break;
-          // }
 
           if (ImGui_ImplSDL2_ProcessEvent(&e)) { continue; }
 
@@ -345,29 +322,21 @@ namespace ren {
 
       if (!running) break;
 
-      // Get a frame from the swapchain.
 
       renderer->beginFrame();
       auto &frame = ren::getFrameData();
 
       framerateCounter.addFrame(deltaTime);
 
-
-
-
-      float width = frame.deviceImage->getWidth();
-      float height = frame.deviceImage->getHeight();
-
-
       float targetHeight = 480;
+      float width = (float)windowWidth;
+      float height = (float)windowHeight;
       // targetHeight = height;
       targetHeight = height * renderScaleTemp;
       float scale = targetHeight / height;
       scale *= renderScaleTemp;
       width *= scale;
       height *= scale;
-
-
 
       auto renderSize = glm::uvec2(width, height);
 
@@ -395,8 +364,6 @@ namespace ren {
 
 
       G.startFrame(renderSize);
-
-
 
 
       ImGui::DragFloat("Render Scale", &renderScaleTemp, 0.01f, 0.1f, 2.0f);
@@ -434,59 +401,198 @@ namespace ren {
 
       ren::resource<neko::luainspector>().draw();
 
-      // ImGui::Begin("Nodes");
-      // nodeEditor.display();
-      // ImGui::End();
-
       world.defer_begin();
-      // auto gbufferTarget = sceneRenderer.render(sceneLayer->scene, sceneLayer->camera);
 
-      renderer->withPass(*renderer->getDisplayPass(), *frame.renderTarget, [&]() {
-        static struct BlitConfiguration {
-          float exposure = 1.0f;
-          float ditherDivide = 256.0f;
-        } blitConfig;
+      auto enc = frame.commandEncoder;
+      struct Foo {
+        Foo(int a, float b)
+            : a(a)
+            , b(b) {}
+        int a;
+        float b;
+      };
 
-        ImGui::Begin("Display Settings");
-        ImGui::DragFloat("Exposure", &blitConfig.exposure, 0.01f, 0.0f, 100.0f);
-        ImGui::DragFloat("Dither Divide", &blitConfig.ditherDivide, 1.0f, 1.0f, 1024.0f, "%.0f");
-        ImGui::End();
 
-        static ren::UniformBufferSet<BlitConfiguration> blitConfigBuffer(1);
-        blitConfigBuffer.update(&blitConfig, 1, 0);
-
-        auto cmd = ren::getFrameData().commandBuffer;
-
-        {
-          REN_PROFILE_SCOPE("Blit GBuffer");
-          // Blit the gbuffer to the screen temporarily.
-
-          renderer->bind(blitPSO);
-
-          // begin binding set zero, which is the gbuffer textures.
-          auto blitBinder = renderer->startBinding(0);
-          blitBinder.bind("config", blitConfigBuffer.currentAsBuffer());
-
-          blitBinder.bind("albedo", *G.getImage(gbufferAlbedo), VK_FILTER_NEAREST);
-          blitBinder.bind("ssao", *G.getImage(ssao), VK_FILTER_LINEAR);
-          blitBinder.apply();
-
-          vkCmdDraw(cmd, 3, 1, 0, 0);
+      struct ImGuiTextureID {
+        VkDescriptorSet texID;
+        ImGuiTextureID(ren::Image &image) {
+          texID = ImGui_ImplVulkan_AddTexture(
+              ren::Renderer::get().getSampler(VK_FILTER_LINEAR).getHandle(), image.getImageView(),
+              VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
         }
+        ~ImGuiTextureID() { ImGui_ImplVulkan_RemoveTexture(texID); }
+      };
 
-        {
-          REN_PROFILE_SCOPE("ImGui Render Draw Data");
-          ImGui::Render();
-          ImGui::UpdatePlatformWindows();
-          ImGui::RenderPlatformWindowsDefault();
-          // Gross leakage.
-          ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), ren::getFrameData().commandBuffer);
-        }
 
-      });
+
+      enc->withRenderPass(
+          *renderer->getDisplayPass(), *frame.renderTarget, [&](RenderPassEncoder &enc) {
+            static auto program = make<ShaderProgram>("shaders/test/test_triangle");
+            ren::PipelineStateObject trianglePSO;
+            trianglePSO.debugName = "Test Triangle PSO";
+            trianglePSO.program = program;
+            trianglePSO.cullMode = ren::CullMode::None;
+            trianglePSO.hasVertexBinding = true;
+            trianglePSO.fillMode = ren::FillMode::Wireframe;
+
+
+            auto start = std::chrono::high_resolution_clock::now();
+            ren::MeshBuilder b;
+
+
+            static float p = 0.5f;
+            static int buildMode = 0;
+
+            static int segments = 6;
+            if (segments < 3) segments = 3;
+            // 0 == circle face (triangle fan)
+            // 1 == triangle strip
+
+
+            srand(0);
+
+
+
+            if (buildMode == 0) {
+              auto fb = b.beginFace();
+              // make a circle with N segments.
+              for (int i = 0; i < segments; i++) {
+                // compute a random distance
+                float distance = 0.1f + (rand() % 1000 / 1000.0f);
+
+                // just the point on the unit circle.
+                fb.vertex(glm::vec3(cosf((float)i / segments * glm::two_pi<float>()),
+                                    sinf((float)i / segments * glm::two_pi<float>()), 0.0f) *
+                              distance,
+                          glm::vec3(0), glm::vec2(i / (float)segments, 1.0f));
+              }
+              fb.end();
+            } else if (buildMode == 1) {
+              // triangle strip
+              // for (int i = 0; i <= segments; i++) {
+              //   float angle = (float)i / segments * glm::two_pi<float>();
+              //   float nextAngle = (float)(i + 1) / segments * glm::two_pi<float>();
+              //   b.vertex(glm::vec3(cosf(angle), sinf(angle), 0.0f) * p);
+              //   b.vertex(glm::vec3(cosf(nextAngle), sinf(nextAngle), 0.0f) * p);
+              // }
+            }
+
+            auto meshData = b.stampOut();
+            // fmt::println("Created test mesh with {} vertices and {} indices",
+            //              meshData->vertices.size(), meshData->indices.size());
+            enc.bindImmediateMesh(meshData->vertices, meshData->indices);
+            enc.bindPipeline(trianglePSO);
+            DrawArguments args;
+            args.vertexCount = static_cast<u32>(meshData->indices.size());
+            args.instanceCount = 1;
+            enc.drawIndexed(args);
+
+
+            auto end = std::chrono::high_resolution_clock::now();
+
+
+
+            float allocTime =
+                std::chrono::duration<float, std::chrono::nanoseconds::period>(end - start).count();
+
+            allocationCounter.addFrame(allocTime);
+            allocTime = allocationCounter.getAverageDeltaTime();
+
+            ImGui::Begin("New Perf Test");
+            ImGui::Text("Allocated VertexBuffer in %f ms", allocTime / 1000.0 / 1000.0);
+            // Pick buildMode
+            ImGui::RadioButton("Circle Face", &buildMode, 0);
+            ImGui::RadioButton("Triangle Strip", &buildMode, 1);
+            ImGui::DragInt("Segments", &segments, 1.0f, 3, 1024);
+            if (ImGui::Button("Dump Mesh as OBJ")) { meshData->dumpObj(); }
+
+            int width, height;
+            SDL_GetWindowSize(ren::Application::get().getWindow(), &width, &height);
+            ImGui::Text("Window Size: %d x %d", width, height);
+            SDL_Vulkan_GetDrawableSize(ren::Application::get().getWindow(), &width, &height);
+            ImGui::Text("Drawable Size: %d x %d", width, height);
+
+
+            if (ImGui::BeginTable("Vertices Table", 5,
+                                  ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
+              ImGui::TableSetupColumn("Index");
+              ImGui::TableSetupColumn("x");
+              ImGui::TableSetupColumn("y");
+              ImGui::TableSetupColumn("z");
+              ImGui::TableSetupColumn("UV");
+              ImGui::TableHeadersRow();
+
+              for (size_t i = 0; i < meshData->vertices.size(); ++i) {
+                const auto &vertex = meshData->vertices[i];
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0);
+                ImGui::Text("%zu", i);
+                ImGui::TableNextColumn();
+                ImGui::Text("%f", vertex.pos.x);
+                ImGui::TableNextColumn();
+                ImGui::Text("%f", vertex.pos.y);
+                ImGui::TableNextColumn();
+                ImGui::Text("%f", vertex.pos.z);
+                ImGui::TableNextColumn();
+                ImGui::Text("%f,%f", vertex.texCoord.x, vertex.texCoord.y);
+              }
+
+              ImGui::EndTable();
+            }
+            ImGui::End();
+
+            ImGui::Render();
+            ImGui::UpdatePlatformWindows();
+            ImGui::RenderPlatformWindowsDefault();
+            ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), enc.buf());  // Gross leakage.
+          });
+
+
 
 
       // renderer->withPass(*renderer->getDisplayPass(), *frame.renderTarget, [&]() {
+      //   static struct BlitConfiguration {
+      //     float exposure = 1.0f;
+      //     float ditherDivide = 256.0f;
+      //   } blitConfig;
+
+      //   ImGui::Begin("Display Settings");
+      //   ImGui::DragFloat("Exposure", &blitConfig.exposure, 0.01f, 0.0f, 100.0f);
+      //   ImGui::DragFloat("Dither Divide", &blitConfig.ditherDivide, 1.0f, 1.0f, 1024.0f, "%.0f");
+      //   ImGui::End();
+
+      //   static ren::UniformBufferSet<BlitConfiguration> blitConfigBuffer(1);
+      //   blitConfigBuffer.update(&blitConfig, 1, 0);
+
+      //   auto cmd = ren::getFrameData().commandBuffer;
+
+      //   {
+      //     REN_PROFILE_SCOPE("Blit GBuffer");
+      //     // Blit the gbuffer to the screen temporarily.
+
+      //     renderer->bind(blitPSO);
+
+      //     // begin binding set zero, which is the gbuffer textures.
+      //     auto blitBinder = renderer->startBinding(0);
+      //     blitBinder.bind("config", blitConfigBuffer.currentAsBuffer());
+
+      //     blitBinder.bind("albedo", *G.getImage(gbufferAlbedo), VK_FILTER_NEAREST);
+      //     blitBinder.bind("ssao", *G.getImage(ssao), VK_FILTER_LINEAR);
+      //     blitBinder.apply();
+
+      //     vkCmdDraw(cmd, 3, 1, 0, 0);
+      //   }
+
+      //   {
+      //     REN_PROFILE_SCOPE("ImGui Render Draw Data");
+      //     ImGui::Render();
+      //     ImGui::UpdatePlatformWindows();
+      //     ImGui::RenderPlatformWindowsDefault();
+      //     // Gross leakage.
+      //     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(),
+      //     ren::getFrameData().commandBuffer);
+      //   }
+
       // });
 
 
@@ -539,15 +645,7 @@ namespace ren {
     auto &io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;  //  | ImGuiConfigFlags_ViewportsEnable;
 
-
-    // io.Fonts->AddFontFromFileTTF("assets/fonts/Roboto-Medium.ttf", 15);
-    // io.Fonts->AddFontFromFileTTF("assets/fonts/FiraCode-Medium.ttf", 14);
-
-
     ImGui::StyleColorsDark();
-    // ImGui::StyleColorsLight();
-
-
 
 
     // this initializes imgui for SDL
@@ -567,68 +665,74 @@ namespace ren {
 
     ImGui_ImplVulkan_Init(&init_info);
 
-
     ImGuiStyle &style = ImGui::GetStyle();
-    // if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
-    //   style.WindowRounding = 0.0f;
-    //   style.Colors[ImGuiCol_WindowBg].w = 1.0f;
-    // }
+    // ImVec4 *colors = style.Colors;
+    ImVec4 *colors = ImGui::GetStyle().Colors;
+
+    auto windowBackground = ImVec4(0.01f, 0.01f, 0.01f, 1.00f);
+    auto lighten = [](const ImVec4 &color, float amount) {
+      return ImVec4(color.x + amount, color.y + amount, color.z + amount, color.w);
+    };
+
+    colors[ImGuiCol_TextDisabled] = ImVec4(0.11f, 0.11f, 0.11f, 1.00f);
+    colors[ImGuiCol_WindowBg] = windowBackground;
+    colors[ImGuiCol_ChildBg] = lighten(windowBackground, 0.01f);
+    colors[ImGuiCol_Border] = lighten(windowBackground, 0.02f);
+    colors[ImGuiCol_BorderShadow] = ImVec4(0.00f, 0.00f, 0.00f, 1.00f);
+    colors[ImGuiCol_FrameBg] = lighten(windowBackground, 0.02f);
+    colors[ImGuiCol_FrameBgHovered] = ImVec4(0.08f, 0.08f, 0.08f, 1.00f);
+    colors[ImGuiCol_FrameBgActive] = ImVec4(0.08f, 0.08f, 0.08f, 1.00f);
+    colors[ImGuiCol_TitleBg] = windowBackground;
+    colors[ImGuiCol_TitleBgActive] = windowBackground;
+    colors[ImGuiCol_TitleBgCollapsed] = windowBackground;
+    colors[ImGuiCol_MenuBarBg] = windowBackground;
+    colors[ImGuiCol_ScrollbarBg] = lighten(windowBackground, 0.02f);
+    colors[ImGuiCol_ScrollbarGrab] = ImVec4(0.09f, 0.09f, 0.09f, 1.00f);
+    colors[ImGuiCol_ScrollbarGrabHovered] = ImVec4(0.30f, 0.30f, 0.30f, 1.00f);
+    colors[ImGuiCol_ScrollbarGrabActive] = ImVec4(0.67f, 0.67f, 0.67f, 1.00f);
+    colors[ImGuiCol_Button] = ImVec4(0.07f, 0.07f, 0.07f, 1.00f);
+    colors[ImGuiCol_ButtonHovered] = ImVec4(0.25f, 0.25f, 0.25f, 1.00f);
+    colors[ImGuiCol_ButtonActive] = ImVec4(0.22f, 0.22f, 0.22f, 1.00f);
+    colors[ImGuiCol_Header] = ImVec4(0.02f, 0.02f, 0.02f, 1.00f);
+    colors[ImGuiCol_HeaderHovered] = ImVec4(0.05f, 0.05f, 0.05f, 1.00f);
+    colors[ImGuiCol_HeaderActive] = ImVec4(0.08f, 0.08f, 0.08f, 1.00f);
+    colors[ImGuiCol_Tab] = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
+    colors[ImGuiCol_TabSelected] = ImVec4(0.04f, 0.04f, 0.04f, 1.00f);
+    colors[ImGuiCol_TabHovered] = ImVec4(0.16f, 0.16f, 0.16f, 0.80f);
+    colors[ImGuiCol_TabSelectedOverline] = ImVec4(1.00f, 1.00f, 1.00f, 0.0f);
+    colors[ImGuiCol_TabDimmed] = windowBackground;
+    colors[ImGuiCol_TabDimmedSelected] = lighten(windowBackground, 0.02f);
+    colors[ImGuiCol_DockingPreview] = ImVec4(0.98f, 0.99f, 1.00f, 0.09f);
+    colors[ImGuiCol_DockingEmptyBg] = ImVec4(1.00f, 1.00f, 1.00f, 1.00f);
+    colors[ImGuiCol_TableHeaderBg] = ImVec4(0.16f, 0.16f, 0.16f, 1.00f);
+    colors[ImGuiCol_TableBorderStrong] = lighten(windowBackground, 0.02f);
+    colors[ImGuiCol_TableBorderLight] = ImVec4(0.07f, 0.07f, 0.07f, 1.00f);
+    colors[ImGuiCol_TableRowBg] = ImVec4(0.00f, 0.00f, 0.00f, 0.03f);
+    colors[ImGuiCol_TableRowBgAlt] = ImVec4(0.29f, 0.29f, 0.29f, 0.06f);
+    colors[ImGuiCol_TreeLines] = ImVec4(0.29f, 0.29f, 0.31f, 0.50f);
 
 
-    auto &colors = ImGui::GetStyle().Colors;
-    colors[ImGuiCol_WindowBg] = ImVec4{0.01f, 0.01f, 0.01f, 0.9f};
 
-    auto border = ImVec4{0.1f, 0.1f, 0.1f, 1.0f};
-    auto themeColor = ImVec4{0.2f, 0.205f, 0.21f, 1.0f};
-    auto themeColorHovered = ImVec4{0.3f, 0.305f, 0.31f, 1.0f};
-
-    colors[ImGuiCol_Border] = border;
-
-    // Headers
-    colors[ImGuiCol_Header] = border;
-    colors[ImGuiCol_HeaderHovered] = border;
-    colors[ImGuiCol_HeaderActive] = border;
-
-    // Buttons
-    colors[ImGuiCol_Button] = ImVec4{0.2f, 0.205f, 0.21f, 1.0f};
-    colors[ImGuiCol_ButtonHovered] = ImVec4{0.3f, 0.305f, 0.31f, 1.0f};
-    colors[ImGuiCol_ButtonActive] = ImVec4{0.15f, 0.1505f, 0.151f, 1.0f};
-
-    // Frame BG
-    colors[ImGuiCol_FrameBg] = border;
-    colors[ImGuiCol_FrameBgHovered] = ImVec4{0.3f, 0.305f, 0.31f, 1.0f};
-    colors[ImGuiCol_FrameBgActive] = ImVec4{0.15f, 0.1505f, 0.151f, 1.0f};
-
-    // Tabs
-    colors[ImGuiCol_Tab] = ImVec4{0.15f, 0.1505f, 0.151f, 1.0f};
-    colors[ImGuiCol_TabHovered] = ImVec4{0.38f, 0.3805f, 0.381f, 1.0f};
-    colors[ImGuiCol_TabActive] = ImVec4{0.28f, 0.2805f, 0.281f, 1.0f};
-    colors[ImGuiCol_TabUnfocused] = ImVec4{0.15f, 0.1505f, 0.151f, 1.0f};
-    colors[ImGuiCol_TabUnfocusedActive] = ImVec4{0.2f, 0.205f, 0.21f, 1.0f};
-
-    // Title
-    colors[ImGuiCol_TitleBg] = border;
-    colors[ImGuiCol_TitleBgActive] = border;
-    colors[ImGuiCol_TitleBgCollapsed] = ImVec4{0.15f, 0.1505f, 0.151f, 1.0f};
-
-    colors[ImGuiCol_ButtonHovered] = ImVec4(1.f, 1.f, 1.f, 1.f);
+    style.TabRounding = 0.0f;
+    style.WindowMenuButtonPosition = ImGuiDir_None;
+    style.FontSizeBase = 15.0f;
 
 
-    // Table row alternating colors for less high contrast
-    colors[ImGuiCol_TableRowBg] = ImVec4{0.0f, 0.0f, 0.0f, 0.0f};        // Transparent
-    colors[ImGuiCol_TableRowBgAlt] = ImVec4{0.08f, 0.08f, 0.08f, 0.1f};  // Subtle alternating row
-
-    // Update controls
-    for (auto &style : {
-             ImGuiCol_CheckMark,
-             ImGuiCol_SliderGrab,
-             ImGuiCol_SliderGrabActive,
-             ImGuiCol_ResizeGrip,
-             ImGuiCol_Button,
-         }) {
-      colors[style] = themeColor;
+    auto &am = ren::ensureResource<ren::AssetManager>();
+    std::vector<u8> fontBytes;
+    if (am.load("fonts/MapleMono-Medium.ttf", fontBytes)) {
+      ImFontConfig fontConfig;
+      fontConfig.OversampleH = 3;
+      fontConfig.OversampleV = 1;
+      fontConfig.PixelSnapH = true;
+      fontConfig.FontDataOwnedByAtlas = false;
+      io.Fonts->AddFontFromMemoryTTF(fontBytes.data(), static_cast<int>(fontBytes.size()),
+                                     style.FontSizeBase, &fontConfig);
+    } else {
+      fmt::println("Failed to load font from asset manager!");
     }
   }
+
 
 
 

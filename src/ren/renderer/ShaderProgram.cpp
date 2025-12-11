@@ -50,7 +50,7 @@ namespace ren {
 
 
   void ShaderProgram::reflectShaders() {
-    this->reflection = makeRef<ren::ShaderReflection>();
+    this->reflection = make<ren::ShaderReflection>();
     // TODO: use ren::ShaderRefleciton
     for (auto& shader : shaders) {
       reflectShader(shader->getCode(), shader->getStage());
@@ -274,7 +274,7 @@ namespace ren {
 
   ref<ShaderObject> ShaderProgram::instantiate() {
     auto& frame = getFrameData();
-    return makeRef<ShaderObject>(this->shared_from_this(), frame.descriptorAllocator);
+    return make<ShaderObject>(this->shared_from_this(), frame.descriptorAllocator);
   }
 
 

@@ -177,7 +177,7 @@ ren::ref<ren::Texture> ren::Texture::load(const std::string_view &filename) {
     pixels = stbi_load(filename.data(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
   }
 
-  auto texture = ren::makeRef<ren::Texture>(filename, (u32)texWidth, (u32)texHeight, (u8 *)pixels);
+  auto texture = ren::make<ren::Texture>(filename, (u32)texWidth, (u32)texHeight, (u8 *)pixels);
 
   stbi_image_free(pixels);
 
@@ -196,7 +196,7 @@ ren::ref<ren::Texture> ren::Texture::load(const std::string_view &name, void *da
                                    STBI_rgb_alpha);
   }
 
-  auto texture = ren::makeRef<ren::Texture>(name, (u32)texWidth, (u32)texHeight, (u8 *)pixels);
+  auto texture = ren::make<ren::Texture>(name, (u32)texWidth, (u32)texHeight, (u8 *)pixels);
 
   stbi_image_free(pixels);
 
@@ -215,5 +215,5 @@ ren::ref<ren::Texture> ren::Texture::createSinglePixel(const std::string_view &n
   data[1] = g;
   data[2] = b;
   data[3] = a;
-  return makeRef<Texture>(name, 1, 1, data);
+  return make<Texture>(name, 1, 1, data);
 }

@@ -271,7 +271,7 @@ namespace ren {
       throw std::runtime_error("failed to create graphics pipeline!");
     }
 
-    auto cachedPipeline = makeRef<CachedPipeline>(pipeline, pso);
+    auto cachedPipeline = make<CachedPipeline>(pipeline, pso);
     pipelines[hash] = cachedPipeline;
     return cachedPipeline;
   }

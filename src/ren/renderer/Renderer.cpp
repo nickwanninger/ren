@@ -1,7 +1,7 @@
 #include <ren/renderer/Renderer.h>
 
 
-
+#include <ren/renderer/CommandEncoder.h>
 
 namespace ren {
 
@@ -20,7 +20,7 @@ namespace ren {
     g_renderer = this;
 
     // Create the Vulkan instance
-    this->vulkan = makeRef<VulkanInstance>(this->window);
+    this->vulkan = make<VulkanInstance>(this->window);
 
 
     initSwapchain();
@@ -218,6 +218,7 @@ namespace ren {
 
     // Clear the descriptor pool for this frame to make space for new descriptor sets.
     frame->descriptorAllocator.reset_pools();
+    frame->commandEncoder->reset();
   }
 
   void Renderer::endFrame(void) {
@@ -254,7 +255,7 @@ namespace ren {
       submitInfo.signalSemaphoreCount = 1;
       submitInfo.pSignalSemaphores = signalSemaphores;
 
-      if (vkQueueSubmit(vulkan->graphics_queue, 1, &submitInfo, frame.inFlightFence) !=
+      if (vkQueueSubmit(vulkan->graphics_queue, 1, &submitInfo, frame.inFlightFence->getHandle()) !=
           VK_SUCCESS) {
         throw std::runtime_error("failed to submit draw command buffer!");
       }

@@ -79,7 +79,7 @@ namespace ren {
     // Step 3: Create the RenderTarget
     // The RenderTarget stores attachments and manages VkFramebuffer caching
     // (framebuffers are cached per RenderPass UUID for efficiency).
-    target = makeRef<RenderTarget>(targetDesc);
+    target = make<RenderTarget>(targetDesc);
   }
 
   void RenderPassTask::unprepare() {

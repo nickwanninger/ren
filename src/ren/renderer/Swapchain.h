@@ -22,7 +22,7 @@ namespace ren {
   // This engine defaults to triple buffering. We also have a lower resolution
   // render target for game assets, and we blit that to the device resolution
   // surface.
-  class Swapchain : public ren::VulkanResource {
+  class Swapchain : public ren::VulkanResource, public ren::RefCounted<Swapchain> {
    public:
     // We have one frame for each frame in flight.
     // In a triple buffering setup, this is 3.

@@ -151,7 +151,7 @@ namespace ren {
     static_assert(
         std::is_base_of<RenderTask, T>::value,
         "when adding a task to the render graph, it must be derived from ren::RenderTask");
-    auto task = makeRef<T>(*this, std::forward<Args>(args)...);
+    auto task = make<T>(*this, std::forward<Args>(args)...);
     task->setName(name);
     tasks.push_back(task);
     return *task;

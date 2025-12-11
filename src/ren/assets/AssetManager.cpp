@@ -128,7 +128,7 @@ namespace ren {
         fmt::print("Importing shader asset from {}\n", path);
         // Load the shader from the file
         auto stage = ShaderModule::getStageFromFilename(path);
-        auto shader = makeRef<ShaderModule>(path, stage);
+        auto shader = make<ShaderModule>(path, stage);
         if (shader) {
           // Register the shader asset
           shader->setAssetID(info.id);

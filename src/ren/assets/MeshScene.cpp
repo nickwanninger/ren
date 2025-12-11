@@ -251,7 +251,7 @@ namespace ren {
 
 
   ref<MeshScene::Node> MeshScene::convertAssimpNode(const aiNode *ainode, const aiScene *scene) {
-    auto node = makeRef<MeshScene::Node>();
+    auto node = make<MeshScene::Node>();
     node->name = ainode->mName.C_Str();
     this->nodes.push_back(node);  // Add to the scene's node list
 
@@ -279,7 +279,7 @@ namespace ren {
       // If this node has more than one mesh, create a child for each mesh
       for (unsigned i = 0; i < ainode->mNumMeshes; ++i) {
         unsigned meshIdx = ainode->mMeshes[i];
-        auto meshChild = makeRef<MeshScene::Node>();
+        auto meshChild = make<MeshScene::Node>();
         meshChild->name = node->name + fmt::format("_Mesh{}", i);
         meshChild->mesh = meshes[meshIdx];
         meshChild->transform = node->transform;
@@ -332,7 +332,7 @@ namespace ren {
     }
 
 
-    auto meshScene = makeRef<MeshScene>();
+    auto meshScene = make<MeshScene>();
     meshScene->meshes.reserve(scene->mNumMeshes);
 
     // Iterate over all meshes in the scene.
@@ -394,7 +394,7 @@ namespace ren {
         }
       }
       // Create a mesh from the vertices and indices
-      auto mesh = makeRef<Mesh>(assimpMesh->mName.C_Str(), vertices, indices);
+      auto mesh = make<Mesh>(assimpMesh->mName.C_Str(), vertices, indices);
 
       meshScene->meshes.push_back(mesh);
     }
@@ -422,7 +422,7 @@ namespace ren {
     for (unsigned int i = 0; i < scene->mNumMaterials; ++i) {
       REN_PROFILE_SCOPE("Read Assimp Material");
       const aiMaterial *assimpMaterial = scene->mMaterials[i];
-      auto material = makeRef<ren::PBRMaterial>();
+      auto material = make<ren::PBRMaterial>();
 
       // Set the material name
       aiString materialName;

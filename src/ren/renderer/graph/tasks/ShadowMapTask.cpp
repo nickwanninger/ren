@@ -20,7 +20,7 @@ namespace ren {
       : ren::RenderPassTask(G) {
     out.shadow = addDepthAttachment("shadow_map", {.width = resolution, .height = resolution});
 
-    pso.program = makeRef<ShaderProgram>("shaders/shadow_map");
+    pso.program = make<ShaderProgram>("shaders/shadow_map");
     pso.depthWrite = true;
     pso.depthTest = true;
     pso.cullMode = ren::CullMode::Front;

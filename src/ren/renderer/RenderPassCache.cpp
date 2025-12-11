@@ -18,7 +18,7 @@ namespace ren {
       return it->second;
     } else {
       // Otherwise, create a new render pass and cache it.
-      auto pass = makeRef<RenderPass>(desc);
+      auto pass = make<RenderPass>(desc);
       m_cache[hash] = pass;
       return pass;
     }
