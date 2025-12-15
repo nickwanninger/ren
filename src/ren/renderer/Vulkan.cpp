@@ -2,6 +2,7 @@
 #include <ren/renderer/ShaderModule.h>
 #include <ren/renderer/SubmissionQueue.h>
 #include <ren/core/Instrumentation.h>
+#include <ren/misc/DeprecationLogger.h>
 
 #include <vector>
 #include <fmt/core.h>
@@ -282,7 +283,7 @@ void ren::VulkanInstance::init_instance(void) {
   for (uint32_t i = 0; i < queue_family_count; i++) {
     VkQueueFamilyProperties& props = queue_families[i];
 
-    fmt::print("Queue Family {}    count:={}     ", i, props.queueCount);
+    fmt::print("Queue Family {}    x{}    ", i, props.queueCount);
 #define PRINTCAP(cap, c) fmt::print("{}", props.queueFlags& cap ? c : "-");
 
     PRINTCAP(VK_QUEUE_GRAPHICS_BIT, "G");
@@ -387,6 +388,7 @@ void ren::VulkanInstance::transitionImageLayout(VkCommandBuffer commandBuffer, V
                                                 VkFormat format, VkImageLayout oldLayout,
                                                 VkImageLayout newLayout,
                                                 VkImageAspectFlags aspect) {
+  REN_DEPRECATION_WARNING();
   VkImageMemoryBarrier barrier{};
   barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
   barrier.oldLayout = oldLayout;

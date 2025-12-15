@@ -53,18 +53,12 @@ namespace ren {
     // Image objects from the render graph.
     RenderTargetDescription targetDesc;
 
-    // fmt::println("RenderPassTask '{}' preparing RenderTarget with attachments:", this->name());
-
     for (const auto &[name, handle] : this->attachmentHandles) {
       // Get the image resource from the graph
       ren::ImageRef image = graph().getImage(handle);
 
       // Get the resource metadata to determine attachment type
       auto resource = graph().get<ren::GraphResource>(handle);
-
-      fmt::println(" - Attachment '{}' -> Image {}  - {}", name, (void *)image->getImage(),
-                   resource->writeAccess == GraphAccess::DepthTarget ? "Depth" : "Color");
-
       RenderTargetAttachmentType attachmentType =
           (resource->writeAccess == GraphAccess::DepthTarget) ? RenderTargetAttachmentTypeDepth
                                                               : RenderTargetAttachmentTypeColor;

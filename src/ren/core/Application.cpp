@@ -3,7 +3,6 @@
 #include <ren/core/AutoPlugin.h>
 
 #include <ren/renderer/pipelines/PipelineStateObject.h>
-#include <ren/renderer/pipelines/PipelineCache.h>
 #include <ren/renderer/ShaderCursor.h>
 #include <ren/misc/hash.h>
 #include <ren/renderer/SubmissionQueue.h>
@@ -190,15 +189,7 @@ namespace ren {
     SDL_Event e;
 
 
-    ren::PipelineCache pipelineCache;
     auto &vulkan = ren::getVulkan();
-
-    int pixelScale = 3;
-    float fov = 90.0f;
-
-    // now make a render target for the gbuffer.
-    float renderAspect = 0.0f;
-    bool targetValid = false;
 
 
     ren::PipelineStateObject blitPSO;
@@ -208,13 +199,7 @@ namespace ren {
     blitPSO.hasVertexBinding = false;
 
 
-
-    float modelScale = 1.0f;
-    glm::vec3 modelRotation(0.0f);
-    glm::vec3 modelPosition(0.0f);
-
     FramerateCounter framerateCounter;
-    FramerateCounter allocationCounter;
     ren::RenderGraph G;
 
 
@@ -236,7 +221,6 @@ namespace ren {
       REN_PROFILE_SCOPE("Frame");
 
       {
-        bool windowResized = false;
         REN_PROFILE_SCOPE("SDL Poll");
         // Handle events on queue
         while (SDL_PollEvent(&e) != 0) {
@@ -245,31 +229,10 @@ namespace ren {
 
 
           switch (e.type) {
-            case SDL_DROPFILE: {
-              // File dropped
-              char *dropped_filedir = e.drop.file;
-              // Process the file path
-              printf("File dropped: %s\n", dropped_filedir);
-              SDL_free(dropped_filedir);  // Must free this!
-              break;
-            }
-
-
-            case SDL_DROPBEGIN: {
-              fmt::println("Drop Begin");
-              break;
-            }
-
-            case SDL_DROPCOMPLETE: {
-              fmt::println("Drop Complete");
-              break;
-            }
-
             case SDL_WINDOWEVENT: {
               switch (e.window.event) {
                 case SDL_WINDOWEVENT_RESIZED:
                 case SDL_WINDOWEVENT_SIZE_CHANGED: {
-                  windowResized = true;
                   break;
                 }
               }
@@ -289,12 +252,7 @@ namespace ren {
 
 
           if (ImGui_ImplSDL2_ProcessEvent(&e)) { continue; }
-
-          Event renEvent(e);
-          layerStack.dispatchEvent(renEvent);
         }
-
-        if (windowResized) fmt::println("Window resized");
 
         REN_PROFILE_COUNTER("SDL Events", eventsHandled);
       }
@@ -315,11 +273,8 @@ namespace ren {
       auto deltaTime =
           std::chrono::duration<float, std::chrono::seconds::period>(currentTime - lastTime)
               .count();
-      TracyPlot("Frame Time", deltaTime);
-      TracyPlot("FPS", 1.0f / deltaTime);
       this->timeSeconds = time;
       lastTime = currentTime;
-
 
       if (!running) break;
 
@@ -340,7 +295,7 @@ namespace ren {
       height *= scale;
 
       auto renderSize = glm::uvec2(width, height);
-
+      G.startFrame(renderSize);
 
 
       {
@@ -364,10 +319,13 @@ namespace ren {
 
 
 
-      G.startFrame(renderSize);
 
 
-      ImGui::DragFloat("Render Scale", &renderScaleTemp, 0.01f, 0.1f, 2.0f);
+      ImGui::Begin("Debug Temp Settings");
+      ImGui::DragFloat("Render Scale", &renderScaleTemp, 0.01f, 0.1f, 1.0f);
+      ImGui::Text("FPS: %.1f", framerateCounter.getAverageFramerate());
+      ImGui::Text("Frame Time: %.3f ms", framerateCounter.getAverageDeltaTime() * 1000.0f);
+      ImGui::End();
 
 
       // Update lua globals
@@ -385,10 +343,7 @@ namespace ren {
         }
       }
 
-      {
-        REN_PROFILE_SCOPE("Tick");
-        world.lookup("scene").scope([&]() { world.progress(deltaTime); });
-      }
+      world.lookup("scene").scope([&]() { world.progress(deltaTime); });
 
 
       // TEMP: Execute test RenderPassTask for validation
@@ -405,28 +360,6 @@ namespace ren {
       world.defer_begin();
 
       auto enc = frame.commandEncoder;
-      struct Foo {
-        Foo(int a, float b)
-            : a(a)
-            , b(b) {}
-        int a;
-        float b;
-      };
-
-
-      struct ImGuiTextureID {
-        VkDescriptorSet texID;
-        ImGuiTextureID(ren::Image &image) {
-          texID = ImGui_ImplVulkan_AddTexture(
-              ren::Renderer::get().getSampler(VK_FILTER_LINEAR).getHandle(), image.getImageView(),
-              VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-        }
-        ~ImGuiTextureID() { ImGui_ImplVulkan_RemoveTexture(texID); }
-      };
-
-
-
-
       auto penc = enc->beginRenderPass(*renderer->getDisplayPass(), *frame.renderTarget);
       {
         static auto program = make<ShaderProgram>("shaders/test/test_triangle");
@@ -478,9 +411,6 @@ namespace ren {
         float allocTime =
             std::chrono::duration<float, std::chrono::nanoseconds::period>(end - start).count();
 
-        allocationCounter.addFrame(allocTime);
-        allocTime = allocationCounter.getAverageDeltaTime();
-
         ImGui::Begin("New Perf Test");
         ImGui::Text("Allocated VertexBuffer in %f ms", allocTime / 1000.0 / 1000.0);
         // Pick buildMode
@@ -529,55 +459,6 @@ namespace ren {
       }
 
       penc.end();
-
-
-
-
-      // renderer->withPass(*renderer->getDisplayPass(), *frame.renderTarget, [&]() {
-      //   static struct BlitConfiguration {
-      //     float exposure = 1.0f;
-      //     float ditherDivide = 256.0f;
-      //   } blitConfig;
-
-      //   ImGui::Begin("Display Settings");
-      //   ImGui::DragFloat("Exposure", &blitConfig.exposure, 0.01f, 0.0f, 100.0f);
-      //   ImGui::DragFloat("Dither Divide", &blitConfig.ditherDivide, 1.0f, 1.0f, 1024.0f, "%.0f");
-      //   ImGui::End();
-
-      //   static ren::UniformBufferSet<BlitConfiguration> blitConfigBuffer(1);
-      //   blitConfigBuffer.update(&blitConfig, 1, 0);
-
-      //   auto cmd = ren::getFrameData().commandBuffer;
-
-      //   {
-      //     REN_PROFILE_SCOPE("Blit GBuffer");
-      //     // Blit the gbuffer to the screen temporarily.
-
-      //     renderer->bind(blitPSO);
-
-      //     // begin binding set zero, which is the gbuffer textures.
-      //     auto blitBinder = renderer->startBinding(0);
-      //     blitBinder.bind("config", blitConfigBuffer.currentAsBuffer());
-
-      //     blitBinder.bind("albedo", *G.getImage(gbufferAlbedo), VK_FILTER_NEAREST);
-      //     blitBinder.bind("ssao", *G.getImage(ssao), VK_FILTER_LINEAR);
-      //     blitBinder.apply();
-
-      //     vkCmdDraw(cmd, 3, 1, 0, 0);
-      //   }
-
-      //   {
-      //     REN_PROFILE_SCOPE("ImGui Render Draw Data");
-      //     ImGui::Render();
-      //     ImGui::UpdatePlatformWindows();
-      //     ImGui::RenderPlatformWindowsDefault();
-      //     // Gross leakage.
-      //     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(),
-      //     ren::getFrameData().commandBuffer);
-      //   }
-
-      // });
-
 
       world.defer_end();
       renderer->endFrame();
