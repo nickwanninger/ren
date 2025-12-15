@@ -123,7 +123,6 @@ namespace ren {
     VkShaderModule create_shader_module(const std::vector<u8> &code);
     VkShaderModule load_shader_module(const std::string &filename);
 
-    void update_uniform_buffer(u32 current_image);
     void transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout,
                                VkImageLayout newLayout);
     void transitionImageLayout(VkCommandBuffer buf, VkImage image, VkFormat format,
@@ -149,18 +148,7 @@ namespace ren {
 
    private:
     void init_instance(void);
-    void init_renderpass(void);
-    void init_swapchain(void);
-    void init_framebuffers(void);
     void init_command_pool(void);
-    void init_command_buffer(void);
-    void init_sync_objects(void);
-    void init_imgui(void);
-
-
-    void createDepthResources(void);
-    void createTextureImage(void);
-    void createUniformBuffers(void);
 
 
     void cleanup_swapchain(void);

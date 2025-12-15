@@ -122,7 +122,6 @@ namespace ren {
 
   template <typename T, typename... Args>
   ref<T> make(Args&&... args) {
-    REN_PROFILE_FUNCTION();
     return std::make_shared<T>(std::forward<Args>(args)...);
   }
 

@@ -5,14 +5,13 @@
 namespace ren {
 
   class Fence : public ren::VulkanResource, public RefCounted<Fence> {
-   protected:
+   public:
     // No copying
     Fence(const Fence&) = delete;
     Fence& operator=(const Fence&) = delete;
     Fence(bool signaled = false);
 
 
-   public:
     ~Fence();
 
 

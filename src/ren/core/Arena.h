@@ -53,7 +53,7 @@ namespace ren {
     }
 
 
-    void* push(size_t size, bool zero = false) {
+    void* pushBytes(size_t size, bool zero = false) {
       if (m_current_block == nullptr) { this->new_block(size); }
 
       // TODO: edge case!
@@ -78,11 +78,11 @@ namespace ren {
     inline T* push(Args&&... args) {
       if constexpr (std::is_trivially_destructible<T>::value) {
         // no destructor needed
-        T* p = (T*)push(sizeof(T));
+        T* p = (T*)pushBytes(sizeof(T));
         ::new (p) T(std::forward<Args>(args)...);
         return p;
       } else {
-        auto* node = (DtorNode*)push(sizeof(DtorNode) + sizeof(T));
+        auto* node = (DtorNode*)pushBytes(sizeof(DtorNode) + sizeof(T));
         T* p = (T*)node->data;
         ::new (p) T(std::forward<Args>(args)...);
         node->dtor = [](void* obj) { static_cast<T*>(obj)->~T(); };
@@ -94,7 +94,7 @@ namespace ren {
 
     template <typename T>
     inline T* pushArray(size_t count) {
-      auto p = (T*)push(sizeof(T) * count);
+      auto p = (T*)pushBytes(sizeof(T) * count);
       for (size_t i = 0; i < count; i++) {
         ::new (&p[i]) T();
       }

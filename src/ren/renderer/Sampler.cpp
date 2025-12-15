@@ -32,8 +32,6 @@ namespace ren {
     if (vkCreateSampler(vulkan.device, &samplerInfo, nullptr, &sampler) != VK_SUCCESS) {
       throw std::runtime_error("failed to create texture sampler!");
     }
-
-    fmt::println("Created sampler: {}", (u64)sampler);
   }
 
   Sampler::~Sampler(void) {

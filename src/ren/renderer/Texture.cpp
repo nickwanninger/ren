@@ -35,7 +35,6 @@ ren::Texture::Texture(const std::string_view &name, u32 width, u32 height, u8 *p
     mipLevels = 1;  // disable mipmaps for now.
   }
 
-  fmt::println("Creating texture '{}' ({}x{}, {} mip levels)", name, width, height, mipLevels);
   ib.setFormat(format);
   ib.setMipLevels(mipLevels);
   ib.setUsage(VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
@@ -64,7 +63,6 @@ ren::Texture::Texture(const std::string_view &name, u32 width, u32 height, u8 *p
 
   // Generate mipmaps
   if (mipLevels > 1) { image->generateMipmaps(); }
-  // image->saveDebug("debug/");
 
 
   vulkan.transitionImageLayout(image->getImage(), format, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
@@ -140,8 +138,6 @@ ren::Texture::Texture(ren::ImageRef image) {
   samplerInfo.maxLod = 0.0f;
 
 
-  fmt::println("Creating texture '{}' from existing image", name);
-
   if (vkCreateSampler(vulkan.device, &samplerInfo, nullptr, &sampler) != VK_SUCCESS) {
     throw std::runtime_error("failed to create texture sampler!");
   }
@@ -192,8 +188,13 @@ ren::ref<ren::Texture> ren::Texture::load(const std::string_view &name, void *da
 
   {
     REN_PROFILE_SCOPE("stbi_load_from_memory");
+    auto start = std::chrono::high_resolution_clock::now();
     pixels = stbi_load_from_memory((stbi_uc *)data, (int)size, &texWidth, &texHeight, &texChannels,
                                    STBI_rgb_alpha);
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+    fmt::print("Loaded texture '{}' from memory ({}x{}, {} ms)\n", name, texWidth, texHeight,
+               duration);
   }
 
   auto texture = ren::make<ren::Texture>(name, (u32)texWidth, (u32)texHeight, (u8 *)pixels);

@@ -53,7 +53,7 @@ namespace ren {
     // Image objects from the render graph.
     RenderTargetDescription targetDesc;
 
-    fmt::println("RenderPassTask '{}' preparing RenderTarget with attachments:", this->name());
+    // fmt::println("RenderPassTask '{}' preparing RenderTarget with attachments:", this->name());
 
     for (const auto &[name, handle] : this->attachmentHandles) {
       // Get the image resource from the graph

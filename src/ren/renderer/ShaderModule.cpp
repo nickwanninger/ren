@@ -23,12 +23,10 @@ class ShaderIncluder : public shaderc::CompileOptions::IncluderInterface {
 
     // Convert the requested source path to a string
     std::string include_path = requested_source;
-    fmt::println("Loading shader include: {}", include_path);
 
     // Load the file using ren::loadAssetBytes
     auto file_contents = new std::vector<u8>();
     if (!ren::loadAssetBytes(include_path, *file_contents)) {
-      fmt::println("Failed to load shader include: {}", include_path);
       result->source_name = new char[include_path.length() + 1];
       strcpy((char*)result->source_name, include_path.c_str());
       result->source_name_length = include_path.length();
@@ -126,11 +124,7 @@ std::vector<u32> ren::ShaderModule::loadShader(const std::string_view& filename)
   // It is either loaded from a .spv file, or compiled on the fly from GLSL.
   std::vector<u32> code;
 
-  fmt::println("Loading shader from {}", filename);
-
   // if the filename contains .vert, .frag, .comp, extract the stage from it.
-
-
   std::filesystem::path path = filename;
   // If the file ends in .spv, we assume its a precompiled SPIV-V shader,
   // and we will just load that off the disk (and trust it! (eep))
@@ -170,8 +164,6 @@ std::vector<u32> ren::ShaderModule::loadShader(const std::string_view& filename)
     options.SetOptimizationLevel(shaderc_optimization_level_performance);
     // options.SetOptimizationLevel(shaderc_optimization_level_zero);
 
-
-
     std::vector<u8> sourceCode;
     if (!ren::loadAssetBytes(filename, sourceCode)) {
       throw std::runtime_error(fmt::format("Failed to load shader file: {}", path.string()));
@@ -192,17 +184,10 @@ std::vector<u32> ren::ShaderModule::loadShader(const std::string_view& filename)
 
 
     std::string shaderSource = std::string(sourceCode.begin(), sourceCode.end());
-    // fmt::println("Compiling shader from source:\n{}", shaderSource);
-
     auto result = compiler.CompileGlslToSpv((char*)sourceCode.data(), sourceCode.size(), shaderKind,
                                             path.filename().string().c_str(), options);
-
     if (result.GetCompilationStatus() == shaderc_compilation_status_success) {
-      fmt::print("Shader compiled successfully: {}\n", path.string());
-
-      // copy result.cbegin() to result.cend() into code
       std::copy(result.cbegin(), result.cend(), std::back_inserter(code));
-
     } else if (result.GetCompilationStatus() == shaderc_compilation_status_invalid_stage) {
       throw std::runtime_error(fmt::format("Invalid shader stage for file: {}", path.string()));
     } else {
@@ -227,5 +212,4 @@ void ren::ShaderModule::initShader(const std::vector<u32>& spirv) {
   if (vkCreateShaderModule(vulkan.device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS) {
     throw std::runtime_error("failed to create shader module!");
   }
-  fmt::println("Shader module created successfully! {}", (u64)shaderModule);
 }

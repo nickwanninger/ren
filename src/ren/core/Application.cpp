@@ -639,7 +639,7 @@ namespace ren {
     init_info.Instance = vulkan.instance;
     init_info.PhysicalDevice = vulkan.physical_device;
     init_info.Device = vulkan.device;
-    init_info.Queue = vulkan.graphics_queue;
+    init_info.Queue = vulkan.graphicsQueue->getHandle();
     init_info.DescriptorPool = state.imguiPool;
     init_info.MinImageCount = 3;
     init_info.ImageCount = 3;
@@ -699,6 +699,7 @@ namespace ren {
     style.TabRounding = 0.0f;
     style.WindowMenuButtonPosition = ImGuiDir_None;
     style.FontSizeBase = 15.0f;
+    style.DockingSeparatorSize = 4.0f;
 
 
     auto &am = ren::ensureResource<ren::AssetManager>();

@@ -6,10 +6,15 @@ namespace ren {
 
   void CommandEncoder::withRenderPass(RenderPass &pass, RenderTarget &target,
                                       std::function<void(RenderPassEncoder &)> func) {
-    RenderPassEncoder encoder(*this, pass, target);
-    encoder.begin();
+    RenderPassEncoder encoder = beginRenderPass(pass, target);
     func(encoder);
     encoder.end();
+  }
+
+  RenderPassEncoder CommandEncoder::beginRenderPass(RenderPass &pass, RenderTarget &target) {
+    RenderPassEncoder encoder(*this, pass, target);
+    encoder.begin();
+    return encoder;
   }
 
   void CommandEncoder::copyBuffer(ren::Buffer &src, ren::Buffer &dst, VkDeviceSize size,
@@ -19,6 +24,12 @@ namespace ren {
     copyRegion.dstOffset = dstOffset;
     copyRegion.size = size;
     vkCmdCopyBuffer(this->cmd, src.getHandle(), dst.getHandle(), 1, &copyRegion);
+  }
+
+
+  void CommandEncoder::reset(void) {
+    // Reset the arena.
+    arena.clear();
   }
 
 
@@ -111,7 +122,30 @@ namespace ren {
   }
 
 
-  void RenderPassEncoder::drawIndexed(DrawArguments &args) {
+  void RenderPassEncoder::bindImmediateMesh(std::span<ren::Vertex> vertices,
+                                            std::span<u32> indices) {
+    // Create vertex buffer
+    auto vbuf = getEncoder().getArena().push<ren::VertexBuffer<ren::Vertex>>(
+        sizeof(ren::Vertex) * static_cast<VkDeviceSize>(vertices.size()));
+    vbuf->map();
+    std::memcpy(vbuf->map(), vertices.data(), sizeof(ren::Vertex) * vertices.size());
+    vbuf->unmap();
+
+    // Create index buffer
+    auto ibuf = getEncoder().getArena().push<ren::IndexBuffer>(
+        sizeof(u32) * static_cast<VkDeviceSize>(indices.size()));
+    ibuf->map();
+    std::memcpy(ibuf->map(), indices.data(), sizeof(u32) * indices.size());
+    ibuf->unmap();
+
+    VkDeviceSize offsets[] = {0};
+    VkBuffer vbufHandle = vbuf->getHandle();
+    vkCmdBindVertexBuffers(buf(), 0, 1, &vbufHandle, offsets);
+    vkCmdBindIndexBuffer(buf(), ibuf->getHandle(), 0, VK_INDEX_TYPE_UINT32);
+  }
+
+
+  void RenderPassEncoder::drawIndexed(const DrawArguments &args) {
     vkCmdDrawIndexed(buf(), args.vertexCount, args.instanceCount, args.firstIndex, args.firstVertex,
                      args.firstInstance);
   }

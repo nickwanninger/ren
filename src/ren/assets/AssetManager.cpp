@@ -125,7 +125,6 @@ namespace ren {
         break;
       }
       case AssetType::Shader: {
-        fmt::print("Importing shader asset from {}\n", path);
         // Load the shader from the file
         auto stage = ShaderModule::getStageFromFilename(path);
         auto shader = make<ShaderModule>(path, stage);
@@ -133,7 +132,6 @@ namespace ren {
           // Register the shader asset
           shader->setAssetID(info.id);
           loadedAssets[info.id] = shader;  // Cache the loaded shader
-          fmt::print("Shader asset {} imported successfully.\n", (u64)info.id);
           return shader;  // Return the loaded shader
         }
         asset = shader;

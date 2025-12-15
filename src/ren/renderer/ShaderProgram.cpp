@@ -166,21 +166,6 @@ namespace ren {
   void ShaderProgram::bakeLayouts() {
     auto& vulkan = getVulkan();
 
-    // Print a concise binding listing; allow sparse sets/bindings
-    printf("Baking shader program.\nBinding listing (sparse supported):\n");
-    for (const auto& binding : bindings) {
-      const char* typeName = "???";
-      if (binding.type == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
-        typeName = "SAMPLER";
-      else if (binding.type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
-        typeName = "UNIFORM";
-      else if (binding.type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-        typeName = "STORAGE";
-      printf(" %d.%d   %-25s : %-8s x%-2u  %c%c\n", binding.set, binding.binding,
-             binding.name.c_str(), typeName, binding.count,
-             binding.stages & VK_SHADER_STAGE_VERTEX_BIT ? 'v' : '-',
-             binding.stages & VK_SHADER_STAGE_FRAGMENT_BIT ? 'f' : '-');
-    }
 
     // using our bindings, we can create a pipeline layout.
 

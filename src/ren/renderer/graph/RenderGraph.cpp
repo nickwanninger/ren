@@ -83,7 +83,6 @@ namespace ren {
     for (auto &[handle, resource] : resourceTable) {
       if (resource->update(*this)) {
         anyReallocated = true;
-        fmt::println("Resource '{}' updated (handle {})", resource->name, handle);
         for (auto *userTask : resource->users) {
           needToPrepare.insert(userTask);
         }
@@ -96,7 +95,6 @@ namespace ren {
     if (needToPrepare.size() > 0) {
       getVulkan().waitForIdle(); // TEST
       for (auto *task : needToPrepare) {
-        fmt::println("Re-preparing task '{}'", task->name());
         task->version++;
         // Re-prepare tasks whose resources were reallocated
         task->unprepare();

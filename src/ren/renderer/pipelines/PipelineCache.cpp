@@ -19,10 +19,6 @@ namespace ren {
       return it->second;
     }
 
-
-    fmt::println("Creating new pipeline for render pass '{}'", renderPass.getName());
-
-
     // Otherwise, we gotta create a new pipeline!
 
     // Grab a reference to the Vulkan instance.

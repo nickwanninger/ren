@@ -710,12 +710,9 @@ namespace ren {
     for (auto* member : root->members) {
       traverse(member, "");
     }
-    // traverse(root, "");
 
     for (auto& binding : bindings) {
       fmt::println("- {}.{} = {}", binding.set, binding.index, binding.path);
-      // fmt::println("Binding: {} -> set {}, binding {}", binding.path, binding.set,
-      // binding.index);
     }
   }
 
