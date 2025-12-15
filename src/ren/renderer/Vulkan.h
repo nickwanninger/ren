@@ -6,7 +6,6 @@
 
 #include <ren/types.h>
 #include <ren/core/Instrumentation.h>
-
 #include <SDL2/SDL.h>         // for SDL_Window
 #include <SDL2/SDL_vulkan.h>  // for SDL_Vulkan functions
 
@@ -23,6 +22,8 @@
 
 
 namespace ren {
+
+  class SubmissionQueue;
 
   class VulkanInstance;
 
@@ -52,8 +53,10 @@ namespace ren {
 
     VkPhysicalDevice physical_device = VK_NULL_HANDLE;
     VkDevice device = VK_NULL_HANDLE;
-    VkQueue graphics_queue = VK_NULL_HANDLE;
-    u32 graphics_queue_family = 0;
+
+    ref<SubmissionQueue> graphicsQueue;
+    ref<SubmissionQueue> computeQueue;
+    ref<SubmissionQueue> transferQueue;
 
     // Preferred MSAA sample count for color/depth attachments in render passes.
     VkSampleCountFlagBits msaaSamples = VK_SAMPLE_COUNT_1_BIT;
@@ -78,10 +81,6 @@ namespace ren {
     VkCommandPool commandPool;
     u64 frame_number = 0;
 
-    VkCommandBuffer beginFrame(void);
-    void endFrame(void);
-
-    void draw_frame(void);
 
     void recreate_swapchain(void) {
       // REN_PROFILE_FUNCTION();

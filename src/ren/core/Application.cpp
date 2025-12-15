@@ -6,6 +6,7 @@
 #include <ren/renderer/pipelines/PipelineCache.h>
 #include <ren/renderer/ShaderCursor.h>
 #include <ren/misc/hash.h>
+#include <ren/renderer/SubmissionQueue.h>
 
 #include <imgui.h>
 #include <backends/imgui_impl_vulkan.h>
@@ -425,127 +426,109 @@ namespace ren {
 
 
 
-      enc->withRenderPass(
-          *renderer->getDisplayPass(), *frame.renderTarget, [&](RenderPassEncoder &enc) {
-            static auto program = make<ShaderProgram>("shaders/test/test_triangle");
-            ren::PipelineStateObject trianglePSO;
-            trianglePSO.debugName = "Test Triangle PSO";
-            trianglePSO.program = program;
-            trianglePSO.cullMode = ren::CullMode::None;
-            trianglePSO.hasVertexBinding = true;
-            trianglePSO.fillMode = ren::FillMode::Wireframe;
+
+      auto penc = enc->beginRenderPass(*renderer->getDisplayPass(), *frame.renderTarget);
+      {
+        static auto program = make<ShaderProgram>("shaders/test/test_triangle");
+        ren::PipelineStateObject trianglePSO;
+        trianglePSO.debugName = "Test Triangle PSO";
+        trianglePSO.program = program;
+        trianglePSO.cullMode = ren::CullMode::None;
+        trianglePSO.hasVertexBinding = true;
+        trianglePSO.fillMode = ren::FillMode::Wireframe;
 
 
-            auto start = std::chrono::high_resolution_clock::now();
-            ren::MeshBuilder b;
+        auto start = std::chrono::high_resolution_clock::now();
+        ren::MeshBuilder b;
 
 
-            static float p = 0.5f;
-            static int buildMode = 0;
-
-            static int segments = 6;
-            if (segments < 3) segments = 3;
-            // 0 == circle face (triangle fan)
-            // 1 == triangle strip
-
-
-            srand(0);
+        static float p = 0.5f;
+        static int segments = 6;
+        if (segments < 3) segments = 3;
+        srand(0);
 
 
 
-            if (buildMode == 0) {
-              auto fb = b.beginFace();
-              // make a circle with N segments.
-              for (int i = 0; i < segments; i++) {
-                // compute a random distance
-                float distance = 0.1f + (rand() % 1000 / 1000.0f);
+        auto fb = b.beginFace();
+        // make a circle with N segments.
+        for (int i = 0; i < segments; i++) {
+          // compute a random distance
+          float distance = 0.1f + (rand() % 1000 / 1000.0f);
 
-                // just the point on the unit circle.
-                fb.vertex(glm::vec3(cosf((float)i / segments * glm::two_pi<float>()),
-                                    sinf((float)i / segments * glm::two_pi<float>()), 0.0f) *
-                              distance,
-                          glm::vec3(0), glm::vec2(i / (float)segments, 1.0f));
-              }
-              fb.end();
-            } else if (buildMode == 1) {
-              // triangle strip
-              // for (int i = 0; i <= segments; i++) {
-              //   float angle = (float)i / segments * glm::two_pi<float>();
-              //   float nextAngle = (float)(i + 1) / segments * glm::two_pi<float>();
-              //   b.vertex(glm::vec3(cosf(angle), sinf(angle), 0.0f) * p);
-              //   b.vertex(glm::vec3(cosf(nextAngle), sinf(nextAngle), 0.0f) * p);
-              // }
-            }
+          // just the point on the unit circle.
+          fb.vertex(glm::vec3(cosf((float)i / segments * glm::two_pi<float>()),
+                              sinf((float)i / segments * glm::two_pi<float>()), 0.0f) *
+                        distance,
+                    glm::vec3(0), glm::vec2(i / (float)segments, 1.0f));
+        }
+        fb.end();
 
-            auto meshData = b.stampOut();
-            // fmt::println("Created test mesh with {} vertices and {} indices",
-            //              meshData->vertices.size(), meshData->indices.size());
-            enc.bindImmediateMesh(meshData->vertices, meshData->indices);
-            enc.bindPipeline(trianglePSO);
-            DrawArguments args;
-            args.vertexCount = static_cast<u32>(meshData->indices.size());
-            args.instanceCount = 1;
-            enc.drawIndexed(args);
+        auto meshData = b.stampOut();
+
+        penc.bindImmediateMesh(meshData->vertices, meshData->indices);
+        penc.bindPipeline(trianglePSO);
+        DrawArguments args;
+        args.vertexCount = static_cast<u32>(meshData->indices.size());
+        args.instanceCount = 1;
+        penc.drawIndexed(args);
 
 
-            auto end = std::chrono::high_resolution_clock::now();
+        auto end = std::chrono::high_resolution_clock::now();
+
+        float allocTime =
+            std::chrono::duration<float, std::chrono::nanoseconds::period>(end - start).count();
+
+        allocationCounter.addFrame(allocTime);
+        allocTime = allocationCounter.getAverageDeltaTime();
+
+        ImGui::Begin("New Perf Test");
+        ImGui::Text("Allocated VertexBuffer in %f ms", allocTime / 1000.0 / 1000.0);
+        // Pick buildMode
+        ImGui::DragInt("Segments", &segments, 1.0f, 3, 1024);
+        if (ImGui::Button("Dump Mesh as OBJ")) { meshData->dumpObj(); }
+
+        int width, height;
+        SDL_GetWindowSize(ren::Application::get().getWindow(), &width, &height);
+        ImGui::Text("Window Size: %d x %d", width, height);
+        SDL_Vulkan_GetDrawableSize(ren::Application::get().getWindow(), &width, &height);
+        ImGui::Text("Drawable Size: %d x %d", width, height);
 
 
+        if (ImGui::BeginTable("Vertices Table", 5,
+                              ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
+          ImGui::TableSetupColumn("Index");
+          ImGui::TableSetupColumn("x");
+          ImGui::TableSetupColumn("y");
+          ImGui::TableSetupColumn("z");
+          ImGui::TableSetupColumn("UV");
+          ImGui::TableHeadersRow();
 
-            float allocTime =
-                std::chrono::duration<float, std::chrono::nanoseconds::period>(end - start).count();
+          for (size_t i = 0; i < meshData->vertices.size(); ++i) {
+            const auto &vertex = meshData->vertices[i];
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::Text("%zu", i);
+            ImGui::TableNextColumn();
+            ImGui::Text("%f", vertex.pos.x);
+            ImGui::TableNextColumn();
+            ImGui::Text("%f", vertex.pos.y);
+            ImGui::TableNextColumn();
+            ImGui::Text("%f", vertex.pos.z);
+            ImGui::TableNextColumn();
+            ImGui::Text("%f,%f", vertex.texCoord.x, vertex.texCoord.y);
+          }
 
-            allocationCounter.addFrame(allocTime);
-            allocTime = allocationCounter.getAverageDeltaTime();
+          ImGui::EndTable();
+        }
+        ImGui::End();
 
-            ImGui::Begin("New Perf Test");
-            ImGui::Text("Allocated VertexBuffer in %f ms", allocTime / 1000.0 / 1000.0);
-            // Pick buildMode
-            ImGui::RadioButton("Circle Face", &buildMode, 0);
-            ImGui::RadioButton("Triangle Strip", &buildMode, 1);
-            ImGui::DragInt("Segments", &segments, 1.0f, 3, 1024);
-            if (ImGui::Button("Dump Mesh as OBJ")) { meshData->dumpObj(); }
+        ImGui::Render();
+        ImGui::UpdatePlatformWindows();
+        ImGui::RenderPlatformWindowsDefault();
+        ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), penc.buf());  // Gross leakage.
+      }
 
-            int width, height;
-            SDL_GetWindowSize(ren::Application::get().getWindow(), &width, &height);
-            ImGui::Text("Window Size: %d x %d", width, height);
-            SDL_Vulkan_GetDrawableSize(ren::Application::get().getWindow(), &width, &height);
-            ImGui::Text("Drawable Size: %d x %d", width, height);
-
-
-            if (ImGui::BeginTable("Vertices Table", 5,
-                                  ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
-              ImGui::TableSetupColumn("Index");
-              ImGui::TableSetupColumn("x");
-              ImGui::TableSetupColumn("y");
-              ImGui::TableSetupColumn("z");
-              ImGui::TableSetupColumn("UV");
-              ImGui::TableHeadersRow();
-
-              for (size_t i = 0; i < meshData->vertices.size(); ++i) {
-                const auto &vertex = meshData->vertices[i];
-                ImGui::TableNextRow();
-                ImGui::TableSetColumnIndex(0);
-                ImGui::Text("%zu", i);
-                ImGui::TableNextColumn();
-                ImGui::Text("%f", vertex.pos.x);
-                ImGui::TableNextColumn();
-                ImGui::Text("%f", vertex.pos.y);
-                ImGui::TableNextColumn();
-                ImGui::Text("%f", vertex.pos.z);
-                ImGui::TableNextColumn();
-                ImGui::Text("%f,%f", vertex.texCoord.x, vertex.texCoord.y);
-              }
-
-              ImGui::EndTable();
-            }
-            ImGui::End();
-
-            ImGui::Render();
-            ImGui::UpdatePlatformWindows();
-            ImGui::RenderPlatformWindowsDefault();
-            ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), enc.buf());  // Gross leakage.
-          });
+      penc.end();
 
 
 

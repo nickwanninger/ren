@@ -1,7 +1,7 @@
 #include <ren/renderer/Vulkan.h>
 #include <ren/renderer/ShaderModule.h>
+#include <ren/renderer/SubmissionQueue.h>
 #include <ren/core/Instrumentation.h>
-
 
 #include <vector>
 #include <fmt/core.h>
@@ -21,7 +21,7 @@
 #include <imstb_truetype.h>
 #include <imgui/backends/imgui_impl_sdl2.h>
 #include <imgui/backends/imgui_impl_vulkan.h>
-
+#include <ren/renderer/Fence.h>
 #include <ren/core/Flag.h>
 
 
@@ -88,11 +88,13 @@ vulkanDebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
   // Format: [SEVERITY: TYPE] MessageID
   // Message content
   // (with color coding)
-  fmt::print("{}[{}: {}]{} {}\n", color, severityLabel, typeLabel, COLOR_RESET,
+  fmt::print("{}[{}: {}]{} {}", color, severityLabel, typeLabel, COLOR_RESET,
              pCallbackData->pMessageIdName ? pCallbackData->pMessageIdName : "");
 
   // Print the actual message with indentation for readability
-  if (pCallbackData->pMessage) { fmt::print("  {}\n", pCallbackData->pMessage); }
+  if (pCallbackData->pMessage) { fmt::print("  {}", pCallbackData->pMessage); }
+
+  fmt::println("");
 
   // For errors, add extra visibility
   if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
@@ -143,7 +145,14 @@ ren::VulkanInstance::VulkanInstance(SDL_Window* window) {
 
 
   // ASAP, create a command pool.
-  init_command_pool();
+  VkCommandPoolCreateInfo poolInfo{};
+  poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+  poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+  poolInfo.queueFamilyIndex = this->graphicsQueue->family();
+
+  if (vkCreateCommandPool(device, &poolInfo, nullptr, &commandPool) != VK_SUCCESS) {
+    throw std::runtime_error("failed to create command pool!");
+  }
 
 
   // -- Tracy Vulkan -- //
@@ -160,20 +169,6 @@ ren::VulkanInstance::VulkanInstance(SDL_Window* window) {
 
 
 
-
-VkCommandBuffer ren::VulkanInstance::beginFrame(void) {
-  // Not Needed
-  return 0;
-}
-
-
-void ren::VulkanInstance::endFrame(void) {
-  // Not Needed
-}
-
-void ren::VulkanInstance::draw_frame(void) {
-  // Not Needed
-}
 
 void ren::VulkanInstance::init_instance(void) {
   REN_PROFILE_FUNCTION();
@@ -272,9 +267,58 @@ void ren::VulkanInstance::init_instance(void) {
   vkb::Device vkbDevice = deviceBuilder.build().value();
   this->device = vkbDevice.device;
 
-  this->graphics_queue = vkbDevice.get_queue(vkb::QueueType::graphics).value();
-  this->graphics_queue_family = vkbDevice.get_queue_index(vkb::QueueType::graphics).value();
-  fmt::print("Created graphics queue with family index: {}\n", this->graphics_queue_family);
+
+
+
+  // Query queue families manually
+  uint32_t queue_family_count;
+  vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &queue_family_count, nullptr);
+
+  std::vector<VkQueueFamilyProperties> queue_families(queue_family_count);
+  vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &queue_family_count,
+                                           queue_families.data());
+
+  // Iterate over all queue families
+  for (uint32_t i = 0; i < queue_family_count; i++) {
+    VkQueueFamilyProperties& props = queue_families[i];
+
+    fmt::print("Queue Family {}    count:={}     ", i, props.queueCount);
+#define PRINTCAP(cap, c) fmt::print("{}", props.queueFlags& cap ? c : "-");
+
+    PRINTCAP(VK_QUEUE_GRAPHICS_BIT, "G");
+    PRINTCAP(VK_QUEUE_COMPUTE_BIT, "C");
+    PRINTCAP(VK_QUEUE_TRANSFER_BIT, "T");
+    PRINTCAP(VK_QUEUE_SPARSE_BINDING_BIT, "S");
+    PRINTCAP(VK_QUEUE_PROTECTED_BIT, "P");
+    PRINTCAP(VK_QUEUE_VIDEO_DECODE_BIT_KHR, "d");
+    PRINTCAP(VK_QUEUE_VIDEO_ENCODE_BIT_KHR, "e");
+    PRINTCAP(VK_QUEUE_OPTICAL_FLOW_BIT_NV, "o");
+    PRINTCAP(VK_QUEUE_DATA_GRAPH_BIT_ARM, "g");
+#undef PRINTCAP
+
+    fmt::print("\n");
+  }
+
+
+
+  auto tryToMakeQueue = [&vkbDevice](vkb::QueueType type,
+                                     ref<SubmissionQueue> def) -> ref<SubmissionQueue> {
+    auto queue = vkbDevice.get_queue(type);
+    auto index = vkbDevice.get_queue_index(type);
+    if (!queue || !index) { return def; }
+    return make<SubmissionQueue>(queue.value(), index.value());
+  };
+
+
+
+  // This must be guaranteed.
+  this->graphicsQueue = tryToMakeQueue(vkb::QueueType::graphics, nullptr);
+  this->computeQueue = tryToMakeQueue(vkb::QueueType::compute, this->graphicsQueue);
+  this->transferQueue = tryToMakeQueue(vkb::QueueType::transfer, this->graphicsQueue);
+
+  fmt::println("Graphics Queue: {}", this->graphicsQueue->family());
+  fmt::println("Compute Queue: {}", this->computeQueue->family());
+  fmt::println("Transfer Queue: {}", this->transferQueue->family());
 
 
   // Now that we have an instance, allocate the vulkan allocator
@@ -295,24 +339,11 @@ void ren::VulkanInstance::init_instance(void) {
   VkPhysicalDeviceProperties props;
   vkGetPhysicalDeviceProperties(physicalDevice, &props);
 
-  printf("Max bound descriptor sets: %u\n", props.limits.maxBoundDescriptorSets);
-  printf("Max samplers per set: %u\n", props.limits.maxDescriptorSetSamplers);
-  printf("Max UBOs per stage: %u\n", props.limits.maxPerStageDescriptorUniformBuffers);
-  printf("Push constants size: %u bytes\n", props.limits.maxPushConstantsSize);
-
-  // Choose MSAA sample count (prefer 4x when available on MoltenVK)
-  {
-    auto maxUsable = VulkanInstance::getMaxUsableSampleCount(props);
-    // Prefer 4x if supported, otherwise take max available
-    if (maxUsable >= VK_SAMPLE_COUNT_4_BIT)
-      msaaSamples = VK_SAMPLE_COUNT_4_BIT;
-    else
-      msaaSamples = maxUsable;
-
-    // Disable MSAA!
-    msaaSamples = VK_SAMPLE_COUNT_1_BIT;
-    fmt::println("MSAA samples selected: {}, max: {}", (unsigned)msaaSamples, (unsigned)maxUsable);
-  }
+  fmt::print("Max bound descriptor sets: {}\n", props.limits.maxBoundDescriptorSets);
+  fmt::print("Max samplers per set: {}\n", props.limits.maxDescriptorSetSamplers);
+  fmt::print("Max UBOs per stage: {}\n", props.limits.maxPerStageDescriptorUniformBuffers);
+  fmt::print("Push constants size: {} bytes\n", props.limits.maxPushConstantsSize);
+  msaaSamples = VK_SAMPLE_COUNT_1_BIT;
 
 
   this->swapchainFormat =
@@ -350,49 +381,7 @@ ren::VulkanInstance::~VulkanInstance() {
 }
 
 
-void ren::VulkanInstance::init_swapchain(void) {
-  // REN_PROFILE_FUNCTION();
-  // this->swapchain.reset();
 
-  // this->swapchain = makeBox<ren::Swapchain>(this->window);
-}
-
-
-void ren::VulkanInstance::init_renderpass(void) {
-  // Not Needed
-}
-
-
-
-void ren::VulkanInstance::init_framebuffers(void) {
-  // Not Needed
-}
-
-
-void ren::VulkanInstance::init_command_pool(void) {
-  VkCommandPoolCreateInfo poolInfo{};
-  poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-  poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-  poolInfo.queueFamilyIndex = this->graphics_queue_family;
-
-  if (vkCreateCommandPool(device, &poolInfo, nullptr, &commandPool) != VK_SUCCESS) {
-    throw std::runtime_error("failed to create command pool!");
-  }
-}
-
-
-void ren::VulkanInstance::init_command_buffer(void) {
-  // Not Needed
-}
-
-
-void ren::VulkanInstance::init_sync_objects(void) {
-  // Not Needed
-}
-
-void ren::VulkanInstance::createUniformBuffers(void) {
-  // Not Needed
-}
 
 void ren::VulkanInstance::transitionImageLayout(VkCommandBuffer commandBuffer, VkImage image,
                                                 VkFormat format, VkImageLayout oldLayout,
@@ -540,14 +529,6 @@ bool hasStencilComponent(VkFormat format) {
 }
 
 
-void ren::VulkanInstance::createDepthResources() {
-  // Not Needed
-}
-
-void ren::VulkanInstance::createTextureImage() {
-  // Not Needed
-}
-
 
 
 VkImageView ren::VulkanInstance::create_image_view(VkImage image, VkFormat format,
@@ -641,17 +622,13 @@ void ren::VulkanInstance::endSingleTimeCommands(VkCommandBuffer commandBuffer) {
   submitInfo.commandBufferCount = 1;
   submitInfo.pCommandBuffers = &commandBuffer;
 
-  vkQueueSubmit(graphics_queue, 1, &submitInfo, VK_NULL_HANDLE);
-  vkQueueWaitIdle(graphics_queue);
+  // Submit the buffer to the queue and wait for it to finish with the fence.
+  graphicsQueue->submit({&commandBuffer, 1})->awaitCompletion();
 
   vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
 }
 
 
-
-void ren::VulkanInstance::update_uniform_buffer(u32 current_frame) {
-  // Not Needed
-}
 
 
 void ren::VulkanInstance::create_buffer(VkDeviceSize size, VkBufferUsageFlags usage,
@@ -753,11 +730,6 @@ VkShaderModule ren::VulkanInstance::load_shader_module(const std::string& filena
   return create_shader_module(code);
 }
 
-
-
-void ren::VulkanInstance::init_imgui(void) {
-  // Not Needed
-}
 
 
 

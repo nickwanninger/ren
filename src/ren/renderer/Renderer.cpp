@@ -1,7 +1,7 @@
 #include <ren/renderer/Renderer.h>
-
-
+#include <ren/misc/DeprecationLogger.h>
 #include <ren/renderer/CommandEncoder.h>
+#include <ren/renderer/SubmissionQueue.h>
 
 namespace ren {
 
@@ -45,6 +45,7 @@ namespace ren {
 
 
   void Renderer::beginPass(ren::RenderPass &pass, ren::RenderTarget &target) {
+    REN_DEPRECATION_WARNING();
     REN_PROFILE_FUNCTION();
 
     this->currentPass = pass.shared_from_this();
@@ -255,8 +256,8 @@ namespace ren {
       submitInfo.signalSemaphoreCount = 1;
       submitInfo.pSignalSemaphores = signalSemaphores;
 
-      if (vkQueueSubmit(vulkan->graphics_queue, 1, &submitInfo, frame.inFlightFence->getHandle()) !=
-          VK_SUCCESS) {
+      if (vkQueueSubmit(vulkan->graphicsQueue->getHandle(), 1, &submitInfo,
+                        frame.inFlightFence->getHandle()) != VK_SUCCESS) {
         throw std::runtime_error("failed to submit draw command buffer!");
       }
     }
@@ -279,7 +280,7 @@ namespace ren {
       presentInfo.pImageIndices = &index;
 
       presentInfo.pResults = nullptr;  // Optional
-      vkQueuePresentKHR(vulkan->graphics_queue, &presentInfo);
+      vkQueuePresentKHR(vulkan->graphicsQueue->getHandle(), &presentInfo);
     }
   }
 
