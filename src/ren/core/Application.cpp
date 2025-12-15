@@ -320,11 +320,14 @@ namespace ren {
 
 
 
-
       ImGui::Begin("Debug Temp Settings");
       ImGui::DragFloat("Render Scale", &renderScaleTemp, 0.01f, 0.1f, 1.0f);
       ImGui::Text("FPS: %.1f", framerateCounter.getAverageFramerate());
       ImGui::Text("Frame Time: %.3f ms", framerateCounter.getAverageDeltaTime() * 1000.0f);
+
+      if (ImGui::Button("Save Pipeline Cache")) {
+        renderer->getPipelineCache().save("pipeline_cache.bin");
+      }
       ImGui::End();
 
 

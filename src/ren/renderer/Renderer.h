@@ -74,7 +74,12 @@ namespace ren {
 
     // Get a handle to the render pass cache.
     auto &getRenderPassCache() { return renderPassCache; }
-    auto &getPipelineCache() { return pipelineCache; }
+    inline auto &getPipelineCache() {
+      if (pipelineCache == nullptr) {
+        pipelineCache = make<PipelineCache>();
+      }
+      return *pipelineCache;
+    }
 
     inline auto getDisplayPass() {
       if (displayPass == nullptr) {
@@ -134,7 +139,7 @@ namespace ren {
     inline auto getCurrentProgram() const { return getCurrentPSO().program; }
 
    private:
-    ren::PipelineCache pipelineCache;
+    ref<PipelineCache> pipelineCache;
     ref<RenderPass> currentPass = nullptr;
     ref<CachedPipeline> currentPipeline = nullptr;
 

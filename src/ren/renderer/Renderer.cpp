@@ -120,7 +120,7 @@ namespace ren {
            "Cannot bind a pipeline without a current render pass set. Call beginPass first.");
 
     // Get the cached pipeline for this render pass and PSO.
-    auto newPipeline = this->pipelineCache.get(*this->currentPass, pso);
+    auto newPipeline = getPipelineCache().get(*this->currentPass, pso);
 
     if (newPipeline == nullptr) {
       throw std::runtime_error("Failed to get cached pipeline for PSO: " + pso.debugName);

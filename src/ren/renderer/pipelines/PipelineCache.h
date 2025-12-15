@@ -28,11 +28,24 @@ namespace ren {
 
   class PipelineCache {
    public:
+    PipelineCache();
+    ~PipelineCache();
+
+    // No copy, no move
+    PipelineCache(const PipelineCache &) = delete;
+    PipelineCache &operator=(const PipelineCache &) = delete;
+    PipelineCache(PipelineCache &&) = delete;
+    PipelineCache &operator=(PipelineCache &&) = delete;
+
     ref<CachedPipeline> get(ren::RenderPass &renderPass, const PipelineStateObject &pso);
+
+    void save(std::string_view filename) const;
+    void load(std::string_view filename);
 
     size_t size(void) const { return pipelines.size(); }
 
    private:
+    VkPipelineCache vkCache = VK_NULL_HANDLE;
     std::unordered_map<u64, ref<CachedPipeline>> pipelines;
   };
 }  // namespace ren

@@ -2,11 +2,32 @@
 #include <ren/misc/hash.h>
 #include <ren/renderer/Vulkan.h>
 #include <ren/renderer/ShaderProgram.h>
+#include <fstream>
+#include <cstring>
 
 
 namespace ren {
 
+  PipelineCache::PipelineCache() {
+    auto &vulkan = ren::getVulkan();
 
+    VkPipelineCacheCreateInfo cacheInfo{};
+    cacheInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
+    cacheInfo.initialDataSize = 0;
+    cacheInfo.pInitialData = nullptr;
+
+    if (vkCreatePipelineCache(vulkan.device, &cacheInfo, nullptr, &vkCache) != VK_SUCCESS) {
+      throw std::runtime_error("failed to create pipeline cache!");
+    }
+  }
+
+  PipelineCache::~PipelineCache() {
+    if (vkCache != VK_NULL_HANDLE) {
+      auto &vulkan = ren::getVulkan();
+      vkDestroyPipelineCache(vulkan.device, vkCache, nullptr);
+      vkCache = VK_NULL_HANDLE;
+    }
+  }
 
   ref<CachedPipeline> PipelineCache::get(ren::RenderPass &renderPass,
                                          const PipelineStateObject &pso) {
@@ -262,7 +283,7 @@ namespace ren {
     pipelineInfo.pDepthStencilState = &depthStencil;
 
 
-    if (vkCreateGraphicsPipelines(vulkan.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr,
+    if (vkCreateGraphicsPipelines(vulkan.device, vkCache, 1, &pipelineInfo, nullptr,
                                   &pipeline) != VK_SUCCESS) {
       throw std::runtime_error("failed to create graphics pipeline!");
     }
@@ -270,6 +291,91 @@ namespace ren {
     auto cachedPipeline = make<CachedPipeline>(pipeline, pso);
     pipelines[hash] = cachedPipeline;
     return cachedPipeline;
+  }
+
+  void PipelineCache::save(std::string_view filename) const {
+    auto &vulkan = ren::getVulkan();
+
+    // Get the size of the cache data
+    size_t dataSize = 0;
+    if (vkGetPipelineCacheData(vulkan.device, vkCache, &dataSize, nullptr) != VK_SUCCESS) {
+      throw std::runtime_error("failed to get pipeline cache data size!");
+    }
+
+    // Allocate buffer and retrieve the data
+    std::vector<uint8_t> cacheData(dataSize);
+    if (vkGetPipelineCacheData(vulkan.device, vkCache, &dataSize, cacheData.data()) != VK_SUCCESS) {
+      throw std::runtime_error("failed to get pipeline cache data!");
+    }
+
+    // Write to file
+    std::ofstream file(filename.data(), std::ios::binary);
+    if (!file.is_open()) {
+      throw std::runtime_error(std::string("failed to open pipeline cache file for writing: ") +
+                                filename.data());
+    }
+
+    file.write(reinterpret_cast<const char *>(cacheData.data()), dataSize);
+    if (!file.good()) {
+      throw std::runtime_error("failed to write pipeline cache data to file!");
+    }
+  }
+
+  void PipelineCache::load(std::string_view filename) {
+    auto &vulkan = ren::getVulkan();
+
+    // Read from file
+    std::ifstream file(filename.data(), std::ios::binary | std::ios::ate);
+    if (!file.is_open()) {
+      // File doesn't exist, that's okay - we'll just start with an empty cache
+      return;
+    }
+
+    // Get file size
+    std::streamsize fileSize = file.tellg();
+    file.seekg(0, std::ios::beg);
+
+    // Read data
+    std::vector<uint8_t> cacheData(fileSize);
+    if (!file.read(reinterpret_cast<char *>(cacheData.data()), fileSize)) {
+      throw std::runtime_error("failed to read pipeline cache data from file!");
+    }
+
+    // Validate the cache UUID against the physical device
+    // Pipeline cache data format: header (4 bytes version + 4 bytes vendor + 4 bytes device + 16 bytes UUID)
+    // Total header = 28 bytes. If smaller, it's invalid.
+    if (cacheData.size() < 28) {
+      // Cache file is too small, discard it
+      return;
+    }
+
+    // Get the physical device properties to compare UUIDs
+    VkPhysicalDeviceProperties deviceProps{};
+    vkGetPhysicalDeviceProperties(vulkan.physical_device, &deviceProps);
+
+    // Extract UUID from cache data (at offset 12, 16 bytes)
+    const uint8_t *cachedUUID = cacheData.data() + 12;
+
+    // Compare UUIDs (16 bytes)
+    if (std::memcmp(cachedUUID, deviceProps.pipelineCacheUUID, VK_UUID_SIZE) != 0) {
+      // UUID mismatch - cache is not compatible with this device, start fresh
+      return;
+    }
+
+    // Destroy the old cache
+    if (vkCache != VK_NULL_HANDLE) {
+      vkDestroyPipelineCache(vulkan.device, vkCache, nullptr);
+    }
+
+    // Create new cache with the loaded data
+    VkPipelineCacheCreateInfo cacheInfo{};
+    cacheInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
+    cacheInfo.initialDataSize = cacheData.size();
+    cacheInfo.pInitialData = cacheData.data();
+
+    if (vkCreatePipelineCache(vulkan.device, &cacheInfo, nullptr, &vkCache) != VK_SUCCESS) {
+      throw std::runtime_error("failed to create pipeline cache from loaded data!");
+    }
   }
 
 }  // namespace ren

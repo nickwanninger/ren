@@ -77,7 +77,7 @@ vulkanDebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
                     VkDebugUtilsMessageTypeFlagsEXT messageType,
                     const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData) {
   // Skip verbose messages unless specifically debugging
-  if (messageSeverity < VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT) { return VK_FALSE; }
+  if (messageSeverity < VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) { return VK_FALSE; }
 
   const char* color = getSeverityColor(messageSeverity);
   const char* severityLabel = getSeverityLabel(messageSeverity);
@@ -314,6 +314,9 @@ void ren::VulkanInstance::init_instance(void) {
 
   // This must be guaranteed.
   this->graphicsQueue = tryToMakeQueue(vkb::QueueType::graphics, nullptr);
+  // These other queues must be created as well, but can fall back to graphics
+  // if not available. Having multiple queues helps performance by allowing
+  // parallelism, but them being unique is not strictly needed.
   this->computeQueue = tryToMakeQueue(vkb::QueueType::compute, this->graphicsQueue);
   this->transferQueue = tryToMakeQueue(vkb::QueueType::transfer, this->graphicsQueue);
 
@@ -344,6 +347,13 @@ void ren::VulkanInstance::init_instance(void) {
   fmt::print("Max samplers per set: {}\n", props.limits.maxDescriptorSetSamplers);
   fmt::print("Max UBOs per stage: {}\n", props.limits.maxPerStageDescriptorUniformBuffers);
   fmt::print("Push constants size: {} bytes\n", props.limits.maxPushConstantsSize);
+
+  fmt::print("Pipeline Cache UUID: ");
+  for (size_t i = 0; i < VK_UUID_SIZE; i++) {
+    fmt::print("{:02x} ", props.pipelineCacheUUID[i]);
+  }
+  fmt::print("\n");
+
   msaaSamples = VK_SAMPLE_COUNT_1_BIT;
 
 
