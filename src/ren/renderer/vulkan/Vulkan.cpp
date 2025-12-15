@@ -1,4 +1,4 @@
-#include <ren/renderer/Vulkan.h>
+#include <ren/renderer/vulkan/Vulkan.h>
 #include <ren/renderer/ShaderModule.h>
 #include <ren/renderer/SubmissionQueue.h>
 #include <ren/core/Instrumentation.h>
@@ -120,6 +120,7 @@ vulkanDebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
 static ren::VulkanInstance* g_vulkan_instance = nullptr;
 
 ren::VulkanInstance& ren::getVulkan(void) {
+  // REN_DEPRECATION_WARNING();
   if (g_vulkan_instance == nullptr) { throw std::runtime_error("Vulkan instance not initialized"); }
   return *g_vulkan_instance;
 }
@@ -227,6 +228,7 @@ void ren::VulkanInstance::init_instance(void) {
       .descriptorBindingSampledImageUpdateAfterBind = VK_TRUE,
       .descriptorBindingPartiallyBound = VK_TRUE,
       .runtimeDescriptorArray = VK_TRUE,
+      .descriptorIndexing = VK_TRUE,
   };
   selector.add_required_extension(VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME);
   selector.set_required_features_12(indexing_features);
@@ -307,7 +309,7 @@ void ren::VulkanInstance::init_instance(void) {
     auto queue = vkbDevice.get_queue(type);
     auto index = vkbDevice.get_queue_index(type);
     if (!queue || !index) { return def; }
-    return make<SubmissionQueue>(queue.value(), index.value());
+    return SubmissionQueue::make(queue.value(), index.value());
   };
 
 
@@ -354,8 +356,6 @@ void ren::VulkanInstance::init_instance(void) {
   }
   fmt::print("\n");
 
-  msaaSamples = VK_SAMPLE_COUNT_1_BIT;
-
 
   this->swapchainFormat =
       findSupportedFormat({VK_FORMAT_B8G8R8A8_SRGB, VK_FORMAT_R8G8B8A8_UNORM},
@@ -398,7 +398,6 @@ void ren::VulkanInstance::transitionImageLayout(VkCommandBuffer commandBuffer, V
                                                 VkFormat format, VkImageLayout oldLayout,
                                                 VkImageLayout newLayout,
                                                 VkImageAspectFlags aspect) {
-  REN_DEPRECATION_WARNING();
   VkImageMemoryBarrier barrier{};
   barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
   barrier.oldLayout = oldLayout;
@@ -545,6 +544,7 @@ bool hasStencilComponent(VkFormat format) {
 
 VkImageView ren::VulkanInstance::create_image_view(VkImage image, VkFormat format,
                                                    VkImageAspectFlags aspectFlags) {
+  REN_DEPRECATION_WARNING();
   VkImageViewCreateInfo viewInfo{};
   viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
   viewInfo.image = image;
@@ -570,6 +570,7 @@ void ren::VulkanInstance::create_image(uint32_t width, uint32_t height, VkFormat
                                        VkImageTiling tiling, VkImageUsageFlags usage,
                                        VkMemoryPropertyFlags properties, VkImage& image,
                                        VkDeviceMemory& imageMemory) {
+  REN_DEPRECATION_WARNING();
   VkImageCreateInfo imageInfo{};
   imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
   imageInfo.imageType = VK_IMAGE_TYPE_2D;
@@ -643,46 +644,18 @@ void ren::VulkanInstance::endSingleTimeCommands(VkCommandBuffer commandBuffer) {
 
 
 
-void ren::VulkanInstance::create_buffer(VkDeviceSize size, VkBufferUsageFlags usage,
-                                        VkMemoryPropertyFlags properties, VkBuffer& buffer,
-                                        VkDeviceMemory& bufferMemory) {
-  VkBufferCreateInfo bufferInfo{};
-  bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-  bufferInfo.size = size;
-  bufferInfo.usage = usage;
-  bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+// void ren::VulkanInstance::copy_buffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size,
+//                                       u32 srcOffset, u32 dstOffset) {
+//   REN_DEPRECATION_WARNING();
+//   fmt::println("Copying buffer: size={} srcOffset={} dstOffset={}", size, srcOffset, dstOffset);
+//   VkCommandBuffer commandBuffer = beginSingleTimeCommands();
 
-  if (vkCreateBuffer(device, &bufferInfo, nullptr, &buffer) != VK_SUCCESS) {
-    throw std::runtime_error("failed to create buffer!");
-  }
+//   VkBufferCopy copyRegion{};
+//   copyRegion.size = size;
+//   vkCmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, 1, &copyRegion);
 
-  VkMemoryRequirements memRequirements;
-  vkGetBufferMemoryRequirements(device, buffer, &memRequirements);
-
-  VkMemoryAllocateInfo allocInfo{};
-  allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-  allocInfo.allocationSize = memRequirements.size;
-  allocInfo.memoryTypeIndex = find_memory_type(memRequirements.memoryTypeBits, properties);
-
-  if (vkAllocateMemory(device, &allocInfo, nullptr, &bufferMemory) != VK_SUCCESS) {
-    throw std::runtime_error("failed to allocate buffer memory!");
-  }
-
-  vkBindBufferMemory(device, buffer, bufferMemory, 0);
-}
-
-
-void ren::VulkanInstance::copy_buffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size,
-                                      u32 srcOffset, u32 dstOffset) {
-  fmt::println("Copying buffer: size={} srcOffset={} dstOffset={}", size, srcOffset, dstOffset);
-  VkCommandBuffer commandBuffer = beginSingleTimeCommands();
-
-  VkBufferCopy copyRegion{};
-  copyRegion.size = size;
-  vkCmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, 1, &copyRegion);
-
-  endSingleTimeCommands(commandBuffer);
-}
+//   endSingleTimeCommands(commandBuffer);
+// }
 
 u32 ren::VulkanInstance::find_memory_type(u32 typeFilter, VkMemoryPropertyFlags properties) {
   // First we need to query info about the available types of memory

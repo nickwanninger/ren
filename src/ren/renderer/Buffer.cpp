@@ -1,6 +1,8 @@
 #include <ren/renderer/Buffer.h>
-#include <ren/renderer/Vulkan.h>
+#include <ren/renderer/vulkan/Vulkan.h>
 #include <ren/core/Instrumentation.h>
+#include <ren/renderer/SubmissionQueue.h>
+
 
 ren::Buffer::Buffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties)
     : usage(usage)
@@ -53,7 +55,19 @@ void ren::Buffer::resizeBytes(size_t newSize) {
     auto copySize = oldSize;
     if (newSize < copySize) { copySize = newSize; }
     fmt::println("Resizing buffer from {} to {}, copying {} bytes", oldSize, newSize, copySize);
-    getVulkan().copy_buffer(oldBuffer, buffer, copySize);
+
+    auto &vk = getVulkan();
+    auto cmd = vk.beginSingleTimeCommands();
+
+    VkBufferCopy copyRegion{};
+    copyRegion.srcOffset = 0;
+    copyRegion.dstOffset = 0;
+    copyRegion.size = copySize;
+    vkCmdCopyBuffer(cmd, oldBuffer, buffer, 1, &copyRegion);
+
+    vkEndCommandBuffer(cmd);
+    vk.transferQueue->submit({&cmd, 1})->awaitCompletion();
+
     vmaDestroyBuffer(getVulkan().allocator, oldBuffer, oldAllocation);
   }
 }
@@ -79,7 +93,17 @@ void ren::Buffer::unmap(void) {
 
 void ren::Buffer::copyFrom(const Buffer &src, VkDeviceSize size, VkDeviceSize srcOffset,
                            VkDeviceSize dstOffset) {
-  getVulkan().copy_buffer(src.buffer, this->buffer, size);
+  auto &vk = getVulkan();
+  auto cmd = vk.beginSingleTimeCommands();
+
+  VkBufferCopy copyRegion{};
+  copyRegion.srcOffset = srcOffset;
+  copyRegion.dstOffset = dstOffset;
+  copyRegion.size = size;
+  vkCmdCopyBuffer(cmd, src.buffer, this->buffer, 1, &copyRegion);
+  vkEndCommandBuffer(cmd);
+
+  vk.transferQueue->submit({&cmd, 1})->awaitCompletion();
 }
 
 

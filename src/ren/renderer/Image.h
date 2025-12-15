@@ -7,7 +7,7 @@
 #include <unordered_set>
 
 #include <ren/core/Builder.h>
-#include <ren/renderer/Vulkan.h>
+#include <ren/renderer/vulkan/Vulkan.h>
 
 namespace ren {
 

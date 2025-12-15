@@ -8,7 +8,7 @@
 #include <ren/core/Instrumentation.h>
 #include <SDL2/SDL.h>         // for SDL_Window
 #include <SDL2/SDL_vulkan.h>  // for SDL_Vulkan functions
-
+#include <ren/misc/DeprecationLogger.h>
 #include <vk_mem_alloc.h>  // for VMA (Vulkan Memory Allocator)
 
 #define CHECK_VK_RESULT(x, msg)                                          \
@@ -33,7 +33,7 @@ namespace ren {
 
   // Every vulkan application needs at least one Vulkan instance.
   // This class also contains the physical device, device, and surface.
-  class VulkanInstance : public std::enable_shared_from_this<VulkanInstance> {
+  class VulkanInstance : public RefCounted<VulkanInstance> {
    public:
     VulkanInstance(SDL_Window *window);
     ~VulkanInstance();
@@ -45,34 +45,30 @@ namespace ren {
     VulkanInstance &operator=(VulkanInstance &&) = delete;
 
 
-    SDL_Window *window = nullptr;
 
-    // This is the Vulkan instance handle. We expose it publically so that other
-    // parts of the vulkan engine can interface with it.
+
     VkInstance instance = VK_NULL_HANDLE;
-
     VkPhysicalDevice physical_device = VK_NULL_HANDLE;
     VkDevice device = VK_NULL_HANDLE;
 
+    // The surface is the window that we render to (we link against SDL2)
+    VkSurfaceKHR surface = VK_NULL_HANDLE;
+    SDL_Window *window = nullptr;
+
+
+    // -- Submission Queues -- //
     ref<SubmissionQueue> graphicsQueue;
     ref<SubmissionQueue> computeQueue;
     ref<SubmissionQueue> transferQueue;
 
-    // Preferred MSAA sample count for color/depth attachments in render passes.
-    VkSampleCountFlagBits msaaSamples = VK_SAMPLE_COUNT_1_BIT;
-
-    // ---- Memory Allocator ---- //
+    // -- Buffer Memory Allocator -- //
     VmaAllocator allocator;
-
-    // The surface is the window that we render to (we link against SDL2)
-    VkSurfaceKHR surface = VK_NULL_HANDLE;
 
     // Debug messenger for validation layer output (only used when validation enabled)
     VkDebugUtilsMessengerEXT debug_messenger = VK_NULL_HANDLE;
 
     // ---- Swapchain ---- //
     // Written externally by ren::Engine when the window is resized.
-    bool framebuffer_resized = false;
     VkExtent2D extent;         // Render target size
     VkFormat swapchainFormat;  // chosen in init_instance()
     // box<ren::Swapchain> swapchain;
@@ -82,29 +78,18 @@ namespace ren {
     u64 frame_number = 0;
 
 
-    void recreate_swapchain(void) {
-      // REN_PROFILE_FUNCTION();
-      // cleanup_swapchain();
-      // init_swapchain();
-      // framebuffer_resized = false;
-    }
+
+
+
 
     inline void waitForIdle(void) {
+      REN_DEPRECATION_WARNING();
       REN_PROFILE_SCOPE("Wait For Idle");
       vkDeviceWaitIdle(device);
     }
 
 
     VkSampler createSampler(VkFilter filter);
-
-    void create_buffer(VkDeviceSize size, VkBufferUsageFlags usage,
-                       VkMemoryPropertyFlags properties, VkBuffer &buffer,
-                       VkDeviceMemory &bufferMemory);
-
-
-    void copy_buffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size, u32 srcOffset = 0,
-                     u32 dstOffset = 0);
-
 
     void create_image(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling,
                       VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage &image,

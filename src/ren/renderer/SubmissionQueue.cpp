@@ -14,7 +14,7 @@ namespace ren {
 
   ref<Fence> SubmissionQueue::submit(std::span<VkCommandBuffer> cmds) {
     // Create a fence to signal when the command buffers have finished executing
-    auto fence = make<Fence>(false);
+    auto fence = ren::make<Fence>(false);
 
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;

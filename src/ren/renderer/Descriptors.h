@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ren/renderer/Vulkan.h>
+#include <ren/renderer/vulkan/Vulkan.h>
 
 
 // This set of classes implements a thin wrapper around Vulkan descriptor sets.

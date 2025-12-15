@@ -1,5 +1,5 @@
 #include <ren/renderer/Swapchain.h>
-#include <ren/renderer/Vulkan.h>
+#include <ren/renderer/vulkan/Vulkan.h>
 #include <SDL2/SDL_vulkan.h>
 #include <fmt/core.h>
 #include <vkb/VkBootstrap.h>
@@ -113,8 +113,7 @@ namespace ren {
                                         frameData->imageAvailableSemaphore, VK_NULL_HANDLE,
                                         &frameData->frameIndex);
 
-    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR ||
-        vulkan.framebuffer_resized) {
+    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
       fmt::println("Swapchain image out of date");
       return nullptr;
     } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {

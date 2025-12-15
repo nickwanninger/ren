@@ -1,6 +1,6 @@
 #include <ren/renderer/pipelines/PipelineCache.h>
 #include <ren/misc/hash.h>
-#include <ren/renderer/Vulkan.h>
+#include <ren/renderer/vulkan/Vulkan.h>
 #include <ren/renderer/ShaderProgram.h>
 #include <fstream>
 #include <cstring>
@@ -260,7 +260,6 @@ namespace ren {
 
     VkGraphicsPipelineCreateInfo pipelineInfo{};
     pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-    pipelineInfo.stageCount = 2;
     // We start by referencing the array of VkPipelineShaderStageCreateInfo structs.
     pipelineInfo.pVertexInputState = &vertexInputInfo;
     pipelineInfo.pInputAssemblyState = &inputAssembly;

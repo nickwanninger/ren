@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ren/renderer/Vulkan.h>
+#include <ren/renderer/vulkan/Vulkan.h>
 #include <ren/layers/LayerStack.h>
 #include <SDL2/SDL.h>
 #include <ren/renderer/RenderPass.h>

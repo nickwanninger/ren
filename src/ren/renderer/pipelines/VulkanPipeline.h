@@ -6,7 +6,7 @@
 #include <ren/core/UUID.h>
 #include <ren/core/Instrumentation.h>
 #include <ren/assets/Vertex.h>
-#include <ren/renderer/Vulkan.h>
+#include <ren/renderer/vulkan/Vulkan.h>
 
 namespace ren {
 

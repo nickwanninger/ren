@@ -19,6 +19,6 @@ namespace ren {
       void* buffer[128];                                                                      \
       size_t nptrs = backtrace(buffer, 128);                                                  \
       ren::printDeprecationWarning(__PRETTY_FUNCTION__, __FILE__, __LINE__, {buffer, nptrs}); \
-      _ren_deprecation_logged = true;                                                         \
+      /*_ren_deprecation_logged = true;*/                                                     \
     }                                                                                         \
   } while (0);

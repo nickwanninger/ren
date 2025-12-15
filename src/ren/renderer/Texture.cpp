@@ -1,7 +1,7 @@
 
 #include <ren/renderer/Texture.h>
 #include <ren/renderer/Buffer.h>
-#include <ren/renderer/Vulkan.h>
+#include <ren/renderer/vulkan/Vulkan.h>
 #include <ren/core/Instrumentation.h>
 
 #include <stb/stb_image.h>

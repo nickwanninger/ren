@@ -1,7 +1,7 @@
 #pragma once
 
 #include <ren/types.h>
-#include <ren/renderer/Vulkan.h>
+#include <ren/renderer/vulkan/Vulkan.h>
 
 namespace ren {
 

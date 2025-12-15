@@ -4,7 +4,7 @@
 #include <ren/renderer/graph/RenderGraph.h>
 
 #include <ren/Camera.h>
-#include <ren/renderer/Vulkan.h>
+#include <ren/renderer/vulkan/Vulkan.h>
 #include <imgui/imgui.h>
 #include <random>
 
@@ -33,8 +33,7 @@ namespace ren {
                                    &texHeight, &texChannels, STBI_rgb_alpha);
 
 
-    glm::vec4 noiseData[texWidth * texHeight];
-
+    std::vector<glm::vec4> noiseData(texWidth * texHeight);
     for (u32 y = 0; y < (u32)texHeight; ++y) {
       for (u32 x = 0; x < (u32)texWidth; ++x) {
         u32 index = y * texWidth + x;
@@ -48,29 +47,16 @@ namespace ren {
       }
     }
 
-    
+
     stbi_image_free(pixels);
-
-    fmt::println("SSAONoise texture size: {}x{}, channels: {}", texWidth, texHeight, texChannels);
-
-    // glm::vec4 noiseData[ssaoNoiseSize * ssaoNoiseSize];
-    // std::uniform_real_distribution<float> randomFloats(0.0,
-    //                                                    1.0);  // random floats between [0.0, 1.0]
-    // std::default_random_engine generator;
-    // for (u32 i = 0; i < ssaoNoiseSize * ssaoNoiseSize; ++i) {
-    //   glm::vec4 noise(randomFloats(generator) * 2.0 - 1.0, randomFloats(generator) * 2.0 - 1.0,
-    //                   randomFloats(generator) * 2.0 - 1.0, 1.0f);
-    //   noiseData[i] = glm::normalize(noise);
-    // }
-
 
 
     // make a staging buffer.
-    VkDeviceSize bufferSize = sizeof(noiseData);
+    VkDeviceSize bufferSize = noiseData.size() * sizeof(glm::vec4);
     ren::Buffer stagingBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                               VMA_MEMORY_USAGE_CPU_ONLY);
     stagingBuffer.map();
-    stagingBuffer.copyFromHost(noiseData, bufferSize, 0);
+    stagingBuffer.copyFromHost(noiseData.data(), bufferSize, 0);
     stagingBuffer.unmap();
 
 
@@ -92,8 +78,7 @@ namespace ren {
                                  VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 
     vulkan.copyBufferToImage(stagingBuffer.getHandle(), image->getImage(),
-                             static_cast<uint32_t>(texWidth),
-                             static_cast<uint32_t>(texHeight));
+                             static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight));
 
     vulkan.transitionImageLayout(image->getImage(), format, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                                  VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);

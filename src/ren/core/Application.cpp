@@ -527,7 +527,7 @@ namespace ren {
     init_info.DescriptorPool = state.imguiPool;
     init_info.MinImageCount = 3;
     init_info.ImageCount = 3;
-    init_info.MSAASamples = ren::getVulkan().msaaSamples;
+    init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
     init_info.RenderPass = Renderer::get().getDisplayPass()->getHandle();
 
     ImGui_ImplVulkan_Init(&init_info);

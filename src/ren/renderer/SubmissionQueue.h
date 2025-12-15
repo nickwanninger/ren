@@ -6,7 +6,7 @@
 
 namespace ren {
 
-  class SubmissionQueue {
+  class SubmissionQueue : public RefCounted<SubmissionQueue> {
    public:
     inline SubmissionQueue(VkQueue queue, u32 familyIndex)
         : queue(queue)

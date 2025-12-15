@@ -1,5 +1,5 @@
 #include <ren/renderer/RenderPass.h>
-#include <ren/renderer/Vulkan.h>
+#include <ren/renderer/vulkan/Vulkan.h>
 #include <ren/assets/Vertex.h>
 #include <ren/misc/hash.h>
 #include <vulkan/vulkan_core.h>

@@ -2,7 +2,7 @@
 
 #include <ren/types.h>
 #include <ren/renderer/ShaderModule.h>
-#include <ren/renderer/Vulkan.h>
+#include <ren/renderer/vulkan/Vulkan.h>
 #include <ren/renderer/Descriptors.h>
 #include <spirv_reflect/spirv_reflect.h>
 #include <ren/misc/json_serialize.h>

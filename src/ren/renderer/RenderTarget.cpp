@@ -1,5 +1,5 @@
 #include <ren/renderer/RenderTarget.h>
-#include <ren/renderer/Vulkan.h>
+#include <ren/renderer/vulkan/Vulkan.h>
 #include <ren/renderer/RenderPass.h>
 
 namespace ren {
