@@ -263,10 +263,15 @@ vec3 DecodeNormal(vec2 enc) {
 // Main
 // ─────────────────────────────────────────────────────────────────────────────
 
+float alphaHash(vec2 p) {
+  return fract(1.0e4 * sin(17.0 * p.x + 0.1 * p.y) * (0.1 + abs(sin(13.0 * p.y + p.x))));
+}
+
 void main() {
   // Sample and prepare textures
   vec4 baseColor = texture(baseColorTexture, uv) * material.baseColorFactor;
-  if (baseColor.a < 0.01) discard;
+  if (baseColor.a < alphaHash(gl_FragCoord.xy)) discard;
+  // if (baseColor.a < 0.01) discard;
 
   // Compute lighting vectors
   vec3 N = computeWorldNormal();

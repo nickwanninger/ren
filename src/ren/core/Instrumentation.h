@@ -11,10 +11,9 @@
 #include <sstream>
 #include <list>
 
-#include <tracy/tracy/Tracy.hpp>
 #include <vulkan/vulkan.h>
-#include <tracy/tracy/TracyVulkan.hpp>
-// #define REN_PROFILE
+
+#define REN_PROFILE
 
 namespace ren {
 
@@ -255,7 +254,6 @@ namespace ren {
 
 
 }  // namespace ren
-#if 0
 #ifdef REN_PROFILE
    // Resolve which function signature macro will be used. Note that this only
   // is resolved when the (pre)compiler starts, so the syntax highlighting
@@ -304,14 +302,3 @@ namespace ren {
   #define REN_PROFILE_COUNTER(name, value) ((void)(value))
   #define REN_PROFILE_RECORD_GPUTIME(name, duration_ms) ((void)(duration_ms))
 #endif
-#endif
-
-#define REN_PROFILE_BEGIN_SESSION(name, filepath)
-#define REN_PROFILE_END_SESSION()
-#define REN_PROFILE_SCOPE(name) ZoneScopedN(name)
-#define REN_PROFILE_FUNCTION() ZoneScoped
-#define REN_PROFILE_MARK(name)
-#define REN_PROFILE_OUTPUT(enable)
-#define REN_PROFILE_OUTPUT_ENABLED() (false)
-#define REN_PROFILE_COUNTER(name, value) ((void)(value))
-#define REN_PROFILE_RECORD_GPUTIME(name, duration_ms) ((void)(duration_ms))

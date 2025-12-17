@@ -44,7 +44,7 @@ message(STATUS "Vulkan include dirs: ${Vulkan_INCLUDE_DIRS}")
 include_directories(${Vulkan_INCLUDE_DIRS})
 
 # Add some of the libraries we vendor
-add_subdirectory(lib/VulkanMemoryAllocator)
+# add_subdirectory(lib/VulkanMemoryAllocator)
 # add_subdirectory(lib/flecs)
 add_subdirectory(lib/fmt)
 

@@ -38,7 +38,6 @@ add_library(ren SHARED
   ${CMAKE_SOURCE_DIR}/lib/ImGuizmo/ImGradient.cpp
   ${CMAKE_SOURCE_DIR}/lib/ImGuizmo/ImGuizmo.cpp
   ${CMAKE_SOURCE_DIR}/lib/ImGuizmo/ImSequencer.cpp
-  ${CMAKE_SOURCE_DIR}/lib/tracy/TracyClient.cpp
 
 
 
@@ -69,7 +68,6 @@ target_link_libraries(ren
   slang
 
   Vulkan::Vulkan # Vulkan SDK
-  GPUOpen::VulkanMemoryAllocator # Vulkan Memory Allocator
   Vulkan::shaderc_combined
 )
 

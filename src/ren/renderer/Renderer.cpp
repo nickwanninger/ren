@@ -190,6 +190,7 @@ namespace ren {
     // }
 
     do {
+      REN_PROFILE_SCOPE("Acquire Next Frame");
       frame = this->swapchain->acquireNextFrame();
 
       if (frame == nullptr) {
@@ -229,8 +230,11 @@ namespace ren {
     auto &frame = ren::getFrameData();
 
     // And we've finished recording the command buffer:
-    if (vkEndCommandBuffer(frame.commandBuffer) != VK_SUCCESS) {
-      throw std::runtime_error("failed to record command buffer!");
+    {
+      REN_PROFILE_SCOPE("End Command Buffer");
+      if (vkEndCommandBuffer(frame.commandBuffer) != VK_SUCCESS) {
+        throw std::runtime_error("failed to record command buffer!");
+      }
     }
 
 

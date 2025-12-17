@@ -6,17 +6,6 @@ namespace ren {
 
   void printDeprecationWarning(const char* function, const char* file, int line,
                                std::span<void*> backtrace) {
-    static std::unordered_set<u64> seenBacktraceHashes;
-
-
-    u64 hash;
-    for (auto ptr : backtrace) {
-      hash ^= reinterpret_cast<u64>(ptr) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
-    }
-
-    if (seenBacktraceHashes.find(hash) != seenBacktraceHashes.end()) { return; }
-    seenBacktraceHashes.insert(hash);
-
     fmt::println("\e[31m=== Deprecation Warning ===\e[0m");
     fmt::println("Function: '{}'", function);
     fmt::println("Location: {}:{}", file, line);

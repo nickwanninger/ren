@@ -9,7 +9,7 @@
 #include <SDL2/SDL.h>         // for SDL_Window
 #include <SDL2/SDL_vulkan.h>  // for SDL_Vulkan functions
 #include <ren/misc/DeprecationLogger.h>
-#include <vk_mem_alloc.h>  // for VMA (Vulkan Memory Allocator)
+#include "./vk_mem_alloc.h"  // for VMA (Vulkan Memory Allocator)
 
 #define CHECK_VK_RESULT(x, msg)                                          \
   do {                                                                   \
@@ -68,10 +68,7 @@ namespace ren {
     VkDebugUtilsMessengerEXT debug_messenger = VK_NULL_HANDLE;
 
     // ---- Swapchain ---- //
-    // Written externally by ren::Engine when the window is resized.
-    VkExtent2D extent;         // Render target size
     VkFormat swapchainFormat;  // chosen in init_instance()
-    // box<ren::Swapchain> swapchain;
 
     // ---- Command Pool ---- //
     VkCommandPool commandPool;

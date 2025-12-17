@@ -110,13 +110,6 @@ vulkanDebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
 
 
 
-#include <tracy/tracy/TracyVulkan.hpp>
-
-// Implement vk_mem_alloc here!
-#define VMA_IMPLEMENTATION
-#include "vk_mem_alloc.h"
-
-
 static ren::VulkanInstance* g_vulkan_instance = nullptr;
 
 ren::VulkanInstance& ren::getVulkan(void) {
@@ -137,14 +130,8 @@ ren::VulkanInstance::VulkanInstance(SDL_Window* window) {
   }
   g_vulkan_instance = this;
 
-  int width, height;
-  SDL_Vulkan_GetDrawableSize(window, &width, &height);
-  this->extent.width = width;
-  this->extent.height = height;
 
   init_instance();
-
-
 
   // ASAP, create a command pool.
   VkCommandPoolCreateInfo poolInfo{};
@@ -155,18 +142,6 @@ ren::VulkanInstance::VulkanInstance(SDL_Window* window) {
   if (vkCreateCommandPool(device, &poolInfo, nullptr, &commandPool) != VK_SUCCESS) {
     throw std::runtime_error("failed to create command pool!");
   }
-
-
-  // -- Tracy Vulkan -- //
-  VkCommandBufferAllocateInfo allocInfo{};
-  allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-  allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-  allocInfo.commandPool = this->commandPool;
-  allocInfo.commandBufferCount = 1;
-  VkCommandBuffer tracyCommandBuffer;
-  vkAllocateCommandBuffers(this->device, &allocInfo, &tracyCommandBuffer);
-
-  TracyVkContext(this->physical_device, this->device, this->graphics_queue, tracyCommandBuffer);
 }
 
 
@@ -219,10 +194,12 @@ void ren::VulkanInstance::init_instance(void) {
   VkPhysicalDeviceFeatures requiredFeatures = {};
   // requiredFeatures.geometryShader = VK_FALSE;    // Enable geometry shaders
   requiredFeatures.samplerAnisotropy = VK_TRUE;  // Enable anisotropic filtering
-  requiredFeatures.fillModeNonSolid = VK_TRUE;
+  // requiredFeatures.fillModeNonSolid = VK_TRUE;
+
+  selector.set_required_features(requiredFeatures);
 
   // Request the specific features you need
-  VkPhysicalDeviceVulkan12Features indexing_features{
+  VkPhysicalDeviceVulkan12Features vk12Features{
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
       .shaderSampledImageArrayNonUniformIndexing = VK_TRUE,
       .descriptorBindingSampledImageUpdateAfterBind = VK_TRUE,
@@ -230,16 +207,15 @@ void ren::VulkanInstance::init_instance(void) {
       .runtimeDescriptorArray = VK_TRUE,
       .descriptorIndexing = VK_TRUE,
   };
-  selector.add_required_extension(VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME);
-  selector.set_required_features_12(indexing_features);
+  // selector.add_required_extension(VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME);
+  // selector.set_required_features_12(vk12Features);
 
 
+  selector.set_minimum_version(1, 2);
+  selector.set_surface(surface);
 
-  auto physicalDeviceResult = selector.set_minimum_version(1, 2)
-                                  .set_required_features(requiredFeatures)
-                                  .set_surface(surface)
-                                  .select();
 
+  auto physicalDeviceResult = selector.select();
 
   // get physical device properties for version info
   if (!physicalDeviceResult) {

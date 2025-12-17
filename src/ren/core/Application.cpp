@@ -53,7 +53,7 @@ extern "C" {
 static ren::Flag<int> kMaxFPS("max-fps", 0,
                               "Maximum framerate for the application, 0 = vsync or uncapped.");
 
-
+static ren::Flag<bool> kHighDPI("high-dpi", true, "Enable high DPI support.");
 
 static ren::Application *g_application = nullptr;
 namespace ren {
@@ -69,7 +69,7 @@ namespace ren {
 
 
     SDL_WindowFlags window_flags =
-        (SDL_WindowFlags)(SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
+        (SDL_WindowFlags)(SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE | (kHighDPI.get() ? SDL_WINDOW_ALLOW_HIGHDPI : 0));
 
     auto windowName = fmt::format("{} - Ren {}", app_name, REN_VERSION);
     this->window =
@@ -84,7 +84,7 @@ namespace ren {
     // TODO: make this a resource instead of a value on Application.
     this->renderer = make<Renderer>(this->window);
 
-    // world.set_threads(6);
+    world.set_threads(6);
 
     if (kMaxFPS.get() > 0) { world.set_target_fps(kMaxFPS.get()); }
 
@@ -200,21 +200,14 @@ namespace ren {
 
 
     FramerateCounter framerateCounter;
-    ren::RenderGraph G;
-
-
-    ren::GraphHandle nullHandleOut;
-
-    ren::GraphHandle ssao;
-    ren::GraphHandle gbufferAlbedo, gbufferNormal, gbufferMaterial, gbufferDepth;
-    auto &gbp = ren::addGBuffer(G, gbufferAlbedo, gbufferNormal, gbufferMaterial, gbufferDepth);
-
-    ren::addSSAO(G, gbufferDepth, gbufferNormal, ssao);
+    // ren::RenderGraph G;
+    // ren::GraphHandle nullHandleOut;
+    // ren::GraphHandle ssao;
+    // ren::GraphHandle gbufferAlbedo, gbufferNormal, gbufferMaterial, gbufferDepth;
+    // auto &gbp = ren::addGBuffer(G, gbufferAlbedo, gbufferNormal, gbufferMaterial, gbufferDepth);
+    // ren::addSSAO(G, gbufferDepth, gbufferNormal, ssao);
 
     float renderScaleTemp = 1.0f;
-    ren::NodeGraphEditor nodeEditor;
-
-
 
     while (this->running) {
       int eventsHandled = 0;
@@ -261,6 +254,7 @@ namespace ren {
       int windowWidth, windowHeight;
       SDL_GetWindowSize(getWindow(), &windowWidth, &windowHeight);
       if (windowWidth == 0 || windowHeight == 0) {
+        fmt::println("Window minimized, skipping frame");
         SDL_Delay(100);
         continue;
       }
@@ -284,18 +278,18 @@ namespace ren {
 
       framerateCounter.addFrame(deltaTime);
 
-      float targetHeight = 480;
-      float width = (float)windowWidth;
-      float height = (float)windowHeight;
-      // targetHeight = height;
-      targetHeight = height * renderScaleTemp;
-      float scale = targetHeight / height;
-      scale *= renderScaleTemp;
-      width *= scale;
-      height *= scale;
+      // float targetHeight = 480;
+      // float width = (float)windowWidth;
+      // float height = (float)windowHeight;
+      // // targetHeight = height;
+      // targetHeight = height * renderScaleTemp;
+      // float scale = targetHeight / height;
+      // scale *= renderScaleTemp;
+      // width *= scale;
+      // height *= scale;
 
-      auto renderSize = glm::uvec2(width, height);
-      G.startFrame(renderSize);
+      // auto renderSize = glm::uvec2(width, height);
+      // G.startFrame(renderSize);
 
 
       {
@@ -330,130 +324,137 @@ namespace ren {
       }
       ImGui::End();
 
-
-      // Update lua globals
-      lua.globals()["time"] = time;
-      lua.globals()["delta_time"] = deltaTime;
-      lua.globals()["fps"] = framerateCounter.getAverageFramerate();
-      lua.globals()["frame"] = vulkan.frame_number;
-      // Call the lua update function if it exists
-      sol::protected_function lua_update = lua["update"];
-      if (lua_update.valid()) {
-        sol::protected_function_result result = lua_update(deltaTime);
-        if (!result.valid()) {
-          sol::error err = result;
-          fmt::println("Error running lua update: {}", err.what());
-        }
+      {
+        REN_PROFILE_SCOPE("WorldProgress");
+        world.progress(deltaTime);
       }
 
-      world.lookup("scene").scope([&]() { world.progress(deltaTime); });
+      // Update lua globals
+      // lua.globals()["time"] = time;
+      // lua.globals()["delta_time"] = deltaTime;
+      // lua.globals()["fps"] = framerateCounter.getAverageFramerate();
+      // lua.globals()["frame"] = vulkan.frame_number;
+      // // Call the lua update function if it exists
+      // sol::protected_function lua_update = lua["update"];
+      // if (lua_update.valid()) {
+      //   sol::protected_function_result result = lua_update(deltaTime);
+      //   if (!result.valid()) {
+      //     sol::error err = result;
+      //     fmt::println("Error running lua update: {}", err.what());
+      //   }
+      // }
+
+      // world.lookup("scene").scope([&]() { world.progress(deltaTime); });
 
 
       // TEMP: Execute test RenderPassTask for validation
-      try {
-        G.runFor(ssao, *renderer);
-      } catch (const std::exception &e) {
-        fmt::println("✗ RenderPassTask execution failed: {}", e.what());
-      }
+      // try {
+      //   G.runFor(ssao, *renderer);
+      // } catch (const std::exception &e) {
+      //   fmt::println("✗ RenderPassTask execution failed: {}", e.what());
+      // }
 
-      G.inspect();
+      // G.inspect();
 
-      ren::resource<neko::luainspector>().draw();
+      // ren::resource<neko::luainspector>().draw();
 
-      world.defer_begin();
+      // world.defer_begin();
 
       auto enc = frame.commandEncoder;
       auto penc = enc->beginRenderPass(*renderer->getDisplayPass(), *frame.renderTarget);
       {
-        static auto program = make<ShaderProgram>("shaders/test/test_triangle");
-        ren::PipelineStateObject trianglePSO;
-        trianglePSO.debugName = "Test Triangle PSO";
-        trianglePSO.program = program;
-        trianglePSO.cullMode = ren::CullMode::None;
-        trianglePSO.hasVertexBinding = true;
-        trianglePSO.fillMode = ren::FillMode::Wireframe;
+        if (1) {
+          static auto program = make<ShaderProgram>("shaders/test/test_triangle");
+          ren::PipelineStateObject trianglePSO;
+          trianglePSO.debugName = "Test Triangle PSO";
+          trianglePSO.program = program;
+          trianglePSO.cullMode = ren::CullMode::None;
+          trianglePSO.hasVertexBinding = true;
+          trianglePSO.fillMode = ren::FillMode::Solid;
 
 
-        auto start = std::chrono::high_resolution_clock::now();
-        ren::MeshBuilder b;
+          auto start = std::chrono::high_resolution_clock::now();
+          ren::MeshBuilder b;
 
 
-        static float p = 0.5f;
-        static int segments = 6;
-        if (segments < 3) segments = 3;
-        srand(0);
+          static float p = 0.5f;
+          static int segments = 6;
+          if (segments < 3) segments = 3;
+          srand(0);
 
 
 
-        auto fb = b.beginFace();
-        // make a circle with N segments.
-        for (int i = 0; i < segments; i++) {
-          // compute a random distance
-          float distance = 0.1f + (rand() % 1000 / 1000.0f);
+          auto fb = b.beginFace();
+          // make a circle with N segments.
+          for (int i = 0; i < segments; i++) {
+            // compute a random distance
+            float distance = 0.1f + (rand() % 1000 / 1000.0f);
 
-          // just the point on the unit circle.
-          fb.vertex(glm::vec3(cosf((float)i / segments * glm::two_pi<float>()),
-                              sinf((float)i / segments * glm::two_pi<float>()), 0.0f) *
-                        distance,
-                    glm::vec3(0), glm::vec2(i / (float)segments, 1.0f));
-        }
-        fb.end();
-
-        auto meshData = b.stampOut();
-
-        penc.bindImmediateMesh(meshData->vertices, meshData->indices);
-        penc.bindPipeline(trianglePSO);
-        DrawArguments args;
-        args.vertexCount = static_cast<u32>(meshData->indices.size());
-        args.instanceCount = 1;
-        penc.drawIndexed(args);
-
-
-        auto end = std::chrono::high_resolution_clock::now();
-
-        float allocTime =
-            std::chrono::duration<float, std::chrono::nanoseconds::period>(end - start).count();
-
-        ImGui::Begin("New Perf Test");
-        ImGui::Text("Allocated VertexBuffer in %f ms", allocTime / 1000.0 / 1000.0);
-        // Pick buildMode
-        ImGui::DragInt("Segments", &segments, 1.0f, 3, 1024);
-        if (ImGui::Button("Dump Mesh as OBJ")) { meshData->dumpObj(); }
-
-        int width, height;
-        SDL_GetWindowSize(ren::Application::get().getWindow(), &width, &height);
-        ImGui::Text("Window Size: %d x %d", width, height);
-        SDL_Vulkan_GetDrawableSize(ren::Application::get().getWindow(), &width, &height);
-        ImGui::Text("Drawable Size: %d x %d", width, height);
-
-
-        if (ImGui::BeginTable("Vertices Table", 5,
-                              ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
-          ImGui::TableSetupColumn("Index");
-          ImGui::TableSetupColumn("x");
-          ImGui::TableSetupColumn("y");
-          ImGui::TableSetupColumn("z");
-          ImGui::TableSetupColumn("UV");
-          ImGui::TableHeadersRow();
-
-          for (size_t i = 0; i < meshData->vertices.size(); ++i) {
-            const auto &vertex = meshData->vertices[i];
-            ImGui::TableNextRow();
-            ImGui::TableSetColumnIndex(0);
-            ImGui::Text("%zu", i);
-            ImGui::TableNextColumn();
-            ImGui::Text("%f", vertex.pos.x);
-            ImGui::TableNextColumn();
-            ImGui::Text("%f", vertex.pos.y);
-            ImGui::TableNextColumn();
-            ImGui::Text("%f", vertex.pos.z);
-            ImGui::TableNextColumn();
-            ImGui::Text("%f,%f", vertex.texCoord.x, vertex.texCoord.y);
+            float rad = (float)i / segments * glm::two_pi<float>();
+            rad += time * 0.5f;
+            // just the point on the unit circle.
+            fb.vertex(glm::vec3(cosf(rad), sinf(rad), 0.0f) * distance,
+                      glm::vec3(0.0f), glm::vec2(0.0f));
           }
+          fb.end();
 
-          ImGui::EndTable();
+          auto meshData = b.stampOut();
+
+          penc.bindImmediateMesh(meshData->vertices, meshData->indices);
+          penc.bindPipeline(trianglePSO);
+          DrawArguments args;
+          args.vertexCount = static_cast<u32>(meshData->indices.size());
+          args.instanceCount = 1;
+          penc.drawIndexed(args);
+
+
+          auto end = std::chrono::high_resolution_clock::now();
+
+          float allocTime =
+              std::chrono::duration<float, std::chrono::nanoseconds::period>(end - start).count();
+
+          ImGui::Begin("New Perf Test");
+          ImGui::Text("Allocated VertexBuffer in %f ms", allocTime / 1000.0 / 1000.0);
+          // Pick buildMode
+          ImGui::DragInt("Segments", &segments, 1.0f, 3, 1024);
+          if (ImGui::Button("Dump Mesh as OBJ")) { meshData->dumpObj(); }
+
+          int width, height;
+          SDL_GetWindowSize(ren::Application::get().getWindow(), &width, &height);
+          ImGui::Text("Window Size: %d x %d", width, height);
+          SDL_Vulkan_GetDrawableSize(ren::Application::get().getWindow(), &width, &height);
+          ImGui::Text("Drawable Size: %d x %d", width, height);
+
+
+          if (ImGui::BeginTable("Vertices Table", 5,
+                                ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
+            ImGui::TableSetupColumn("Index");
+            ImGui::TableSetupColumn("x");
+            ImGui::TableSetupColumn("y");
+            ImGui::TableSetupColumn("z");
+            ImGui::TableSetupColumn("UV");
+            ImGui::TableHeadersRow();
+
+            for (size_t i = 0; i < meshData->vertices.size(); ++i) {
+              const auto &vertex = meshData->vertices[i];
+              ImGui::TableNextRow();
+              ImGui::TableSetColumnIndex(0);
+              ImGui::Text("%zu", i);
+              ImGui::TableNextColumn();
+              ImGui::Text("%f", vertex.pos.x);
+              ImGui::TableNextColumn();
+              ImGui::Text("%f", vertex.pos.y);
+              ImGui::TableNextColumn();
+              ImGui::Text("%f", vertex.pos.z);
+              ImGui::TableNextColumn();
+              ImGui::Text("%f,%f", vertex.texCoord.x, vertex.texCoord.y);
+            }
+
+            ImGui::EndTable();
+          }
+          ImGui::End();
         }
-        ImGui::End();
+
 
         ImGui::Render();
         ImGui::UpdatePlatformWindows();
@@ -463,11 +464,8 @@ namespace ren {
 
       penc.end();
 
-      world.defer_end();
+      // world.defer_end();
       renderer->endFrame();
-
-      // Update the layers.
-      layerStack.onUpdate(deltaTime);
     }
     renderer->waitForIdle();
   }

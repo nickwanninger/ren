@@ -38,12 +38,13 @@ namespace ren {
     this->renderExtent.height = target_render_height;
 
 
-    fmt::print("Creating ren::Swapchain for window size: {}x{}\n", width, height);
 
     // ---- Allocate the Swapchain for device target rendering ---- //
     vkb::SwapchainBuilder swapchain_builder(vulkan.physical_device, vulkan.device, vulkan.surface);
 
     bool vsync = vsyncFlag.get();
+
+    fmt::print("Creating ren::Swapchain for window size: {}x{}, vsync={}\n", width, height, vsync);
 
     vkb::Swapchain vkb_swapchain =
         swapchain_builder.use_default_format_selection()
@@ -109,6 +110,8 @@ namespace ren {
     // Reset the command buffer for this frame.
     vkResetCommandBuffer(frameData->commandBuffer, 0);
 
+
+    REN_PROFILE_SCOPE("AcquireNextImage");
     auto result = vkAcquireNextImageKHR(vulkan.device, this->swapchain, UINT64_MAX,
                                         frameData->imageAvailableSemaphore, VK_NULL_HANDLE,
                                         &frameData->frameIndex);
@@ -121,6 +124,13 @@ namespace ren {
       // TODO: what does this mean? I usually see -4 here.
       return nullptr;
     }
+
+    // Reset the in-flight fence for this frame *after* we successfully acquired
+    // the image, as if vkAcquireNextImageKHR returns VK_ERROR_OUT_OF_DATE_KHR
+    // (window resize), we return from the function early. If we had already
+    // reset the fence, the next time we call acquireNextFrame, we would wait on
+    // a fence that is not actually in flight, causing a stall.
+    frameData->inFlightFence->reset();
 
     return frameData;
   }

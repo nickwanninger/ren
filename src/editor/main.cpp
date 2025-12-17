@@ -322,37 +322,38 @@ static const char* typeKindToString(SlangTypeKind kind) {
 }
 
 int main(int argc, char* argv[]) {
+
   ren::parseFlags(argc, argv);
 
   // slangCompileTest();
 
-  auto shaders = compileSlangShaders("./test.slang");
-  // auto shaders = compileSlangShaders("./src/ren/res/shaders/display.slang");
+  // auto shaders = compileSlangShaders("./test.slang");
+  // // auto shaders = compileSlangShaders("./src/ren/res/shaders/display.slang");
 
-  for (const auto& shader : shaders) {
-    fmt::println("Compiled shader '{}' (stage {}) with {} bytes of SPIR-V, {} parameters",
-                 shader.name, static_cast<uint32_t>(shader.stage), shader.spirv.size(),
-                 shader.parameterCount);
-
-
-    ren::ShaderReflection reflFromSpirv;
-    reflFromSpirv.parseFromSpirv(shader.spirv.data(), shader.spirv.size());
+  // for (const auto& shader : shaders) {
+  //   fmt::println("Compiled shader '{}' (stage {}) with {} bytes of SPIR-V, {} parameters",
+  //                shader.name, static_cast<uint32_t>(shader.stage), shader.spirv.size(),
+  //                shader.parameterCount);
 
 
-    std::cout << "Reflection (from SPIR-V):" << reflFromSpirv.getRoot()->toJson().dump(2)
-              << std::endl;
-    std::cout << std::endl;
+  //   ren::ShaderReflection reflFromSpirv;
+  //   reflFromSpirv.parseFromSpirv(shader.spirv.data(), shader.spirv.size());
 
-    // Also test reflection from Slang ProgramLayout
-    if (auto layout = shader.getLayout()) {
-      ren::ShaderReflection reflFromSlang;
-      reflFromSlang.parseFromSlang(layout);
-      std::cout << std::endl;
-      std::cout << "Reflection (from Slang):" << reflFromSlang.getRoot()->toJson().dump(2)
-                << std::endl;
-      std::cout << std::endl;
-    }
-  }
+
+  //   std::cout << "Reflection (from SPIR-V):" << reflFromSpirv.getRoot()->toJson().dump(2)
+  //             << std::endl;
+  //   std::cout << std::endl;
+
+  //   // Also test reflection from Slang ProgramLayout
+  //   if (auto layout = shader.getLayout()) {
+  //     ren::ShaderReflection reflFromSlang;
+  //     reflFromSlang.parseFromSlang(layout);
+  //     std::cout << std::endl;
+  //     std::cout << "Reflection (from Slang):" << reflFromSlang.getRoot()->toJson().dump(2)
+  //               << std::endl;
+  //     std::cout << std::endl;
+  //   }
+  // }
 
   // return 0;
 
@@ -360,27 +361,8 @@ int main(int argc, char* argv[]) {
   res.x = 1920;
   res.y = 1080;
 
+  REN_PROFILE_BEGIN_SESSION("profile", "profile.json");
   ren::Application app("Editor", res);
-
-
-
-
-  int numLights = 16;
-  float lightRadius = 8.0f;
-  // add lights in a ring around the origin
-  for (int i = 0; i < numLights; i++) {
-    float angle = (float)i / (float)numLights * 2.0f * glm::pi<float>();
-    float x = cos(angle) * lightRadius;
-    float z = sin(angle) * lightRadius;
-    addLight(glm::vec3(x, 3.0f, z),
-             glm::vec3(0.5f + 0.5f * cos(angle), 0.5f + 0.5f * sin(angle), 1.0f), 1.0f,
-             lightRadius * 0.8f);
-  }
-
-
-  // auto &vulkan = ren::getVulkan();
-  // print_descriptor_indexing_limits(vulkan.physical_device);
-  // return 0;
 
   if (loadArg.get() == "SPONZA") {
     loadMeshIntoScene("/Users/nick/Downloads/main_sponza/NewSponza_Main_glTF_003.gltf",
@@ -395,6 +377,7 @@ int main(int argc, char* argv[]) {
 
 
   app.run();
+  REN_PROFILE_END_SESSION();
 
   return 0;
 }

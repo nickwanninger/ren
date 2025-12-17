@@ -55,18 +55,19 @@ namespace ren::editor {
   }
 
   static void inspectorPlugin(ren::Application &app) {
-    ren::system::onUpdate("ren::editor::EditorInspector").run([&](flecs::iter &it) {
-      ImGui::Begin("Inspector");
+    if (0)
+      ren::system::onUpdate("ren::editor::EditorInspector").run([&](flecs::iter &it) {
+        ImGui::Begin("Inspector");
 
-      auto &world = app.world;
+        auto &world = app.world;
 
 
-      world.children([](Entity e) { drawEntityHeirarchy(e); });
+        world.children([](Entity e) { drawEntityHeirarchy(e); });
 
-      // draw the scene heirarchy.
+        // draw the scene heirarchy.
 
-      ImGui::End();
-    });
+        ImGui::End();
+      });
 
     if (0)
       ren::system::onUpdate<EcsComponent>("ren::editor::ComponentInspector")
@@ -97,7 +98,7 @@ namespace ren::editor {
             ImGui::End();
           });
 
-    if (1)
+    if (0)
       ren::system::onUpdate<EcsComponent>("ren::editor::TextureInspector").run([](flecs::iter &it) {
         ImGui::Begin("Texture Inspector");
 
