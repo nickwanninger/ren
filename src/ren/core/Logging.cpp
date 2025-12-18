@@ -31,6 +31,7 @@ namespace ren {
 
       LogLevel level;
       uint64_t timestamp_ms;
+      bool pinned = false;  // always draw, even if scrollback is full.
     };
 
 
@@ -51,12 +52,19 @@ namespace ren {
 
 
 
+    class LogUIItem;
+    static std::unordered_map<std::string, LogUIItem*> g_uiLogContexts;
     class LogUIItem : public LogItem {
      public:
       LogUIItem(std::string_view label, std::function<void(UiLogContext& ctx)> uiFunc)
-          : LogItem(LogLevel::Info)
+          : LogItem(LogLevel::UserInterface)
           , label(label)
-          , uiFunc(std::move(uiFunc)) {}
+          , uiFunc(std::move(uiFunc)) {
+        this->pinned = true;
+        g_uiLogContexts[this->label] = this;
+      }
+
+      virtual ~LogUIItem() { g_uiLogContexts.erase(label); }
 
       void inspect(void) override {
         ImGui::PushID(this);
@@ -66,7 +74,7 @@ namespace ren {
         if (ctx.opened) {
           ImGui::TextUnformatted(label.c_str());
           ImGui::SameLine();
-          if (ImGui::SmallButton("Close")) {
+          if (ImGui::SmallButton("Close##LogUIItem")) {
             ctx.opened = false;
             uiFunc = nullptr;
           }
@@ -74,14 +82,15 @@ namespace ren {
           if (uiFunc) uiFunc(ctx);
         }
 
-        if (!ctx.opened) { ImGui::TextDisabled("%s (closed)", label.c_str()); }
+        if (!ctx.opened) {
+          ImGui::TextDisabled("%s (closed)", label.c_str());
+          this->pinned = false;
+        }
 
         // ImGui::TreePop();
         // }
         ImGui::PopID();
       }
-
-     private:
       UiLogContext ctx;
       std::string label;
       std::function<void(UiLogContext&)> uiFunc;
@@ -111,6 +120,7 @@ namespace ren {
       case LogLevel::Error:
         fmt::print(fmt::emphasis::bold | fg(fmt::terminal_color::red), "[ ERR! ] ");
         break;
+      default: break;
     }
 
     fmt::print("{}\n", message);
@@ -119,16 +129,71 @@ namespace ren {
     g_logMessages.push_back(ren::makeBox<LogMessageItem>(level, std::move(message)));
   }
 
+  // Simple trim helper
+  static std::string_view trim(std::string_view s) {
+    auto start = s.find_first_not_of(" \t\n\r");
+    if (start == std::string_view::npos) return "";
+
+    auto end = s.find_last_not_of(" \t\n\r");
+    return s.substr(start, end - start + 1);
+  }
+
+
+
+  static std::pair<std::string, std::string> split_and_strip(std::string_view input) {
+    auto pos = input.find('>');
+    if (pos == std::string_view::npos) {
+      // No '>' found - return whole string as first element
+      auto trimmed = trim(input);
+      return {std::string(trimmed), ""};
+    }
+
+    auto first = trim(input.substr(0, pos));
+    auto second = trim(input.substr(pos + 1));
+
+    return {std::string(first), std::string(second)};
+  }
+
+
+  inline void logUIRaw(std::string_view label, std::function<void(UiLogContext& ctx)> uiFunc) {
+    fmt::println("[Log UI] Registering UI log: {}", label);
+    for (auto& pair : g_uiLogContexts) {
+      fmt::println("  Existing UI log: {}", pair.first);
+    }
+    std::lock_guard<std::mutex> lock(g_logMutex);
+
+    // If the label already exists, we need to replace it's UI function
+    auto it = g_uiLogContexts.find(std::string(label));
+    if (it != g_uiLogContexts.end()) {
+      fmt::println("[Log UI] Updating existing UI log: {}", label);
+      it->second->uiFunc = std::move(uiFunc);
+      it->second->ctx.opened = true;
+      it->second->pinned = true;  // always drawn
+      return;
+    }
+
+    g_logMessages.push_back(ren::makeBox<LogUIItem>(label, std::move(uiFunc)));
+  }
+
 
   void logUI(std::string_view label, std::function<void(UiLogContext& ctx)> uiFunc) {
-    std::lock_guard<std::mutex> lock(g_logMutex);
-    g_logMessages.push_back(ren::makeBox<LogUIItem>(label, std::move(uiFunc)));
+    // If the label contains '>', split into window and tab
+    auto [windowGroup, tab] = split_and_strip(label);
+    if (!tab.empty()) {
+      logWindow(windowGroup, tab, std::move(uiFunc));
+      return;
+    }
+
+
+    logUIRaw(label, std::move(uiFunc));
   }
 
   void logWindow(std::string windowGroup, std::string tab,
                  std::function<void(UiLogContext& ctx)> uiFunc) {
-    logUI(fmt::format("{} > {}", windowGroup, tab), [=](UiLogContext& ctx) {
-      ImGui::Begin(windowGroup.c_str());
+    logUIRaw(fmt::format("{} > {}", windowGroup, tab), [=](UiLogContext& ctx) {
+      ImGui::SameLine();
+      ImGui::TextDisabled("Opened in Window");
+      ImGui::Begin(windowGroup.c_str(), &ctx.opened);
       ImGui::BeginTabBar(windowGroup.c_str());
       if (ImGui::BeginTabItem(tab.data(), &ctx.opened)) {
         uiFunc(ctx);
@@ -182,8 +247,13 @@ namespace ren {
     ImGui::Checkbox("Auto-scroll", &autoScroll);
     ImGui::SameLine();
     if (ImGui::Button("Clear Log")) {
+      // Only clear non-pinned messages
+
       std::lock_guard<std::mutex> lock(g_logMutex);
-      g_logMessages.clear();
+
+      g_logMessages.erase(std::remove_if(g_logMessages.begin(), g_logMessages.end(),
+                                         [](const Box<LogItem>& item) { return !item->pinned; }),
+                          g_logMessages.end());
       g_logMessageBytes = 0;
     }
     ImGui::SameLine();
@@ -208,8 +278,9 @@ namespace ren {
                           ? g_logMessages.size() - maxScrollbackDisplay
                           : 0;
 
-    for (size_t i = startIdx; i < g_logMessages.size(); ++i) {
+    for (size_t i = 0; i < g_logMessages.size(); ++i) {
       const auto& logMsg = g_logMessages[i];
+      if (i < startIdx && !logMsg->pinned) { continue; }
 
       // Filter by log level
       bool shouldShow = false;
@@ -218,7 +289,9 @@ namespace ren {
         case LogLevel::Info: shouldShow = showInfo; break;
         case LogLevel::Warning: shouldShow = showWarning; break;
         case LogLevel::Error: shouldShow = showError; break;
+        default: shouldShow = true; break;
       }
+
 
       if (!shouldShow) continue;
 
@@ -247,15 +320,23 @@ namespace ren {
           color = ImVec4(1.0f, 0.2f, 0.2f, 1.0f);  // Red
           prefix = "!";
           break;
+        case LogLevel::UserInterface:
+          color = ImVec4(0.0f, 0.8f, 0.0f, 1.0f);  // Green
+          prefix = "UI";
+          break;
       }
 
       // Render the log message
-
       char timebuf[64];
-      time_t seconds = (time_t)(logMsg->timestamp_ms / 1000);
-      strftime(timebuf, sizeof(timebuf), "%H:%M:%S", localtime(&seconds));
+      if (logMsg->pinned) {
+        std::strcpy(timebuf, "[PINNED]");
+      } else {
+        time_t seconds = (time_t)(logMsg->timestamp_ms / 1000);
 
-      ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.6f, 0.6f, 1.0f));
+        strftime(timebuf, sizeof(timebuf), "%H:%M:%S", localtime(&seconds));
+      }
+
+      ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.1f, 0.1f, 0.1f, 1.0f));
       ImGui::TextUnformatted(timebuf);
       ImGui::SameLine();
       ImGui::PopStyleColor();
@@ -266,6 +347,7 @@ namespace ren {
         ImGui::SameLine();
         ImGui::PopStyleColor();
       }
+
 
       logMsg->inspect();
     }
