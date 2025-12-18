@@ -55,8 +55,6 @@ namespace ren {
     for (const auto &[handle, entry] : entries) {
       ImGui::Text("Mesh %3d: Verts %6d @ %6d, Idx %6d @ %6d", handle, entry.vertexCount,
                   entry.vertexOffset, entry.indexCount, entry.indexOffset);
-      // fmt::println("{},{},{},{}", entry.vertexOffset, entry.vertexCount, entry.indexOffset,
-      //              entry.indexCount);
     }
     ImGui::End();
   }

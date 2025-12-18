@@ -130,7 +130,7 @@ namespace ren {
       //   }
       // }
       // code += "\")";
-      // fmt::println("Eval code: {}", code);
+      // ren::println("Eval code: {}", code);
 
       // s7_pointer out = S.eval(code.c_str());
       // if (s7_is_string(out)) {

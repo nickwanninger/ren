@@ -78,7 +78,7 @@ namespace ren {
 
     // ren::Entity e = this->meshScene->instantiate(scene);
 
-    // // fmt::println("JSON:", e.to_json().c_str());
+    // // ren::println("JSON:", e.to_json().c_str());
     // e.get_mut<comp::Transform>().scale = glm::vec3(1.0f); // Set the scale of the instantiated
     // entity
   }

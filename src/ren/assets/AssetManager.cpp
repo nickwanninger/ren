@@ -211,20 +211,20 @@ namespace ren {
     lua_pushstring(L, "fennel");            // arg
     if (lua_pcall(L, 1, 1, 0) != LUA_OK) {  // call require("fennel")
       const char *err = lua_tostring(L, -1);
-      fmt::println("Failed to require fennel: {}", err ? err : "unknown error");
+      ren::errln("Failed to require fennel: {}", err ? err : "unknown error");
       abort();
     }
 
     // Now fennel module is on top of the stack.
     if (!lua_istable(L, -1)) {
-      fmt::println("fennel.require did not return a table");
+      ren::errln("fennel.require did not return a table");
       abort();
     }
 
     // Get fennel.compileString
     lua_getfield(L, -1, "compileString");  // pushes function
     if (!lua_isfunction(L, -1)) {
-      fmt::println("fennel.compileString not found or not a function");
+      ren::errln("fennel.compileString not found or not a function");
       abort();
     }
 
@@ -238,7 +238,7 @@ namespace ren {
     // Call compileString(source, options)
     if (lua_pcall(L, 2, 1, 0) != LUA_OK) {
       const char *err = lua_tostring(L, -1);
-      fmt::println("fennel.compileString error: {}", err ? err : "unknown error");
+      ren::errln("fennel.compileString error: {}", err ? err : "unknown error");
       return lua_error(L);
       // lua_pop(L, 1);  // pop error
       // lua_pop(L, 1);  // pop module
@@ -249,7 +249,7 @@ namespace ren {
     size_t compiled_len = 0;
     const char *compiled_cstr = lua_tolstring(L, -1, &compiled_len);
     if (!compiled_cstr) {
-      fmt::println("fennel.compileString did not return a string");
+      ren::errln("fennel.compileString did not return a string");
       lua_pop(L, 1);  // pop result
       return 0;
     }
@@ -296,7 +296,7 @@ namespace ren {
         }
       }
 
-      fmt::println("[!!] Failed to load lua module '{}'\n", modname);
+      ren::errln("[!!] Failed to load lua module '{}'\n", modname);
       // On failure, return nil and an error string.
       lua_pushnil(L);
       lua_pushfstring(L, "Module '%s' not found", modname);

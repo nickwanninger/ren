@@ -296,7 +296,7 @@ namespace ren {
         throw std::runtime_error("Failed to write PNG: " + filename);
       }
 
-      fmt::println("Saved mipmap level {} to {}", mipLevel, filename);
+      ren::println("Saved mipmap level {} to {}", mipLevel, filename);
 
       // Unmap memory
       stagingBuffer.unmap();

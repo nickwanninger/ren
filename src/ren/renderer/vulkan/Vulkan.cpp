@@ -95,7 +95,7 @@ vulkanDebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
   // Print the actual message with indentation for readability
   if (pCallbackData->pMessage) { fmt::print("  {}", pCallbackData->pMessage); }
 
-  fmt::println("");
+  ren::println("");
 
   // For errors, add extra visibility
   if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
@@ -151,7 +151,7 @@ void ren::VulkanInstance::init_instance(void) {
   REN_PROFILE_FUNCTION();
   vkb::InstanceBuilder builder;
 
-  fmt::println("Enabling validation layers: {}", validationLayers.get() ? "Yes" : "No");
+  ren::println("Enabling validation layers: {}", validationLayers.get() ? "Yes" : "No");
 
   // Configure validation layers with custom debug callback
   auto inst_ret =
@@ -272,7 +272,6 @@ void ren::VulkanInstance::init_instance(void) {
     PRINTCAP(VK_QUEUE_VIDEO_DECODE_BIT_KHR, "d");
     PRINTCAP(VK_QUEUE_VIDEO_ENCODE_BIT_KHR, "e");
     PRINTCAP(VK_QUEUE_OPTICAL_FLOW_BIT_NV, "o");
-    PRINTCAP(VK_QUEUE_DATA_GRAPH_BIT_ARM, "g");
 #undef PRINTCAP
 
     fmt::print("\n");
@@ -298,9 +297,9 @@ void ren::VulkanInstance::init_instance(void) {
   this->computeQueue = tryToMakeQueue(vkb::QueueType::compute, this->graphicsQueue);
   this->transferQueue = tryToMakeQueue(vkb::QueueType::transfer, this->graphicsQueue);
 
-  fmt::println("Graphics Queue: {}", this->graphicsQueue->family());
-  fmt::println("Compute Queue: {}", this->computeQueue->family());
-  fmt::println("Transfer Queue: {}", this->transferQueue->family());
+  ren::println("Graphics Queue: {}", this->graphicsQueue->family());
+  ren::println("Compute Queue: {}", this->computeQueue->family());
+  ren::println("Transfer Queue: {}", this->transferQueue->family());
 
 
   // Now that we have an instance, allocate the vulkan allocator
@@ -623,7 +622,7 @@ void ren::VulkanInstance::endSingleTimeCommands(VkCommandBuffer commandBuffer) {
 // void ren::VulkanInstance::copy_buffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size,
 //                                       u32 srcOffset, u32 dstOffset) {
 //   REN_DEPRECATION_WARNING();
-//   fmt::println("Copying buffer: size={} srcOffset={} dstOffset={}", size, srcOffset, dstOffset);
+//   ren::println("Copying buffer: size={} srcOffset={} dstOffset={}", size, srcOffset, dstOffset);
 //   VkCommandBuffer commandBuffer = beginSingleTimeCommands();
 
 //   VkBufferCopy copyRegion{};

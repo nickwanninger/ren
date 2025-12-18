@@ -43,7 +43,7 @@ namespace ren {
     rw.extractFromECS(ren::world());
 
     // for (auto &pl : rw.pointLights) {
-    //   fmt::println("Point Light at {},{},{} with radius {}", pl.position.x, pl.position.y,
+    //   ren::println("Point Light at {},{},{} with radius {}", pl.position.x, pl.position.y,
     //                pl.position.z, pl.radius);
     //   DebugScribe s;
     //   s.drawSphere(pl.position, pl.radius, pl.color, 0.1f);

@@ -54,7 +54,7 @@ void ren::Buffer::resizeBytes(size_t newSize) {
   if (oldBuffer != VK_NULL_HANDLE) {
     auto copySize = oldSize;
     if (newSize < copySize) { copySize = newSize; }
-    fmt::println("Resizing buffer from {} to {}, copying {} bytes", oldSize, newSize, copySize);
+    ren::dbgln("Resizing buffer from {} to {}, copying {} bytes", oldSize, newSize, copySize);
 
     auto &vk = getVulkan();
     auto cmd = vk.beginSingleTimeCommands();

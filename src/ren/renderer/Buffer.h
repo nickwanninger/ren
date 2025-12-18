@@ -168,7 +168,7 @@ namespace ren {
       auto &buffer = buffers[index];
       if (buffer->getSize() != expectedArrayLength * sizeof(T)) {
         // resize the buffer!
-        fmt::println("Frame {} of UBS isn't the right size. resizing from {} to {}", index,
+        ren::dbgln("Frame {} of UBS isn't the right size. resizing from {} to {}", index,
                      buffer->getSize(), expectedArrayLength * sizeof(T));
         buffer->resizeCount(expectedArrayLength);
       }

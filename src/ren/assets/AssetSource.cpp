@@ -17,7 +17,7 @@ namespace ren {
       m_root = root;
     }
 
-    fmt::println("Created Filesystem Asset Manager with root '{}'", m_root.c_str());
+    ren::println("Created Filesystem Asset Manager with root '{}'", m_root.c_str());
   }
 
 
@@ -51,7 +51,7 @@ namespace ren {
       return false;
     }
 
-    fmt::println("[Asset Source] Loaded '{}' ({} bytes) from filesystem", name, out.size());
+    ren::println("[Asset Source] Loaded '{}' ({} bytes) from filesystem", name, out.size());
 
     return true;
   }
@@ -162,7 +162,7 @@ namespace ren {
         // Decompress into the buffer
         int status = decompress_gzip(res.data, res.size, out.data(), out.size());
         if (status != MZ_OK) {
-          fmt::println("[Asset Source] Failed to decompress embedded resource '{}', status={}",
+          ren:errln("[Asset Source] Failed to decompress embedded resource '{}', status={}",
                        name, status);
           out.clear();
           return false;

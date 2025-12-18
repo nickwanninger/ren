@@ -184,7 +184,7 @@ namespace ren {
     // if (width != (int)this->swapchain->deviceExtent.width ||
     //     height != (int)this->swapchain->deviceExtent.height) {
     //       sizeIncorrect = true;
-    //   fmt::println("Window resized from {}x{} to {}x{}. Swapchain invalid!",
+    //   ren::println("Window resized from {}x{} to {}x{}. Swapchain invalid!",
     //                this->swapchain->deviceExtent.width, this->swapchain->deviceExtent.height,
     //                width, height);
     // }

@@ -49,7 +49,6 @@ namespace ren {
                                        VK_IMAGE_ASPECT_COLOR_BIT);
         }
       } else if (attachment.type == RenderTargetAttachmentTypeDepth) {
-        // fmt::println("transitioning depth attachment {} to READ_ONLY_OPTIMAL", attachment.name);
         vulkan.transitionImageLayout(cmd, attachment.texture->getImage(), attachment.format,
                                      VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
                                      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
@@ -83,7 +82,7 @@ namespace ren {
           this->width = twidth;
           this->height = theight;
         } else if (this->width != twidth || this->height != theight) {
-          fmt::print("RenderTarget: All attachments must have the same dimensions.\n");
+          ren::errln("RenderTarget: All attachments must have the same dimensions.");
           abort();
         }
         attachmentViews.push_back(attachment.texture->getImageView());

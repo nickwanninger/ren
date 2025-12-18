@@ -23,7 +23,7 @@ struct LuaComponent {
     // if the value $v on the top of the stack is not a table, make a new table like this: {value =
     // $v}
     if (!lua_istable(L, -1)) {
-      fmt::println("LuaComponent::set() wrapping non-table value into table {{value = ...}}");
+      ren::dbgln("LuaComponent::set() wrapping non-table value into table {{value = ...}}");
       lua_newtable(L);
       lua_pushvalue(L, -2);  // copy the value
       lua_setfield(L, -2, "value");
@@ -36,7 +36,7 @@ struct LuaComponent {
       reg_id = luaL_ref(L, LUA_REGISTRYINDEX);
     }
 
-    fmt::println("LuaComponent::set() reg_id = {}", reg_id);
+    ren::dbgln("LuaComponent::set() reg_id = {}", reg_id);
   }
 
   int get(lua_State *L) {
@@ -54,7 +54,7 @@ struct LuaComponent {
       auto *L = ren::lua();
       luaL_unref(L, LUA_REGISTRYINDEX, reg_id);
       reg_id = -1;
-      fmt::println("LuaComponent::~LuaComponent() unrefed reg_id");
+      ren::dbgln("LuaComponent::~LuaComponent() unrefed reg_id");
     }
   }
 };
@@ -77,7 +77,7 @@ static int l_write_component(lua_State *L) {
 
 
   auto *comp_ptr = (LuaComponent *)e.ensure(component_id);
-  fmt::println("l_write_component: entity_id = {}, component_id = {}, comp_ptr = {}", entity_id,
+  ren::dbgln("l_write_component: entity_id = {}, component_id = {}, comp_ptr = {}", entity_id,
                component_id, (void *)comp_ptr);
   if (comp_ptr == nullptr) { return 0; }
 

@@ -117,10 +117,10 @@ namespace ren {
                                         &frameData->frameIndex);
 
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
-      fmt::println("Swapchain image out of date");
+      ren::warnln("Swapchain image out of date");
       return nullptr;
     } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
-      fmt::print("Failed to acquire swapchain image {}\n", (int)result);
+      ren::errln("Failed to acquire swapchain image {}", (int)result);
       // TODO: what does this mean? I usually see -4 here.
       return nullptr;
     }

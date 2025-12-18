@@ -474,7 +474,7 @@ namespace ren {
             int embeddedIndex = atoi(&path.C_Str()[1]);
             return meshScene->textures[embeddedIndex];
           }
-          // fmt::println("Texture: {}", path.C_Str());
+          // ren::println("Texture: {}", path.C_Str());
         }
         return nullptr;
       };
@@ -502,7 +502,7 @@ namespace ren {
 
 
       // auto j = dumpAiMaterial(assimpMaterial);
-      // fmt::println("{}", j.dump(2));
+      // ren::println("{}", j.dump(2));
 
       meshScene->materials.push_back(material);
     }

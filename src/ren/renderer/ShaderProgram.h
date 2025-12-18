@@ -40,9 +40,13 @@ namespace ren {
                         public ren::HasUUID,
                         public std::enable_shared_from_this<ShaderProgram> {
    public:
-    ShaderProgram(const std::string& shaderPrefix);
-    ShaderProgram(const std::string& vertexShader, const std::string& fragmentShader);
+    // Load from slang
+    ShaderProgram(const std::string& shader);
+
+    // DEPRECATED!!!
+    ShaderProgram(const std::string& glslVertexShader, const std::string& glslFragmentShader);
     ~ShaderProgram();
+
 
     static inline ref<ShaderProgram> makeFullScreenProgram(const std::string& fragmentShaderPath) {
       return make<ShaderProgram>("shaders/display.vert", fragmentShaderPath);
@@ -78,8 +82,8 @@ namespace ren {
     JSON_SERIALIZE(ShaderProgram, vertexShaderPath, fragmentShaderPath);
 
    private:
-    std::string vertexShaderPath;
-    std::string fragmentShaderPath;
+    std::string vertexShaderPath; // TODO(NUKE)
+    std::string fragmentShaderPath; // TODO(NUKE)
     void reflectShaders();
     void reflectShader(const std::vector<u32>& spirv, VkShaderStageFlagBits stage);
 

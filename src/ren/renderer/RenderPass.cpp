@@ -229,8 +229,8 @@ namespace ren {
     // TODO: Handle all this.
     VkSubpassDescription subpass{};
 
-    fmt::println("attachments: {}", desc.attachments.size());
-    fmt::println("RenderPass: Creating subpass with {} color references. Depth = {}",
+    ren::println("attachments: {}", desc.attachments.size());
+    ren::println("RenderPass: Creating subpass with {} color references. Depth = {}",
                  colorRefs.size(), hasDepth);
     subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
     subpass.colorAttachmentCount = colorRefs.size();

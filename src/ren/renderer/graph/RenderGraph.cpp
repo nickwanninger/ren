@@ -292,23 +292,18 @@ namespace ren {
       throw std::runtime_error(fmt::format("Invalid resource handle for runFor: {}", goalResource));
     }
 
-    // fmt::println("Starting frame.");
     auto scheduleStart = std::chrono::high_resolution_clock::now();
     auto schedule = compile(goalResource);
-    // schedule.validate();
     auto scheduleEnd = std::chrono::high_resolution_clock::now();
-
-    // auto durationNs = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
-    // fmt::println("Compiled render graph schedule in {} ns", durationNs);
 
 #if 0
     int currentLevel = 0;
     for (const auto &task : schedule.getTasks()) {
       if (schedule.getLevel(task) != currentLevel) {
         currentLevel = schedule.getLevel(task);
-        fmt::println("{:04d}:", currentLevel);
+        ren::println("{:04d}:", currentLevel);
       }
-      fmt::println("  {}", task->toString());
+      ren::println("  {}", task->toString());
     }
 #endif
 

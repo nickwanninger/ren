@@ -113,7 +113,7 @@ namespace ren {
       }
     }
 
-    fmt::println("Schedule validation passed: {} tasks across {} levels", tasks.size(),
+    ren::println("Schedule validation passed: {} tasks across {} levels", tasks.size(),
                  levelTasks.size());
     return true;
   }

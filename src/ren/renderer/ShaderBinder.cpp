@@ -118,7 +118,7 @@ namespace ren {
     }
     VkDescriptorSet descriptorSet;
     if (!frame.descriptorAllocator.allocate(&descriptorSet, layout)) {
-      fmt::println("Could not allocate descriptor set for set {} in {}", this->set,
+      ren::errln("Could not allocate descriptor set for set {} in {}", this->set,
                    json(program).dump());
       return;
     }

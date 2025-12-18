@@ -88,10 +88,6 @@ namespace ren {
           pointLights.push_back(std::move(pl));
         });
 
-
-    // fmt::println("Extracted {} renderables and {} point lights from ECS", renderables.size(),
-    //              pointLights.size());
-
     // sort renderables by distance to camera
     glm::vec3 cameraPos = glm::inverse(camera.view_matrix())[3];
     std::sort(renderables.begin(), renderables.end(),

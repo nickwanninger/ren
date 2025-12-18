@@ -10,6 +10,7 @@
 #include <vector>
 #include <iostream>
 
+#include <ren/core/Logging.h>
 #include <ren/core/Instrumentation.h>
 #include <vulkan/vulkan.h> // TODO: BAD IN THIS FILE!
 
@@ -129,7 +130,6 @@ namespace ren {
 
   template <typename T, typename... Args>
   Box<T> makeBox(Args&&... args) {
-    REN_PROFILE_FUNCTION();
     return std::make_unique<T>(std::forward<Args>(args)...);
   }
 

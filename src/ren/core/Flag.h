@@ -160,7 +160,6 @@ namespace ren {
     bool parseValue(const std::string &value) override {
       try {
         this->value = std::stof(value);
-        fmt::println("Parsed float flag {} = {}", name, this->value);
         return true;
       } catch (...) { return false; }
     }
