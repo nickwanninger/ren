@@ -1,5 +1,6 @@
 #pragma once
 #include <fmt/core.h>
+#include <functional>
 
 namespace ren {
 
@@ -29,6 +30,22 @@ namespace ren {
   inline void errln(fmt::format_string<T...> fmt, T &&...args) {
     logMessageln(LogLevel::Error, fmt::format(fmt, static_cast<T &&>(args)...));
   }
+
+  struct UiLogContext {
+    bool opened = true;
+  };
+
+  void logUI(std::string_view label, std::function<void(UiLogContext &)> uiFunc);
+  inline void logUI(std::string_view label, std::function<void()> uiFunc) {
+    logUI(label, [uiFunc = std::move(uiFunc)](UiLogContext &) { uiFunc(); });
+  }
+
+
+  // Log a tab in a window grouping. All logs into the same windowGroup will be
+  // grouped together, split by tab which can be closed. When the last tab is closed,
+  // the window will close.
+  void logWindow(std::string windowGroup, std::string tab,
+                 std::function<void(UiLogContext &)> uiFunc);
 
   // Renders the log console in the current ImGui context
   void inspectLog();
