@@ -8,6 +8,11 @@ sudo apt install libvulkan-dev libfmt-dev libspirv-dev glslang-tools spirv-heade
 ```
 
 
+## Fedora Deps
+```bash
+sudo dnf install cmake ninja luajit-devel SDL2-devel
+```
+
 # Building on windows documentation
 ## Windows Sucks for Developers.
 
