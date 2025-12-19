@@ -1,6 +1,6 @@
 #pragma once
 
-#include <slang/slang.h>
+#include <slang.h>
 #include <ren/types.h>
 #include <spirv_reflect/spirv_reflect.h>
 

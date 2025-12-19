@@ -4,8 +4,8 @@
 #include <set>
 
 #include "./SlangPrinter.h"
-#include <slang/slang-com-ptr.h>
-#include <slang/slang.h>
+#include <slang-com-ptr.h>
+#include <slang.h>
 #include <imgui/imgui.h>
 
 namespace ren {

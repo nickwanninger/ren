@@ -1,8 +1,8 @@
 #pragma once
 
 #include <ren/types.h>
-#include <slang/slang-com-ptr.h>
-#include <slang/slang.h>
+#include <slang-com-ptr.h>
+#include <slang.h>
 
 
 namespace ren {
