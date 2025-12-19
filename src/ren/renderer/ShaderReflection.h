@@ -14,6 +14,15 @@
 namespace ren {
 
 
+// SRT = Shader Reflection Type.  These flags are used to describe various
+// bitmasks for each shader reflection type from ShaderReflectionTypes.def
+#define SRT_RESOURCE \
+  (1LU << 0)  // This is a resource (requires binding). A semantic of this is that elements are
+              // *not* resources.
+#define SRT_BUFFER (1LU << 1)  // This is a buffer type (UBO/SSBO). We include PCs in here.
+#define SRT_WRITE (1LU << 2)   // This type supports write access.
+
+
 
 
   class ShaderReflection {
@@ -29,56 +38,50 @@ namespace ren {
 
 
     // These are the types of bindings we can have in a shader.
-    enum BindingType : u8 {
-      // Uniform buffer / constant buffer
-      // - Has Binding info, might have members
-      UniformBuffer,
-      // Storage buffer / read-write buffer
-      // - Has Binding info, might have members
-      StorageBuffer,
-      // CombinedImageSampler (COMBINED_IMAGE_SAMPLER in Vulkan)
-      // - Has binding info, no members
-      CombinedImageSampler,
-      // Sampler (separate sampler in Vulkan)
-      // - Has binding info, no members
-      Sampler,
-      // Image (storage image in Vulkan)
-      // - Has binding info, no members
-      Image,
-      // StorageImage (storage image in Vulkan)
-      // - Has binding info, no members
-      StorageImage,
-      // Push constant block
-      // - Has members, no binding info, but is special cased.
-      PushConstant,
-      // Parameter block (Slang concept, maps to a descriptor set)
-      // - Has descriptor set index, has members, represents a ParameterBlock<T>
-      ParameterBlock,
-
-      // LogicalGroup
-      // Just a logical grouping of other nodes, no binding info itself
-      LogicalGroup,
-
-
-      // an Entrypoint in the shader
-      EntryPoint,
-
-
-      // Struct (block of other nodes)
-      // - Has members, does not have binding info itself
-      Struct,
-      // Array (todo:)
-      // This node represents something like:
-      // sampler2D myTextures[4];
-      // Not sure how to represent array size yet.
-      Array,
-
-      // A field in a uniform buffer or push constant
-      // - Has binding info if the parent is a uniform buffer, otherwiise not.
-      Field,  // Field type in a uniform (if we have this info)
+    enum Type : u8 {
+#define TYPE(a, ...) a,
+#include "./ShaderReflectionTypes.def"
+#undef TYPE
 
       // Unknown / unrecognized type (error, should not happen)
-      Unknown
+      Unknown,
+    };
+
+
+
+    // A class that lets us represent the type of a binding in a higher level way.
+    // For example, a simple uniform buffer would be represented as a Type::UniformBuffer,
+    // but a `Sampler2D heap[]` would be represented as a Type::Array with elementType of
+    // Texture (combined image sampler). This is basically capturing some simple form of type
+    // composition.
+    struct BindingType {
+      Type type = Type::Unknown;
+      // For arrays, the element type
+      std::optional<Type> elementType;
+
+      inline BindingType(Type type)
+          : type(type)
+          , elementType(std::nullopt) {}
+      inline BindingType(Type type, Type elementType)
+          : type(type)
+          , elementType(elementType) {}
+
+      std::string toString(void) const;
+      inline bool operator==(const BindingType& other) const {
+        return type == other.type && elementType == other.elementType;
+      }
+
+      inline bool operator!=(const BindingType& other) const { return !(*this == other); }
+
+      static bool allowedInTopLevel(Type type) {
+        switch (type) {
+#define TYPE(a, flags, allowed) \
+  case Type::a: return allowed;
+#include "./ShaderReflectionTypes.def"
+#undef TYPE
+          default: return false;
+        }
+      }
     };
 
     struct Location {
@@ -87,7 +90,7 @@ namespace ren {
 
       std::optional<u32> bindingSet;    // Descriptor set
       std::optional<u32> bindingIndex;  // Binding index within the set
-      std::optional<u32> byteOffset;    // Byte offset into a buffer (fields)
+      std::optional<u32> byteOffset;    // Byte offset into a buffer (scalars)
       std::optional<u32> byteSize;      // Size in bytes (if applicable)
       std::optional<u32> arrayIndex;    // Array index (if applicable)
 
@@ -114,7 +117,7 @@ namespace ren {
      public:
       std::string name;
       Location location;
-      BindingType type;
+      BindingType type{Type::Unknown};
 
       std::vector<Node*> members;
 
@@ -135,6 +138,10 @@ namespace ren {
     Node* getRoot() const { return root; }
 
     std::vector<Binding> bindings;
+
+    // Inspect the shader reflection in ImGui (tree view with type/location columns)
+    void inspect();
+
 
    private:
     // Recursive divide-and-conquer merge of two nodes and their subtrees

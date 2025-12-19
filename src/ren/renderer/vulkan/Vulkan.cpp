@@ -79,29 +79,34 @@ vulkanDebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
   // Skip verbose messages unless specifically debugging
   if (messageSeverity < VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) { return VK_FALSE; }
 
-  const char* color = getSeverityColor(messageSeverity);
-  const char* severityLabel = getSeverityLabel(messageSeverity);
+  if (messageType & VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT) { return VK_FALSE; }
+
   const char* typeLabel = getMessageTypeLabel(messageType);
 
-  // Use performance-specific color for performance warnings
-  if (messageType & VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT) { color = COLOR_MAGENTA; }
 
-  // Format: [SEVERITY: TYPE] MessageID
-  // Message content
-  // (with color coding)
-  fmt::print("{}[{}: {}]{} {}", color, severityLabel, typeLabel, COLOR_RESET,
-             pCallbackData->pMessageIdName ? pCallbackData->pMessageIdName : "");
+  switch (messageSeverity) {
+#define PRINT(SEVERITY, printer)                                                \
+  case SEVERITY:                                                                \
+    printer("[VULKAN {}] {} {}", typeLabel,                                     \
+            pCallbackData->pMessageIdName ? pCallbackData->pMessageIdName : "", \
+            pCallbackData->pMessage ? pCallbackData->pMessage : "");            \
+    break;
 
-  // Print the actual message with indentation for readability
-  if (pCallbackData->pMessage) { fmt::print("  {}", pCallbackData->pMessage); }
 
-  ren::println("");
-
-  // For errors, add extra visibility
-  if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
-    fmt::print("{}  ^^^ VALIDATION ERROR - This may cause crashes or incorrect rendering ^^^{}\n",
-               COLOR_RED, COLOR_RESET);
+    PRINT(VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT, ren::dbgln);
+    PRINT(VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT, ren::dbgln);
+    PRINT(VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT, ren::warnln);
+    PRINT(VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT, ren::errln);
+    default:
+      ren::dbgln("[VULKAN {}] {}", typeLabel,
+                 pCallbackData->pMessageIdName ? pCallbackData->pMessageIdName : "");
+      break;
+#undef PRINT
   }
+
+  // if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
+  //   ren::errln("^^^ VALIDATION ERROR - This may cause crashes or incorrect rendering ^^^");
+  // }
 
   // Return VK_FALSE to continue execution (VK_TRUE would abort the Vulkan call)
   // Only validation layer should ever return VK_TRUE, and only in specific cases
@@ -335,6 +340,33 @@ void ren::VulkanInstance::init_instance(void) {
   this->swapchainFormat =
       findSupportedFormat({VK_FORMAT_B8G8R8A8_SRGB, VK_FORMAT_R8G8B8A8_UNORM},
                           VK_IMAGE_TILING_OPTIMAL, VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT);
+
+
+  // Check out the memory properties
+  VkPhysicalDeviceMemoryProperties memProperties;
+  vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
+
+  // Print em out nice.
+  ren::println("Memory Heaps:");
+  for (uint32_t i = 0; i < memProperties.memoryHeapCount; i++) {
+    const VkMemoryHeap& heap = memProperties.memoryHeaps[i];
+    ren::println("  Heap {}: Size: {} MB, Flags: {}{}", i, heap.size / (1024 * 1024),
+                 (heap.flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) ? "DEVICE_LOCAL" : "HOST_VISIBLE",
+                 (heap.flags & VK_MEMORY_HEAP_MULTI_INSTANCE_BIT) ? " | MULTI_INSTANCE" : "");
+  }
+
+  ren::println("Memory Types:");
+  for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
+    const VkMemoryType& type = memProperties.memoryTypes[i];
+
+    std::string props;
+    if (type.propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) props += "DEVICE_LOCAL ";
+    if (type.propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) props += "HOST_VISIBLE ";
+    if (type.propertyFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) props += "HOST_COHERENT ";
+    if (type.propertyFlags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT) props += "HOST_CACHED ";
+    if (type.propertyFlags & VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT) props += "LAZILY_ALLOCATED ";
+    ren::println("  Type {}: Heap: {}, Property Flags: {}", i, type.heapIndex, props);
+  }
 }
 
 ren::VulkanInstance::~VulkanInstance() {

@@ -3,6 +3,8 @@
 MAKEFLAGS += --no-print-directory
 
 
+MODE:=Release
+
 BUILD=build
 BUILD_REQ=$(BUILD)/Makefile
 
@@ -11,9 +13,9 @@ $(BUILD)/Makefile:
 	cd $(BUILD) && cmake ../ -DCMAKE_INSTALL_PREFIX:PATH=$(ROOT)/local -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 
 renderer: # $(BUILD_REQ)
-	@cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+	@cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=$(MODE) -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 	@ninja -C build
-	@# cd $(BUILD) && cmake --build . --config Release
+	@# cd $(BUILD) && cmake --build . --config $(MODE)
 	@cp build/compile_commands.json .
 
 

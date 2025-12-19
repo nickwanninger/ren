@@ -74,7 +74,7 @@ namespace ren {
         if (ctx.opened) {
           ImGui::TextUnformatted(label.c_str());
           ImGui::SameLine();
-          if (ImGui::SmallButton("Close##LogUIItem")) {
+          if (ImGui::SmallButton("X##LogUIItem")) {
             ctx.opened = false;
             uiFunc = nullptr;
           }

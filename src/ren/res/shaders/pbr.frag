@@ -267,6 +267,12 @@ float alphaHash(vec2 p) {
   return fract(1.0e4 * sin(17.0 * p.x + 0.1 * p.y) * (0.1 + abs(sin(13.0 * p.y + p.x))));
 }
 
+vec3 hslToRgb(vec3 hsl) {
+  vec3 rgb = clamp(abs(mod(hsl.x * 6.0 + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0);
+  rgb = rgb * rgb * (3.0 - 2.0 * rgb);  // cubic smoothing
+  return hsl.z + hsl.y * (rgb - 0.5) * (1.0 - abs(2.0 * hsl.z - 1.0));
+}
+
 void main() {
   // Sample and prepare textures
   vec4 baseColor = texture(baseColorTexture, uv) * material.baseColorFactor;
@@ -284,6 +290,10 @@ void main() {
   float metallic = saturate(metallicRoughnessSample.b * material.metallicFactor);
   float roughness = saturate(metallicRoughnessSample.g * material.roughnessFactor);
   roughness = max(roughness, 0.04);  // Clamp to avoid division by zero
+
+  // float h = float(gl_VertexIndex) * 1.61803398874989;
+  // vec3 hsl = vec3(h, 1.0, 0.5);
+  // outColor = vec4(hslToRgb(fract(hsl)), 1.0);
 
   outColor = baseColor;
   outNormal = vec4(N * 0.5 + 0.5, 1.0);

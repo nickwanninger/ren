@@ -117,7 +117,7 @@ namespace ren {
                                         &frameData->frameIndex);
 
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
-      ren::warnln("Swapchain image out of date");
+      ren::dbgln("Swapchain image out of date. Rebuilding...");
       return nullptr;
     } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
       ren::errln("Failed to acquire swapchain image {}", (int)result);

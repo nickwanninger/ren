@@ -1,29 +1,37 @@
 #include <ren/renderer/ShaderProgram.h>
 #include <ren/renderer/ShaderReflection.h>
+#include <ren/renderer/SlangCompiler.h>
 #include <ren/renderer/Swapchain.h>
 #include <algorithm>
 #include <ren/assets/AssetManager.h>
 #include <fmt/format.h>
+#include <ren/misc/DeprecationLogger.h>
 #include <imgui/imgui.h>
 
 namespace ren {
 
-  ShaderProgram::ShaderProgram(const std::string& shaderPrefix)
-      : ShaderProgram(shaderPrefix + ".vert", shaderPrefix + ".frag") {}
+  ShaderProgram::ShaderProgram(const std::string& slangPath) {
+    auto result = ren::compileSlangShaders(slangPath.c_str());
+    this->reflection = result.reflection;
+
+    for (const auto& module : result.modules) {
+      // Make a shader module from the SPIR-V
+      auto mod = make<ShaderModule>(module.name, module.spirv, module.stage);
+      shaders.push_back(mod);
+    }
+
+    bakeLayouts();
+  }
 
   ShaderProgram::ShaderProgram(const std::string& vertexPath, const std::string& fragmentPath)
       : vertexShaderPath(vertexPath)
       , fragmentShaderPath(fragmentPath) {
+    REN_DEPRECATION_WARNING();
     shaders.push_back(ren::getAsset<VertexShader>(vertexPath));
     shaders.push_back(ren::getAsset<FragmentShader>(fragmentPath));
 
-    // assert(vertexShader != NULL);
-    // assert(fragmentShader != NULL);
-
     reflectShaders();
     bakeLayouts();
-    // createPipelineLayout();
-    // createDescriptorPool();
   }
 
 
@@ -55,7 +63,7 @@ namespace ren {
     for (auto& shader : shaders) {
       reflectShader(shader->getCode(), shader->getStage());
       reflection->parseFromSpirv(reinterpret_cast<const u8*>(shader->getCode().data()),
-                                shader->getCode().size() * sizeof(u32));
+                                 shader->getCode().size() * sizeof(u32));
     }
 
     // Merge and deduplicate bindings
@@ -197,7 +205,7 @@ namespace ren {
       for (const auto& [setIndex, bindings] : setBindings) {
         VkDescriptorSetLayoutCreateInfo layoutInfo{};
         layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        layoutInfo.flags = 0; // VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
+        layoutInfo.flags = 0;  // VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
         layoutInfo.bindingCount = static_cast<u32>(bindings.size());
         layoutInfo.pBindings = bindings.data();
 
@@ -227,8 +235,6 @@ namespace ren {
     vkCreatePipelineLayout(vulkan.device, &pipelineLayoutInfo, nullptr, &this->pipelineLayout);
   }
 
-
-
   const ShaderBinding* ShaderProgram::getBinding(const std::string_view& name) const {
     // TODO: as we grow, we need a faster lookup mechanism!
     for (const auto& binding : bindings) {
@@ -247,12 +253,49 @@ namespace ren {
 
 
   void ShaderProgram::inspect(void) {
-    ImGui::Text("ShaderModule Program: %s", vertexShaderPath.c_str());
-    ImGui::Text("Fragment ShaderModule: %s", fragmentShaderPath.c_str());
-    ImGui::Text("Bindings: %zu", bindings.size());
-    for (const auto& binding : bindings) {
-      ImGui::Text("  %s: %d.%d", binding.name.c_str(), binding.set, binding.binding);
+    ImGui::Text("Shader Modules:");
+    static ImGuiTableFlags flags = ImGuiTableFlags_BordersV | ImGuiTableFlags_BordersOuterH |
+                                   ImGuiTableFlags_RowBg | ImGuiTableFlags_NoBordersInBody;
+    if (ImGui::BeginTable("##ShaderProgramModules", 5, flags)) {
+      auto colFlags = ImGuiTableColumnFlags_NoHide | ImGuiTableColumnFlags_WidthStretch;
+      ImGui::TableSetupColumn("Name", colFlags);
+      ImGui::TableSetupColumn("Type", colFlags);
+      ImGui::TableSetupColumn("SPIR-V Size", colFlags);
+      ImGui::TableSetupColumn("Handle", colFlags);
+      ImGui::TableSetupColumn("##", colFlags);
+      ImGui::TableHeadersRow();
+
+      for (auto& module : shaders) {
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::Text("%s", module->getFilename().c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text("%d", module->getStage());
+
+        ImGui::TableNextColumn();
+        ImGui::Text("%zu bytes", module->getCode().size() * sizeof(u32));
+
+        
+        ImGui::TableNextColumn();
+        ImGui::Text("%p", (void*)module->getHandle());
+
+        ImGui::TableNextColumn();
+        if (ImGui::Button(fmt::format("Dump##{}", module->getFilename()).c_str())) {
+          // Dump SPIR-V to file
+          auto dumpPath = fmt::format("{}.spv", module->getFilename());
+          std::ofstream ofs(dumpPath, std::ios::binary);
+          ofs.write(reinterpret_cast<const char*>(module->getCode().data()),
+                    module->getCode().size() * sizeof(u32));
+          ofs.close();
+          ren::println("Dumped SPIR-V to {}", dumpPath);
+        }
+      }
+      ImGui::EndTable();
     }
+
+    ImGui::Separator();
+    ImGui::Text("Shader Reflection:");
+    reflection->inspect();
   }
 
 
@@ -275,9 +318,7 @@ namespace ren {
 
       VkDescriptorSet descriptorSet;
       bool success = descAlloc.allocate(&descriptorSet, layouts[i]);
-      if (!success) {
-        throw std::runtime_error("Failed to allocate descriptor set");
-      }
+      if (!success) { throw std::runtime_error("Failed to allocate descriptor set"); }
       sets.push_back(descriptorSet);
     }
   }

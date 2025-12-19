@@ -60,24 +60,34 @@ namespace ren {
 
   Application &Application::get(void) { return *g_application; }
   Application::Application(const std::string &app_name, glm::uvec2 window_size) {
+    REN_PROFILE_SCOPE("BringupApplication");
     g_application = this;
     // Initialize the SDL window
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER)) {
-      fmt::println("SDL_Init Error: {}", SDL_GetError());
-      throw std::runtime_error("Failed to initialize SDL");
+
+    {
+      REN_PROFILE_SCOPE("SDL_Init");
+      if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER)) {
+        ren::println("SDL_Init Error: {}", SDL_GetError());
+        throw std::runtime_error("Failed to initialize SDL");
+      }
     }
 
 
-    SDL_WindowFlags window_flags =
-        (SDL_WindowFlags)(SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE | (kHighDPI.get() ? SDL_WINDOW_ALLOW_HIGHDPI : 0));
 
-    auto windowName = fmt::format("{} - Ren {}", app_name, REN_VERSION);
-    this->window =
-        SDL_CreateWindow(windowName.c_str(), SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
-                         window_size.x, window_size.y, window_flags);
-    if (!this->window) {
-      fmt::println("SDL_CreateWindow Error: {}", SDL_GetError());
-      throw std::runtime_error("Failed to create SDL window");
+    {
+      REN_PROFILE_SCOPE("SDL_CreateWindow");
+      SDL_WindowFlags window_flags =
+          (SDL_WindowFlags)(SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE |
+                            (kHighDPI.get() ? SDL_WINDOW_ALLOW_HIGHDPI : 0));
+
+      auto windowName = fmt::format("{} - Ren {}", app_name, REN_VERSION);
+      this->window =
+          SDL_CreateWindow(windowName.c_str(), SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
+                           window_size.x, window_size.y, window_flags);
+      if (!this->window) {
+        ren::println("SDL_CreateWindow Error: {}", SDL_GetError());
+        throw std::runtime_error("Failed to create SDL window");
+      }
     }
 
     // This initializes the Vulkan instance and all the necessary Vulkan objects.
@@ -103,7 +113,7 @@ namespace ren {
 
     auto *L = ren::lua();
     if (luaJIT_setmode(L, 0, LUAJIT_MODE_ENGINE | LUAJIT_MODE_ON) == 0) {
-      fmt::println("Warning: failed to enable LuaJIT JIT engine");
+      ren::println("Warning: failed to enable LuaJIT JIT engine");
     }
 
 
@@ -190,22 +200,32 @@ namespace ren {
 
 
     auto &vulkan = ren::getVulkan();
-
-
-    ren::PipelineStateObject blitPSO;
-    blitPSO.debugName = "GBuffer Blit PSO";
-    blitPSO.program = make<ShaderProgram>("shaders/display");
-    blitPSO.cullMode = ren::CullMode::None;
-    blitPSO.hasVertexBinding = false;
-
-
     FramerateCounter framerateCounter;
-    // ren::RenderGraph G;
-    // ren::GraphHandle nullHandleOut;
+
+
+
+    ren::RenderGraph G;
+    ren::GraphHandle nullHandleOut;
     // ren::GraphHandle ssao;
-    // ren::GraphHandle gbufferAlbedo, gbufferNormal, gbufferMaterial, gbufferDepth;
-    // auto &gbp = ren::addGBuffer(G, gbufferAlbedo, gbufferNormal, gbufferMaterial, gbufferDepth);
+    ren::GraphHandle gbufferAlbedo, gbufferNormal, gbufferMaterial, gbufferDepth;
+    auto &gbp = ren::addGBuffer(G, gbufferAlbedo, gbufferNormal, gbufferMaterial, gbufferDepth);
     // ren::addSSAO(G, gbufferDepth, gbufferNormal, ssao);
+
+
+
+
+    static auto program = make<ShaderProgram>("./test");
+    ren::PipelineStateObject trianglePSO;
+    trianglePSO.debugName = "Test Triangle PSO";
+    trianglePSO.program = program;
+    trianglePSO.cullMode = ren::CullMode::None;
+    trianglePSO.hasVertexBinding = true;
+    trianglePSO.fillMode = ren::FillMode::Solid;
+
+
+
+
+    auto computeProgram = make<ShaderProgram>("./compute");
 
     float renderScaleTemp = 1.0f;
 
@@ -254,7 +274,7 @@ namespace ren {
       int windowWidth, windowHeight;
       SDL_GetWindowSize(getWindow(), &windowWidth, &windowHeight);
       if (windowWidth == 0 || windowHeight == 0) {
-        fmt::println("Window minimized, skipping frame");
+        ren::println("Window minimized, skipping frame");
         SDL_Delay(100);
         continue;
       }
@@ -276,20 +296,10 @@ namespace ren {
       renderer->beginFrame();
       auto &frame = ren::getFrameData();
 
+      ren::Camera::get().update(deltaTime);
+
       framerateCounter.addFrame(deltaTime);
 
-      // float targetHeight = 480;
-      // float width = (float)windowWidth;
-      // float height = (float)windowHeight;
-      // // targetHeight = height;
-      // targetHeight = height * renderScaleTemp;
-      // float scale = targetHeight / height;
-      // scale *= renderScaleTemp;
-      // width *= scale;
-      // height *= scale;
-
-      // auto renderSize = glm::uvec2(width, height);
-      // G.startFrame(renderSize);
 
 
       {
@@ -313,6 +323,97 @@ namespace ren {
 
 
 
+      float targetHeight = 480;
+      float width = (float)windowWidth;
+      float height = (float)windowHeight;
+      // targetHeight = height;
+      targetHeight = height * renderScaleTemp;
+      float scale = targetHeight / height;
+      scale *= renderScaleTemp;
+      width *= scale;
+      height *= scale;
+
+      auto renderSize = glm::uvec2(width, height);
+      G.startFrame(renderSize);
+
+
+      if (ImGui::BeginMainMenuBar()) {
+        // 1. Standard menus on the left
+        if (ImGui::BeginMenu("File")) {
+          if (ImGui::MenuItem("New")) {}
+          if (ImGui::MenuItem("Open")) {
+            ren::logUI("Open Menu Item", [=](auto &ctx) {
+              ImGui::Text("Open menu item clicked!");
+              if (ImGui::Button("Close")) { ren::println("Close was pressed!"); }
+            });
+          }
+          ImGui::EndMenu();
+        }
+        if (ImGui::BeginMenu("Edit")) { ImGui::EndMenu(); }
+
+        if (ImGui::BeginMenu("View")) {
+          if (ImGui::MenuItem("ImGui Demo")) {
+            ren::logUI("ImGui Demo", [](auto &ctx) { ImGui::ShowDemoWindow(&ctx.opened); });
+          }
+          ImGui::EndMenu();
+        }
+
+        if (ImGui::MenuItem("Boop")) {
+          u64 frame = vulkan.frame_number;
+          ren::logWindow("Boop", fmt::format("boop{}", frame % 6),
+                         [=](auto &ctx) { ImGui::Text("Boop menu item clicked!"); });
+        }
+
+
+        if (ImGui::MenuItem("Bop")) {
+          int frame = vulkan.frame_number;
+          ren::logUI("Bop",
+                     [=](auto &ctx) { ImGui::Text("Bop menu item clicked on frame %d", frame); });
+        }
+
+        // // 2. Calculate right-alignment
+        // // We get the total width, subtract the width of our text, and a small margin
+
+        char buf[64];
+        snprintf(buf, sizeof(buf), "%4d FPS", (int)framerateCounter.getAverageFramerate());
+
+        if (ImGui::MenuItem(buf)) {
+          //
+        }
+
+        // // Write the right-aligned text in the menu bar.
+        // float textWidth = ImGui::CalcTextSize(rightText.c_str()).x;
+        // float windowWidth = ImGui::GetWindowWidth();
+        // ImGui::SetCursorPosX(windowWidth - textWidth - 10.0f);
+        // ImGui::Text("%s", rightText.c_str());
+
+        ImGui::EndMainMenuBar();
+      }
+
+
+
+      ImGui::Begin("Console");
+      ren::inspectLog();
+      ImGui::End();
+
+      ImGui::Begin("Compute Shader Inspection");
+
+      if (ImGui::Button("Log Inspector")) {
+        ren::logInspection<ShaderProgram>("Programs > Compute Shader Program", computeProgram);
+      }
+      ImGui::SameLine();
+
+      if (ImGui::Button("Reload")) {
+        try {
+          computeProgram = make<ShaderProgram>("./compute");
+        } catch (const std::exception &e) {
+          ren::errln("XXX Failed to reload compute shader: {}", e.what());
+        }
+      }
+      // computeProgram->inspect();
+
+      ImGui::End();
+
 
       ImGui::Begin("Debug Temp Settings");
       ImGui::DragFloat("Render Scale", &renderScaleTemp, 0.01f, 0.1f, 1.0f);
@@ -330,31 +431,30 @@ namespace ren {
       }
 
       // Update lua globals
-      // lua.globals()["time"] = time;
-      // lua.globals()["delta_time"] = deltaTime;
-      // lua.globals()["fps"] = framerateCounter.getAverageFramerate();
-      // lua.globals()["frame"] = vulkan.frame_number;
-      // // Call the lua update function if it exists
-      // sol::protected_function lua_update = lua["update"];
-      // if (lua_update.valid()) {
-      //   sol::protected_function_result result = lua_update(deltaTime);
-      //   if (!result.valid()) {
-      //     sol::error err = result;
-      //     fmt::println("Error running lua update: {}", err.what());
-      //   }
-      // }
+      lua.globals()["time"] = time;
+      lua.globals()["delta_time"] = deltaTime;
+      lua.globals()["fps"] = framerateCounter.getAverageFramerate();
+      lua.globals()["frame"] = vulkan.frame_number;
+      // Call the lua update function if it exists
+      sol::protected_function lua_update = lua["update"];
+      if (lua_update.valid()) {
+        sol::protected_function_result result = lua_update(deltaTime);
+        if (!result.valid()) {
+          sol::error err = result;
+          ren::println("Error running lua update: {}", err.what());
+        }
+      }
 
       // world.lookup("scene").scope([&]() { world.progress(deltaTime); });
 
 
-      // TEMP: Execute test RenderPassTask for validation
-      // try {
-      //   G.runFor(ssao, *renderer);
-      // } catch (const std::exception &e) {
-      //   fmt::println("✗ RenderPassTask execution failed: {}", e.what());
-      // }
+      try {
+        G.runFor(gbufferAlbedo, *renderer);
+      } catch (const std::exception &e) {
+        ren::println("✗ RenderPassTask execution failed: {}", e.what());
+      }
 
-      // G.inspect();
+      G.inspect();
 
       // ren::resource<neko::luainspector>().draw();
 
@@ -363,22 +463,14 @@ namespace ren {
       auto enc = frame.commandEncoder;
       auto penc = enc->beginRenderPass(*renderer->getDisplayPass(), *frame.renderTarget);
       {
-        if (1) {
-          static auto program = make<ShaderProgram>("shaders/test/test_triangle");
-          ren::PipelineStateObject trianglePSO;
-          trianglePSO.debugName = "Test Triangle PSO";
-          trianglePSO.program = program;
-          trianglePSO.cullMode = ren::CullMode::None;
-          trianglePSO.hasVertexBinding = true;
-          trianglePSO.fillMode = ren::FillMode::Solid;
-
-
+        if (0) {
           auto start = std::chrono::high_resolution_clock::now();
           ren::MeshBuilder b;
 
 
           static float p = 0.5f;
           static int segments = 6;
+          static int repeatCount = 1;
           if (segments < 3) segments = 3;
           srand(0);
 
@@ -389,23 +481,40 @@ namespace ren {
           for (int i = 0; i < segments; i++) {
             // compute a random distance
             float distance = 0.1f + (rand() % 1000 / 1000.0f);
+            distance *= 0.5f;
 
             float rad = (float)i / segments * glm::two_pi<float>();
             rad += time * 0.5f;
             // just the point on the unit circle.
-            fb.vertex(glm::vec3(cosf(rad), sinf(rad), 0.0f) * distance,
-                      glm::vec3(0.0f), glm::vec2(0.0f));
+            fb.vertex(glm::vec3(cosf(rad), sinf(rad), 0.0f) * distance, glm::vec3(0.0f),
+                      glm::vec2(0.0f));
           }
           fb.end();
 
           auto meshData = b.stampOut();
 
+
+          static struct {
+            float brightness = 1.0f;
+            float stride = 0.001f;
+            int index = 1;
+            int numDraws = 1;
+          } pc;
+
           penc.bindImmediateMesh(meshData->vertices, meshData->indices);
           penc.bindPipeline(trianglePSO);
-          DrawArguments args;
-          args.vertexCount = static_cast<u32>(meshData->indices.size());
-          args.instanceCount = 1;
-          penc.drawIndexed(args);
+          pc.numDraws = repeatCount;
+          for (int i = 0; i < repeatCount; i++) {
+            DrawArguments args;
+            args.vertexCount = static_cast<u32>(meshData->indices.size());
+            args.instanceCount = 1;
+
+            pc.index = i;
+            vkCmdPushConstants(penc.buf(), trianglePSO.program->getPipelineLayout(),
+                               VK_SHADER_STAGE_ALL, 0, sizeof(pc), &pc);
+            penc.drawIndexed(args);
+          }
+
 
 
           auto end = std::chrono::high_resolution_clock::now();
@@ -414,9 +523,22 @@ namespace ren {
               std::chrono::duration<float, std::chrono::nanoseconds::period>(end - start).count();
 
           ImGui::Begin("New Perf Test");
+
+
+
+          ImGui::SeparatorText("Push Constants");
+          if (ImGui::DragFloat("Brightness", &pc.brightness, 0.01f, 0.0f, 10.0f)) {
+            ren::println("Brightness: {}", pc.brightness);
+          }
+          ImGui::DragFloat("Stride", &pc.stride, 0.01f, 0.0f, 1.0f);
+          ImGui::Separator();
+
+
+          framerateCounter.inspect();
           ImGui::Text("Allocated VertexBuffer in %f ms", allocTime / 1000.0 / 1000.0);
           // Pick buildMode
           ImGui::DragInt("Segments", &segments, 1.0f, 3, 1024);
+          ImGui::DragInt("Repeat Draws", &repeatCount, 1.0f, 1, 1000);
           if (ImGui::Button("Dump Mesh as OBJ")) { meshData->dumpObj(); }
 
           int width, height;
@@ -424,6 +546,7 @@ namespace ren {
           ImGui::Text("Window Size: %d x %d", width, height);
           SDL_Vulkan_GetDrawableSize(ren::Application::get().getWindow(), &width, &height);
           ImGui::Text("Drawable Size: %d x %d", width, height);
+
 
 
           if (ImGui::BeginTable("Vertices Table", 5,
@@ -595,7 +718,7 @@ namespace ren {
       io.Fonts->AddFontFromMemoryTTF(fontBytes.data(), static_cast<int>(fontBytes.size()),
                                      style.FontSizeBase, &fontConfig);
     } else {
-      fmt::println("Failed to load font from asset manager!");
+      ren::println("Failed to load font from asset manager!");
     }
   }
 

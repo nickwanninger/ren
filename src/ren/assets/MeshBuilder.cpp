@@ -5,10 +5,10 @@ namespace ren {
 
   void MeshData::dumpObj(void) {
     for (const auto &v : vertices) {
-      printf("v %f %f %f\n", v.pos.x, v.pos.y, v.pos.z);
+      ren::println("v {} {} {}", v.pos.x, v.pos.y, v.pos.z);
     }
     for (size_t i = 0; i < indices.size(); i += 3) {
-      printf("f %u %u %u\n", indices[i] + 1, indices[i + 1] + 1, indices[i + 2] + 1);
+      ren::println("f {} {} {}", indices[i] + 1, indices[i + 1] + 1, indices[i + 2] + 1);
     }
   }
 

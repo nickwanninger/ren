@@ -5,8 +5,30 @@ namespace ren {
 
   // TODO: outline!
   static float lerp(float a, float b, float t) { return a + t * (b - a); }
+
+  void FramerateCounter::addFrame(float deltaTime) {
+    // Remove old value from sum if buffer is full
+    if (count == FRAMERATE_TRACKER_SIZE) {
+      sum -= deltaTimes[head];
+    } else {
+      ++count;
+    }
+
+    // Add new value
+    deltaTimes[head] = deltaTime;
+    sum += deltaTime;
+
+    if (deltaTime > maxSeen) maxSeen = deltaTime;
+
+    // Advance head pointer
+    head = (head + 1) % FRAMERATE_TRACKER_SIZE;
+
+    this->lerpAvg = lerp(this->lerpAvg, getAverageDeltaTime(), 0.1f);
+  }
+
   void FramerateCounter::inspect(void) {
-    ImGui::Text("Average Delta Time: %.4f ms", getAverageDeltaTime() * 1000.0f);
+    ImGui::Text("Average Delta Time: %.4f ms (%.2f lerp)", getAverageDeltaTime() * 1000.0f,
+                lerpAvg * 1000.0f);
     ImGui::Text("Average Framerate: %.2f FPS", getAverageFramerate());
 
     ImGui::PushStyleColor(ImGuiCol_PlotLines, IM_COL32(255, 255, 0, 255));

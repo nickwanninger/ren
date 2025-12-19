@@ -116,9 +116,11 @@ namespace ren {
 
 
     auto &sets = object.getDescriptorSets();
-    // // Bind descriptor sets from the shader object.
-    vkCmdBindDescriptorSets(buf(), VK_PIPELINE_BIND_POINT_GRAPHICS, object.getLayout(), 0,
-                            static_cast<uint32_t>(sets.size()), sets.data(), 0, nullptr);
+    if (sets.size() > 0) {
+      // Bind descriptor sets from the shader object.
+      vkCmdBindDescriptorSets(buf(), VK_PIPELINE_BIND_POINT_GRAPHICS, object.getLayout(), 0,
+                              static_cast<uint32_t>(sets.size()), sets.data(), 0, nullptr);
+    }
   }
 
 

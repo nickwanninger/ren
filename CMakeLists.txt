@@ -64,6 +64,8 @@ else()
 endif()
 
 
+set(CMAKE_BUILD_WITH_INSTALL_RPATH ON)
+
 # Disable assimp tests, we don't need them, gonna trust it works.
 set(ASSIMP_BUILD_TESTS OFF)
 set(ASSIMP_BUILD_STATIC_LIB ON)

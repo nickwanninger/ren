@@ -48,16 +48,16 @@ int main(int argc, char* argv[]) {
 
   ren::Application app("Editor", res);
 
-  // if (loadArg.get() == "SPONZA") {
-  //   loadMeshIntoScene("/Users/nick/Downloads/main_sponza/NewSponza_Main_glTF_003.gltf",
-  //                     scaleArg.get());
-  //   loadMeshIntoScene("/Users/nick/Downloads/pkg_a_curtains/NewSponza_Curtains_glTF.gltf",
-  //                     scaleArg.get());
-  //   loadMeshIntoScene("/Users/nick/Downloads/pkg_b_ivy/NewSponza_IvyGrowth_glTF.gltf",
-  //                     scaleArg.get());
-  // } else {
-  //   loadMeshIntoScene(loadArg.get().c_str(), scaleArg.get());
-  // }
+  if (loadArg.get() == "SPONZA") {
+    loadMeshIntoScene("/Users/nick/Downloads/main_sponza/NewSponza_Main_glTF_003.gltf",
+                      scaleArg.get());
+    loadMeshIntoScene("/Users/nick/Downloads/pkg_a_curtains/NewSponza_Curtains_glTF.gltf",
+                      scaleArg.get());
+    loadMeshIntoScene("/Users/nick/Downloads/pkg_b_ivy/NewSponza_IvyGrowth_glTF.gltf",
+                      scaleArg.get());
+  } else {
+    loadMeshIntoScene(loadArg.get().c_str(), scaleArg.get());
+  }
 
 
   app.run();

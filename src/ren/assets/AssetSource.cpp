@@ -162,7 +162,7 @@ namespace ren {
         // Decompress into the buffer
         int status = decompress_gzip(res.data, res.size, out.data(), out.size());
         if (status != MZ_OK) {
-          ren:errln("[Asset Source] Failed to decompress embedded resource '{}', status={}",
+          ren::errln("[Asset Source] Failed to decompress embedded resource '{}', status={}",
                        name, status);
           out.clear();
           return false;

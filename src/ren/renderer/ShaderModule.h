@@ -22,6 +22,7 @@ namespace ren {
   class ShaderModule : public ren::VulkanResource, public ren::ShaderAsset {
    public:
     ShaderModule(const std::string_view &filename, VkShaderStageFlagBits stage);
+    ShaderModule(const std::string_view &name, const std::vector<u8> &spirv, VkShaderStageFlagBits stage);
     virtual ~ShaderModule();
 
     static VkShaderStageFlagBits getStageFromFilename(const std::string_view &filename);

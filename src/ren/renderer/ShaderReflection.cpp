@@ -6,6 +6,7 @@
 #include "./SlangPrinter.h"
 #include <slang/slang-com-ptr.h>
 #include <slang/slang.h>
+#include <imgui/imgui.h>
 
 namespace ren {
 
@@ -20,25 +21,17 @@ namespace ren {
 
 
   // Type alias for convenience within this namespace
+  using Type = ShaderReflection::Type;
   using BindingType = ShaderReflection::BindingType;
   using Node = ShaderReflection::Node;
 
-  const char* bindingTypeToString(BindingType type) {
+  const char* bindingTypeToString(Type type) {
     switch (type) {
-      case BindingType::UniformBuffer: return "UniformBuffer";
-      case BindingType::StorageBuffer: return "StorageBuffer";
-      case BindingType::CombinedImageSampler: return "CombinedImageSampler";
-      case BindingType::Sampler: return "Sampler";
-      case BindingType::Image: return "Image";
-      case BindingType::StorageImage: return "StorageImage";
-      case BindingType::PushConstant: return "PushConstant";
-      case BindingType::ParameterBlock: return "ParameterBlock";
-      case BindingType::LogicalGroup: return "LogicalGroup";
-      case BindingType::Struct: return "Struct";
-      case BindingType::Array: return "Array";
-      case BindingType::Field: return "Field";
-      case BindingType::EntryPoint: return "EntryPoint";
-      case BindingType::Unknown: return "Unknown";
+#define TYPE(a, ...) \
+  case Type::a: return #a;
+#include "./ShaderReflectionTypes.def"
+#undef TYPE
+      case Type::Unknown: return "Unknown";
     }
   }
 
@@ -56,11 +49,17 @@ namespace ren {
     return result;
   }
 
+
+  std::string BindingType::toString() const {
+    if (!elementType.has_value()) { return bindingTypeToString(type); }
+    return fmt::format("{}<{}>", bindingTypeToString(type), bindingTypeToString(*elementType));
+  }
+
   json Node::toJson() const {
     json result;
 
     result["name"] = name;
-    result["type"] = bindingTypeToString(type);
+    result["type"] = type.toString();  // bindingTypeToString(type);
 
     if (!meta.is_null()) { result["meta"] = meta; }
 
@@ -96,18 +95,19 @@ namespace ren {
   // Helper Functions for Parsing
   // ============================================================================
 
-  static BindingType mapDescriptorType(SpvReflectDescriptorType type) {
+
+  static ShaderReflection::Type mapDescriptorType(SpvReflectDescriptorType type) {
+    using Type = ShaderReflection::Type;
     switch (type) {
       case SPV_REFLECT_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
-      case SPV_REFLECT_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC: return BindingType::UniformBuffer;
+      case SPV_REFLECT_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC: return Type::UniformBuffer;
       case SPV_REFLECT_DESCRIPTOR_TYPE_STORAGE_BUFFER:
-      case SPV_REFLECT_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC: return BindingType::StorageBuffer;
-      case SPV_REFLECT_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
-        return BindingType::CombinedImageSampler;
-      case SPV_REFLECT_DESCRIPTOR_TYPE_SAMPLED_IMAGE: return BindingType::Image;
-      case SPV_REFLECT_DESCRIPTOR_TYPE_SAMPLER: return BindingType::Sampler;
-      case SPV_REFLECT_DESCRIPTOR_TYPE_STORAGE_IMAGE: return BindingType::StorageImage;
-      default: return BindingType::Unknown;
+      case SPV_REFLECT_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC: return Type::StorageBuffer;
+      case SPV_REFLECT_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER: return Type::Texture;
+      case SPV_REFLECT_DESCRIPTOR_TYPE_SAMPLED_IMAGE: return Type::Image;
+      case SPV_REFLECT_DESCRIPTOR_TYPE_SAMPLER: return Type::Sampler;
+      case SPV_REFLECT_DESCRIPTOR_TYPE_STORAGE_IMAGE: return Type::StorageImage;
+      default: return Type::Unknown;
     }
   }
 
@@ -130,27 +130,27 @@ namespace ren {
       if (member->array.dims_count > 0) {
         u32 array_size = member->array.dims[0];
         // // Determine the element type of the array
-        // BindingType element_type = BindingType::Unknown;
+        // BindingType element_type = Type::Unknown;
         // if (member->type_description) {
         //   element_type =
         //       mapDescriptorType(SPV_REFLECT_DESCRIPTOR_TYPE_STORAGE_BUFFER);  // Default
         //       placeholder
         // }
 
-        auto* n = newNode(BindingType::Array, member->name, memberLoc);
+        auto* n = newNode(Type::Array, member->name, memberLoc);
         parent_node->members.push_back(n);
       }
       // Check if this member is a struct type
       else if (member->type_description && member->type_description->op == SpvOpTypeStruct &&
                member->member_count > 0) {
         // Create struct node with offset/size info
-        auto* n = newNode(BindingType::Struct, member->name, memberLoc);
+        auto* n = newNode(Type::Struct, member->name, memberLoc);
         parseBlockVariableMembers(member, n, memberLoc.child());
         parent_node->members.push_back(n);
       }
       // Regular field (scalar, vector, matrix, etc.)
       else {
-        auto* n = newNode(BindingType::Field, member->name, memberLoc);
+        auto* n = newNode(Type::Scalar, member->name, memberLoc);
         parent_node->members.push_back(n);
       }
     }
@@ -172,7 +172,7 @@ namespace ren {
 
 
 
-    auto root = newNode(BindingType::LogicalGroup, "Root", {/* empty on purpose */});
+    auto root = newNode(Type::LogicalGroup, "Root", {/* empty on purpose */});
 
     // Parse descriptor bindings
     uint32_t binding_count = 0;
@@ -185,7 +185,7 @@ namespace ren {
       for (const auto* binding : bindings) {
         if (!binding || !binding->name) continue;
 
-        BindingType type = mapDescriptorType(binding->descriptor_type);
+        Type type = mapDescriptorType(binding->descriptor_type);
 
 
         Location loc;
@@ -254,8 +254,7 @@ namespace ren {
         Node* structNode = nullptr;
         auto it = namedTopLevel.find(structName);
         if (it == namedTopLevel.end()) {
-          structNode =
-              newNode(BindingType::LogicalGroup, structName.c_str(), {/* empty on purpose */});
+          structNode = newNode(Type::LogicalGroup, structName.c_str(), {/* empty on purpose */});
           namedTopLevel[structName] = structNode;
           newMembers.push_back(structNode);
         } else {
@@ -317,8 +316,6 @@ namespace ren {
     auto applyOffset = [](std::optional<u32>& base, u32 offset) {
       base = base ? *base + offset : offset;
     };
-    // fmt::println("Adjust for variable '{}', layoutUnit={}, offset={}, space={}", debugName,
-    //              static_cast<int>(layoutUnit), offset, space);
 
     switch (layoutUnit) {
       case slang::ParameterCategory::DescriptorTableSlot: {
@@ -356,8 +353,7 @@ namespace ren {
 
 
       default: {
-        fmt::print("\e[33mWarning:\e[0m ");
-        fmt::println("Unhandled unit for variable '{}', layoutUnit={}, offset={}, space={}",
+        ren::warnln("Unhandled unit for variable '{}', layoutUnit={}, offset={}, space={}",
                      debugName, static_cast<int>(layoutUnit), offset, space);
         break;
         // return false;
@@ -392,9 +388,13 @@ namespace ren {
 
 
 
-  BindingType mapSlangType(SlangResourceShape shape, SlangResourceAccess access) {
-    //
-    return BindingType::Unknown;
+  ShaderReflection::Type mapSlangType(SlangResourceShape shape, SlangResourceAccess access) {
+    using Type = ShaderReflection::Type;
+    switch (shape) {
+      case SlangResourceShape::SLANG_STRUCTURED_BUFFER:
+      case SlangResourceShape::SLANG_BYTE_ADDRESS_BUFFER: return Type::StorageBuffer;
+      default: return Type::Unknown;
+    }
   }
 
   Node* ShaderReflection::extractVariableLayout(VariableLayoutReflection* vl,
@@ -417,11 +417,6 @@ namespace ren {
     auto kind = tl->getKind();
     switch (kind) {
       case Kind::ParameterBlock: {
-        // printLocation(name, loc);
-        // printIndent(loc.depth);
-        // fmt::println("ParameterBlock {}", name);
-
-
         auto evl = tl->getElementVarLayout();
         auto etl = tl->getElementTypeLayout();
 
@@ -429,16 +424,12 @@ namespace ren {
         // of bindings (that is, it includes fields.)
         auto* node = extractVariableLayout(evl, etl, loc.child());
         node->name = name;
-        node->type = BindingType::LogicalGroup;
+        node->type = Type::ParameterBlock;
 
         return node;
       }
 
       case Kind::ConstantBuffer: {
-        // printLocation(name, loc);
-        // printIndent(loc.depth);
-        // fmt::println("ConstantBuffer {} {}", name, uniformSize);
-
         auto evl = tl->getElementVarLayout();
         auto etl = tl->getElementTypeLayout();
 
@@ -450,23 +441,55 @@ namespace ren {
         if (loc.pushConstant) {
           node->type = PushConstant;
         } else {
-          BindingType bindingType = BindingType::UniformBuffer;
+          Type bindingType = Type::UniformBuffer;
           node->type = bindingType;
         }
 
         return node;
       }
 
+
+
       case Kind::Array: {
         auto elementTypeLayout = tl->getElementTypeLayout();
         auto elementCount = tl->getElementCount();
 
+
+        Type nodeType = Type::Array;
+        Type elementType = Type::Unknown;
+        if (elementTypeLayout) {
+          auto elementKind = elementTypeLayout->getKind();
+
+          ren::warnln("Array element kind not being handled correctly yet!");
+
+
+          switch (elementKind) {
+            case Kind::Resource: {
+              nodeType = Type::ResourceArray;
+              auto type = elementTypeLayout->getType();
+              auto shape = type->getResourceShape();
+              auto access = type->getResourceAccess();
+              elementType = mapSlangType(shape, access);
+              break;
+            }
+            case Kind::SamplerState: {
+              elementType = Type::Sampler;
+              break;
+            }
+            default: {
+              elementType = Type::Scalar;
+              break;
+            }
+          }
+        }
         // printLocation(name, loc);
         // printIndent(loc.depth);
-        // fmt::println("array: {}", name);
 
+        BindingType t = elementType == Type::Unknown ? BindingType(nodeType)
+                                                     : BindingType(nodeType, elementType);
+        auto* node = newNode(t, name, loc);
 
-        break;
+        return node;
       }
       case Kind::Matrix:
       case Kind::Vector:
@@ -475,17 +498,11 @@ namespace ren {
         loc.byteSize = sizeInBytes;
         // printLocation(name, loc);
         // printIndent(loc.depth);
-        // fmt::println("field: {} {}", name, sizeInBytes);
-        auto* fieldNode = newNode(Field, name, loc);
+        auto* fieldNode = newNode(Scalar, name, loc);
         return fieldNode;
-        break;
       }
 
       case Kind::Struct: {
-        // printLocation(name, loc);
-        // printIndent(loc.depth);
-        // fmt::println("struct: {} {}", name, uniformSize);
-
         // TODO: store the Location!
 
         auto* structNode = newNode(Struct, name, loc);
@@ -504,10 +521,6 @@ namespace ren {
 
 
       case Kind::SamplerState: {
-        // printLocation(name, loc);
-        // printIndent(loc.depth);
-        // fmt::println("sampler: {} ", name);
-
         auto* samplerNode = newNode(Sampler, name, loc);
         return samplerNode;
       }
@@ -516,8 +529,9 @@ namespace ren {
         auto type = tl->getType();
         auto shape = type->getResourceShape();
         auto access = type->getResourceAccess();
-        BindingType resourceType = mapSlangType(shape, access);
 
+        // TODO: unify this analysis!
+        Type resourceType = mapSlangType(shape, access);
 
         auto rangeCount = tl->getBindingRangeCount();
         for (u32 i = 0; i < rangeCount; ++i) {
@@ -525,58 +539,61 @@ namespace ren {
 
           switch (range) {
             case slang::BindingType::Texture: {
-              resourceType = BindingType::CombinedImageSampler;
+              resourceType = Type::Texture;
               break;
             }
             case slang::BindingType::Sampler: {
-              resourceType = BindingType::Sampler;
+              resourceType = Type::Sampler;
               break;
             }
             case slang::BindingType::CombinedTextureSampler: {
-              resourceType = BindingType::CombinedImageSampler;
+              resourceType = Type::Texture;
               break;
             }
+
             default: {
               break;
             }
           }
-
-
-          fmt::println("  Binding {} range for {} : {}", i, name, static_cast<int>(range));
         }
 
 
 
 
-        // if (shape & SLANG_TEXTURE_1D || shape & SLANG_TEXTURE_2D || shape & SLANG_TEXTURE_3D ||
-        //     shape & SLANG_TEXTURE_CUBE) {
-        //   if (access == SLANG_RESOURCE_ACCESS_READ_WRITE) {
-        //     resourceType = BindingType::StorageImage;  // Storage image
-        //   } else {
-        //     resourceType = BindingType::CombinedImageSampler;  // Sampled texture
-        //   }
-        //   // } else if (shape == slanm) {
-        //   //   resourceType = BindingType::Sampler;
-        // } else if (shape & SLANG_STRUCTURED_BUFFER || shape & SLANG_BYTE_ADDRESS_BUFFER) {
-        //   if (access == SLANG_RESOURCE_ACCESS_READ_WRITE) {
-        //     resourceType = BindingType::StorageBuffer;
-        //   } else {
-        //     resourceType = BindingType::UniformBuffer;
-        //   }
-        // }
-
-
-        // printLocation(name, loc);
-        // printIndent(loc.depth);
-        // fmt::println("resource: {} ", name);
+        if (shape & SLANG_TEXTURE_1D || shape & SLANG_TEXTURE_2D || shape & SLANG_TEXTURE_3D ||
+            shape & SLANG_TEXTURE_CUBE) {
+          if (access == SLANG_RESOURCE_ACCESS_READ_WRITE) {
+            resourceType = Type::StorageImage;  // Storage image
+          } else {
+            resourceType = Type::Texture;  // Sampled texture
+          }
+          // } else if (shape == slanm) {
+          //   resourceType = Type::Sampler;
+        } else if (shape & SLANG_STRUCTURED_BUFFER || shape & SLANG_BYTE_ADDRESS_BUFFER) {
+          if (access == SLANG_RESOURCE_ACCESS_READ_WRITE) {
+            resourceType = Type::StorageBuffer;
+          } else {
+            resourceType = Type::UniformBuffer;
+          }
+        }
 
         auto* resourceNode = newNode(resourceType, name, loc);
+
+
+        u32 fieldCount = tl->getFieldCount();
+        for (u32 i = 0; i < fieldCount; ++i) {
+          auto fieldVarLayout = tl->getFieldByIndex(i);
+          auto fieldTypeLayout = fieldVarLayout->getTypeLayout();
+
+          auto* fieldNode = extractVariableLayout(fieldVarLayout, fieldTypeLayout, loc.child());
+          resourceNode->members.push_back(fieldNode);
+        }
+
         return resourceNode;
       }
 
       default: {
-        printIndent(loc.depth);
-        fmt::println("Unhandled kind: {}", static_cast<int>(kind));
+        ren::warnln("Unhandled kind: {}", static_cast<int>(kind));
         break;
       }
     }
@@ -595,15 +612,17 @@ namespace ren {
     // printer.printProgramLayout(programLayout, SlangCompileTarget::SLANG_SPIRV);
 
     // Create root node
-    auto root = newNode(BindingType::LogicalGroup, "Root", {/* empty on purpose */});
+    auto root = newNode(Type::LogicalGroup, "Root", {/* empty on purpose */});
 
     // Parse global parameters
     auto globalParams = programLayout->getGlobalParamsVarLayout();
     if (globalParams) {
-      // auto node = extracVariableLayout(globalParams, Location{});
-
       auto globalTypeLayout = globalParams->getTypeLayout();
       if (globalTypeLayout) {
+        if (globalTypeLayout->getKind() != slang::TypeReflection::Kind::Struct) {
+          throw std::runtime_error(
+              "Slang globals must be explicit, and without automatically inserted constant structs or parameter blocks. This is a temporary limitation.");
+        }
         // Traverse global scope (usually a struct containing all globals)
         u32 fieldCount = globalTypeLayout->getFieldCount();
         for (u32 i = 0; i < fieldCount; ++i) {
@@ -611,11 +630,20 @@ namespace ren {
           if (fieldVarLayout) {
             auto fieldTypeLayout = fieldVarLayout->getTypeLayout();
             if (fieldTypeLayout) {
-              // Create a fresh
+              // Create a fresh location.
               ShaderReflection::Location loc;
-
               auto* node = extractVariableLayout(fieldVarLayout, fieldTypeLayout, loc);
-              if (node) root->members.push_back(node);
+              if (node) {
+                // There's a little check we have to do here - we only want to
+                // support *some* types at the top level, to simplify the shader resource management
+                // system down the line.
+                if (!BindingType::allowedInTopLevel(node->type.type)) {
+                  ren::warnln("Unsupported top-level global variable '{}', type={}",
+                              node->name, node->type.toString());
+                }
+
+                root->members.push_back(node);
+              }
             }
           }
         }
@@ -638,10 +666,8 @@ namespace ren {
       if (!entryTypeLayout) continue;
 
 
-      auto epRoot =
-          newNode(BindingType::EntryPoint, entryPoint->getName(), {/* empty on purpose */});
+      auto epRoot = newNode(Type::EntryPoint, entryPoint->getName(), {/* empty on purpose */});
       root->members.push_back(epRoot);
-      fmt::println("Entry Point: {}", entryPoint->getName());
 
       u32 fieldCount = entryTypeLayout->getFieldCount();
       for (u32 i = 0; i < fieldCount; ++i) {
@@ -657,6 +683,7 @@ namespace ren {
     }
 #endif
 
+
     // Set root node
     this->root = mergeNodes(this->root, root);
 
@@ -664,29 +691,25 @@ namespace ren {
   }
 
 
-  static bool hasRealBinding(const ShaderReflection::BindingType type) {
-    switch (type) {
-      case ShaderReflection::BindingType::UniformBuffer:
-      case ShaderReflection::BindingType::StorageBuffer:
-      case ShaderReflection::BindingType::CombinedImageSampler:
-      case ShaderReflection::BindingType::Sampler:
-      case ShaderReflection::BindingType::Image:
-      case ShaderReflection::BindingType::StorageImage: {
-        return true;
-      }
-      default: {
-        return false;
-      }
+  static bool hasRealBinding(const BindingType type) {
+    switch (type.type) {
+#define TYPE(a, flags, ...) \
+  case ShaderReflection::Type::a: return (flags & SRT_RESOURCE) ? true : false;
+#include "./ShaderReflectionTypes.def"
+#undef TYPE
+      default: return Type::Unknown;
     }
   }
 
 
   void ShaderReflection::extractBindings(void) {
+    REN_PROFILE_SCOPE("ShaderReflection::extractBindings");
     bindings.clear();
     if (!root) return;
 
     std::function<void(Node*, const std::string&)> traverse;
     traverse = [&](Node* node, const std::string& path) {
+      REN_PROFILE_SCOPE("traverse");
       if (!node) return;
 
       std::string currentPath = path.empty() ? node->name : path + "." + node->name;
@@ -711,8 +734,16 @@ namespace ren {
       traverse(member, "");
     }
 
+    // Sort bindings by set, then by index
+    std::sort(bindings.begin(), bindings.end(), [](const Binding& a, const Binding& b) {
+      if (a.set != b.set) { return a.set < b.set; }
+      return a.index < b.index;
+    });
+
+
+    ren::dbgln("Extracted {} bindings:", bindings.size());
     for (auto& binding : bindings) {
-      fmt::println("- {}.{} = {}", binding.set, binding.index, binding.path);
+      ren::dbgln("- {}.{} = {}", binding.set, binding.index, binding.path);
     }
   }
 
@@ -750,19 +781,20 @@ namespace ren {
 
         // Verify type compatibility
         if (memberA->type != memberB->type) {
-          throw std::runtime_error(fmt::format("Shader merge conflict: '{}' has incompatible types ({} vs {})",
-                                           memberB->name, bindingTypeToString(memberA->type),
-                                           bindingTypeToString(memberB->type)));
+          throw std::runtime_error(
+              fmt::format("Shader merge conflict: '{}' has incompatible types ({} vs {})",
+                          memberB->name, memberA->type.toString(), memberB->type.toString()));
         }
 
         // Verify location compatibility
         if (!locationsAreCompatible(memberA->location, memberB->location)) {
-          throw std::runtime_error(fmt::format("Shader merge conflict: '{}' has incompatible location info", memberB->name));
+          throw std::runtime_error(fmt::format(
+              "Shader merge conflict: '{}' has incompatible location info", memberB->name));
         }
 
         // If both are container types, recursively merge their members
-        if (memberA->type == BindingType::LogicalGroup || memberA->type == BindingType::Struct ||
-            memberA->type == BindingType::ParameterBlock) {
+        if (memberA->type == Type::LogicalGroup || memberA->type == Type::Struct ||
+            memberA->type == Type::ParameterBlock) {
           mergeNodes(memberA, memberB);
         }
       } else {
@@ -779,6 +811,123 @@ namespace ren {
     nodeA->meta["merged"] = true;
 
     return nodeA;
+  }
+
+
+  static ImGuiTreeNodeFlags tree_node_flags_base = ImGuiTreeNodeFlags_SpanAllColumns |
+                                                   ImGuiTreeNodeFlags_DefaultOpen |
+                                                   ImGuiTreeNodeFlags_DrawLinesFull;
+
+  static void inspectNodeRecursive(const ShaderReflection::Node* node, int depth) {
+    if (!node) return;
+
+    ImGui::TableNextRow();
+    ImGui::TableSetColumnIndex(0);
+
+    const bool isLeaf = node->members.empty();
+
+    ImGuiTreeNodeFlags node_flags = tree_node_flags_base;
+    if (isLeaf) { node_flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen; }
+
+    bool open = ImGui::TreeNodeEx((void*)node, node_flags, "%s", node->name.c_str());
+
+    // Type column
+    ImGui::TableNextColumn();
+    ImGui::Text("%s", node->type.toString().c_str());
+
+
+    ImGui::TableNextColumn();
+    ImGui::Text("%s", node->location.pushConstant ? "Yes" : "");
+
+#define SHOW_LOC(FIELD)     \
+  ImGui::TableNextColumn(); \
+  if (node->location.FIELD) { ImGui::Text("%d", *node->location.FIELD); }
+
+    // Set column
+    SHOW_LOC(bindingSet);
+    SHOW_LOC(bindingIndex);
+    SHOW_LOC(byteOffset);
+    SHOW_LOC(byteSize);
+    // SHOW_LOC(arrayIndex);
+    SHOW_LOC(varyingIn);
+    SHOW_LOC(varyingOut);
+
+
+
+    // Recurse into members
+    if (open && !isLeaf) {
+      for (const auto* member : node->members) {
+        inspectNodeRecursive(member, depth + 1);
+      }
+      ImGui::TreePop();
+    }
+  }
+
+  void ShaderReflection::inspect() {
+    if (!root) {
+      ImGui::Text("No reflection data available");
+      return;
+    }
+
+    const float TEXT_BASE_WIDTH = ImGui::CalcTextSize("A").x;
+
+    static ImGuiTableFlags flags =
+        ImGuiTableFlags_BordersV | ImGuiTableFlags_BordersOuterH | ImGuiTableFlags_RowBg;
+
+    float locWidth = TEXT_BASE_WIDTH * 3.5f;
+    ImGuiTableColumnFlags locFlags = ImGuiTableColumnFlags_WidthFixed |
+                                     ImGuiTableColumnFlags_NoHide | ImGuiTableColumnFlags_NoResize;
+
+    if (ImGui::BeginTable("##ShaderReflection", 9, flags)) {
+      ImGui::TableSetupColumn("Name",
+                              ImGuiTableColumnFlags_NoHide | ImGuiTableColumnFlags_WidthStretch);
+      ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthFixed, TEXT_BASE_WIDTH * 25.0f);
+
+      ImGui::TableSetupColumn("PC?", locFlags, locWidth);
+      ImGui::TableSetupColumn("SET", locFlags, locWidth);
+      ImGui::TableSetupColumn("IND", locFlags, locWidth);
+      ImGui::TableSetupColumn("OFF", locFlags, locWidth);
+      ImGui::TableSetupColumn("SIZ", locFlags, locWidth);
+      // ImGui::TableSetupColumn("ArrayInd", locFlags, locWidth);
+      ImGui::TableSetupColumn("VIN", locFlags, locWidth);
+      ImGui::TableSetupColumn("VOUT", locFlags, locWidth);
+
+      ImGui::TableHeadersRow();
+
+
+      // Draw root members
+      for (const auto* member : root->members) {
+        inspectNodeRecursive(member, 0);
+      }
+
+      ImGui::EndTable();
+    }
+
+
+    ImGui::Separator();
+    ImGui::Text("Reflected Bindings (not instantiated):");
+
+    if (ImGui::BeginTable("##ShaderBindings", 3, flags)) {
+      ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
+      ImGui::TableSetupColumn("Descriptor Set");
+      ImGui::TableSetupColumn("Index");
+      ImGui::TableHeadersRow();
+
+      for (const auto& binding : bindings) {
+        ImGui::TableNextRow();
+
+        ImGui::TableSetColumnIndex(0);
+        ImGui::Text("%s", binding.path.c_str());
+
+        ImGui::TableNextColumn();
+        ImGui::Text("%d", binding.set);
+
+        ImGui::TableNextColumn();
+        ImGui::Text("%d", binding.index);
+      }
+
+      ImGui::EndTable();
+    }
   }
 
 }  // namespace ren

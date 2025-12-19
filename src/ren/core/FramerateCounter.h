@@ -8,13 +8,16 @@ namespace ren {
   // it uses a fixed sized array to store the frame times and implements it using
   // a circular buffer.
 
-  constexpr int FRAMERATE_TRACKER_SIZE = 60;
+  constexpr int FRAMERATE_TRACKER_SIZE = 100;
   class FramerateCounter {
    private:
     float deltaTimes[FRAMERATE_TRACKER_SIZE];
     size_t head;
     size_t count;
     float sum;
+    float maxSeen = 0.0f;
+    float lerpMax = 0.0f;
+    float lerpAvg = 0.0f;
 
    public:
     FramerateCounter()
@@ -27,21 +30,8 @@ namespace ren {
       }
     }
 
-    void addFrame(float deltaTime) {
-      // Remove old value from sum if buffer is full
-      if (count == FRAMERATE_TRACKER_SIZE) {
-        sum -= deltaTimes[head];
-      } else {
-        ++count;
-      }
+    void addFrame(float deltaTime);
 
-      // Add new value
-      deltaTimes[head] = deltaTime;
-      sum += deltaTime;
-
-      // Advance head pointer
-      head = (head + 1) % FRAMERATE_TRACKER_SIZE;
-    }
 
     float getAverageDeltaTime() const { return count > 0 ? sum / count : 0.0f; }
 
@@ -58,10 +48,13 @@ namespace ren {
       head = 0;
       count = 0;
       sum = 0.0f;
+      maxSeen = 0.0f;
       for (size_t i = 0; i < FRAMERATE_TRACKER_SIZE; ++i) {
         deltaTimes[i] = 0.0f;
       }
     }
+
+    void inspect(void);  // ImGUI Inspection.
   };
 
 }  // namespace ren

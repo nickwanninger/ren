@@ -77,10 +77,23 @@ class ShaderIncluder : public shaderc::CompileOptions::IncluderInterface {
 ren::ShaderModule::ShaderModule(const std::string_view& file_name, VkShaderStageFlagBits stage)
     : filename(file_name)
     , stage(stage) {
+  // TEMP BAD
+  REN_DEPRECATION_WARNING();
   if (!reload()) {
     fmt::print("Failed to load shader: {}\n", filename);
     throw std::runtime_error(fmt::format("Failed to load shader: {}", filename));
   }
+}
+
+
+ren::ShaderModule::ShaderModule(const std::string_view& name, const std::vector<u8>& spirv,
+                                VkShaderStageFlagBits stage)
+    : filename(name)
+    , stage(stage) {
+  // Copy spirv bytes into u32 vector
+  std::vector<u32> code(spirv.size() / sizeof(u32));
+  std::memcpy(code.data(), spirv.data(), spirv.size());
+  initShader(code);
 }
 
 
@@ -94,6 +107,8 @@ ren::ShaderModule::~ShaderModule() {
 
 
 bool ren::ShaderModule::reload() {
+  // MOVE TO SHADER PROGRAM
+  REN_DEPRECATION_WARNING();
   try {
     auto code = loadShader(this->filename);
     initShader(code);
@@ -119,7 +134,10 @@ VkShaderStageFlagBits ren::ShaderModule::getStageFromFilename(const std::string_
 
 
 std::vector<u32> ren::ShaderModule::loadShader(const std::string_view& filename) {
-  REN_PROFILE_SCOPE("Load Shader");
+  REN_DEPRECATION_WARNING();
+
+
+  REN_PROFILE_SCOPE("LoadShader");
   // This is the output code that will be returned.
   // It is either loaded from a .spv file, or compiled on the fly from GLSL.
   std::vector<u32> code;
@@ -129,7 +147,7 @@ std::vector<u32> ren::ShaderModule::loadShader(const std::string_view& filename)
   // If the file ends in .spv, we assume its a precompiled SPIV-V shader,
   // and we will just load that off the disk (and trust it! (eep))
   if (path.extension() == ".spv") {
-    REN_PROFILE_SCOPE("Load Precompiled SPIR-V Shader");
+    REN_PROFILE_SCOPE("LoadPrecompiledShader");
 
     std::vector<u8> rawData;
     if (!ren::loadAssetBytes(filename, rawData)) {
@@ -145,7 +163,7 @@ std::vector<u32> ren::ShaderModule::loadShader(const std::string_view& filename)
     fmt::print("Loading shader from {} ({} bytes)\n", filename, rawData.size());
   } else {
     // Otherwise, we'll compile it from source using shaderc from the vulkan sdk.
-    REN_PROFILE_SCOPE("Compile Shader from Source");
+    REN_PROFILE_SCOPE("CompilerShaderSource");
 
     shaderc::Compiler compiler;
     shaderc::CompileOptions options;
@@ -161,12 +179,16 @@ std::vector<u32> ren::ShaderModule::loadShader(const std::string_view& filename)
     options.SetAutoMapLocations(true);
     options.SetGenerateDebugInfo();  // Preserve debug info for reflection
 
-    options.SetOptimizationLevel(shaderc_optimization_level_performance);
-    // options.SetOptimizationLevel(shaderc_optimization_level_zero);
+    // options.SetOptimizationLevel(shaderc_optimization_level_performance);
+    options.SetOptimizationLevel(shaderc_optimization_level_zero);
+    // options.SetOptimizationLevel(shaderc_optimization_level_size);
 
     std::vector<u8> sourceCode;
-    if (!ren::loadAssetBytes(filename, sourceCode)) {
-      throw std::runtime_error(fmt::format("Failed to load shader file: {}", path.string()));
+    {
+      REN_PROFILE_SCOPE("LoadShaderSource");
+      if (!ren::loadAssetBytes(filename, sourceCode)) {
+        throw std::runtime_error(fmt::format("Failed to load shader file: {}", path.string()));
+      }
     }
 
 
@@ -183,6 +205,7 @@ std::vector<u32> ren::ShaderModule::loadShader(const std::string_view& filename)
     }
 
 
+    REN_PROFILE_SCOPE("CompileShader");
     std::string shaderSource = std::string(sourceCode.begin(), sourceCode.end());
     auto result = compiler.CompileGlslToSpv((char*)sourceCode.data(), sourceCode.size(), shaderKind,
                                             path.filename().string().c_str(), options);

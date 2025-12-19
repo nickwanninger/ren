@@ -27,7 +27,8 @@ namespace ren {
 
     if (PBRMaterial::pso.program == nullptr) {
       // If the PSO is not initialized, create it.
-      PBRMaterial::pso.program = make<ShaderProgram>("shaders/pbr");
+      PBRMaterial::pso.program = make<ShaderProgram>("shaders/pbr.frag", "shaders/pbr.vert");
+      ren::logInspection<ShaderProgram>("Programs > PBRMaterial PSO Program", PBRMaterial::pso.program);
 
       PBRMaterial::pso.blendMode = ren::BlendMode::Alpha;
       // PBRMaterial::pso.fillMode = ren::FillMode::Wireframe;
