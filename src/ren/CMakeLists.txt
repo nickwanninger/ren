@@ -48,6 +48,12 @@ add_library(ren SHARED
 )
 
 
+install(TARGETS ren 
+  LIBRARY DESTINATION lib
+  ARCHIVE DESTINATION lib
+  RUNTIME DESTINATION bin
+)
+
 target_compile_features(ren
   PRIVATE
   cxx_std_20
@@ -56,17 +62,13 @@ target_compile_features(ren
 target_include_directories(ren BEFORE PRIVATE ${slang_INCLUDE_DIRS})
 
 # Link libraries
-target_link_libraries(ren
-  PUBLIC
+target_link_libraries(ren PUBLIC
+
   ${SDL2_LIBRARIES}
   fmt::fmt-header-only # fmt library
-
   PkgConfig::LuaJIT
-
   assimp
-
   slang
-
   Vulkan::Vulkan # Vulkan SDK
   Vulkan::shaderc_combined
 )

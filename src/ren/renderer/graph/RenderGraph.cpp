@@ -373,8 +373,8 @@ namespace ren {
               ImGui::Text("Task: %s (Version %d)", selectedTask->name().c_str(),
                           selectedTask->version);
               ImGui::Separator();
-              ImGui::Text("Average Execution Time: %.8f ms over %llu runs",
-                          selectedTask->averageTimeNs() / 1024.0f / 1024.0f, selectedTask->numExecutions);
+              ImGui::Text("Average Execution Time: %.8f ms over %zu runs",
+                          selectedTask->averageTimeNs() / 1024.0f / 1024.0f, (u64)selectedTask->numExecutions);
 
               // Operands (reads)
               const auto &operands = selectedTask->getOperands();
@@ -528,7 +528,7 @@ namespace ren {
 
       // Statistics tab.
       if (ImGui::BeginTabItem("Statistics")) {
-        ImGui::Text("Runs: %llu", numRuns);
+        ImGui::Text("Runs: %zuu", numRuns);
         double avgCompileMs = numRuns > 0 ? (double)compileTimeUs / numRuns / 1000.0 : 0.0;
         double avgRuntimeMs = numRuns > 0 ? (double)totalRuntimeUs / numRuns / 1000.0 : 0.0;
         ImGui::Text("Average Compile Time: %.3f ms", avgCompileMs);

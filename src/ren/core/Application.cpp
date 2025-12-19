@@ -107,7 +107,6 @@ namespace ren {
 
     ren::initPhases(ren::world());
 
-    LUAJIT_VERSION_SYM();  // ensure luajit is linked
     // Configure Lua by loading the standard libraries.
     luaL_openlibs(lua.lua_state());
 

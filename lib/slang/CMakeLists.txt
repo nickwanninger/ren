@@ -35,11 +35,13 @@ set(SLANG_INCLUDE_DIR "${SLANG_ROOT_DIR}/include")
 set(SLANG_LIB_DIR "${SLANG_ROOT_DIR}/lib")
 set(SLANG_CMAKE_DIR "${SLANG_LIB_DIR}/cmake/slang")
 
+
+set(SLANG_VERSION "2025.22.1")
+
 # Download Slang binaries if not present
 if(NOT EXISTS "${SLANG_ROOT_DIR}")
   message(STATUS "Slang binaries not found, downloading for ${ARCH_DIR}...")
 
-  set(SLANG_VERSION "2025.22.1")
   set(SLANG_TAR "slang-${SLANG_VERSION}-${ARCH_DIR}.tar.gz")
   set(SLANG_URL "https://github.com/shader-slang/slang/releases/download/v${SLANG_VERSION}/${SLANG_TAR}")
   set(SLANG_TAR_PATH "${SLANG_BIN_DIR}/${SLANG_TAR}")
@@ -72,6 +74,9 @@ find_package(slang REQUIRED)
 add_library(slang INTERFACE)
 target_link_libraries(slang INTERFACE slang::slang)
 target_include_directories(slang INTERFACE ${SLANG_INCLUDE_DIR})
+# Install the libslang-compiler.so.XXXX
+install(FILES "${SLANG_LIB_DIR}/libslang-compiler.so.0.${SLANG_VERSION}" DESTINATION lib)
+
 
 # Export variables and target for use in parent project
 set(slang_INCLUDE_DIRS "${SLANG_INCLUDE_DIR}" PARENT_SCOPE)

@@ -2,6 +2,7 @@
 #include <fmt/core.h>
 #include <functional>
 #include <imgui/imgui.h>
+#include <memory>
 
 namespace ren {
 
