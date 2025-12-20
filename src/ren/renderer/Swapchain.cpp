@@ -7,10 +7,11 @@
 #include <ren/core/Application.h>
 #include <ren/core/Flag.h>
 
-static ren::Flag<bool> vsyncFlag("vsync", true, "Enable VSync for the swapchain");
 
 
 static ren::FrameData *g_frameData = nullptr;
+
+
 
 namespace ren {
   FrameData &getFrameData(void) {
@@ -21,8 +22,8 @@ namespace ren {
   }
 
 
-  Swapchain::Swapchain(SDL_Window *window)
-      : window(window) {
+  Swapchain::Swapchain(SwapchainCreateInfo &info)
+      : window(info.window) {
     REN_PROFILE_SCOPE("Build Swapchain");
     this->frameIndex = 0;
     auto &vulkan = ren::getVulkan();
@@ -42,14 +43,13 @@ namespace ren {
     // ---- Allocate the Swapchain for device target rendering ---- //
     vkb::SwapchainBuilder swapchain_builder(vulkan.physical_device, vulkan.device, vulkan.surface);
 
-    bool vsync = vsyncFlag.get();
-
-    fmt::print("Creating ren::Swapchain for window size: {}x{}, vsync={}\n", width, height, vsync);
+    fmt::print("Creating ren::Swapchain for window size: {}x{}, vsync={}\n", width, height,
+               info.enableVSync);
 
     vkb::Swapchain vkb_swapchain =
         swapchain_builder.use_default_format_selection()
-            .set_desired_present_mode(vsync ? VK_PRESENT_MODE_FIFO_KHR
-                                            : VK_PRESENT_MODE_IMMEDIATE_KHR)
+            .set_desired_present_mode(info.enableVSync ? VK_PRESENT_MODE_FIFO_KHR
+                                                       : VK_PRESENT_MODE_IMMEDIATE_KHR)
             .set_image_usage_flags(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
                                    VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT)
             .set_desired_format(

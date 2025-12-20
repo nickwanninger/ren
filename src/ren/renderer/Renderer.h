@@ -32,6 +32,9 @@ namespace ren {
 
 
 
+    // TODO: move all this to a swapchain wrapper class.
+    void rebuildSwapchain(void);
+
     // Begin a new frame. This will drive the swapchain and prepare the frame data for drawing.
     void beginFrame(void);
     // End the current frame. This will submit the command buffer to the GPU and
@@ -112,7 +115,6 @@ namespace ren {
     const Swapchain &getSwapchain(void) const { return *swapchain; }
 
    private:
-    void initSwapchain();
     inline const PipelineStateObject &getCurrentPSO() const {
       if (currentPipeline == nullptr) {
         throw std::runtime_error("No current pipeline set. Call bind() first.");

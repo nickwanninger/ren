@@ -30,6 +30,13 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 
 # ------- Find various packages we need -------
+
+# Vulkan as a Graphics API
+message(STATUS "Vulkan SDK Set to: ${VULKAN_SDK}")
+find_package(Vulkan REQUIRED COMPONENTS shaderc_combined)
+message(STATUS "Vulkan include dirs: ${Vulkan_INCLUDE_DIRS}")
+include_directories(${Vulkan_INCLUDE_DIRS})
+
 # We depend on LuaJIT as a scripting engine.
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(LuaJIT REQUIRED IMPORTED_TARGET luajit)
@@ -39,10 +46,6 @@ include_directories(${LuaJIT_INCLUDE_DIRS})
 find_package(SDL2 REQUIRED)
 include_directories(${SDL2_INCLUDE_DIRS})
 
-# Vulkan as a Graphics API
-find_package(Vulkan REQUIRED COMPONENTS shaderc_combined)
-message(STATUS "Vulkan include dirs: ${Vulkan_INCLUDE_DIRS}")
-include_directories(${Vulkan_INCLUDE_DIRS})
 
 
 

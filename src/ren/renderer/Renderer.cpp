@@ -2,9 +2,11 @@
 #include <ren/misc/DeprecationLogger.h>
 #include <ren/renderer/CommandEncoder.h>
 #include <ren/renderer/SubmissionQueue.h>
+#include <ren/core/Flag.h>
 
 namespace ren {
 
+  static ren::Flag<bool> vsyncFlag("vsync", true, "Enable VSync for the swapchain");
 
   static Renderer *g_renderer = nullptr;
   Renderer &Renderer::get(void) {
@@ -23,7 +25,7 @@ namespace ren {
     this->vulkan = make<VulkanInstance>(this->window);
 
 
-    initSwapchain();
+    rebuildSwapchain();
   }
 
   Renderer::~Renderer(void) {
@@ -180,26 +182,19 @@ namespace ren {
     int width, height;
     SDL_Vulkan_GetDrawableSize(this->window, &width, &height);
 
-    // bool sizeIncorrect = false;
-    // if (width != (int)this->swapchain->deviceExtent.width ||
-    //     height != (int)this->swapchain->deviceExtent.height) {
-    //       sizeIncorrect = true;
-    //   ren::println("Window resized from {}x{} to {}x{}. Swapchain invalid!",
-    //                this->swapchain->deviceExtent.width, this->swapchain->deviceExtent.height,
-    //                width, height);
-    // }
-
-    do {
+    for (int i = 0; i < 10 && frame == nullptr; i++) {
       REN_PROFILE_SCOPE("Acquire Next Frame");
       frame = this->swapchain->acquireNextFrame();
 
       if (frame == nullptr) {
-        // The swapchain is out of date, so we need to recreate it.
-        this->initSwapchain();
-        SDL_Delay(100);
-        ren::getVulkan().waitForIdle();
+        // Swapchain is out of date, rebuild it.
+        rebuildSwapchain();
       }
-    } while (frame == nullptr);
+    }
+
+    if (frame == nullptr) {
+      throw std::runtime_error("Failed to acquire next frame from swapchain.");
+    }
 
 
     vulkan->frame_number += 1;
@@ -289,14 +284,20 @@ namespace ren {
   }
 
 
-  void Renderer::initSwapchain(void) {
+  void Renderer::rebuildSwapchain() {
     REN_PROFILE_FUNCTION();
-
     // wait for the GPU to be idle.
     this->vulkan->waitForIdle();
     this->swapchain.reset();
 
-    this->swapchain = makeBox<ren::Swapchain>(this->window);
+    auto info = ren::SwapchainCreateInfo{
+        .window = this->window,
+        .enableVSync = vsyncFlag.get(),
+    };
+
+    this->swapchain = makeBox<ren::Swapchain>(info);
   }
+
+
 
 }  // namespace ren

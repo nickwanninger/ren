@@ -1,4 +1,5 @@
 
+#include <SDL_video.h>
 #include <ren/core/Application.h>
 #include <ren/core/AutoPlugin.h>
 
@@ -228,6 +229,11 @@ namespace ren {
 
     float renderScaleTemp = 1.0f;
 
+    // TODO: Move me to a logical class, not here as static variables.
+    //       Maybe these should live in a WSI abstraction class?
+    static bool swapchainNeedsRebuild = false;
+    static bool isResizing = false;
+
     while (this->running) {
       int eventsHandled = 0;
       REN_PROFILE_SCOPE("Frame");
@@ -245,6 +251,15 @@ namespace ren {
               switch (e.window.event) {
                 case SDL_WINDOWEVENT_RESIZED:
                 case SDL_WINDOWEVENT_SIZE_CHANGED: {
+                  int width = e.window.data1;
+                  int height = e.window.data2;
+                  swapchainNeedsRebuild = true;
+                  isResizing = true;
+                  break;
+                }
+
+                case SDL_WINDOWEVENT_EXPOSED: {
+                  isResizing = false;
                   break;
                 }
               }
@@ -267,6 +282,14 @@ namespace ren {
         }
 
         REN_PROFILE_COUNTER("SDL Events", eventsHandled);
+      }
+
+      // Handle swapchain rebuild if needed, and the state machine allows.
+      if (swapchainNeedsRebuild && !isResizing) {
+        REN_PROFILE_SCOPE("Rebuild Swapchain");
+        renderer->rebuildSwapchain();
+        swapchainNeedsRebuild = false;
+        continue;
       }
 
       // handle sdl 0 size window

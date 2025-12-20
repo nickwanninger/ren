@@ -18,6 +18,11 @@ namespace ren {
   constexpr u32 target_render_height = 240;
 
 
+  struct SwapchainCreateInfo {
+    SDL_Window *window;
+    bool enableVSync = true;
+  };
+
   // This class implements a swapchain for rendering multiple frames at once.
   // This engine defaults to triple buffering. We also have a lower resolution
   // render target for game assets, and we blit that to the device resolution
@@ -39,7 +44,7 @@ namespace ren {
     SDL_Window *window;
 
 
-    Swapchain(SDL_Window *window);
+    Swapchain(SwapchainCreateInfo &info);
     ~Swapchain();
 
 
