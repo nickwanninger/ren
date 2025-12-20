@@ -29,39 +29,7 @@
 static ren::Flag<bool> validationLayers("validation", true, "Enable Vulkan validation layers");
 
 
-// ---- Custom Vulkan Validation Layer Callback ---- //
-// This provides formatted, color-coded validation messages with severity filtering.
-// Integrates with vkb's debug messenger setup via set_debug_callback().
-
 namespace {
-  // ANSI color codes for terminal output
-  constexpr const char* COLOR_RESET = "\033[0m";
-  constexpr const char* COLOR_RED = "\033[1;31m";      // Errors
-  constexpr const char* COLOR_YELLOW = "\033[1;33m";   // Warnings
-  constexpr const char* COLOR_BLUE = "\033[1;34m";     // Info
-  constexpr const char* COLOR_CYAN = "\033[1;36m";     // Verbose/Debug
-  constexpr const char* COLOR_MAGENTA = "\033[1;35m";  // Performance warnings
-
-  const char* getSeverityColor(VkDebugUtilsMessageSeverityFlagBitsEXT severity) {
-    switch (severity) {
-      case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT: return COLOR_RED;
-      case VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT: return COLOR_YELLOW;
-      case VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT: return COLOR_BLUE;
-      case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT: return COLOR_CYAN;
-      default: return COLOR_RESET;
-    }
-  }
-
-  const char* getSeverityLabel(VkDebugUtilsMessageSeverityFlagBitsEXT severity) {
-    switch (severity) {
-      case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT: return "ERROR";
-      case VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT: return "WARNING";
-      case VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT: return "INFO";
-      case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT: return "VERBOSE";
-      default: return "UNKNOWN";
-    }
-  }
-
   const char* getMessageTypeLabel(VkDebugUtilsMessageTypeFlagsEXT type) {
     // Can have multiple bits set, prioritize validation > performance > general
     if (type & VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT) { return "VALIDATION"; }

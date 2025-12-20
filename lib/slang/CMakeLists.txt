@@ -75,7 +75,13 @@ add_library(slang INTERFACE)
 target_link_libraries(slang INTERFACE slang::slang)
 target_include_directories(slang INTERFACE ${SLANG_INCLUDE_DIR})
 # Install the libslang-compiler.so.XXXX
-install(FILES "${SLANG_LIB_DIR}/libslang-compiler.so.0.${SLANG_VERSION}" DESTINATION lib)
+if(APPLE)
+  install(FILES "${SLANG_LIB_DIR}/libslang-compiler.0.${SLANG_VERSION}.dylib" DESTINATION lib)
+elseif(WIN32)
+  install(FILES "${SLANG_LIB_DIR}/slang-compiler-${SLANG_VERSION}.dll" DESTINATION bin)
+else()
+  install(FILES "${SLANG_LIB_DIR}/libslang-compiler.so.0.${SLANG_VERSION}" DESTINATION lib)
+endif()
 
 
 # Export variables and target for use in parent project

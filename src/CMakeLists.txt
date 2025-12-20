@@ -93,9 +93,14 @@ function(collect_sources OUT_VAR DIR)
 endfunction()
 
 
-# Set RPATH for all executables to find shared libraries relative to executable location
-set(CMAKE_INSTALL_RPATH "$ORIGIN/../lib/")
 set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
+set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+# Set RPATH for all executables to find shared libraries relative to executable location
+if(APPLE)
+  list(APPEND CMAKE_INSTALL_RPATH "@loader_path/../lib/")
+elseif(UNIX)
+  list(APPEND CMAKE_INSTALL_RPATH "$ORIGIN/../lib/")
+endif()
 
 add_subdirectory(ren)
 add_subdirectory(editor)
