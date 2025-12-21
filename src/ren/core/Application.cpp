@@ -414,9 +414,7 @@ namespace ren {
 
 
 
-      ImGui::Begin("Console");
       ren::inspectLog();
-      ImGui::End();
 
       ImGui::Begin("Compute Shader Inspection");
 
@@ -485,7 +483,7 @@ namespace ren {
       auto enc = frame.commandEncoder;
       auto penc = enc->beginRenderPass(*renderer->getDisplayPass(), *frame.renderTarget);
       {
-        if (0) {
+        if (1) {
           auto start = std::chrono::high_resolution_clock::now();
           ren::MeshBuilder b;
 

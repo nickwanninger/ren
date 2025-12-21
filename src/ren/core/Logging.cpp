@@ -205,6 +205,8 @@ namespace ren {
   }
 
   void inspectLog() {
+    ImGui::SetNextWindowSizeConstraints(ImVec2(350, 200), ImVec2(FLT_MAX, FLT_MAX));
+    ImGui::Begin("Log");
     // Static state for the log inspector
     static bool showDebug = true;
     static bool showInfo = true;
@@ -261,7 +263,6 @@ namespace ren {
 
     ImGui::Separator();
 
-    // Main scrolling region
     ImGui::BeginChild("LogScrolling", ImVec2(0, 0), false, ImGuiWindowFlags_HorizontalScrollbar);
 
     // Use smaller font for log messages
@@ -368,6 +369,7 @@ namespace ren {
     }
 
     ImGui::EndChild();
+    ImGui::End();  // Log window
   }
 
 }  // namespace ren
