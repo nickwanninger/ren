@@ -1,10 +1,8 @@
 
-#include <SDL_video.h>
 #include <ren/core/Application.h>
 #include <ren/core/AutoPlugin.h>
 
 #include <ren/renderer/pipelines/PipelineStateObject.h>
-#include <ren/renderer/ShaderCursor.h>
 #include <ren/misc/hash.h>
 #include <ren/renderer/SubmissionQueue.h>
 
@@ -26,11 +24,14 @@
 #include <ren/renderer/graph/tasks/SSAOTask.h>
 #include <ren/renderer/graph/tasks/ShadowMapTask.h>
 #include <ren/renderer/graph/tasks/GBufferTask.h>
-#include <ren/core/DebugLines.hpp>
 #include <ren/renderer/Sampler.h>
+#include <ren/renderer/ShaderProgram.h>
+
+#include <ren/core/eui.h>
+#include <ren/core/DebugLines.hpp>
+#include <ren/core/Color.h>
 #include <ren/misc/resource_usage.h>
 
-#include <ren/renderer/ShaderProgram.h>
 
 
 #include <assimp/Importer.hpp>
@@ -418,10 +419,30 @@ namespace ren {
 
       ImGui::Begin("Compute Shader Inspection");
 
-      if (ImGui::Button("Log Inspector")) {
-        ren::logInspection<ShaderProgram>("Programs > Compute Shader Program", computeProgram);
-      }
+
+
+      eui::ButtonGreen("Save", ICON_SAVE);
       ImGui::SameLine();
+      eui::ButtonRed("Delete", ICON_TRASH_2);
+      ImGui::SameLine();
+      eui::ExtendedButton("Ship It", ICON_ARROW_UP_RIGHT);
+      ImGui::SameLine();
+      eui::ButtonYellow(NULL, ICON_ARROW_UP_RIGHT);
+      ImGui::SameLine();
+      // eui::ExtendedButton("Submit", ICON_SEND, {
+      //   .bg = Color(0xFFFFFF),
+      //   .fg = Color(0x000000),
+      // });
+
+
+      eui::ExtendedButton("New Project", ICON_PLUS, {
+        .bg = Color(0xFFFFFF),
+        .fg = Color(0x000000),
+      });
+
+      ImGui::Separator();
+
+
 
       if (ImGui::Button("Reload")) {
         try {
@@ -430,20 +451,23 @@ namespace ren {
           ren::errln("XXX Failed to reload compute shader: {}", e.what());
         }
       }
-      // computeProgram->inspect();
-
-      ImGui::End();
-
-
-      ImGui::Begin("Debug Temp Settings");
-      ImGui::DragFloat("Render Scale", &renderScaleTemp, 0.01f, 0.1f, 1.0f);
-      ImGui::Text("FPS: %.1f", framerateCounter.getAverageFramerate());
-      ImGui::Text("Frame Time: %.3f ms", framerateCounter.getAverageDeltaTime() * 1000.0f);
-
-      if (ImGui::Button("Save Pipeline Cache")) {
-        renderer->getPipelineCache().save("pipeline_cache.bin");
+      ImGui::SameLine();
+      if (ImGui::Button("Log Inspector")) {
+        ren::logInspection<ShaderProgram>("Program > A Shader Program", computeProgram);
       }
+      if (computeProgram) computeProgram->inspect();
       ImGui::End();
+
+
+      // ImGui::Begin("Debug Temp Settings");
+      // ImGui::DragFloat("Render Scale", &renderScaleTemp, 0.01f, 0.1f, 1.0f);
+      // ImGui::Text("FPS: %.1f", framerateCounter.getAverageFramerate());
+      // ImGui::Text("Frame Time: %.3f ms", framerateCounter.getAverageDeltaTime() * 1000.0f);
+
+      // if (ImGui::Button("Save Pipeline Cache")) {
+      //   renderer->getPipelineCache().save("pipeline_cache.bin");
+      // }
+      // ImGui::End();
 
       {
         REN_PROFILE_SCOPE("WorldProgress");
@@ -498,17 +522,24 @@ namespace ren {
 
           auto fb = b.beginFace();
           // make a circle with N segments.
-          for (int i = 0; i < segments; i++) {
-            // compute a random distance
-            float distance = 0.1f + (rand() % 1000 / 1000.0f);
-            distance *= 0.5f;
+          // for (int i = 0; i < segments; i++) {
+          //   // compute a random distance
+          //   float distance = 0.1f + (rand() % 1000 / 1000.0f);
+          //   distance *= 0.5f;
 
-            float rad = (float)i / segments * glm::two_pi<float>();
-            rad += time * 0.5f;
-            // just the point on the unit circle.
-            fb.vertex(glm::vec3(cosf(rad), sinf(rad), 0.0f) * distance, glm::vec3(0.0f),
-                      glm::vec2(0.0f));
-          }
+          //   float rad = (float)i / segments * glm::two_pi<float>();
+          //   rad += time * 0.5f;
+          //   // just the point on the unit circle.
+          //   fb.vertex(glm::vec3(cosf(rad), sinf(rad), 0.0f) * distance, glm::vec3(0.0f),
+          //             glm::vec2(0.0f));
+          // }
+
+          // Add triangles to make a full screen quad
+          fb.vertex(glm::vec3(-1.0f, -1.0f, 0.0f), glm::vec3(0.0f), glm::vec2(0.0f, 0.0f));
+          fb.vertex(glm::vec3(1.0f, -1.0f, 0.0f), glm::vec3(0.0f), glm::vec2(1.0f, 0.0f));
+          fb.vertex(glm::vec3(1.0f, 1.0f, 0.0f), glm::vec3(0.0f), glm::vec2(1.0f, 1.0f));
+          fb.vertex(glm::vec3(-1.0f, 1.0f, 0.0f), glm::vec3(0.0f), glm::vec2(0.0f, 1.0f));
+
           fb.end();
 
           auto meshData = b.stampOut();
@@ -516,14 +547,17 @@ namespace ren {
 
           static struct {
             float brightness = 1.0f;
+            float time = 0.0f;
             float stride = 0.001f;
             int index = 1;
             int numDraws = 1;
           } pc;
 
+
           penc.bindImmediateMesh(meshData->vertices, meshData->indices);
           penc.bindPipeline(trianglePSO);
           pc.numDraws = repeatCount;
+          pc.time = time;
           for (int i = 0; i < repeatCount; i++) {
             DrawArguments args;
             args.vertexCount = static_cast<u32>(meshData->indices.size());
@@ -542,60 +576,57 @@ namespace ren {
           float allocTime =
               std::chrono::duration<float, std::chrono::nanoseconds::period>(end - start).count();
 
-          ImGui::Begin("New Perf Test");
+          // ImGui::Begin("New Perf Test");
+          // ImGui::SeparatorText("Push Constants");
+          // if (ImGui::DragFloat("Brightness", &pc.brightness, 0.01f, 0.0f, 10.0f)) {
+          //   ren::println("Brightness: {}", pc.brightness);
+          // }
+          // ImGui::DragFloat("Stride", &pc.stride, 0.01f, 0.0f, 1.0f);
+          // ImGui::Separator();
+
+
+          // framerateCounter.inspect();
+          // ImGui::Text("Allocated VertexBuffer in %f ms", allocTime / 1000.0 / 1000.0);
+          // // Pick buildMode
+          // ImGui::DragInt("Segments", &segments, 1.0f, 3, 1024);
+          // ImGui::DragInt("Repeat Draws", &repeatCount, 1.0f, 1, 1000);
+          // if (ImGui::Button("Dump Mesh as OBJ")) { meshData->dumpObj(); }
+
+          // int width, height;
+          // SDL_GetWindowSize(ren::Application::get().getWindow(), &width, &height);
+          // ImGui::Text("Window Size: %d x %d", width, height);
+          // SDL_Vulkan_GetDrawableSize(ren::Application::get().getWindow(), &width, &height);
+          // ImGui::Text("Drawable Size: %d x %d", width, height);
 
 
 
-          ImGui::SeparatorText("Push Constants");
-          if (ImGui::DragFloat("Brightness", &pc.brightness, 0.01f, 0.0f, 10.0f)) {
-            ren::println("Brightness: {}", pc.brightness);
-          }
-          ImGui::DragFloat("Stride", &pc.stride, 0.01f, 0.0f, 1.0f);
-          ImGui::Separator();
+          // if (ImGui::BeginTable("Vertices Table", 5,
+          //                       ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
+          //   ImGui::TableSetupColumn("Index");
+          //   ImGui::TableSetupColumn("x");
+          //   ImGui::TableSetupColumn("y");
+          //   ImGui::TableSetupColumn("z");
+          //   ImGui::TableSetupColumn("UV");
+          //   ImGui::TableHeadersRow();
 
+          //   for (size_t i = 0; i < meshData->vertices.size(); ++i) {
+          //     const auto &vertex = meshData->vertices[i];
+          //     ImGui::TableNextRow();
+          //     ImGui::TableSetColumnIndex(0);
+          //     ImGui::Text("%zu", i);
+          //     ImGui::TableNextColumn();
+          //     ImGui::Text("%f", vertex.pos.x);
+          //     ImGui::TableNextColumn();
+          //     ImGui::Text("%f", vertex.pos.y);
+          //     ImGui::TableNextColumn();
+          //     ImGui::Text("%f", vertex.pos.z);
+          //     ImGui::TableNextColumn();
+          //     ImGui::Text("%f,%f", vertex.texCoord.x, vertex.texCoord.y);
+          //   }
 
-          framerateCounter.inspect();
-          ImGui::Text("Allocated VertexBuffer in %f ms", allocTime / 1000.0 / 1000.0);
-          // Pick buildMode
-          ImGui::DragInt("Segments", &segments, 1.0f, 3, 1024);
-          ImGui::DragInt("Repeat Draws", &repeatCount, 1.0f, 1, 1000);
-          if (ImGui::Button("Dump Mesh as OBJ")) { meshData->dumpObj(); }
-
-          int width, height;
-          SDL_GetWindowSize(ren::Application::get().getWindow(), &width, &height);
-          ImGui::Text("Window Size: %d x %d", width, height);
-          SDL_Vulkan_GetDrawableSize(ren::Application::get().getWindow(), &width, &height);
-          ImGui::Text("Drawable Size: %d x %d", width, height);
-
-
-
-          if (ImGui::BeginTable("Vertices Table", 5,
-                                ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
-            ImGui::TableSetupColumn("Index");
-            ImGui::TableSetupColumn("x");
-            ImGui::TableSetupColumn("y");
-            ImGui::TableSetupColumn("z");
-            ImGui::TableSetupColumn("UV");
-            ImGui::TableHeadersRow();
-
-            for (size_t i = 0; i < meshData->vertices.size(); ++i) {
-              const auto &vertex = meshData->vertices[i];
-              ImGui::TableNextRow();
-              ImGui::TableSetColumnIndex(0);
-              ImGui::Text("%zu", i);
-              ImGui::TableNextColumn();
-              ImGui::Text("%f", vertex.pos.x);
-              ImGui::TableNextColumn();
-              ImGui::Text("%f", vertex.pos.y);
-              ImGui::TableNextColumn();
-              ImGui::Text("%f", vertex.pos.z);
-              ImGui::TableNextColumn();
-              ImGui::Text("%f,%f", vertex.texCoord.x, vertex.texCoord.y);
-            }
-
-            ImGui::EndTable();
-          }
-          ImGui::End();
+          //   ImGui::EndTable();
+          // }
+          // ImGui::End();
         }
 
 
@@ -673,73 +704,7 @@ namespace ren {
 
     ImGui_ImplVulkan_Init(&init_info);
 
-    ImGuiStyle &style = ImGui::GetStyle();
-    // ImVec4 *colors = style.Colors;
-    ImVec4 *colors = ImGui::GetStyle().Colors;
-
-    auto windowBackground = ImVec4(0.01f, 0.01f, 0.01f, 1.00f);
-    auto lighten = [](const ImVec4 &color, float amount) {
-      return ImVec4(color.x + amount, color.y + amount, color.z + amount, color.w);
-    };
-
-    colors[ImGuiCol_TextDisabled] = ImVec4(0.11f, 0.11f, 0.11f, 1.00f);
-    colors[ImGuiCol_WindowBg] = windowBackground;
-    colors[ImGuiCol_ChildBg] = lighten(windowBackground, 0.01f);
-    colors[ImGuiCol_Border] = lighten(windowBackground, 0.02f);
-    colors[ImGuiCol_BorderShadow] = ImVec4(0.00f, 0.00f, 0.00f, 1.00f);
-    colors[ImGuiCol_FrameBg] = lighten(windowBackground, 0.02f);
-    colors[ImGuiCol_FrameBgHovered] = ImVec4(0.08f, 0.08f, 0.08f, 1.00f);
-    colors[ImGuiCol_FrameBgActive] = ImVec4(0.08f, 0.08f, 0.08f, 1.00f);
-    colors[ImGuiCol_TitleBg] = windowBackground;
-    colors[ImGuiCol_TitleBgActive] = windowBackground;
-    colors[ImGuiCol_TitleBgCollapsed] = windowBackground;
-    colors[ImGuiCol_MenuBarBg] = windowBackground;
-    colors[ImGuiCol_ScrollbarBg] = lighten(windowBackground, 0.02f);
-    colors[ImGuiCol_ScrollbarGrab] = ImVec4(0.09f, 0.09f, 0.09f, 1.00f);
-    colors[ImGuiCol_ScrollbarGrabHovered] = ImVec4(0.30f, 0.30f, 0.30f, 1.00f);
-    colors[ImGuiCol_ScrollbarGrabActive] = ImVec4(0.67f, 0.67f, 0.67f, 1.00f);
-    colors[ImGuiCol_Button] = ImVec4(0.07f, 0.07f, 0.07f, 1.00f);
-    colors[ImGuiCol_ButtonHovered] = ImVec4(0.25f, 0.25f, 0.25f, 1.00f);
-    colors[ImGuiCol_ButtonActive] = ImVec4(0.22f, 0.22f, 0.22f, 1.00f);
-    colors[ImGuiCol_Header] = ImVec4(0.02f, 0.02f, 0.02f, 1.00f);
-    colors[ImGuiCol_HeaderHovered] = ImVec4(0.05f, 0.05f, 0.05f, 1.00f);
-    colors[ImGuiCol_HeaderActive] = ImVec4(0.08f, 0.08f, 0.08f, 1.00f);
-    colors[ImGuiCol_Tab] = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
-    colors[ImGuiCol_TabSelected] = ImVec4(0.04f, 0.04f, 0.04f, 1.00f);
-    colors[ImGuiCol_TabHovered] = ImVec4(0.16f, 0.16f, 0.16f, 0.80f);
-    colors[ImGuiCol_TabSelectedOverline] = ImVec4(1.00f, 1.00f, 1.00f, 0.0f);
-    colors[ImGuiCol_TabDimmed] = windowBackground;
-    colors[ImGuiCol_TabDimmedSelected] = lighten(windowBackground, 0.02f);
-    colors[ImGuiCol_DockingPreview] = ImVec4(0.98f, 0.99f, 1.00f, 0.09f);
-    colors[ImGuiCol_DockingEmptyBg] = ImVec4(1.00f, 1.00f, 1.00f, 1.00f);
-    colors[ImGuiCol_TableHeaderBg] = ImVec4(0.16f, 0.16f, 0.16f, 1.00f);
-    colors[ImGuiCol_TableBorderStrong] = lighten(windowBackground, 0.02f);
-    colors[ImGuiCol_TableBorderLight] = ImVec4(0.07f, 0.07f, 0.07f, 1.00f);
-    colors[ImGuiCol_TableRowBg] = ImVec4(0.00f, 0.00f, 0.00f, 0.03f);
-    colors[ImGuiCol_TableRowBgAlt] = ImVec4(0.29f, 0.29f, 0.29f, 0.06f);
-    colors[ImGuiCol_TreeLines] = ImVec4(0.29f, 0.29f, 0.31f, 0.50f);
-
-
-
-    style.TabRounding = 0.0f;
-    style.WindowMenuButtonPosition = ImGuiDir_None;
-    style.FontSizeBase = 15.0f;
-    style.DockingSeparatorSize = 4.0f;
-
-
-    auto &am = ren::ensureResource<ren::AssetManager>();
-    std::vector<u8> fontBytes;
-    if (am.load("fonts/MapleMono-Medium.ttf", fontBytes)) {
-      ImFontConfig fontConfig;
-      fontConfig.OversampleH = 3;
-      fontConfig.OversampleV = 1;
-      fontConfig.PixelSnapH = true;
-      fontConfig.FontDataOwnedByAtlas = false;
-      io.Fonts->AddFontFromMemoryTTF(fontBytes.data(), static_cast<int>(fontBytes.size()),
-                                     style.FontSizeBase, &fontConfig);
-    } else {
-      ren::println("Failed to load font from asset manager!");
-    }
+    ren::eui::configure();
   }
 
 

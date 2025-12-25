@@ -6,6 +6,7 @@
 
 namespace ren {
 
+
   enum class LogLevel { Debug, Info, Warning, Error, UserInterface };
 
 
@@ -50,9 +51,14 @@ namespace ren {
   void logWindow(std::string windowGroup, std::string tab,
                  std::function<void(UiLogContext &)> uiFunc);
 
+
   template <typename T>
+  concept Inspectable = requires(T a) { a.inspect(); };
+
+  template <typename T>
+    requires Inspectable<T>
   void logInspection(std::string_view label, std::weak_ptr<T> item) {
-    logUI(fmt::format("{} ##{}", label, (void*)item.lock().get()), [item](UiLogContext &ctx) {
+    logUI(fmt::format("{} ##{}", label, (void *)item.lock().get()), [item](UiLogContext &ctx) {
       // Try to lock the weak pointer to get a shared pointer
       auto shared = item.lock();
       // If it wasn't possible, indicate that the item is gone
@@ -61,14 +67,8 @@ namespace ren {
         ctx.opened = false;
         return;
       }
-      // We then require that T has an inspect() method
-      if constexpr (requires { shared->inspect(); }) {
-        // and call inspect on it.
-        shared->inspect();
-      } else {
-        // If it doesn't, display that there's no inspect method
-        ImGui::Text("No inspect() method for this type.");
-      }
+
+      shared->inspect();
     });
   }
 
