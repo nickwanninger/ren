@@ -18,12 +18,12 @@ namespace ren {
   enum class FileWatcherEvent { Modified, Deleted };
 
 
-  using FileWatcher = Watcher<FileWatcherEvent, File>;
+  using FileWatcher = Watcher<File, FileWatcherEvent>;
 
   // A File is just a thing that can have bytes read from it, and can maybe have
   // bytes written to it. Note that this interface does not actually require the
   // file is on disk, and as such it could be in memory.
-  class File {
+  class File : public Notifier<File, FileWatcherEvent> {
    public:
     virtual ~File() = default;
 
@@ -39,23 +39,6 @@ namespace ren {
      * @brief Quickly get the size of the file in bytes
      */
     virtual size_t getSize() = 0;
-
-    /**
-     * @brief Add a watcher to this file that will be notified when the file changes.
-     *
-     * When the file changes, the onFileChanged method of the watcher will be
-     * called, if the file implementation supports it under the hood.  Note that
-     * we use weak_ref here to avoid the file watching itself being kept alive
-     * solely by being watched.
-     *
-     * When the file has events from FileWatcherEvent, the onEvent method of the
-     * watcher is expected to be called.
-     *
-     * @return true if the watcher was added successfully.
-     */
-    virtual bool addWatcher(weak_ref<FileWatcher> watcher) { return false; }
-
-
 
     // Helper methods.
     inline bool read(u8 *buffer, size_t size, size_t offset = 0) {

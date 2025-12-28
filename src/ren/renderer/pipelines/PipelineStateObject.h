@@ -2,8 +2,8 @@
 
 #include <vector>
 
-#include <ren/renderer/ShaderModule.h>
-#include <ren/renderer/ShaderProgram.h>
+#include <ren/renderer/shader/ShaderModule.h>
+#include <ren/renderer/shader/ShaderProgram.h>
 #include <ren/misc/json_serialize.h>
 
 namespace ren {

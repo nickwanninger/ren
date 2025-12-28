@@ -1,7 +1,7 @@
 #include <ren/assets/AssetManager.h>
 
 #include <ren/renderer/Texture.h>
-#include <ren/renderer/ShaderModule.h>
+#include <ren/renderer/shader/ShaderModule.h>
 #include <ren/core/Application.h>
 #include <imgui/imgui.h>
 #include <ren/misc/hash.h>

@@ -25,9 +25,10 @@
 #include <ren/renderer/graph/tasks/ShadowMapTask.h>
 #include <ren/renderer/graph/tasks/GBufferTask.h>
 #include <ren/renderer/Sampler.h>
-#include <ren/renderer/ShaderProgram.h>
+#include <ren/renderer/shader/ShaderProgram.h>
 
-#include <ren/core/eui.h>
+#include <ren/core/ui/EditorUI.h>
+#include <ren/core/Watcher.h>
 #include <ren/core/DebugLines.hpp>
 #include <ren/core/Color.h>
 #include <ren/misc/resource_usage.h>
@@ -41,7 +42,7 @@
 #include <ren/assets/MegaMeshBuffer.h>
 
 #include <ren/core/Flag.h>
-#include <ren/renderer/ShaderProgram.h>
+#include <ren/renderer/shader/ShaderProgram.h>
 #include <ren/scripting/imgui_lua_inspector.hpp>
 
 extern "C" {
@@ -105,6 +106,7 @@ namespace ren {
     // Enable the flecs world rest api
     ren::world().set<flecs::Rest>({});
     ren::world().import <flecs::stats>();
+    ren::world().import <flecs::timer>();
 
 
     ren::initPhases(ren::world());
@@ -130,10 +132,6 @@ namespace ren {
     ren::ensureResource<ren::MegaMeshBuffer>();
 
     world.emplace<neko::luainspector>(ren::lua());
-
-    auto scene = ren::world().entity("scene");
-    this->sceneLayer = make<SceneLayer>(*this);
-    this->layerStack.pushLayer(sceneLayer);
 
     initImGui();
 
@@ -162,11 +160,6 @@ namespace ren {
     // Call exit callbacks
     for (auto &func : exitCallbacks)
       func();
-
-    // Clear the layer stack
-    this->layerStack.clear();
-
-    this->sceneLayer.reset();
 
     {
       REN_PROFILE_SCOPE("ImGuiLayer::shutdown");
@@ -435,10 +428,11 @@ namespace ren {
       // });
 
 
-      eui::ExtendedButton("New Project", ICON_PLUS, {
-        .bg = Color(0xFFFFFF),
-        .fg = Color(0x000000),
-      });
+      eui::ExtendedButton("New Project", ICON_PLUS,
+                          {
+                              .bg = Color(0xFFFFFF),
+                              .fg = Color(0x000000),
+                          });
 
       ImGui::Separator();
 

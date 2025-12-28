@@ -27,7 +27,7 @@ if(NOT ARCH_DIR)
   message(FATAL_ERROR "Unsupported architecture: ${CMAKE_SYSTEM_PROCESSOR} on ${CMAKE_SYSTEM_NAME}")
 endif()
 
-message(STATUS "Slang: Using architecture directory: ${ARCH_DIR}")
+# message(STATUS "Slang: Using architecture directory: ${ARCH_DIR}")
 
 set(SLANG_BIN_DIR "${CMAKE_CURRENT_SOURCE_DIR}/bin")
 set(SLANG_ROOT_DIR "${SLANG_BIN_DIR}/${ARCH_DIR}")
@@ -87,5 +87,3 @@ endif()
 # Export variables and target for use in parent project
 set(slang_INCLUDE_DIRS "${SLANG_INCLUDE_DIR}" PARENT_SCOPE)
 set(slang_FOUND TRUE PARENT_SCOPE)
-
-message(STATUS "Slang found: ${slang_FOUND}")

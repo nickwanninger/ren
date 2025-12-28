@@ -1,6 +1,6 @@
-#include <ren/renderer/ShaderProgram.h>
-#include <ren/renderer/ShaderReflection.h>
-#include <ren/renderer/SlangCompiler.h>
+#include <ren/renderer/shader/ShaderProgram.h>
+#include <ren/renderer/shader/ShaderReflection.h>
+#include <ren/renderer/shader/SlangCompiler.h>
 #include <ren/renderer/Swapchain.h>
 #include <algorithm>
 #include <ren/assets/AssetManager.h>
@@ -8,11 +8,27 @@
 #include <ren/misc/DeprecationLogger.h>
 #include <imgui/imgui.h>
 
+
+
+
 namespace ren {
 
   ShaderProgram::ShaderProgram(const std::string& slangPath) {
     auto result = ren::compileSlangShaders(slangPath.c_str());
-    this->reflection = result.reflection;
+
+    this->slangProgram = std::move(result.program);
+    this->reflection = std::move(result.reflection);
+
+    // slangProgram->addRef(); // The hell is going on with this com protocol??
+
+
+
+
+    auto vkDevice = getVulkan().device;
+    auto globalParamsLayout =
+        slangProgram->getLayout()->getGlobalParamsVarLayout()->getTypeLayout();
+
+    fmt::println("Compiled Slang shader for {} @ {}", (void*)this, (void*)slangProgram.get());
 
     for (const auto& module : result.modules) {
       // Make a shader module from the SPIR-V
@@ -30,6 +46,8 @@ namespace ren {
     shaders.push_back(ren::getAsset<VertexShader>(vertexPath));
     shaders.push_back(ren::getAsset<FragmentShader>(fragmentPath));
 
+
+    slangProgram = nullptr;
     reflectShaders();
     bakeLayouts();
   }
@@ -275,7 +293,7 @@ namespace ren {
         ImGui::TableNextColumn();
         ImGui::Text("%zu bytes", module->getCode().size() * sizeof(u32));
 
-        
+
         ImGui::TableNextColumn();
         ImGui::Text("%p", (void*)module->getHandle());
 
@@ -296,6 +314,39 @@ namespace ren {
     ImGui::Separator();
     ImGui::Text("Shader Reflection:");
     reflection->inspect();
+
+    // ImGui::Text("Slang Program");
+    if (slangProgram.get() != NULL) inspectSlangComponent(slangProgram.get());
+
+    if (ImGui::BeginTable("##ShaderProgramBindings", 6, flags)) {
+      auto colFlags = ImGuiTableColumnFlags_NoHide | ImGuiTableColumnFlags_WidthStretch;
+      ImGui::TableSetupColumn("Set", colFlags);
+      ImGui::TableSetupColumn("Binding", colFlags);
+      ImGui::TableSetupColumn("Name", colFlags);
+      ImGui::TableSetupColumn("Type", colFlags);
+      ImGui::TableSetupColumn("Count", colFlags);
+      ImGui::TableSetupColumn("Stages", colFlags);
+      ImGui::TableHeadersRow();
+
+      for (const auto& binding : bindings) {
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::Text("%u", binding.set);
+        ImGui::TableNextColumn();
+        ImGui::Text("%u", binding.binding);
+        ImGui::TableNextColumn();
+        ImGui::Text("%s", binding.name.c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text("%d", binding.type);
+        ImGui::TableNextColumn();
+        ImGui::Text("%u", binding.count);
+        ImGui::TableNextColumn();
+        ImGui::Text("%u", binding.stages);
+      }
+      ImGui::EndTable();
+    }
+
+    ImGui::Separator();
   }
 
 

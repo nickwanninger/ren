@@ -286,75 +286,31 @@ namespace ren {
   // ============================================================================
 
 
-  static void printIndent(u32 depth) {
-    return;
-    for (u32 i = 0; i < depth; ++i) {
-      fmt::print("  ");
-    }
+
+
+  static void applyOffset(std::optional<u32>& base, u32 offset) {
+    base = base ? *base + offset : offset;
   }
-
-  static void printLocation(const char* name, const ShaderReflection::Location& loc) {
-    return;
-    printIndent(loc.depth);
-    fmt::print("Location for {}: ", name);
-
-    fmt::print("depth={} ", loc.depth);
-
-    if (loc.bindingSet) fmt::print("set={} ", *loc.bindingSet);
-    if (loc.bindingIndex) fmt::print("binding={} ", *loc.bindingIndex);
-    if (loc.byteOffset) fmt::print("byte={} ", *loc.byteOffset);
-    if (loc.byteSize) fmt::print("size={} ", *loc.byteSize);
-    if (loc.arrayIndex) fmt::print("arrayIndex={} ", *loc.arrayIndex);
-    if (loc.pushConstant) fmt::print("pushConstant ");
-
-    fmt::print("\n");
-  }
-
 
   bool adjustLocation(const char* debugName, ShaderReflection::Location& loc,
                       slang::ParameterCategory layoutUnit, u32 offset, u32 space) {
-    auto applyOffset = [](std::optional<u32>& base, u32 offset) {
-      base = base ? *base + offset : offset;
-    };
-
     switch (layoutUnit) {
-      case slang::ParameterCategory::DescriptorTableSlot: {
+      case slang::ParameterCategory::DescriptorTableSlot:
         applyOffset(loc.bindingIndex, offset);
         applyOffset(loc.bindingSet, space);
         break;
-      }
-
-      case slang::ParameterCategory::SubElementRegisterSpace: {
+      case slang::ParameterCategory::SubElementRegisterSpace:
         applyOffset(loc.bindingIndex, 0);
         applyOffset(loc.bindingSet, offset);
         break;
-      }
-
-      case slang::ParameterCategory::Uniform: {
-        applyOffset(loc.byteOffset, offset);
-        break;
-      }
-
-      case slang::ParameterCategory::PushConstantBuffer: {
-        loc.pushConstant = true;
-        break;
-      }
-
-
-      case slang::ParameterCategory::VaryingInput: {
-        applyOffset(loc.varyingIn, offset);
-        break;
-      }
-
-      case slang::ParameterCategory::VaryingOutput: {
-        applyOffset(loc.varyingOut, offset);
-        break;
-      }
-
+      case slang::ParameterCategory::Uniform: applyOffset(loc.byteOffset, offset); break;
+      case slang::ParameterCategory::PushConstantBuffer: loc.pushConstant = true; break;
+      case slang::ParameterCategory::VaryingInput: applyOffset(loc.varyingIn, offset); break;
+      case slang::ParameterCategory::VaryingOutput: applyOffset(loc.varyingOut, offset); break;
 
       default: {
         ren::warnln("Unhandled unit for variable '{}', layoutUnit={}, offset={}, space={}",
-                     debugName, static_cast<int>(layoutUnit), offset, space);
+                    debugName, static_cast<int>(layoutUnit), offset, space);
         break;
         // return false;
       }
@@ -365,12 +321,9 @@ namespace ren {
   bool adjustLocation(VariableLayoutReflection* vl, ShaderReflection::Location& loc) {
     if (!vl) return false;
 
-    TypeLayoutReflection* tl = vl->getTypeLayout();
-
     const char* debugName = vl->getName() ? vl->getName() : "<unnamed>";
 
     auto newLoc = loc;
-
     int usedLayoutUnitCount = vl->getCategoryCount();
     for (int i = 0; i < usedLayoutUnitCount; ++i) {
       auto layoutUnit = vl->getCategoryByIndex(i);
@@ -399,15 +352,19 @@ namespace ren {
 
   Node* ShaderReflection::extractVariableLayout(VariableLayoutReflection* vl,
                                                 TypeLayoutReflection* tl, Location loc) {
-    if (!vl) return nullptr;
-    if (!tl) return nullptr;
-    // fmt::print("\n");
-
-    if (adjustLocation(vl, loc) == false) { return nullptr; }
+    // if (!vl) return nullptr;
+    // if (!tl) return nullptr;
 
 
+    if (vl && tl) {
+      if (adjustLocation(vl, loc) == false) { return nullptr; }
+    }
 
-    auto name = vl->getName() ? vl->getName() : "<unnamed>";
+
+
+    const char* name = "";
+
+    if (vl && vl->getName()) name = vl->getName();
 
 
     size_t uniformSize = tl->getSize(slang::ParameterCategory::Uniform);
@@ -415,6 +372,8 @@ namespace ren {
 
     using Kind = slang::TypeReflection::Kind;
     auto kind = tl->getKind();
+
+    ren::println("name={} kind={} size={}", name, static_cast<int>(kind), uniformSize);
     switch (kind) {
       case Kind::ParameterBlock: {
         auto evl = tl->getElementVarLayout();
@@ -451,22 +410,26 @@ namespace ren {
 
 
       case Kind::Array: {
-        auto elementTypeLayout = tl->getElementTypeLayout();
+        ren::println("Array!");
         auto elementCount = tl->getElementCount();
+        auto evl = tl->getElementVarLayout();
+        auto etl = tl->getElementTypeLayout();
 
 
         Type nodeType = Type::Array;
         Type elementType = Type::Unknown;
-        if (elementTypeLayout) {
-          auto elementKind = elementTypeLayout->getKind();
-
-          ren::warnln("Array element kind not being handled correctly yet!");
-
+        if (etl) {
+          auto elementKind = etl->getKind();
 
           switch (elementKind) {
+            case Kind::Struct: {
+              nodeType = Type::Array;
+              elementType = Type::Struct;
+              break;
+            }
             case Kind::Resource: {
               nodeType = Type::ResourceArray;
-              auto type = elementTypeLayout->getType();
+              auto type = etl->getType();
               auto shape = type->getResourceShape();
               auto access = type->getResourceAccess();
               elementType = mapSlangType(shape, access);
@@ -477,17 +440,39 @@ namespace ren {
               break;
             }
             default: {
-              elementType = Type::Scalar;
+              ren::warnln("Array element kind not being handled correctly yet! elementKind={}",
+                          static_cast<int>(elementKind));
+              elementType = Type::Unknown;
               break;
             }
           }
         }
-        // printLocation(name, loc);
-        // printIndent(loc.depth);
 
         BindingType t = elementType == Type::Unknown ? BindingType(nodeType)
                                                      : BindingType(nodeType, elementType);
         auto* node = newNode(t, name, loc);
+
+
+        // go over element?
+
+
+        u32 stride = tl->getElementStride(SLANG_PARAMETER_CATEGORY_UNIFORM);
+        ren::println(
+            "Array detected: name='{}', elementCount={}, elementType={}, evtl:{},{}, stride={}",
+            name, elementCount, static_cast<int>(elementType), (void*)evl, (void*)etl, stride);
+
+
+
+
+        for (u32 i = 0; i < elementCount; ++i) {
+          auto l = loc.child();
+          l.arrayIndex = i;
+          if (stride > 0) { applyOffset(l.byteOffset, i * stride); }
+          auto n = extractVariableLayout(evl, etl, l);
+          ren::println("Array element {} extracted: {}", i, (void*)n);
+          node->members.push_back(n);
+        }
+
 
         return node;
       }
@@ -496,8 +481,6 @@ namespace ren {
       case Kind::Scalar: {
         auto sizeInBytes = tl->getSize();
         loc.byteSize = sizeInBytes;
-        // printLocation(name, loc);
-        // printIndent(loc.depth);
         auto* fieldNode = newNode(Scalar, name, loc);
         return fieldNode;
       }
@@ -638,8 +621,8 @@ namespace ren {
                 // support *some* types at the top level, to simplify the shader resource management
                 // system down the line.
                 if (!BindingType::allowedInTopLevel(node->type.type)) {
-                  ren::warnln("Unsupported top-level global variable '{}', type={}",
-                              node->name, node->type.toString());
+                  ren::warnln("Unsupported top-level global variable '{}', type={}", node->name,
+                              node->type.toString());
                 }
 
                 root->members.push_back(node);
@@ -829,7 +812,21 @@ namespace ren {
     ImGuiTreeNodeFlags node_flags = tree_node_flags_base;
     if (isLeaf) { node_flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen; }
 
-    bool open = ImGui::TreeNodeEx((void*)node, node_flags, "%s", node->name.c_str());
+
+    char name_buf[256];
+
+    if (node->name.length() == 0) {
+      if (node->location.arrayIndex) {
+        if (node->location.arrayIndex > 0) node_flags &= ~ImGuiTreeNodeFlags_DefaultOpen;
+        snprintf(name_buf, sizeof(name_buf), "[#%d]", *node->location.arrayIndex);
+      } else {
+        snprintf(name_buf, sizeof(name_buf), "<unnamed>");
+      }
+    } else {
+      snprintf(name_buf, sizeof(name_buf), "%s", node->name.c_str());
+    }
+
+    bool open = ImGui::TreeNodeEx((void*)node, node_flags, name_buf);
 
     // Type column
     ImGui::TableNextColumn();
@@ -848,7 +845,7 @@ namespace ren {
     SHOW_LOC(bindingIndex);
     SHOW_LOC(byteOffset);
     SHOW_LOC(byteSize);
-    // SHOW_LOC(arrayIndex);
+    SHOW_LOC(arrayIndex);
     SHOW_LOC(varyingIn);
     SHOW_LOC(varyingOut);
 
@@ -878,7 +875,7 @@ namespace ren {
     ImGuiTableColumnFlags locFlags = ImGuiTableColumnFlags_WidthFixed |
                                      ImGuiTableColumnFlags_NoHide | ImGuiTableColumnFlags_NoResize;
 
-    if (ImGui::BeginTable("##ShaderReflection", 9, flags)) {
+    if (ImGui::BeginTable("##ShaderReflection", 10, flags)) {
       ImGui::TableSetupColumn("Name",
                               ImGuiTableColumnFlags_NoHide | ImGuiTableColumnFlags_WidthStretch);
       ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthFixed, TEXT_BASE_WIDTH * 25.0f);
@@ -888,7 +885,7 @@ namespace ren {
       ImGui::TableSetupColumn("IND", locFlags, locWidth);
       ImGui::TableSetupColumn("OFF", locFlags, locWidth);
       ImGui::TableSetupColumn("SIZ", locFlags, locWidth);
-      // ImGui::TableSetupColumn("ArrayInd", locFlags, locWidth);
+      ImGui::TableSetupColumn("AID", locFlags, locWidth);
       ImGui::TableSetupColumn("VIN", locFlags, locWidth);
       ImGui::TableSetupColumn("VOUT", locFlags, locWidth);
 
@@ -904,6 +901,7 @@ namespace ren {
     }
 
 
+#if 0
     ImGui::Separator();
     ImGui::Text("Reflected Bindings (not instantiated):");
 
@@ -928,6 +926,7 @@ namespace ren {
 
       ImGui::EndTable();
     }
+#endif
   }
 
 }  // namespace ren

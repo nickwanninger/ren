@@ -1,6 +1,6 @@
 #include "SSAOTask.h"
 #include <ren/core/Application.h>
-#include "ren/renderer/ShaderProgram.h"
+#include <ren/renderer/shader/ShaderProgram.h>
 #include <ren/renderer/graph/RenderGraph.h>
 
 #include <ren/Camera.h>

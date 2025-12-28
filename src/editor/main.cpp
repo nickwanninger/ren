@@ -4,10 +4,15 @@
 #include <ren/core/Instrumentation.h>
 #include <ren/core/Application.h>
 #include <ren/renderer/graph/RenderGraph.h>
-#include <ren/renderer/ShaderReflection.h>
+#include <ren/renderer/shader/ShaderReflection.h>
 
 #include <ren/core/Flag.h>
-#include <ren/renderer/SlangCompiler.h>
+#include <ren/renderer/shader/SlangCompiler.h>
+#include <ren/assets/MeshScene.hpp>
+
+#include <ren/core/Systems.h>
+#include <ren/core/Components.h>
+
 
 ren::Flag<std::string> loadArg("load", "assets/test/meshes/simple_scene.glb",
                                "Path to a mesh to load at startup");
@@ -42,11 +47,51 @@ int main(int argc, char* argv[]) {
   //                static_cast<uint32_t>(shader.stage), shader.spirv.size());
   // }
 
+
+
   glm::uvec2 res;
   res.x = 1920;
   res.y = 1080;
 
   ren::Application app("Editor", res);
+
+
+  struct Position {
+    float x, y;
+  };
+
+
+
+  long runCount = 0;
+  ren::system::onUpdate<Position>("Broken").rate(2).each([](Position& p) {
+    // std::cout << "A  position " << p.x << " " << p.y << std::endl;
+  });
+  // .tick_source(tick_source)
+  // .run([&](flecs::iter& it) {
+  //   ren::println("tick. {} {} {}", runCount++, it.delta_time(), it.count());
+  // });
+  app.world.system<Position>("Working").rate(2).each([](Position& p) {
+    // std::cout << "B  position " << p.x << " " << p.y << std::endl;
+  });
+
+  app.world.entity().set<Position>({1.0, 2.0});
+
+
+  for (int i = 0; i < 10; i++) {
+    std::cout << "Iteration " << i << std::endl;
+    app.world.progress();
+  }
+
+  // return 0;
+  // // A rate filter can be created with .rate(2)
+  // flecs::entity tick_source = ren::world().timer().interval(1.0);
+
+  // ren::system::onUpdate<ren::comp::Transform>("OnUpdate")
+  //     .interval(1.0 / 2.0)
+  //     // .tick_source(tick_source)
+  //     .run([&](flecs::iter& it) {
+  //       ren::println("tick. {} {} {}", runCount++, it.delta_time(), it.count());
+  //     });
 
   if (loadArg.get() == "SPONZA") {
     loadMeshIntoScene("/Users/nick/Downloads/main_sponza/NewSponza_Main_glTF_003.gltf",

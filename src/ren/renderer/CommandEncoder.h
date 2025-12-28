@@ -3,7 +3,7 @@
 #include <ren/types.h>
 #include <ren/core/Arena.h>
 #include <ren/renderer/Buffer.h>
-#include <ren/renderer/ShaderProgram.h>
+#include <ren/renderer/shader/ShaderProgram.h>
 #include <ren/renderer/RenderPass.h>
 #include <ren/renderer/RenderTarget.h>
 #include <ren/assets/Vertex.h>

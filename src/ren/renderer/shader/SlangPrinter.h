@@ -195,7 +195,7 @@ namespace ren {
       key("name");
       printQuotedString(variableLayout->getName());
 
-      // printOffsets(variableLayout, accessPath);
+      printOffsets(variableLayout, accessPath);
 
       printVaryingParameterInfo(variableLayout);
 

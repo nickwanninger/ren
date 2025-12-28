@@ -1,5 +1,5 @@
 #define IMGUI_DEFINE_MATH_OPERATORS
-#include <ren/core/eui.h>
+#include <ren/core/ui/EditorUI.h>
 
 #include <imgui/imgui.h>
 #include <imgui/imgui_internal.h>
@@ -71,27 +71,34 @@ namespace ren::eui {
     bool hovered, held;
     bool pressed = ImGui::ButtonBehavior(bb, id, &hovered, &held);
 
-    // Render frame
-    // const ImU32 col = ImGui::GetColorU32((held && hovered) ? ImGuiCol_ButtonActive
-    //                                      : hovered         ? ImGuiCol_ButtonHovered
-    //                                                        : ImGuiCol_Button);
     if (held) bgColor = bgColor + ImVec4(0.1f, 0.1f, 0.1f, 0.0f);
     if (hovered) bgColor = bgColor + ImVec4(0.1f, 0.1f, 0.1f, 0.0f);
 
-
+    float expand = 0.0f;
 
     if (held) {
-      bb.Min.y += 1.0f;
-      bb.Max.y += 1.0f;
+      expand = -0.1f;
     } else if (hovered) {
+      // expand = 2.0f;
       bb.Min.y -= 1.0f;
       bb.Max.y -= 1.0f;
     }
 
 
+    // bb.Min += ImVec2(-expand, -expand);
+    // bb.Max += ImVec2(expand, expand);
+    // if (held) {Vk
+    //   bb.Min.y += 1.0f;
+    //   bb.Max.y += 1.0f;
+    // } else if (hovered) {
+    //   bb.Min.y -= 1.0f;
+    //   bb.Max.y -= 1.0f;
+    // }
+
+
     ImGui::RenderNavHighlight(bb, id);
-    ImGui::RenderFrame(bb.Min, bb.Max, ImGui::ColorConvertFloat4ToU32(bgColor), true,
-                       style.FrameRounding);
+    ImGui::RenderFrame(bb.Min + ImVec2(-expand, -expand), bb.Max + ImVec2(expand, expand),
+                       ImGui::ColorConvertFloat4ToU32(bgColor), true, style.FrameRounding);
 
     // Render icon and text
     ImVec2 text_pos = bb.Min + style.FramePadding;

@@ -1,5 +1,5 @@
 #include <ren/renderer/vulkan/Vulkan.h>
-#include <ren/renderer/ShaderModule.h>
+#include <ren/renderer/shader/ShaderModule.h>
 #include <ren/renderer/SubmissionQueue.h>
 #include <ren/core/Instrumentation.h>
 #include <ren/misc/DeprecationLogger.h>
@@ -180,8 +180,8 @@ void ren::VulkanInstance::init_instance(void) {
       .runtimeDescriptorArray = VK_TRUE,
       .descriptorIndexing = VK_TRUE,
   };
-  // selector.add_required_extension(VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME);
-  // selector.set_required_features_12(vk12Features);
+  selector.add_required_extension(VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME);
+  selector.set_required_features_12(vk12Features);
 
 
   selector.set_minimum_version(1, 2);

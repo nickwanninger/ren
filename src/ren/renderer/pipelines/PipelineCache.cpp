@@ -1,7 +1,7 @@
 #include <ren/renderer/pipelines/PipelineCache.h>
 #include <ren/misc/hash.h>
 #include <ren/renderer/vulkan/Vulkan.h>
-#include <ren/renderer/ShaderProgram.h>
+#include <ren/renderer/shader/ShaderProgram.h>
 #include <fstream>
 #include <cstring>
 

@@ -1,19 +1,18 @@
 #pragma once
 
 #include <ren/renderer/vulkan/Vulkan.h>
-#include <ren/layers/LayerStack.h>
 #include <SDL2/SDL.h>
 #include <ren/renderer/RenderPass.h>
 #include <ren/renderer/Renderer.h>
 #include <ren/core/Scene.h>
 #include <ren/core/Entity.h>
-#include <ren/layers/SceneLayer.h>
 #include <ren/assets/AssetManager.h>
 #include <ren/core/FramerateCounter.h>
 #include <flecs/flecs.h>
 
 #include <sol/sol.hpp>
 
+#include <ren/Camera.h>
 extern "C" {
 #include <lua.h>
 #include <lauxlib.h>
@@ -33,8 +32,8 @@ namespace ren {
     SDL_Window *window = nullptr;
     ref<Renderer> renderer;
 
-    ren::LayerStack layerStack;
 
+    ren::Camera cam;
     bool running = true;
     Entity globalEventEntity;
     std::vector<std::function<void(void)>> exitCallbacks;
@@ -49,7 +48,6 @@ namespace ren {
     void initImGui();
 
    public:
-    ref<SceneLayer> sceneLayer = nullptr;
 
     ren::AssetManager &getAssetManager() { return world.get_mut<ren::AssetManager>(); }
 

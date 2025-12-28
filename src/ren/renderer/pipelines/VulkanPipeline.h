@@ -1,7 +1,7 @@
 #pragma once
 
 #include <ren/types.h>
-#include <ren/renderer/ShaderModule.h>
+#include <ren/renderer/shader/ShaderModule.h>
 #include <vector>
 #include <ren/core/UUID.h>
 #include <ren/core/Instrumentation.h>

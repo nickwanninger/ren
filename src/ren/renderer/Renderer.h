@@ -10,7 +10,7 @@
 #include <ren/renderer/RenderPassCache.h>
 #include <ren/renderer/pipelines/PipelineCache.h>
 #include <ren/renderer/pipelines/PipelineStateObject.h>
-#include <ren/renderer/ShaderBinder.h>
+#include <ren/renderer/shader/ShaderBinder.h>
 #include <SDL2/SDL.h>
 
 namespace ren {

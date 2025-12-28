@@ -451,7 +451,7 @@ namespace ren {
         ImGui::BeginGroup();
         {
           // Left panel: Resource list
-          ImGui::BeginChild("ResourceListPanel", ImVec2(280, -ImGui::GetFrameHeightWithSpacing()),
+          ImGui::BeginChild("ResourceListPanel", ImVec2(150, -ImGui::GetFrameHeightWithSpacing()),
                             ImGuiChildFlags_Border);
           {
             ImGui::Text("Resources (%zu)", resourceTable.size());
@@ -528,7 +528,7 @@ namespace ren {
 
       // Statistics tab.
       if (ImGui::BeginTabItem("Statistics")) {
-        ImGui::Text("Runs: %zuu", numRuns);
+        ImGui::Text("Runs: %zu", numRuns);
         double avgCompileMs = numRuns > 0 ? (double)compileTimeUs / numRuns / 1000.0 : 0.0;
         double avgRuntimeMs = numRuns > 0 ? (double)totalRuntimeUs / numRuns / 1000.0 : 0.0;
         ImGui::Text("Average Compile Time: %.3f ms", avgCompileMs);

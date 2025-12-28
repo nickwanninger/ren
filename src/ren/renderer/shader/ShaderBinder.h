@@ -1,7 +1,7 @@
 #pragma once
 
-#include <ren/renderer/ShaderProgram.h>
-#include <ren/renderer/ShaderModule.h>
+#include <ren/renderer/shader/ShaderProgram.h>
+#include <ren/renderer/shader/ShaderModule.h>
 #include <ren/renderer/Texture.h>
 #include <ren/renderer/Descriptors.h>
 #include <ren/renderer/Sampler.h>

@@ -10,7 +10,7 @@
 #include <ren/assets/AssetManager.h>
 #include <ren/core/Color.h>
 
-#include "ui/IconsLucide.h"
+#include "./IconsLucide.h"
 
 
 namespace ren::eui {
@@ -24,18 +24,6 @@ namespace ren::eui {
 
 
   constexpr ImVec4 primaryColor = ImVec4(0.0f, 0.52f, 0.25f, 1.0f);
-
-  // namespace colors {
-  //   // Opinionated colors
-  //   Color white = Color(0xFFFFFF);
-  //   Color red = Color(0xFFF5C60);
-  //   Color yellow = Color(0xFAC800);
-  //   Color green = Color(0x35C759);
-  //   Color blue = Color(0x9DCEFF);
-
-  //   Color frameBackground = Color(0x030303);
-  //   Color frameForeground = white;
-  // }  // namespace colors
 
   struct Style {
     std::optional<ImVec4> fg, bg;
@@ -68,6 +56,10 @@ namespace ren::eui {
                               .fg = Color(0x6D5700),
                           });
   }
+
+
+  inline bool Button(const char *label) { return eui::ExtendedButton(label, nullptr, {}); }
+  inline bool IconButton(const char *icon) { return eui::ExtendedButton(nullptr, icon, {}); }
 
 
 

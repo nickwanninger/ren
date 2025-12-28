@@ -12,6 +12,7 @@ namespace ren {
 
 
   void initPhases(flecs::world& world) {
+    return;
 #define DEFINE_PHASE(name) ren::name = world.entity("ren::phase::" #name).add(flecs::Phase);
 
 #define PHASE(name)           \
@@ -23,7 +24,7 @@ namespace ren {
 
 
 #define PHASE_DEPENDS_ON(name, dep) ren::Before##name.depends_on(ren::After##dep);
-#define PHASE_ROOT(name) ren::Before##name.depends_on(flecs::OnUpdate);
+#define PHASE_ROOT(name) ren::Before##name.depends_on(flecs::OnUpdate).depends_on(flecs::PreFrame);
 #include "./Phases.inc"
 #undef PHASE_ROOT
 #undef PHASE_DEPENDS_ON

@@ -1,13 +1,14 @@
 #pragma once
 
 #include <ren/types.h>
-#include <ren/renderer/ShaderModule.h>
+#include <ren/renderer/shader/ShaderModule.h>
 #include <ren/renderer/vulkan/Vulkan.h>
 #include <ren/renderer/Descriptors.h>
 #include <spirv_reflect/spirv_reflect.h>
 #include <ren/misc/json_serialize.h>
+#include <ren/renderer/shader/SlangCompiler.h>
 #include <ren/core/File.h>
-#include <ren/renderer/ShaderReflection.h>
+#include <ren/renderer/shader/ShaderReflection.h>
 #include <vector>
 
 namespace ren {
@@ -82,8 +83,8 @@ namespace ren {
     JSON_SERIALIZE(ShaderProgram, vertexShaderPath, fragmentShaderPath);
 
    private:
-    std::string vertexShaderPath; // TODO(NUKE)
-    std::string fragmentShaderPath; // TODO(NUKE)
+    std::string vertexShaderPath;    // TODO(NUKE)
+    std::string fragmentShaderPath;  // TODO(NUKE)
     void reflectShaders();
     void reflectShader(const std::vector<u32>& spirv, VkShaderStageFlagBits stage);
 
@@ -99,6 +100,7 @@ namespace ren {
     VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
 
     std::vector<ref<ShaderModule>> shaders;
+    Slang::ComPtr<slang::IComponentType> slangProgram;
   };
 
 
