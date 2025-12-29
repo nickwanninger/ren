@@ -1,6 +1,6 @@
 #include <ren/renderer/Swapchain.h>
 #include <ren/renderer/vulkan/Vulkan.h>
-#include <SDL2/SDL_vulkan.h>
+#include <SDL3/SDL_vulkan.h>
 #include <fmt/core.h>
 #include <vkb/VkBootstrap.h>
 #include <ren/core/Instrumentation.h>
@@ -30,7 +30,7 @@ namespace ren {
     vulkan.frame_number = 0;
 
     int width, height;
-    SDL_Vulkan_GetDrawableSize(window, &width, &height);
+    SDL_GetWindowSizeInPixels(window, &width, &height);
 
     this->deviceExtent.width = width;
     this->deviceExtent.height = height;
@@ -46,10 +46,15 @@ namespace ren {
     fmt::print("Creating ren::Swapchain for window size: {}x{}, vsync={}\n", width, height,
                info.enableVSync);
 
+
+    auto presentMode = VK_PRESENT_MODE_IMMEDIATE_KHR;
+    if (info.enableVSync) {
+      presentMode = VK_PRESENT_MODE_FIFO_KHR;
+    }
+
     vkb::Swapchain vkb_swapchain =
         swapchain_builder.use_default_format_selection()
-            .set_desired_present_mode(info.enableVSync ? VK_PRESENT_MODE_FIFO_KHR
-                                                       : VK_PRESENT_MODE_IMMEDIATE_KHR)
+            .set_desired_present_mode(presentMode)
             .set_image_usage_flags(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
                                    VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT)
             .set_desired_format(

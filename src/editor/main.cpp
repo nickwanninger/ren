@@ -1,5 +1,3 @@
-#include <iostream>
-#include <vector>
 
 #include <ren/core/Instrumentation.h>
 #include <ren/core/Application.h>
@@ -41,57 +39,11 @@ int main(int argc, char* argv[]) {
 
   REN_PROFILE_BEGIN_SESSION("profile", "profile.json");
 
-  // auto result = ren::compileSlangShaders("test.slang");
-  // for (const auto& shader : result.modules) {
-  //   ren::println("Compiled shader '{}' (stage {}) with {} bytes of SPIR-V", shader.name,
-  //                static_cast<uint32_t>(shader.stage), shader.spirv.size());
-  // }
-
-
-
   glm::uvec2 res;
   res.x = 1920;
   res.y = 1080;
 
   ren::Application app("Editor", res);
-
-
-  struct Position {
-    float x, y;
-  };
-
-
-
-  long runCount = 0;
-  ren::system::onUpdate<Position>("Broken").rate(2).each([](Position& p) {
-    // std::cout << "A  position " << p.x << " " << p.y << std::endl;
-  });
-  // .tick_source(tick_source)
-  // .run([&](flecs::iter& it) {
-  //   ren::println("tick. {} {} {}", runCount++, it.delta_time(), it.count());
-  // });
-  app.world.system<Position>("Working").rate(2).each([](Position& p) {
-    // std::cout << "B  position " << p.x << " " << p.y << std::endl;
-  });
-
-  app.world.entity().set<Position>({1.0, 2.0});
-
-
-  for (int i = 0; i < 10; i++) {
-    std::cout << "Iteration " << i << std::endl;
-    app.world.progress();
-  }
-
-  // return 0;
-  // // A rate filter can be created with .rate(2)
-  // flecs::entity tick_source = ren::world().timer().interval(1.0);
-
-  // ren::system::onUpdate<ren::comp::Transform>("OnUpdate")
-  //     .interval(1.0 / 2.0)
-  //     // .tick_source(tick_source)
-  //     .run([&](flecs::iter& it) {
-  //       ren::println("tick. {} {} {}", runCount++, it.delta_time(), it.count());
-  //     });
 
   if (loadArg.get() == "SPONZA") {
     loadMeshIntoScene("/Users/nick/Downloads/main_sponza/NewSponza_Main_glTF_003.gltf",

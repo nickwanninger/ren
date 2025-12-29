@@ -10,7 +10,7 @@
 #include <imgui/imgui.h>
 #include "vkb/VkBootstrap.h"
 #include "vulkan/vulkan_core.h"
-#include <SDL2/SDL_vulkan.h>
+#include <SDL3/SDL_vulkan.h>
 #include <fmt/core.h>
 #include <stb/stb_image.h>
 
@@ -20,7 +20,7 @@
 #include <imstb_rectpack.h>
 #include <imstb_textedit.h>
 #include <imstb_truetype.h>
-#include <imgui/backends/imgui_impl_sdl2.h>
+#include <imgui/backends/imgui_impl_sdl3.h>
 #include <imgui/backends/imgui_impl_vulkan.h>
 #include <ren/renderer/Fence.h>
 #include <ren/core/Flag.h>
@@ -159,7 +159,7 @@ void ren::VulkanInstance::init_instance(void) {
   this->debug_messenger = vkb_inst.debug_messenger;
 
   // Create the vulkan surface from SDL
-  SDL_Vulkan_CreateSurface(window, instance, &surface);
+  SDL_Vulkan_CreateSurface(window, instance, NULL, &surface);
 
   // And select the GPU to use (I think we'd need to figure out how to pick the
   // best one if you have multiple GPUs, but I don't so this is fine for now)

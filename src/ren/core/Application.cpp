@@ -8,7 +8,9 @@
 
 #include <imgui.h>
 #include <backends/imgui_impl_vulkan.h>
-#include <backends/imgui_impl_sdl2.h>
+#include <backends/imgui_impl_sdl3.h>
+#include <SDL3/SDL_video.h>
+#include <SDL3/SDL_vulkan.h>
 #include <ImGuizmo/ImGuizmo.h>
 #include <imnodes/imnodes.h>
 
@@ -69,7 +71,11 @@ namespace ren {
 
     {
       REN_PROFILE_SCOPE("SDL_Init");
-      if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER)) {
+
+      auto initFlags = SDL_INIT_VIDEO;
+      initFlags |= SDL_INIT_CAMERA;
+
+      if (SDL_Init(initFlags) == false) {
         ren::println("SDL_Init Error: {}", SDL_GetError());
         throw std::runtime_error("Failed to initialize SDL");
       }
@@ -79,19 +85,20 @@ namespace ren {
 
     {
       REN_PROFILE_SCOPE("SDL_CreateWindow");
-      SDL_WindowFlags window_flags =
-          (SDL_WindowFlags)(SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE |
-                            (kHighDPI.get() ? SDL_WINDOW_ALLOW_HIGHDPI : 0));
+
+      auto flags = SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE;
+      if (kHighDPI.get()) flags |= SDL_WINDOW_HIGH_PIXEL_DENSITY;
 
       auto windowName = fmt::format("{} - Ren {}", app_name, REN_VERSION);
-      this->window =
-          SDL_CreateWindow(windowName.c_str(), SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
-                           window_size.x, window_size.y, window_flags);
+      this->window = SDL_CreateWindow(windowName.c_str(), window_size.x, window_size.y, flags);
       if (!this->window) {
         ren::println("SDL_CreateWindow Error: {}", SDL_GetError());
         throw std::runtime_error("Failed to create SDL window");
       }
+
+      SDL_RaiseWindow(this->window);
     }
+
 
     // This initializes the Vulkan instance and all the necessary Vulkan objects.
     // TODO: make this a resource instead of a value on Application.
@@ -171,7 +178,7 @@ namespace ren {
       state.imguiPool = VK_NULL_HANDLE;
 
       ImGui_ImplVulkan_Shutdown();
-      ImGui_ImplSDL2_Shutdown();
+      ImGui_ImplSDL3_Shutdown();
       ImNodes::DestroyContext();
       ImGui::DestroyContext();
     }
@@ -241,27 +248,22 @@ namespace ren {
 
 
           switch (e.type) {
-            case SDL_WINDOWEVENT: {
-              switch (e.window.event) {
-                case SDL_WINDOWEVENT_RESIZED:
-                case SDL_WINDOWEVENT_SIZE_CHANGED: {
-                  int width = e.window.data1;
-                  int height = e.window.data2;
-                  swapchainNeedsRebuild = true;
-                  isResizing = true;
-                  break;
-                }
+            case SDL_EVENT_WINDOW_RESIZED:
+            case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED: {
+              int width = e.window.data1;
+              int height = e.window.data2;
+              swapchainNeedsRebuild = true;
+              isResizing = true;
+              break;
+            }
 
-                case SDL_WINDOWEVENT_EXPOSED: {
-                  isResizing = false;
-                  break;
-                }
-              }
+            case SDL_EVENT_WINDOW_EXPOSED: {
+              isResizing = false;
               break;
             }
 
 
-            case SDL_QUIT: {
+            case SDL_EVENT_QUIT: {
               this->running = false;
               break;
             }
@@ -272,7 +274,7 @@ namespace ren {
 
 
 
-          if (ImGui_ImplSDL2_ProcessEvent(&e)) { continue; }
+          if (ImGui_ImplSDL3_ProcessEvent(&e)) { continue; }
         }
 
         REN_PROFILE_COUNTER("SDL Events", eventsHandled);
@@ -321,7 +323,7 @@ namespace ren {
       {
         REN_PROFILE_SCOPE("ImGui New Frame");
         ImGui_ImplVulkan_NewFrame();
-        ImGui_ImplSDL2_NewFrame();
+        ImGui_ImplSDL3_NewFrame();
 
         ImGui::NewFrame();
         ImGuizmo::BeginFrame();
@@ -358,10 +360,20 @@ namespace ren {
         if (ImGui::BeginMenu("File")) {
           if (ImGui::MenuItem("New")) {}
           if (ImGui::MenuItem("Open")) {
-            ren::logUI("Open Menu Item", [=](auto &ctx) {
-              ImGui::Text("Open menu item clicked!");
-              if (ImGui::Button("Close")) { ren::println("Close was pressed!"); }
-            });
+            SDL_ShowOpenFileDialog(
+                +[](void *userdata, const char *const *filelist, int filter) {
+                  if (filelist == NULL) {
+                    ren::println("No file selected");
+                  } else {
+                    ren::println("Selected files:");
+                    for (int i = 0; filelist[i] != NULL; i++) {
+                      ren::println(" - {}", filelist[i]);
+                    }
+                  }
+                },
+                nullptr, this->window, NULL,
+                // Filters
+                0, NULL, true);
           }
           ImGui::EndMenu();
         }
@@ -430,8 +442,8 @@ namespace ren {
 
       eui::ExtendedButton("New Project", ICON_PLUS,
                           {
-                              .bg = Color(0xFFFFFF),
                               .fg = Color(0x000000),
+                              .bg = Color(0xFFFFFF),
                           });
 
       ImGui::Separator();
@@ -589,7 +601,7 @@ namespace ren {
           // int width, height;
           // SDL_GetWindowSize(ren::Application::get().getWindow(), &width, &height);
           // ImGui::Text("Window Size: %d x %d", width, height);
-          // SDL_Vulkan_GetDrawableSize(ren::Application::get().getWindow(), &width, &height);
+          // SDL_GetWindowSizeInPixels(ren::Application::get().getWindow(), &width, &height);
           // ImGui::Text("Drawable Size: %d x %d", width, height);
 
 
@@ -682,7 +694,7 @@ namespace ren {
 
 
     // this initializes imgui for SDL
-    ImGui_ImplSDL2_InitForVulkan(getWindow());
+    ImGui_ImplSDL3_InitForVulkan(getWindow());
 
     // this initializes imgui for Vulkan
     ImGui_ImplVulkan_InitInfo init_info = {};

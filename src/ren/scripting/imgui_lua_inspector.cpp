@@ -1,7 +1,7 @@
 #include "imgui_lua_inspector.hpp"
 
 // #define lua_pushglobaltable(L) lua_pushvalue(L, LUA_GLOBALSINDEX)
-#include <SDL2/SDL.h>
+#include <SDL3/SDL.h>
 #include <algorithm>
 #include <cstring>
 #include <fstream>

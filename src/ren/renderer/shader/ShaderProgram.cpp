@@ -2,6 +2,7 @@
 #include <ren/renderer/shader/ShaderReflection.h>
 #include <ren/renderer/shader/SlangCompiler.h>
 #include <ren/renderer/Swapchain.h>
+#include <unistd.h>
 #include <algorithm>
 #include <ren/assets/AssetManager.h>
 #include <fmt/format.h>
@@ -308,10 +309,8 @@ namespace ren {
           ren::println("Dumped SPIR-V to {}", dumpPath);
 
           // if `system` is defined, call spirv-dis on it
-#ifdef __unix__
           auto cmd = fmt::format("spirv-dis {}", dumpPath);
           system(cmd.c_str());
-#endif
           unlink(dumpPath.c_str());
           ren::ShaderReflection refl;
           refl.parseFromSpirv(reinterpret_cast<const u8*>(module->getCode().data()),

@@ -17,7 +17,7 @@ set(IMGUI_SOURCES
 
     ${IMNODES_DIR}/imnodes.cpp
    
-   ${IMGUI_DIR}/backends/imgui_impl_sdl2.cpp
+   ${IMGUI_DIR}/backends/imgui_impl_sdl3.cpp
    ${IMGUI_DIR}/backends/imgui_impl_vulkan.cpp
 )
 
@@ -59,16 +59,21 @@ target_compile_features(ren
   cxx_std_20
 )
 
+
 target_include_directories(ren BEFORE PRIVATE ${slang_INCLUDE_DIRS})
+message(STATUS "Slang include dirs: ${slang_INCLUDE_DIRS}")
+
+
 
 # Link libraries
 target_link_libraries(ren PUBLIC
 
-  ${SDL2_LIBRARIES}
+  slang
+  SDL3::SDL3
+  SDL3::Headers
   fmt::fmt-header-only # fmt library
   PkgConfig::LuaJIT
   assimp
-  slang
   Vulkan::Vulkan # Vulkan SDK
   Vulkan::shaderc_combined
 )
@@ -83,7 +88,7 @@ if (WIN32)
 else()
   # Compiler flags
   target_compile_options(ren PRIVATE 
-      ${SDL2_CFLAGS_OTHER}
+      ${SDL3_CFLAGS_OTHER}
       -Wall
       -Wno-nullability-completeness
       -Wno-unused-variable
@@ -95,3 +100,9 @@ else()
   )
 endif()
 
+
+# print the include dirs for ren
+get_target_property(REN_INCLUDE_DIRS ren INCLUDE_DIRECTORIES)
+message(STATUS "ren include dirs: ${REN_INCLUDE_DIRS}")
+# Print the global include directories
+message(STATUS "Global include dirs: ${CMAKE_INCLUDE_DIRECTORIES_PROJECT_BEFORE}")

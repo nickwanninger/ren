@@ -1,7 +1,7 @@
 #pragma once
 
 #include <ren/types.h>
-#include <SDL2/SDL.h>
+#include <SDL3/SDL.h>
 
 namespace ren {
 

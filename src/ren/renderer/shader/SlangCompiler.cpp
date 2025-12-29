@@ -47,7 +47,7 @@ namespace ren {
           , m_size(size)
           , m_refCount(1) {}
 
-      ~FileBlob() { free(m_data); }
+      virtual ~FileBlob() { free(m_data); }
 
       // ISlangUnknown
       SLANG_NO_THROW SlangResult SLANG_MCALL queryInterface(SlangUUID const& uuid,
@@ -84,6 +84,8 @@ namespace ren {
      public:
       CFileSystem()
           : m_refCount(1) {}
+
+      virtual ~CFileSystem() {}
 
       // ISlangUnknown
       SLANG_NO_THROW SlangResult SLANG_MCALL queryInterface(SlangUUID const& uuid,

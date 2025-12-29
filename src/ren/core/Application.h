@@ -1,7 +1,7 @@
 #pragma once
 
 #include <ren/renderer/vulkan/Vulkan.h>
-#include <SDL2/SDL.h>
+#include <SDL3/SDL.h>
 #include <ren/renderer/RenderPass.h>
 #include <ren/renderer/Renderer.h>
 #include <ren/core/Scene.h>

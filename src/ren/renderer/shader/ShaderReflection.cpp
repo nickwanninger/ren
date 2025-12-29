@@ -826,7 +826,7 @@ namespace ren {
       snprintf(name_buf, sizeof(name_buf), "%s", node->name.c_str());
     }
 
-    bool open = ImGui::TreeNodeEx((void*)node, node_flags, name_buf);
+    bool open = ImGui::TreeNodeEx((void*)node, node_flags, "%s", name_buf);
 
     // Type column
     ImGui::TableNextColumn();

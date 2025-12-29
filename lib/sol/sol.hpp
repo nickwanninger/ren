@@ -34,7 +34,7 @@
 
 // beginning of sol/version.hpp
 
-#include <sol/config.hpp>
+#include "./config.hpp"
 
 #define SOL_VERSION_MAJOR 3
 #define SOL_VERSION_MINOR 5
@@ -694,7 +694,7 @@
 #elif SOL_IS_ON(SOL_USING_CXX_LUA)
 	#define SOL_USE_LUA_HPP_I_ SOL_OFF
 #elif defined(__has_include)
-	#if __has_include(<lua.hpp>)
+	#if 0
 		#define SOL_USE_LUA_HPP_I_ SOL_ON
 	#else
 		#define SOL_USE_LUA_HPP_I_ SOL_OFF
@@ -3012,35 +3012,12 @@ struct pre_main {
 
 // beginning of sol/compatibility/lua_version.hpp
 
-#if SOL_IS_ON(SOL_USING_CXX_LUA)
-	#if __has_include(<lua/lua.h>)
-		#include <lua/lua.h>
-		#include <lua/lauxlib.h>
-		#include <lua/lualib.h>
-	#else
+
+extern "C" {
 		#include <lua.h>
 		#include <lauxlib.h>
 		#include <lualib.h>
-	#endif
-#elif SOL_IS_ON(SOL_USE_LUA_HPP)
-	#if __has_include(<lua/lua.hpp>)
-		#include <lua/lua.hpp>
-	#else
-		#include <lua.hpp>
-	#endif
-#else
-	extern "C" {
-		#if __has_include(<lua/lua.h>)
-			#include <lua/lua.h>
-			#include <lua/lauxlib.h>
-			#include <lua/lualib.h>
-		#else
-			#include <lua.h>
-			#include <lauxlib.h>
-			#include <lualib.h>
-		#endif
-	}
-#endif // C++ Mangling for Lua vs. Not
+}
 
 #if defined(SOL_LUAJIT)
 	#if (SOL_LUAJIT != 0)
@@ -3243,15 +3220,9 @@ struct pre_main {
 #if defined(__cplusplus) && !defined(COMPAT53_LUA_CPP)
 extern "C" {
 #endif
-#if __has_include(<lua/lua.h>)
-  #include <lua/lua.h>
-  #include <lua/lauxlib.h>
-  #include <lua/lualib.h>
-#else
-  #include <lua.h>
-  #include <lauxlib.h>
-  #include <lualib.h>
-#endif
+#include <lua.h>
+#include <lauxlib.h>
+#include <lualib.h>
 #if defined(__cplusplus) && !defined(COMPAT53_LUA_CPP)
 }
 #endif
@@ -4509,15 +4480,9 @@ COMPAT53_API void luaL_requiref(lua_State* L, const char* modname, lua_CFunction
 #if defined(__cplusplus) && !defined(COMPAT53_LUA_CPP)
 extern "C" {
 #endif
-#if __has_include(<lua/lua.h>)
-  #include <lua/lua.h>
-  #include <lua/lauxlib.h>
-  #include <lua/lualib.h>
-#else
-  #include <lua.h>
-  #include <lauxlib.h>
-  #include <lualib.h>
-#endif
+#include <lua.h>
+#include <lauxlib.h>
+#include <lualib.h>
 #if defined(__cplusplus) && !defined(COMPAT53_LUA_CPP)
 }
 #endif

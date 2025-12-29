@@ -45,11 +45,15 @@ include_directories(${Vulkan_INCLUDE_DIRS})
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(LuaJIT REQUIRED IMPORTED_TARGET luajit)
 include_directories(${LuaJIT_INCLUDE_DIRS})
+message(STATUS "LuaJIT include dirs: ${LuaJIT_INCLUDE_DIRS}")
 
-# SDL as a display and input handling library
-find_package(SDL2 REQUIRED)
-include_directories(${SDL2_INCLUDE_DIRS})
+# # SDL as a display and input handling library
+find_package(SDL3 REQUIRED CONFIG)
 
+
+# get_target_property(SDL3_INCLUDES SDL3::Headers INTERFACE_INCLUDE_DIRECTORIES)
+# message(STATUS "SDL3 includes: ${SDL3_INCLUDES}")
+# include_directories(AFTER ${SDL3_INCLUDES})
 
 
 

@@ -1,7 +1,7 @@
 #pragma once
 #include <ren/types.h>
 #include <ren/core/Instrumentation.h>
-#include <SDL2/SDL.h>
+#include <SDL3/SDL.h>
 
 namespace ren {
   struct Camera {
@@ -18,7 +18,7 @@ namespace ren {
 
     glm::mat4 projection;  // HACK: REMOVE ME
 
-    SDL_GameController *controller = nullptr;
+    SDL_Gamepad *controller = nullptr;
 
 
     Camera(void);

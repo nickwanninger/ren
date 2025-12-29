@@ -180,7 +180,7 @@ namespace ren {
 
     // check if the SDL window is a different size than the swapchain.
     int width, height;
-    SDL_Vulkan_GetDrawableSize(this->window, &width, &height);
+    SDL_GetWindowSizeInPixels(this->window, &width, &height);
 
     for (int i = 0; i < 10 && frame == nullptr; i++) {
       REN_PROFILE_SCOPE("Acquire Next Frame");

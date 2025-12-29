@@ -6,8 +6,8 @@
 
 #include <ren/types.h>
 #include <ren/core/Instrumentation.h>
-#include <SDL2/SDL.h>         // for SDL_Window
-#include <SDL2/SDL_vulkan.h>  // for SDL_Vulkan functions
+#include <SDL3/SDL.h>         // for SDL_Window
+#include <SDL3/SDL_vulkan.h>  // for SDL_Vulkan functions
 #include <ren/misc/DeprecationLogger.h>
 #include "./vk_mem_alloc.h"  // for VMA (Vulkan Memory Allocator)
 
@@ -51,7 +51,7 @@ namespace ren {
     VkPhysicalDevice physical_device = VK_NULL_HANDLE;
     VkDevice device = VK_NULL_HANDLE;
 
-    // The surface is the window that we render to (we link against SDL2)
+    // The surface is the window that we render to (we link against SDL)
     VkSurfaceKHR surface = VK_NULL_HANDLE;
     SDL_Window *window = nullptr;
 

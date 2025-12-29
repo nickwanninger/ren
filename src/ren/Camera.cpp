@@ -1,7 +1,8 @@
 
 #include <imgui/imgui.h>
 #include <ren/Camera.h>
-#include <SDL2/SDL.h>
+#include <SDL3/SDL.h>
+#include <SDL3/SDL_mouse.h>
 #include <ren/core/Instrumentation.h>
 
 
@@ -18,14 +19,14 @@ ren::Camera &ren::Camera::get(void) {
 void ren::Camera::update(float dt) {
   REN_PROFILE_FUNCTION();
 
-  const Uint8* keys = SDL_GetKeyboardState(NULL);
-  int mouse_x, mouse_y;
+  const auto* keys = SDL_GetKeyboardState(NULL);
+  float mouse_x, mouse_y;
   u32 mouse = SDL_GetMouseState(NULL, NULL);
   SDL_GetRelativeMouseState(&mouse_x, &mouse_y);
 
   auto& io = ImGui::GetIO();
 
-  bool right_pressed = mouse & SDL_BUTTON(SDL_BUTTON_RIGHT);
+  bool right_pressed = mouse & SDL_BUTTON_MASK(SDL_BUTTON_RIGHT);
 
   if (right_pressed && !mouse_captured && not io.WantCaptureMouse) {
     // SDL_SetRelativeMouseMode(SDL_TRUE);
@@ -39,10 +40,10 @@ void ren::Camera::update(float dt) {
 
 
 
-  Sint16 left_x = SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_LEFTX);
-  Sint16 left_y = SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_LEFTY);
-  Sint16 right_x = SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_RIGHTX);
-  Sint16 right_y = SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_RIGHTY);
+  Sint16 left_x = SDL_GetGamepadAxis(controller, SDL_GAMEPAD_AXIS_LEFTX);
+  Sint16 left_y = SDL_GetGamepadAxis(controller, SDL_GAMEPAD_AXIS_LEFTY);
+  Sint16 right_x = SDL_GetGamepadAxis(controller, SDL_GAMEPAD_AXIS_RIGHTX);
+  Sint16 right_y = SDL_GetGamepadAxis(controller, SDL_GAMEPAD_AXIS_RIGHTY);
 
   glm::vec3 left_stick(0.0f);
   glm::vec3 right_stick(0.0f);
@@ -95,11 +96,11 @@ void ren::Camera::update(float dt) {
 
 
 
-    // move up if the user is pressing the x button
-    if (SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_A)) { impulse.y += speed; }
+    // // move up if the user is pressing the x button
+    // if (SDL_GetGamepadButton(controller, SDL_GAMEPAD_BUTTON_BACK)) { impulse.y += speed; }
 
-    // move down if the user is pressing the circle button
-    if (SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_B)) { impulse.y -= speed; }
+    // // move down if the user is pressing the circle button
+    // if (SDL_GetGamepadButton(controller, SDL_GAMEPAD_BUTTON_)) { impulse.y -= speed; }
 
 
 

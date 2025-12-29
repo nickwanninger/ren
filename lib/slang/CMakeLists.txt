@@ -84,6 +84,8 @@ else()
 endif()
 
 
+message(STATUS "Slang include dir: ${SLANG_INCLUDE_DIR}")
+
 # Export variables and target for use in parent project
 set(slang_INCLUDE_DIRS "${SLANG_INCLUDE_DIR}" PARENT_SCOPE)
 set(slang_FOUND TRUE PARENT_SCOPE)
