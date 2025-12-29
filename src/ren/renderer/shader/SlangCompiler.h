@@ -1,9 +1,10 @@
 #pragma once
 #include <ren/renderer/shader/ShaderReflection.h>
+#include <slang.h>
 #include <slang-com-ptr.h>
+#include <slang-com-helper.h>
 
 namespace ren {
-
 
 
   struct SlangCompilationResult {
@@ -21,7 +22,8 @@ namespace ren {
 
 
 
-  void inspectSlangBindingRanges(slang::TypeLayoutReflection* programTypeLayout, slang::TypeLayoutReflection *typeLayout);
+  void inspectSlangBindingRanges(slang::TypeLayoutReflection *programTypeLayout,
+                                 slang::TypeLayoutReflection *typeLayout);
 
   void inspectSlangComponent(slang::IComponentType *ct);
 }  // namespace ren

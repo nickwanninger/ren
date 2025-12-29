@@ -373,7 +373,7 @@ namespace ren {
     using Kind = slang::TypeReflection::Kind;
     auto kind = tl->getKind();
 
-    ren::println("name={} kind={} size={}", name, static_cast<int>(kind), uniformSize);
+    // ren::println("name={} kind={} size={}", name, static_cast<int>(kind), uniformSize);
     switch (kind) {
       case Kind::ParameterBlock: {
         auto evl = tl->getElementVarLayout();
@@ -410,7 +410,7 @@ namespace ren {
 
 
       case Kind::Array: {
-        ren::println("Array!");
+        // ren::println("Array!");
         auto elementCount = tl->getElementCount();
         auto evl = tl->getElementVarLayout();
         auto etl = tl->getElementTypeLayout();
@@ -457,9 +457,9 @@ namespace ren {
 
 
         u32 stride = tl->getElementStride(SLANG_PARAMETER_CATEGORY_UNIFORM);
-        ren::println(
-            "Array detected: name='{}', elementCount={}, elementType={}, evtl:{},{}, stride={}",
-            name, elementCount, static_cast<int>(elementType), (void*)evl, (void*)etl, stride);
+        // ren::println(
+        //     "Array detected: name='{}', elementCount={}, elementType={}, evtl:{},{}, stride={}",
+        //     name, elementCount, static_cast<int>(elementType), (void*)evl, (void*)etl, stride);
 
 
 
@@ -469,7 +469,7 @@ namespace ren {
           l.arrayIndex = i;
           if (stride > 0) { applyOffset(l.byteOffset, i * stride); }
           auto n = extractVariableLayout(evl, etl, l);
-          ren::println("Array element {} extracted: {}", i, (void*)n);
+          // ren::println("Array element {} extracted: {}", i, (void*)n);
           node->members.push_back(n);
         }
 
@@ -724,10 +724,10 @@ namespace ren {
     });
 
 
-    ren::dbgln("Extracted {} bindings:", bindings.size());
-    for (auto& binding : bindings) {
-      ren::dbgln("- {}.{} = {}", binding.set, binding.index, binding.path);
-    }
+    // ren::dbgln("Extracted {} bindings:", bindings.size());
+    // for (auto& binding : bindings) {
+    //   ren::dbgln("- {}.{} = {}", binding.set, binding.index, binding.path);
+    // }
   }
 
   // Helper function to check if two Location objects are compatible

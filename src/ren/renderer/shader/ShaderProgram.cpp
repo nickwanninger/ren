@@ -306,6 +306,22 @@ namespace ren {
                     module->getCode().size() * sizeof(u32));
           ofs.close();
           ren::println("Dumped SPIR-V to {}", dumpPath);
+
+          // if `system` is defined, call spirv-dis on it
+#ifdef __unix__
+          auto cmd = fmt::format("spirv-dis {}", dumpPath);
+          system(cmd.c_str());
+#endif
+          unlink(dumpPath.c_str());
+          ren::ShaderReflection refl;
+          refl.parseFromSpirv(reinterpret_cast<const u8*>(module->getCode().data()),
+                              module->getCode().size() * sizeof(u32));
+          // ren::println("Reflection:\n{}", refl.getRoot()->toJson().dump(2));
+
+          for (const auto& b : refl.bindings) {
+            ren::println("Binding: set {} binding {} name {} type {}", b.set, b.index, b.path,
+                         static_cast<int>(b.node->type.type));
+          }
         }
       }
       ImGui::EndTable();

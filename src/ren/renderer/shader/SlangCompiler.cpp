@@ -38,6 +38,125 @@ namespace ren {
 
     static Slang::ComPtr<slang::IGlobalSession> globalSession;
     static Slang::ComPtr<slang::ISession> session;  // Local Session.
+
+
+    class FileBlob : public ISlangBlob {
+     public:
+      FileBlob(void* data, size_t size)
+          : m_data(data)
+          , m_size(size)
+          , m_refCount(1) {}
+
+      ~FileBlob() { free(m_data); }
+
+      // ISlangUnknown
+      SLANG_NO_THROW SlangResult SLANG_MCALL queryInterface(SlangUUID const& uuid,
+                                                            void** outObject) SLANG_OVERRIDE {
+        if (uuid == ISlangUnknown::getTypeGuid() || uuid == ISlangBlob::getTypeGuid()) {
+          addRef();
+          *outObject = this;
+          return SLANG_OK;
+        }
+        *outObject = nullptr;
+        return SLANG_E_NO_INTERFACE;
+      }
+
+      SLANG_NO_THROW uint32_t SLANG_MCALL addRef() SLANG_OVERRIDE { return ++m_refCount; }
+
+      SLANG_NO_THROW uint32_t SLANG_MCALL release() SLANG_OVERRIDE {
+        uint32_t count = --m_refCount;
+        if (count == 0) delete this;
+        return count;
+      }
+
+      // ISlangBlob
+      SLANG_NO_THROW void const* SLANG_MCALL getBufferPointer() SLANG_OVERRIDE { return m_data; }
+      SLANG_NO_THROW size_t SLANG_MCALL getBufferSize() SLANG_OVERRIDE { return m_size; }
+
+     private:
+      void* m_data;
+      size_t m_size;
+      std::atomic<uint32_t> m_refCount;
+    };
+
+    // File system implementation using C FILE*
+    class CFileSystem : public ISlangFileSystem {
+     public:
+      CFileSystem()
+          : m_refCount(1) {}
+
+      // ISlangUnknown
+      SLANG_NO_THROW SlangResult SLANG_MCALL queryInterface(SlangUUID const& uuid,
+                                                            void** outObject) SLANG_OVERRIDE {
+        if (uuid == ISlangUnknown::getTypeGuid() || uuid == ISlangCastable::getTypeGuid() ||
+            uuid == ISlangFileSystem::getTypeGuid()) {
+          addRef();
+          *outObject = this;
+          return SLANG_OK;
+        }
+        *outObject = nullptr;
+        return SLANG_E_NO_INTERFACE;
+      }
+
+      SLANG_NO_THROW uint32_t SLANG_MCALL addRef() SLANG_OVERRIDE { return ++m_refCount; }
+
+      SLANG_NO_THROW uint32_t SLANG_MCALL release() SLANG_OVERRIDE {
+        uint32_t count = --m_refCount;
+        if (count == 0) delete this;
+        return count;
+      }
+
+      // ISlangCastable
+      SLANG_NO_THROW void* SLANG_MCALL castAs(SlangUUID const& guid) SLANG_OVERRIDE {
+        if (guid == ISlangUnknown::getTypeGuid() || guid == ISlangCastable::getTypeGuid() ||
+            guid == ISlangFileSystem::getTypeGuid()) {
+          return this;
+        }
+        return nullptr;
+      }
+
+      // ISlangFileSystem
+      SLANG_NO_THROW SlangResult SLANG_MCALL loadFile(char const* path,
+                                                      ISlangBlob** outBlob) SLANG_OVERRIDE {
+        *outBlob = nullptr;
+
+        FILE* f = fopen(path, "rb");
+        if (!f) return SLANG_E_NOT_FOUND;
+
+        fseek(f, 0, SEEK_END);
+        long size = ftell(f);
+        fseek(f, 0, SEEK_SET);
+
+        if (size < 0) {
+          fclose(f);
+          return SLANG_FAIL;
+        }
+
+        // Allocate with +1 for null terminator (Slang expects this for source files)
+        void* data = malloc(size + 1);
+        if (!data) {
+          fclose(f);
+          return SLANG_E_OUT_OF_MEMORY;
+        }
+
+        size_t bytesRead = fread(data, 1, size, f);
+        fclose(f);
+
+        if (bytesRead != (size_t)size) {
+          free(data);
+          return SLANG_FAIL;
+        }
+
+        // Null terminate
+        ((char*)data)[size] = '\0';
+
+        *outBlob = new FileBlob(data, size);
+        return SLANG_OK;
+      }
+
+     private:
+      std::atomic<uint32_t> m_refCount;
+    };
   }  // namespace detail
 
   SlangCompilationResult compileSlangShaders(const char* slangFilePath) {
@@ -52,6 +171,9 @@ namespace ren {
 
     Slang::ComPtr<slang::IBlob> diagnosticsBlob;
     Slang::ComPtr<slang::IModule> module;
+
+
+    ISlangFileSystem* fs;
 
     // Make sure the global session is created.
     if (detail::globalSession.get() == nullptr) {
@@ -94,7 +216,9 @@ namespace ren {
       sessionDesc.targets = &targetDesc;
       sessionDesc.targetCount = 1;
 
+
       // TODO: virtual filesystem!
+      sessionDesc.fileSystem = new detail::CFileSystem();
 
       if (SLANG_FAILED(
               detail::globalSession->createSession(sessionDesc, detail::session.writeRef()))) {
