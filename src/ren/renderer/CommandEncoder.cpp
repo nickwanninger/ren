@@ -99,8 +99,9 @@ namespace ren {
 
 
   ref<ShaderObject> RenderPassEncoder::bindPipeline(ren::PipelineStateObject &pso) {
-    // Bind the pipeline described by the PSO.
-    auto obj = pso.program->instantiate();
+
+    // TODO:
+    ref<ShaderObject> obj = ren::make<ShaderObject>(pso.program);
     bindPipeline(pso, *obj);
     return obj;
   }
@@ -113,14 +114,6 @@ namespace ren {
 
     // // Bind the pipeline described by the PSO.
     vkCmdBindPipeline(buf(), VK_PIPELINE_BIND_POINT_GRAPHICS, cachedPipeline->getHandle());
-
-
-    auto &sets = object.getDescriptorSets();
-    if (sets.size() > 0) {
-      // Bind descriptor sets from the shader object.
-      vkCmdBindDescriptorSets(buf(), VK_PIPELINE_BIND_POINT_GRAPHICS, object.getLayout(), 0,
-                              static_cast<uint32_t>(sets.size()), sets.data(), 0, nullptr);
-    }
   }
 
 

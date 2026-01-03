@@ -6,7 +6,6 @@
 #include <ren/renderer/vulkan/Vulkan.h>
 #include <ren/types.h>
 #include <ren/core/UUID.h>
-#include <ren/renderer/shader/SlangCompiler.h>
 #include <ren/assets/Asset.h>
 
 namespace ren {

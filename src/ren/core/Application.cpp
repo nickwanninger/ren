@@ -82,7 +82,6 @@ namespace ren {
     }
 
 
-
     {
       REN_PROFILE_SCOPE("SDL_CreateWindow");
 
@@ -95,8 +94,6 @@ namespace ren {
         ren::println("SDL_CreateWindow Error: {}", SDL_GetError());
         throw std::runtime_error("Failed to create SDL window");
       }
-
-      SDL_RaiseWindow(this->window);
     }
 
 
@@ -234,6 +231,9 @@ namespace ren {
     //       Maybe these should live in a WSI abstraction class?
     static bool swapchainNeedsRebuild = false;
     static bool isResizing = false;
+
+
+    SDL_RaiseWindow(this->window);
 
     while (this->running) {
       int eventsHandled = 0;

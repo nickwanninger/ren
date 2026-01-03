@@ -8,7 +8,6 @@
 #include <ren/renderer/Buffer.h>
 #include <ren/core/Arena.h>
 #include <span>
-#include <utility>
 
 namespace ren {
 
@@ -75,6 +74,27 @@ namespace ren {
     // VkDescriptorBufferInfo to avoid them moving (if they were stored in a
     // vector that resizes, for example).
     ren::Arena arena{512, true};
+  };
+
+
+
+  class ShaderBindState {
+    private:
+  };
+
+
+  class ShaderParameterBinder {
+
+    ShaderBindState *state; // Allocated from Framealloc
+  };
+
+  
+  // A root binder that lets you bind resources at the top level The main
+  // operation that a root binder supports is to allocate descriptor sets and
+  // construct them and produce ShaderParameterBinder instances that can be used
+  // to bind resources to a command buffer.
+  class ShaderTopLevelBinder {
+
   };
 
 

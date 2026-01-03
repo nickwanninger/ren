@@ -5,12 +5,12 @@
 #include <ren/renderer/shader/ShaderReflection.h>
 
 #include <ren/core/Flag.h>
-#include <ren/renderer/shader/SlangCompiler.h>
 #include <ren/assets/MeshScene.hpp>
+#include "ren/renderer/shader/ShaderProgram.h"
 
 #include <ren/core/Systems.h>
 #include <ren/core/Components.h>
-
+#include <ren/renderer/shader/ParameterBinding.h>
 
 ren::Flag<std::string> loadArg("load", "assets/test/meshes/simple_scene.glb",
                                "Path to a mesh to load at startup");
@@ -33,7 +33,6 @@ void loadMeshIntoScene(const char* path, float scaleChange = 0.0f) {
   }
 }
 
-
 int main(int argc, char* argv[]) {
   ren::parseFlags(argc, argv);
 
@@ -44,6 +43,37 @@ int main(int argc, char* argv[]) {
   res.y = 1080;
 
   ren::Application app("Editor", res);
+
+
+
+
+  auto program = ren::make<ren::ShaderProgram>("compute");
+
+  ren::println("{}", program->getReflection()->getRoot()->toJson().dump(2));
+
+  ren::ShaderObject root(program);
+
+  // try {
+  //   auto mat = root.block("material");
+  //   for (int i = 0; i < 4; i++) {
+  //     mat["texture"].element(i);
+  //   }
+  //   mat["sampler"].element(0);
+  //   mat["foo"]["x"].write<float>(3.14f);
+  //   mat["foo"]["x"].write<char>(1);
+
+
+  //   auto output = root.block("output");
+  //   output["outputBuffer"].writeBytes(nullptr, 64);  // ?
+
+
+  // } catch (const std::exception& e) { ren::errln("Error: {}", e.what()); }
+
+
+  // exit(0);
+
+
+
 
   if (loadArg.get() == "SPONZA") {
     loadMeshIntoScene("/Users/nick/Downloads/main_sponza/NewSponza_Main_glTF_003.gltf",

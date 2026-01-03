@@ -1,7 +1,8 @@
 #include <ren/renderer/shader/ShaderProgram.h>
 #include <ren/renderer/shader/ShaderReflection.h>
-#include <ren/renderer/shader/SlangCompiler.h>
 #include <ren/renderer/Swapchain.h>
+#include <slang-com-ptr.h>
+#include <slang.h>
 #include <unistd.h>
 #include <algorithm>
 #include <ren/assets/AssetManager.h>
@@ -9,35 +10,22 @@
 #include <ren/misc/DeprecationLogger.h>
 #include <imgui/imgui.h>
 
-
+#include <ren/core/Flag.h>
 
 
 namespace ren {
 
   ShaderProgram::ShaderProgram(const std::string& slangPath) {
-    auto result = ren::compileSlangShaders(slangPath.c_str());
+    ren::println("-- Slang --");
+    this->compileFromSlangPath(slangPath);
 
-    this->slangProgram = std::move(result.program);
-    this->reflection = std::move(result.reflection);
-
-    // slangProgram->addRef(); // The hell is going on with this com protocol??
-
-
-
-
-    auto vkDevice = getVulkan().device;
-    auto globalParamsLayout =
-        slangProgram->getLayout()->getGlobalParamsVarLayout()->getTypeLayout();
-
-    fmt::println("Compiled Slang shader for {} @ {}", (void*)this, (void*)slangProgram.get());
-
-    for (const auto& module : result.modules) {
-      // Make a shader module from the SPIR-V
-      auto mod = make<ShaderModule>(module.name, module.spirv, module.stage);
-      shaders.push_back(mod);
+    // Reflect the spirv to compare with the slang reflection.
+    ren::println("-- Spirv --");
+    ShaderReflection spirvReflection;
+    for (auto& shader : shaders) {
+      spirvReflection.parseFromSpirv(reinterpret_cast<const u8*>(shader->getCode().data()),
+                                     shader->getCode().size() * sizeof(u32));
     }
-
-    bakeLayouts();
   }
 
   ShaderProgram::ShaderProgram(const std::string& vertexPath, const std::string& fragmentPath)
@@ -48,7 +36,6 @@ namespace ren {
     shaders.push_back(ren::getAsset<FragmentShader>(fragmentPath));
 
 
-    slangProgram = nullptr;
     reflectShaders();
     bakeLayouts();
   }
@@ -76,13 +63,211 @@ namespace ren {
   }
 
 
-  void ShaderProgram::reflectShaders() {
+
+  static Slang::ComPtr<slang::IGlobalSession> globalSession;
+
+  static ren::Flag<int> kSlangOptLevel(
+      "slang-opt-level", 2, "Optimization level for Slang compiler (0=None, 1=Default, 2=Maximum)");
+
+  // Helper to check diagnostics
+  static void checkSlangDiagnostics(slang::IBlob* diagnosticsBlob) {
+    if (diagnosticsBlob && diagnosticsBlob->getBufferSize() > 0) {
+      const char* msg = (const char*)diagnosticsBlob->getBufferPointer();
+      throw std::runtime_error(std::string("Slang compilation error: ") + msg);
+    }
+  }
+
+  // Helper to convert Slang stage to Vulkan stage
+  static VkShaderStageFlagBits slangStageToVulkan(SlangStage stage) {
+    switch (stage) {
+      case SLANG_STAGE_VERTEX:
+        return VK_SHADER_STAGE_VERTEX_BIT;
+      case SLANG_STAGE_FRAGMENT:
+        return VK_SHADER_STAGE_FRAGMENT_BIT;
+      case SLANG_STAGE_COMPUTE:
+        return VK_SHADER_STAGE_COMPUTE_BIT;
+      case SLANG_STAGE_GEOMETRY:
+        return VK_SHADER_STAGE_GEOMETRY_BIT;
+      case SLANG_STAGE_HULL:
+        return VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
+      case SLANG_STAGE_DOMAIN:
+        return VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
+      default:
+        throw std::runtime_error("Unsupported shader stage");
+    }
+  }
+
+  void ShaderProgram::compileFromSlangPath(const std::string& slangFilePath) {
+    Slang::ComPtr<slang::IBlob> diagnosticsBlob;
+    Slang::ComPtr<slang::IModule> module;
+
+    // First, we need to make sure the global session exists.
+    if (globalSession.get() == nullptr) {
+      REN_PROFILE_SCOPE("CreateGlobalSession");
+      if (SLANG_FAILED(slang::createGlobalSession(globalSession.writeRef()))) {
+        throw std::runtime_error("Failed to create Slang global session");
+      }
+    }
+
+
+
+    // now, create our local session.
+    {
+      REN_PROFILE_SCOPE("CreateLocalSession");
+
+
+      slang::SessionDesc sessionDesc = {};
+      slang::TargetDesc targetDesc = {};
+      targetDesc.format = SLANG_SPIRV;
+      targetDesc.profile = globalSession->findProfile("spirv_1_5");
+
+      // Enable Vulkan reflection to get parameter information
+      slang::CompilerOptionEntry reflectionOption = {};
+      reflectionOption.name = slang::CompilerOptionName::VulkanEmitReflection;
+      reflectionOption.value.kind = slang::CompilerOptionValueKind::Int;
+      reflectionOption.value.intValue0 = 1;
+
+      // Enable optimization
+      slang::CompilerOptionEntry optimizationOption = {};
+      optimizationOption.name = slang::CompilerOptionName::Optimization;
+      optimizationOption.value.kind = slang::CompilerOptionValueKind::Int;
+      optimizationOption.value.intValue0 = kSlangOptLevel;  // 0=None, 1=Default, 2=Maximum
+
+
+
+      std::vector<slang::CompilerOptionEntry> compilerOptions;
+      compilerOptions.push_back(reflectionOption);
+      compilerOptions.push_back(optimizationOption);
+
+      {
+        slang::CompilerOptionEntry opt = {};
+        opt.name = slang::CompilerOptionName::VulkanEmitReflection;
+        opt.value.kind = slang::CompilerOptionValueKind::Int;
+        opt.value.intValue0 = 1;
+        compilerOptions.push_back(opt);
+      }
+
+
+      targetDesc.compilerOptionEntries = compilerOptions.data();
+      targetDesc.compilerOptionEntryCount = static_cast<SlangInt>(compilerOptions.size());
+
+      sessionDesc.targets = &targetDesc;
+      sessionDesc.targetCount = 1;
+
+      // TODO: viratual filesystems from ren::AssetManager!
+
+      if (SLANG_FAILED(globalSession->createSession(sessionDesc, this->session.writeRef()))) {
+        throw std::runtime_error("Failed to create Slang session");
+      }
+    }
+
+
+    // Load the module from the filepath.
+    {
+      REN_PROFILE_SCOPE("LoadSlangModule");
+      module = this->session->loadModule(slangFilePath.c_str(), diagnosticsBlob.writeRef());
+      if (!module) {
+        checkSlangDiagnostics(diagnosticsBlob);
+        throw std::runtime_error("Failed to load Slang module");
+      }
+    }
+
+
+
+
+    // Get the entry point count.
+    SlangInt32 entryPointCount = module->getDefinedEntryPointCount();
+    if (entryPointCount == 0) {
+      throw std::runtime_error("No entry points found in shader source");
+    }
+
+
+    std::vector<slang::IComponentType*> allComponents;
+    allComponents.push_back(module);
+
+    for (SlangInt32 i = 0; i < entryPointCount; ++i) {
+      REN_PROFILE_SCOPE("CompileSlangEntryPoint");
+      Slang::ComPtr<slang::IEntryPoint> entryPoint;
+
+      {
+        REN_PROFILE_SCOPE("GetDefinedEntryPoint");
+        if (SLANG_FAILED(module->getDefinedEntryPoint(i, entryPoint.writeRef()))) {
+          throw std::runtime_error("Failed to get entry point");
+        }
+      }
+
+      // 6. Compose the program (module + entry point)
+      // std::array<slang::IComponentType*, 2> componentTypes = {module, entryPoint};
+      allComponents.push_back(entryPoint);
+    }
+
+
+
+    // Link the modules.
+    {
+      Slang::ComPtr<slang::IComponentType> unlinkedProgram;
+      if (SLANG_FAILED(this->session->createCompositeComponentType(
+              allComponents.data(), allComponents.size(), unlinkedProgram.writeRef()))) {
+        checkSlangDiagnostics(diagnosticsBlob);
+        throw std::runtime_error("Failed to create composite program");
+      }
+
+
+      if (SLANG_FAILED(
+              unlinkedProgram->link(this->program.writeRef(), diagnosticsBlob.writeRef()))) {
+        checkSlangDiagnostics(diagnosticsBlob);
+        throw std::runtime_error("Failed to link program");
+      }
+    }
+
+
+    for (SlangInt32 i = 0; i < entryPointCount; ++i) {
+      // 8. Get compiled SPIR-V code
+      Slang::ComPtr<slang::IBlob> spirvCode;
+
+      {
+        REN_PROFILE_SCOPE("GetEntryPointCode");
+        if (SLANG_FAILED(this->program->getEntryPointCode(
+                i,  // entry point index (we only have one in this composed program)
+                0,  // target index
+                spirvCode.writeRef(), diagnosticsBlob.writeRef()))) {
+          checkSlangDiagnostics(diagnosticsBlob);
+          throw std::runtime_error("Failed to get entry point code");
+        }
+
+
+        const u8* spirvBytes = (const u8*)spirvCode->getBufferPointer();
+        size_t spirvSize = spirvCode->getBufferSize();
+        std::vector<u8> spirv;
+        spirv.assign(spirvBytes, spirvBytes + spirvSize);
+
+
+        auto* ep = this->program->getLayout()->getEntryPointByIndex(i);
+        SlangStage slangStage = ep->getStage();
+        VkShaderStageFlagBits vulkanStage = slangStageToVulkan(slangStage);
+
+        const char* name = "unknown";
+        if (auto epName = ep->getName())
+          name = epName;
+
+        auto mod = make<ShaderModule>(name, spirv, vulkanStage);
+        shaders.push_back(mod);
+      }
+    }
+
     this->reflection = make<ren::ShaderReflection>();
+    this->reflection->parseFromSlang(this->program->getLayout());
+
+
+
+    this->bakeLayouts();
+  }
+
+
+  void ShaderProgram::reflectShaders() {
     // TODO: use ren::ShaderRefleciton
     for (auto& shader : shaders) {
       reflectShader(shader->getCode(), shader->getStage());
-      reflection->parseFromSpirv(reinterpret_cast<const u8*>(shader->getCode().data()),
-                                 shader->getCode().size() * sizeof(u32));
     }
 
     // Merge and deduplicate bindings
@@ -142,10 +327,14 @@ namespace ren {
     struct Key {
       u32 set;
       u32 binding;
-      bool operator==(const Key& o) const { return set == o.set && binding == o.binding; }
+      bool operator==(const Key& o) const {
+        return set == o.set && binding == o.binding;
+      }
     };
     struct KeyHash {
-      size_t operator()(const Key& k) const { return (size_t(k.set) << 16) ^ k.binding; }
+      size_t operator()(const Key& k) const {
+        return (size_t(k.set) << 16) ^ k.binding;
+      }
     };
 
     std::unordered_map<Key, ShaderBinding, KeyHash> mergedMap;
@@ -170,7 +359,8 @@ namespace ren {
         m.stages |= b.stages;
         // Prefer a non-empty, longer name if they differ
         if (m.name != b.name) {
-          if (m.name.empty() || b.name.size() > m.name.size()) m.name = b.name;
+          if (m.name.empty() || b.name.size() > m.name.size())
+            m.name = b.name;
         }
       }
     }
@@ -181,7 +371,8 @@ namespace ren {
     for (auto& [k, v] : mergedMap)
       out.push_back(v);
     std::sort(out.begin(), out.end(), [](const ShaderBinding& a, const ShaderBinding& b) {
-      if (a.set != b.set) return a.set < b.set;
+      if (a.set != b.set)
+        return a.set < b.set;
       return a.binding < b.binding;
     });
     bindings = std::move(out);
@@ -210,7 +401,11 @@ namespace ren {
       layoutBinding.stageFlags = binding.stages;
       layoutBinding.pImmutableSamplers = nullptr;
 
-      if (binding.set > maxSet) maxSet = binding.set;
+      ren::println("Binding: set {} binding {} type={} count={} stages=0x{:X}", binding.set,
+                   binding.binding, static_cast<int>(binding.type), binding.count, binding.stages);
+
+      if (binding.set > maxSet)
+        maxSet = binding.set;
 
       setBindings[binding.set].push_back(layoutBinding);
     }
@@ -257,14 +452,17 @@ namespace ren {
   const ShaderBinding* ShaderProgram::getBinding(const std::string_view& name) const {
     // TODO: as we grow, we need a faster lookup mechanism!
     for (const auto& binding : bindings) {
-      if (binding.name == name) { return &binding; }
+      if (binding.name == name) {
+        return &binding;
+      }
     }
     return nullptr;  // Not found
   }
 
   const ShaderBinding* ShaderProgram::getBinding(u32 set, u32 binding) const {
     for (const auto& b : bindings) {
-      if (b.set == set && b.binding == binding) return &b;
+      if (b.set == set && b.binding == binding)
+        return &b;
     }
     return nullptr;
   }
@@ -330,74 +528,10 @@ namespace ren {
     ImGui::Text("Shader Reflection:");
     reflection->inspect();
 
-    // ImGui::Text("Slang Program");
-    if (slangProgram.get() != NULL) inspectSlangComponent(slangProgram.get());
-
-    if (ImGui::BeginTable("##ShaderProgramBindings", 6, flags)) {
-      auto colFlags = ImGuiTableColumnFlags_NoHide | ImGuiTableColumnFlags_WidthStretch;
-      ImGui::TableSetupColumn("Set", colFlags);
-      ImGui::TableSetupColumn("Binding", colFlags);
-      ImGui::TableSetupColumn("Name", colFlags);
-      ImGui::TableSetupColumn("Type", colFlags);
-      ImGui::TableSetupColumn("Count", colFlags);
-      ImGui::TableSetupColumn("Stages", colFlags);
-      ImGui::TableHeadersRow();
-
-      for (const auto& binding : bindings) {
-        ImGui::TableNextRow();
-        ImGui::TableNextColumn();
-        ImGui::Text("%u", binding.set);
-        ImGui::TableNextColumn();
-        ImGui::Text("%u", binding.binding);
-        ImGui::TableNextColumn();
-        ImGui::Text("%s", binding.name.c_str());
-        ImGui::TableNextColumn();
-        ImGui::Text("%d", binding.type);
-        ImGui::TableNextColumn();
-        ImGui::Text("%u", binding.count);
-        ImGui::TableNextColumn();
-        ImGui::Text("%u", binding.stages);
-      }
-      ImGui::EndTable();
-    }
 
     ImGui::Separator();
   }
 
 
-
-  ref<ShaderObject> ShaderProgram::instantiate() {
-    auto& frame = getFrameData();
-    return make<ShaderObject>(this->shared_from_this(), frame.descriptorAllocator);
-  }
-
-
-  ShaderObject::ShaderObject(ref<ShaderProgram> program, DescriptorAllocator& descAlloc)
-      : program(program) {
-    const auto& layouts = program->getDescriptorSetLayouts();
-
-    for (size_t i = 0; i < layouts.size(); i++) {
-      if (layouts[i] == VK_NULL_HANDLE) {
-        sets.push_back(VK_NULL_HANDLE);
-        continue;
-      }
-
-      VkDescriptorSet descriptorSet;
-      bool success = descAlloc.allocate(&descriptorSet, layouts[i]);
-      if (!success) { throw std::runtime_error("Failed to allocate descriptor set"); }
-      sets.push_back(descriptorSet);
-    }
-  }
-
-
-  ShaderObject::~ShaderObject() {
-    auto& vulkan = ren::getVulkan();
-
-    // Descriptor sets are freed when the descriptor pool is reset.
-
-    // That said, if we ever wanted to free them individually, we could do so here:
-    // But I'm not sure we want to do that just yet.
-    // vkFreeDescriptorSets(vulkan.device, vulkan.descriptorPool, sets.size(), sets.data());
-  }
 
 }  // namespace ren

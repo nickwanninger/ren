@@ -7,6 +7,7 @@
 #include <ren/renderer/RenderPass.h>
 #include <ren/renderer/RenderTarget.h>
 #include <ren/assets/Vertex.h>
+#include <ren/renderer/shader/ParameterBinding.h>
 #include <ren/renderer/pipelines/PipelineStateObject.h>
 #include <functional>
 
@@ -119,6 +120,7 @@ namespace ren {
     ~RenderPassEncoder() = default;
 
 
+    // TODO: this should really return a ShaderEncoder of some kind.
     ref<ShaderObject> bindPipeline(ren::PipelineStateObject &pso);
     void bindPipeline(ren::PipelineStateObject &pso, ShaderObject &object);
 

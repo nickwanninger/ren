@@ -81,4 +81,20 @@ namespace ren {
   // Renders the log console in the current ImGui context
   void inspectLog();
 
+
+#define REN_ASSERT(cond)                                                      \
+  do {                                                                        \
+    if (!(cond)) {                                                            \
+      ren::errln("Assertion failed: {} at {}:{}", #cond, __FILE__, __LINE__); \
+      std::abort();                                                           \
+    }                                                                         \
+  } while (0)
+
+
+#define REN_ASSERT_FAILURE(msg)                                           \
+  do {                                                                    \
+    ren::errln("Assertion failed: {} at {}:{}", msg, __FILE__, __LINE__); \
+    std::abort();                                                         \
+  } while (0)
+
 }  // namespace ren

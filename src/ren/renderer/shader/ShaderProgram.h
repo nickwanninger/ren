@@ -4,9 +4,9 @@
 #include <ren/renderer/shader/ShaderModule.h>
 #include <ren/renderer/vulkan/Vulkan.h>
 #include <ren/renderer/Descriptors.h>
+#include <slang-com-ptr.h>
 #include <spirv_reflect/spirv_reflect.h>
 #include <ren/misc/json_serialize.h>
-#include <ren/renderer/shader/SlangCompiler.h>
 #include <ren/core/File.h>
 #include <ren/renderer/shader/ShaderReflection.h>
 #include <vector>
@@ -32,7 +32,6 @@ namespace ren {
     VkShaderStageFlags stages;
   };
 
-  class ShaderObject;
 
   // A shader program represents a set of shaders that are linked together
   // to form a pipeline.  It is responsible for reflecting the shader resources
@@ -60,12 +59,9 @@ namespace ren {
     ShaderProgram& operator=(ShaderProgram&&) = default;
 
 
-    ref<ShaderObject> instantiate();
-
 
     // -- Getters -- //
     VkPipelineLayout getPipelineLayout() const { return pipelineLayout; }
-    // TODO: abstract me! We want to also handle compute shaders perhaps!
     const std::vector<ref<ShaderModule>>& getShaders() const { return shaders; }
     const std::vector<ShaderBinding>& getBindings() const { return bindings; }
     const ShaderBinding* getBinding(const std::string_view& name) const;
@@ -92,6 +88,13 @@ namespace ren {
     void mergeDescriptorBindings();
     void bakeLayouts();
 
+    // Create a shader program from a slang file path, compiling the shader modules as needed.
+    void compileFromSlangPath(const std::string& slangFilePath);
+
+
+    Slang::ComPtr<slang::ISession> session;
+    Slang::ComPtr<slang::IComponentType> program;
+
     std::vector<ShaderBinding> bindings;
     ref<ren::ShaderReflection> reflection;
 
@@ -100,25 +103,6 @@ namespace ren {
     VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
 
     std::vector<ref<ShaderModule>> shaders;
-    Slang::ComPtr<slang::IComponentType> slangProgram;
-  };
-
-
-  class ShaderObject {
-   public:
-    ShaderObject(ref<ShaderProgram> program, DescriptorAllocator& descAlloc);
-    ~ShaderObject();
-
-
-    VkPipelineLayout getLayout() const { return program->getPipelineLayout(); }
-
-    const std::vector<VkDescriptorSet>& getDescriptorSets() const { return sets; }
-
-    auto getReflection(void) const { return program->getReflection(); }
-
-   private:
-    ref<ShaderProgram> program;
-    std::vector<VkDescriptorSet> sets;
   };
 
 

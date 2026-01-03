@@ -6,6 +6,7 @@
 #include <ren/renderer/RenderTarget.h>
 #include <ren/renderer/Descriptors.h>
 #include <ren/renderer/Fence.h>
+#include <ren/core/Arena.h>
 
 namespace ren {
 
@@ -57,6 +58,11 @@ namespace ren {
     constexpr static u32 query_count = 2;
     VkQueryPool queryPool = VK_NULL_HANDLE;
 
+
+    // Arena for per-frame allocations. All data in here is reset and freed at
+    // the start of each frame. Nothing long-lived should ever be allocated here.
+    ren::Arena arena{4096, true};
+
     FrameData(u32 frameIndex, Swapchain &sc, VkImage swapchainImage,
               VkImageView swapchainImageView);
     ~FrameData();
@@ -65,4 +71,44 @@ namespace ren {
     // timestamp query
     std::vector<u64> getQueryResults(void);
   };
+
+
+  // Get the current frame data from anywhere in the engine.
+  // This code is actually implemented in Swapchain.cpp.
+  // TODO: move me elsewhere!
+  FrameData &getFrameData(void);
+  inline u32 getFrameIndex(void) { return ren::getFrameData().frameIndex; }
+
+
+  template <typename T, typename... Args>
+  inline T *frameAlloc(Args &&...args) {
+    FrameData &frameData = ren::getFrameData();
+    return frameData.arena.push<T>(std::forward<Args>(args)...);
+  }
+
+
+  // This class wraps a pointer allocated from the current frame's arena.
+  // It basically does nothing fancy, and is a simple type-enforced wrapper.
+  template <typename T>
+  class FrameAllocated {
+   public:
+    FrameAllocated(T *ptr)
+        : ptr(ptr) {}
+
+    template <typename... Args>
+    FrameAllocated(Args &&...args)
+        : ptr(frameAlloc<T>(std::forward<Args>(args)...)) {}
+
+
+    inline T *operator->() { return ptr; }
+    inline T &operator*() { return *ptr; }
+    T *get(void) { return ptr; }
+  
+   private:
+    T *ptr;
+  };
+
+
+
+
 }  // namespace ren

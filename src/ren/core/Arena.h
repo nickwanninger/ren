@@ -1,8 +1,11 @@
 #pragma once
 
 
+#include <atomic>
+#include <mutex>
 #include <stdlib.h>
 #include <string.h>
+#include <type_traits>
 
 namespace ren {
 
@@ -15,18 +18,27 @@ namespace ren {
   class Arena {
     struct Block {
       Block* next;
-      size_t used;
+      std::atomic<size_t> used;
       size_t size;
       char data[0];
 
       void* allocate(size_t size) {
-        if (used + size > this->size) { return nullptr; }
-        void* ptr = &data[used];
-        used += size;
-        return ptr;
+        // Lock-free allocation using compare-and-swap
+        size_t old_used = used.load(std::memory_order_relaxed);
+        while (true) {
+          if (old_used + size > this->size) { return nullptr; }
+          if (used.compare_exchange_weak(old_used, old_used + size, std::memory_order_release,
+                                         std::memory_order_relaxed)) {
+            return &data[old_used];
+          }
+        }
       }
 
-      void clear() { used = 0; }
+      size_t clear() {
+        size_t old = used.exchange(0);
+        // Return the absolute number of bytes taken up by this block (previously)
+        return old + sizeof(Block);
+      }
     };
 
     struct DtorNode {
@@ -44,7 +56,8 @@ namespace ren {
     ~Arena() {
       clear();
 
-      Block* block = m_current_block;
+      // Free all blocks (no need for mutex as destructor is single-threaded)
+      Block* block = m_current_block.load(std::memory_order_acquire);
       while (block) {
         Block* next = block->next;
         ::free(block);
@@ -54,21 +67,22 @@ namespace ren {
 
 
     void* pushBytes(size_t size, bool zero = false) {
-      if (m_current_block == nullptr) { this->new_block(size); }
+      Block* current = m_current_block.load(std::memory_order_acquire);
 
-      // TODO: edge case!
-      // if (size > (m_arena_size - sizeof(Block))) {
-      //   return nullptr;
-      // }
-      void* ptr = m_current_block->allocate(size);
+      if (current == nullptr) { current = new_block(size); }
+
+      // Try to allocate from current block (lock-free)
+      void* ptr = current->allocate(size);
       if (ptr == nullptr) {
         if (m_can_grow) {
-          new_block(size);
-          ptr = m_current_block->allocate(size);
+          // Block is full, need a new one
+          current = new_block(size);
+          ptr = current->allocate(size);
         } else {
           return nullptr;
         }
       }
+
       // unlikely
       if (zero) memset(ptr, 0, size);
       return ptr;
@@ -86,8 +100,13 @@ namespace ren {
         T* p = (T*)node->data;
         ::new (p) T(std::forward<Args>(args)...);
         node->dtor = [](void* obj) { static_cast<T*>(obj)->~T(); };
-        node->next = m_dtor_list;
-        m_dtor_list = node;
+
+        // Lock-free prepend to destructor list using CAS
+        DtorNode* old_head = m_dtor_list.load(std::memory_order_relaxed);
+        do {
+          node->next = old_head;
+        } while (!m_dtor_list.compare_exchange_weak(old_head, node, std::memory_order_release,
+                                                    std::memory_order_relaxed));
         return p;
       }
     }
@@ -101,44 +120,63 @@ namespace ren {
       return p;
     }
 
-
     inline void disable_growth(void) { m_can_grow = false; }
-    inline size_t remaining(void) const { return m_current_block->size - m_current_block->used; }
 
-    void clear(void) {
+
+    // Clear the arena, running destructors and resetting all blocks, and return
+    // the number of bytes which were used.
+    size_t clear(void) {
+      std::lock_guard<std::mutex> lock(m_block_mutex);
+      size_t size = 0;
+
       // Run destructors
-      while (m_dtor_list) {
-        DtorNode* node = m_dtor_list;
-        node->dtor(node->data);
-        m_dtor_list = node->next;
+      DtorNode* dtor_node = m_dtor_list.load(std::memory_order_acquire);
+      while (dtor_node) {
+        dtor_node->dtor(dtor_node->data);
+        dtor_node = dtor_node->next;
       }
+      m_dtor_list.store(nullptr, std::memory_order_release);
 
-      // Clear blocks
-      Block* block = m_current_block;
+      // Clear blocks (reset their used counters)
+      Block* block = m_current_block.load(std::memory_order_acquire);
       while (block) {
-        block->clear();
+        size += block->clear();
         block = block->next;
       }
+      return size;
     }
 
 
    private:
     Block* new_block(size_t required_size) {
+      std::lock_guard<std::mutex> lock(m_block_mutex);
+
+      // Double-check that we still need a new block (another thread may have created one)
+      Block* current = m_current_block.load(std::memory_order_acquire);
+      if (current != nullptr) {
+        void* ptr = current->allocate(required_size);
+        if (ptr != nullptr) { return current; }
+      }
+
       size_t block_size = m_arena_size;
       if (required_size + sizeof(Block) > block_size) {
         block_size = required_size + sizeof(Block);
       }
       Block* new_block = (Block*)::malloc(sizeof(Block) + block_size);
       new_block->next = nullptr;
-      new_block->used = 0;
+      new_block->used.store(0, std::memory_order_relaxed);
       new_block->size = block_size;
-      if (m_current_block) { m_current_block->next = new_block; }
-      m_current_block = new_block;
+
+      // Link new block into the chain
+      if (current) { current->next = new_block; }
+
+      m_current_block.store(new_block, std::memory_order_release);
       return new_block;
     }
 
-    Block* m_current_block = nullptr;
-    DtorNode* m_dtor_list = nullptr;
+    std::atomic<Block*> m_current_block = nullptr;
+    std::atomic<DtorNode*> m_dtor_list = nullptr;
+    mutable std::mutex m_block_mutex;  // Protects block creation and clear operations
 
     size_t m_arena_size = 0;
     bool m_can_grow = 0;

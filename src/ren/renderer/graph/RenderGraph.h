@@ -46,7 +46,9 @@ namespace ren {
       return get<ren::ImageResource>(handle)->image;
     }
 
-    auto getResource(GraphHandle handle) const { return resourceTable.at(handle); }
+    auto getResource(GraphHandle handle) const {
+      return resourceTable.at(handle);
+    }
 
 
     // Declare a read of a resource by a task (used internally)
@@ -79,7 +81,9 @@ namespace ren {
      * @brief Get the current swapchain size.
      * @return The dimensions of the swapchain in pixels
      */
-    glm::uvec2 getSwapchainSize() const { return swapchainSize; }
+    glm::uvec2 getSwapchainSize() const {
+      return swapchainSize;
+    }
 
     // Compile the graph into a schedule of tasks to run using topological sort.
     // Starting from the task that writes the goal resource, computes task dependencies
@@ -114,7 +118,9 @@ namespace ren {
 
     inline GraphResourceType getResourceType(GraphHandle handle) const {
       auto it = resourceTable.find(handle);
-      if (it == resourceTable.end()) { throw std::runtime_error("Invalid graph handle"); }
+      if (it == resourceTable.end()) {
+        throw std::runtime_error("Invalid graph handle");
+      }
       return it->second->type;
     }
 
@@ -166,9 +172,12 @@ namespace ren {
 
     LambdaRenderTask(RenderGraph &graph, Callback func)
         : RenderTask(graph)
-        , m_func(std::move(func)) {}
+        , m_func(std::move(func)) {
+    }
 
-    void run(GraphRunContext &ctx) override { m_func(ctx); }
+    void run(GraphRunContext &ctx) override {
+      m_func(ctx);
+    }
 
    private:
     Callback m_func;
