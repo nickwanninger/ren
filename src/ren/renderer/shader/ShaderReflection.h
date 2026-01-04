@@ -3,6 +3,7 @@
 #include <slang.h>
 #include <ren/types.h>
 #include <spirv_reflect/spirv_reflect.h>
+#include <ren/core/OptionalInt.h>
 
 // This file implements an abstraction over various shader resource binding
 // reflection systems such as spirv-reflect and slang reflection. It allows
@@ -59,12 +60,12 @@ namespace ren {
       u8 depth = 0;               // depth in the tree.
       bool pushConstant = false;  // Is this location within a push constant block
 
-      std::optional<u32> bindingSet;             // Descriptor set
-      std::optional<u32> bindingIndex;           // Binding index within the set
-      std::optional<u32> byteOffset;             // Byte offset into a buffer (scalars)
-      std::optional<u32> byteSize;               // Size in bytes (if applicable)
-      std::optional<u32> arrayIndex;             // Array index (if applicable)
-      std::optional<u32> varyingIn, varyingOut;  // Varying location (if applicable)
+      OptionalInt<u16> bindingSet;             // Descriptor set
+      OptionalInt<u16> bindingIndex;           // Binding index within the set
+      OptionalInt<u32> byteOffset;             // Byte offset into a buffer (scalars)
+      OptionalInt<u32> byteSize;               // Size in bytes (if applicable)
+      OptionalInt<u32> arrayIndex;             // Array index (if applicable)
+      OptionalInt<u16> varyingIn, varyingOut;  // Varying location (if applicable)
 
       Location child(void) const;
       json toJson() const;
@@ -100,6 +101,7 @@ namespace ren {
     void parseFromSpirv(const u8* spirvData, size_t spirvSize);
     void parseFromSlang(slang::ProgramLayout* programLayout);
     void inspect();
+    json toJson() const;
 
     std::vector<Binding> bindings;
 
