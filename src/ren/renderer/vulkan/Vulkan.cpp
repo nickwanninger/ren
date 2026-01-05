@@ -32,32 +32,40 @@ static ren::Flag<bool> validationLayers("validation", true, "Enable Vulkan valid
 namespace {
   const char* getMessageTypeLabel(VkDebugUtilsMessageTypeFlagsEXT type) {
     // Can have multiple bits set, prioritize validation > performance > general
-    if (type & VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT) { return "VALIDATION"; }
-    if (type & VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT) { return "PERFORMANCE"; }
-    if (type & VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT) { return "GENERAL"; }
+    if (type & VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT) {
+      return "VALIDATION";
+    }
+    if (type & VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT) {
+      return "PERFORMANCE";
+    }
+    if (type & VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT) {
+      return "GENERAL";
+    }
     return "UNKNOWN";
   }
 }  // namespace
 
 // Custom debug callback - called by validation layers
-static VKAPI_ATTR VkBool32 VKAPI_CALL
-vulkanDebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
-                    VkDebugUtilsMessageTypeFlagsEXT messageType,
-                    const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData) {
+static VKAPI_ATTR VkBool32 VKAPI_CALL vulkanDebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+                                                          VkDebugUtilsMessageTypeFlagsEXT messageType,
+                                                          const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData) {
   // Skip verbose messages unless specifically debugging
-  if (messageSeverity < VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) { return VK_FALSE; }
+  if (messageSeverity < VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
+    return VK_FALSE;
+  }
 
-  if (messageType & VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT) { return VK_FALSE; }
+  if (messageType & VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT) {
+    return VK_FALSE;
+  }
 
   const char* typeLabel = getMessageTypeLabel(messageType);
 
 
   switch (messageSeverity) {
-#define PRINT(SEVERITY, printer)                                                \
-  case SEVERITY:                                                                \
-    printer("[VULKAN {}] {} {}", typeLabel,                                     \
-            pCallbackData->pMessageIdName ? pCallbackData->pMessageIdName : "", \
-            pCallbackData->pMessage ? pCallbackData->pMessage : "");            \
+#define PRINT(SEVERITY, printer)                                                                                \
+  case SEVERITY:                                                                                                \
+    printer("[VULKAN {}] {} {}", typeLabel, pCallbackData->pMessageIdName ? pCallbackData->pMessageIdName : "", \
+            pCallbackData->pMessage ? pCallbackData->pMessage : "");                                            \
     break;
 
 
@@ -66,8 +74,7 @@ vulkanDebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
     PRINT(VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT, ren::warnln);
     PRINT(VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT, ren::errln);
     default:
-      ren::dbgln("[VULKAN {}] {}", typeLabel,
-                 pCallbackData->pMessageIdName ? pCallbackData->pMessageIdName : "");
+      ren::dbgln("[VULKAN {}] {}", typeLabel, pCallbackData->pMessageIdName ? pCallbackData->pMessageIdName : "");
       break;
 #undef PRINT
   }
@@ -87,12 +94,16 @@ static ren::VulkanInstance* g_vulkan_instance = nullptr;
 
 ren::VulkanInstance& ren::getVulkan(void) {
   // REN_DEPRECATION_WARNING();
-  if (g_vulkan_instance == nullptr) { throw std::runtime_error("Vulkan instance not initialized"); }
+  if (g_vulkan_instance == nullptr) {
+    throw std::runtime_error("Vulkan instance not initialized");
+  }
   return *g_vulkan_instance;
 }
 
 ren::ref<ren::VulkanInstance> ren::getVulkanRef(void) {
-  if (g_vulkan_instance == nullptr) { throw std::runtime_error("Vulkan instance not initialized"); }
+  if (g_vulkan_instance == nullptr) {
+    throw std::runtime_error("Vulkan instance not initialized");
+  }
   return g_vulkan_instance->shared_from_this();
 }
 
@@ -127,18 +138,15 @@ void ren::VulkanInstance::init_instance(void) {
   ren::println("Enabling validation layers: {}", validationLayers.get() ? "Yes" : "No");
 
   // Configure validation layers with custom debug callback
-  auto inst_ret =
-      builder.set_app_name("Example Vulkan Application")
-          .request_validation_layers(validationLayers.get())
-          .set_debug_callback(vulkanDebugCallback)  // Custom callback for formatted output
-          .set_debug_messenger_severity(
-              VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
-              VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT |
-              VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT)  // Skip verbose by default
-          .add_debug_messenger_type(VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT)
-          .add_debug_messenger_type(VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT)
-          .require_api_version(1, 3, 0)
-          .build();
+  auto inst_ret = builder.set_app_name("Example Vulkan Application")
+                      .request_validation_layers(validationLayers.get())
+                      .set_debug_callback(vulkanDebugCallback)  // Custom callback for formatted output
+                      .set_debug_messenger_severity(VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT |
+                                                    VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT)  // Skip verbose by default
+                      .add_debug_messenger_type(VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT)
+                      .add_debug_messenger_type(VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT)
+                      .require_api_version(1, 3, 0)
+                      .build();
 
   if (!inst_ret) {
     std::cerr << "Failed to create Vulkan instance: " << inst_ret.error() << std::endl;
@@ -147,10 +155,8 @@ void ren::VulkanInstance::init_instance(void) {
 
   vkb::Instance vkb_inst = inst_ret.value();
 
-  fmt::print("Vulkan instance created with version: {}.{}.{}\n",
-             VK_VERSION_MAJOR(vkb_inst.instance_version),
-             VK_VERSION_MINOR(vkb_inst.instance_version),
-             VK_VERSION_PATCH(vkb_inst.instance_version));
+  fmt::print("Vulkan instance created with version: {}.{}.{}\n", VK_VERSION_MAJOR(vkb_inst.instance_version),
+             VK_VERSION_MINOR(vkb_inst.instance_version), VK_VERSION_PATCH(vkb_inst.instance_version));
 
   // grab the instance and store it away in the VulkanInstance class
   this->instance = vkb_inst.instance;
@@ -174,17 +180,17 @@ void ren::VulkanInstance::init_instance(void) {
   // Request the specific features you need
   VkPhysicalDeviceVulkan12Features vk12Features{
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
+      .descriptorIndexing = VK_TRUE,
       .shaderSampledImageArrayNonUniformIndexing = VK_TRUE,
       .descriptorBindingSampledImageUpdateAfterBind = VK_TRUE,
       .descriptorBindingPartiallyBound = VK_TRUE,
       .runtimeDescriptorArray = VK_TRUE,
-      .descriptorIndexing = VK_TRUE,
   };
   selector.add_required_extension(VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME);
   selector.set_required_features_12(vk12Features);
 
 
-  selector.set_minimum_version(1, 2);
+  selector.set_minimum_version(1, 3);
   selector.set_surface(surface);
 
 
@@ -201,17 +207,13 @@ void ren::VulkanInstance::init_instance(void) {
   // Print the selected physical device information
   fmt::print("Selected physical device: {}\n", physicalDevice.name);
   fmt::print("Physical device features:\n");
-  fmt::print("  Geometry Shader: {}\n",
-             physicalDevice.features.geometryShader ? "Enabled" : "Disabled");
-  fmt::print("  Anisotropic Filtering: {}\n",
-             physicalDevice.features.samplerAnisotropy ? "Enabled" : "Disabled");
-  fmt::print("  Fill Mode Non-Solid: {}\n",
-             physicalDevice.features.fillModeNonSolid ? "Enabled" : "Disabled");
+  fmt::print("  Geometry Shader: {}\n", physicalDevice.features.geometryShader ? "Enabled" : "Disabled");
+  fmt::print("  Anisotropic Filtering: {}\n", physicalDevice.features.samplerAnisotropy ? "Enabled" : "Disabled");
+  fmt::print("  Fill Mode Non-Solid: {}\n", physicalDevice.features.fillModeNonSolid ? "Enabled" : "Disabled");
   fmt::print("Physical device properties:\n");
   fmt::print("  Driver Version: {}\n", physicalDevice.properties.driverVersion);
   fmt::print("  API Version: {}.{}.{}\n", VK_VERSION_MAJOR(physicalDevice.properties.apiVersion),
-             VK_VERSION_MINOR(physicalDevice.properties.apiVersion),
-             VK_VERSION_PATCH(physicalDevice.properties.apiVersion));
+             VK_VERSION_MINOR(physicalDevice.properties.apiVersion), VK_VERSION_PATCH(physicalDevice.properties.apiVersion));
 
   this->physical_device = physicalDevice.physical_device;
 
@@ -227,8 +229,7 @@ void ren::VulkanInstance::init_instance(void) {
   vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &queue_family_count, nullptr);
 
   std::vector<VkQueueFamilyProperties> queue_families(queue_family_count);
-  vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &queue_family_count,
-                                           queue_families.data());
+  vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &queue_family_count, queue_families.data());
 
   // Iterate over all queue families
   for (uint32_t i = 0; i < queue_family_count; i++) {
@@ -252,11 +253,12 @@ void ren::VulkanInstance::init_instance(void) {
 
 
 
-  auto tryToMakeQueue = [&vkbDevice](vkb::QueueType type,
-                                     ref<SubmissionQueue> def) -> ref<SubmissionQueue> {
+  auto tryToMakeQueue = [&vkbDevice](vkb::QueueType type, ref<SubmissionQueue> def) -> ref<SubmissionQueue> {
     auto queue = vkbDevice.get_queue(type);
     auto index = vkbDevice.get_queue_index(type);
-    if (!queue || !index) { return def; }
+    if (!queue || !index) {
+      return def;
+    }
     return SubmissionQueue::make(queue.value(), index.value());
   };
 
@@ -306,8 +308,7 @@ void ren::VulkanInstance::init_instance(void) {
 
 
   this->swapchainFormat =
-      findSupportedFormat({VK_FORMAT_B8G8R8A8_SRGB, VK_FORMAT_R8G8B8A8_UNORM},
-                          VK_IMAGE_TILING_OPTIMAL, VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT);
+      findSupportedFormat({VK_FORMAT_B8G8R8A8_SRGB, VK_FORMAT_R8G8B8A8_UNORM}, VK_IMAGE_TILING_OPTIMAL, VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT);
 
 
   // Check out the memory properties
@@ -328,11 +329,21 @@ void ren::VulkanInstance::init_instance(void) {
     const VkMemoryType& type = memProperties.memoryTypes[i];
 
     std::string props;
-    if (type.propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) props += "DEVICE_LOCAL ";
-    if (type.propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) props += "HOST_VISIBLE ";
-    if (type.propertyFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) props += "HOST_COHERENT ";
-    if (type.propertyFlags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT) props += "HOST_CACHED ";
-    if (type.propertyFlags & VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT) props += "LAZILY_ALLOCATED ";
+    if (type.propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) {
+      props += "DEVICE_LOCAL ";
+    }
+    if (type.propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
+      props += "HOST_VISIBLE ";
+    }
+    if (type.propertyFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) {
+      props += "HOST_COHERENT ";
+    }
+    if (type.propertyFlags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT) {
+      props += "HOST_CACHED ";
+    }
+    if (type.propertyFlags & VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT) {
+      props += "LAZILY_ALLOCATED ";
+    }
     ren::println("  Type {}: Heap: {}, Property Flags: {}", i, type.heapIndex, props);
   }
 }
@@ -353,8 +364,8 @@ ren::VulkanInstance::~VulkanInstance() {
 
   // Destroy debug messenger if validation layers were enabled
   if (debug_messenger != VK_NULL_HANDLE) {
-    auto vkDestroyDebugUtilsMessengerEXT = reinterpret_cast<PFN_vkDestroyDebugUtilsMessengerEXT>(
-        vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT"));
+    auto vkDestroyDebugUtilsMessengerEXT =
+        reinterpret_cast<PFN_vkDestroyDebugUtilsMessengerEXT>(vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT"));
     if (vkDestroyDebugUtilsMessengerEXT) {
       vkDestroyDebugUtilsMessengerEXT(instance, debug_messenger, nullptr);
     }
@@ -369,10 +380,8 @@ ren::VulkanInstance::~VulkanInstance() {
 
 
 
-void ren::VulkanInstance::transitionImageLayout(VkCommandBuffer commandBuffer, VkImage image,
-                                                VkFormat format, VkImageLayout oldLayout,
-                                                VkImageLayout newLayout,
-                                                VkImageAspectFlags aspect) {
+void ren::VulkanInstance::transitionImageLayout(VkCommandBuffer commandBuffer, VkImage image, VkFormat format, VkImageLayout oldLayout,
+                                                VkImageLayout newLayout, VkImageAspectFlags aspect) {
   VkImageMemoryBarrier barrier{};
   barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
   barrier.oldLayout = oldLayout;
@@ -391,8 +400,7 @@ void ren::VulkanInstance::transitionImageLayout(VkCommandBuffer commandBuffer, V
   VkPipelineStageFlags destinationStage;
 
   // Set access masks and pipeline stages based on layouts
-  if (oldLayout == VK_IMAGE_LAYOUT_PRESENT_SRC_KHR &&
-      newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+  if (oldLayout == VK_IMAGE_LAYOUT_PRESENT_SRC_KHR && newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
     barrier.srcAccessMask = 0;  // Present doesn't need specific access
     barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
 
@@ -400,18 +408,15 @@ void ren::VulkanInstance::transitionImageLayout(VkCommandBuffer commandBuffer, V
     destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
 
   } else  // Common depth buffer transitions for G-buffer rendering
-    if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED &&
-        newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
+    if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
       // Initial transition - preparing for geometry pass
       barrier.srcAccessMask = 0;
-      barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
-                              VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+      barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 
       sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
       destinationStage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
 
-    } else if (oldLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL &&
-               newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+    } else if (oldLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
       // After geometry pass - preparing for lighting pass
       barrier.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
       barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
@@ -419,42 +424,35 @@ void ren::VulkanInstance::transitionImageLayout(VkCommandBuffer commandBuffer, V
       sourceStage = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
       destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
 
-    } else if (oldLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL &&
-               newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
+    } else if (oldLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
       // Back to depth attachment for next frame
       barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
-      barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
-                              VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+      barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 
       sourceStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
       destinationStage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
 
-    } else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED &&
-               newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
+    } else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
       barrier.srcAccessMask = 0;
       barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
 
       sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
       destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT;  // Texture transition
 
-    } else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL &&
-               newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+    } else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
       barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
       barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
 
       sourceStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
       destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
     } else {
-      throw std::invalid_argument(
-          fmt::format("Unsupported layout transition {} -> {}!", (u32)oldLayout, (u32)newLayout));
+      throw std::invalid_argument(fmt::format("Unsupported layout transition {} -> {}!", (u32)oldLayout, (u32)newLayout));
     }
 
-  vkCmdPipelineBarrier(commandBuffer, sourceStage, destinationStage, 0, 0, nullptr, 0, nullptr, 1,
-                       &barrier);
+  vkCmdPipelineBarrier(commandBuffer, sourceStage, destinationStage, 0, 0, nullptr, 0, nullptr, 1, &barrier);
 }
 
-void ren::VulkanInstance::transitionImageLayout(VkImage image, VkFormat format,
-                                                VkImageLayout oldLayout, VkImageLayout newLayout) {
+void ren::VulkanInstance::transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout) {
   VkCommandBuffer commandBuffer = beginSingleTimeCommands();
 
 
@@ -465,8 +463,7 @@ void ren::VulkanInstance::transitionImageLayout(VkImage image, VkFormat format,
 
 
 
-void ren::VulkanInstance::copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width,
-                                            uint32_t height) {
+void ren::VulkanInstance::copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height) {
   VkCommandBuffer commandBuffer = beginSingleTimeCommands();
 
   VkBufferImageCopy region{};
@@ -482,8 +479,7 @@ void ren::VulkanInstance::copyBufferToImage(VkBuffer buffer, VkImage image, uint
   region.imageOffset = {0, 0, 0};
   region.imageExtent = {width, height, 1};
 
-  vkCmdCopyBufferToImage(commandBuffer, buffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,
-                         &region);
+  vkCmdCopyBufferToImage(commandBuffer, buffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 
   endSingleTimeCommands(commandBuffer);
 }
@@ -491,17 +487,14 @@ void ren::VulkanInstance::copyBufferToImage(VkBuffer buffer, VkImage image, uint
 
 
 
-VkFormat ren::VulkanInstance::findSupportedFormat(const std::vector<VkFormat>& candidates,
-                                                  VkImageTiling tiling,
-                                                  VkFormatFeatureFlags features) {
+VkFormat ren::VulkanInstance::findSupportedFormat(const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features) {
   for (VkFormat format : candidates) {
     VkFormatProperties props;
     vkGetPhysicalDeviceFormatProperties(this->physical_device, format, &props);
 
     if (tiling == VK_IMAGE_TILING_LINEAR && (props.linearTilingFeatures & features) == features) {
       return format;
-    } else if (tiling == VK_IMAGE_TILING_OPTIMAL &&
-               (props.optimalTilingFeatures & features) == features) {
+    } else if (tiling == VK_IMAGE_TILING_OPTIMAL && (props.optimalTilingFeatures & features) == features) {
       return format;
     }
   }
@@ -510,15 +503,12 @@ VkFormat ren::VulkanInstance::findSupportedFormat(const std::vector<VkFormat>& c
 }
 
 
-bool hasStencilComponent(VkFormat format) {
-  return format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT;
-}
+bool hasStencilComponent(VkFormat format) { return format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT; }
 
 
 
 
-VkImageView ren::VulkanInstance::create_image_view(VkImage image, VkFormat format,
-                                                   VkImageAspectFlags aspectFlags) {
+VkImageView ren::VulkanInstance::create_image_view(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags) {
   REN_DEPRECATION_WARNING();
   VkImageViewCreateInfo viewInfo{};
   viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
@@ -541,10 +531,8 @@ VkImageView ren::VulkanInstance::create_image_view(VkImage image, VkFormat forma
 }
 
 
-void ren::VulkanInstance::create_image(uint32_t width, uint32_t height, VkFormat format,
-                                       VkImageTiling tiling, VkImageUsageFlags usage,
-                                       VkMemoryPropertyFlags properties, VkImage& image,
-                                       VkDeviceMemory& imageMemory) {
+void ren::VulkanInstance::create_image(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage,
+                                       VkMemoryPropertyFlags properties, VkImage& image, VkDeviceMemory& imageMemory) {
   REN_DEPRECATION_WARNING();
   VkImageCreateInfo imageInfo{};
   imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -640,8 +628,7 @@ u32 ren::VulkanInstance::find_memory_type(u32 typeFilter, VkMemoryPropertyFlags 
 
 
   for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
-    if ((typeFilter & (1 << i)) &&
-        (memProperties.memoryTypes[i].propertyFlags & properties) == properties) {
+    if ((typeFilter & (1 << i)) && (memProperties.memoryTypes[i].propertyFlags & properties) == properties) {
       return i;
     }
   }
@@ -722,4 +709,48 @@ VkSampler ren::VulkanInstance::createSampler(VkFilter filter) {
     throw std::runtime_error("failed to create texture sampler!");
   }
   return sampler;
+}
+
+
+
+
+const char* ren::VulkanInstance::stringifyEnum(VkDescriptorType type) {
+  switch (type) {
+    case VK_DESCRIPTOR_TYPE_SAMPLER:
+      return "SAMPLER";
+    case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
+      return "COMBINED_IMAGE_SAMPLER";
+    case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+      return "SAMPLED_IMAGE";
+    case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+      return "STORAGE_IMAGE";
+    case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
+      return "UNIFORM_TEXEL_BUFFER";
+    case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
+      return "STORAGE_TEXEL_BUFFER";
+    case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+      return "UNIFORM_BUFFER";
+    case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+      return "STORAGE_BUFFER";
+    case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
+      return "UNIFORM_BUFFER_DYNAMIC";
+    case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
+      return "STORAGE_BUFFER_DYNAMIC";
+    case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
+      return "INPUT_ATTACHMENT";
+    case VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK:
+      return "INLINE_UNIFORM_BLOCK";
+    case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR:
+      return "ACCELERATION_STRUCTURE_KHR";
+    case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV:
+      return "ACCELERATION_STRUCTURE_NV";
+    case VK_DESCRIPTOR_TYPE_SAMPLE_WEIGHT_IMAGE_QCOM:
+      return "SAMPLE_WEIGHT_IMAGE_QCOM";
+    case VK_DESCRIPTOR_TYPE_BLOCK_MATCH_IMAGE_QCOM:
+      return "BLOCK_MATCH_IMAGE_QCOM";
+    case VK_DESCRIPTOR_TYPE_MUTABLE_EXT:
+      return "MUTABLE_EXT";
+    default:
+      return "UNKNOWN";
+  }
 }

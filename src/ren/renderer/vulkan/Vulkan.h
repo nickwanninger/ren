@@ -128,6 +128,9 @@ namespace ren {
       return VK_SAMPLE_COUNT_1_BIT;
     }
 
+
+    static const char *stringifyEnum(VkDescriptorType type);
+
    private:
     void init_instance(void);
     void init_command_pool(void);

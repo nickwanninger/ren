@@ -78,6 +78,8 @@ namespace ren {
     // Serialization is currently simple. We need to be smarter about reading this back out, though.
     JSON_SERIALIZE(ShaderProgram, vertexShaderPath, fragmentShaderPath);
 
+    void temporarySerialize(const std::string_view &outDir);
+
    private:
     std::string vertexShaderPath;    // TODO(NUKE)
     std::string fragmentShaderPath;  // TODO(NUKE)
@@ -100,6 +102,7 @@ namespace ren {
 
     // Eventually, we generate a pipeline layout from the shader reflection.
     std::vector<VkDescriptorSetLayout> setLayouts;
+    std::vector<VkPushConstantRange> pushConstantRanges;
     VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
 
     std::vector<ref<ShaderModule>> shaders;

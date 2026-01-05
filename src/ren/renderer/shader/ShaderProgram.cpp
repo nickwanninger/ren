@@ -9,7 +9,8 @@
 #include <fmt/format.h>
 #include <ren/misc/DeprecationLogger.h>
 #include <imgui/imgui.h>
-
+#include <ren/core/ui/EditorUI.h>
+#include <ren/core/Bundle.h>
 #include <ren/core/Flag.h>
 
 
@@ -20,12 +21,13 @@ namespace ren {
     this->compileFromSlangPath(slangPath);
 
     // Reflect the spirv to compare with the slang reflection.
-    ren::println("-- Spirv --");
-    ShaderReflection spirvReflection;
-    for (auto& shader : shaders) {
-      spirvReflection.parseFromSpirv(reinterpret_cast<const u8*>(shader->getCode().data()),
-                                     shader->getCode().size() * sizeof(u32));
-    }
+    // ren::println("-- Spirv --");
+    // ShaderReflection spirvReflection;
+    // for (auto& shader : shaders) {
+    //   spirvReflection.parseFromSpirv(reinterpret_cast<const u8*>(shader->getCode().data()), shader->getCode().size() * sizeof(u32));
+    // }
+
+    // ren::println("Slang Reflection: {}", this->reflection->toJson().dump(2));
   }
 
   ShaderProgram::ShaderProgram(const std::string& vertexPath, const std::string& fragmentPath)
@@ -66,8 +68,7 @@ namespace ren {
 
   static Slang::ComPtr<slang::IGlobalSession> globalSession;
 
-  static ren::Flag<int> kSlangOptLevel(
-      "slang-opt-level", 2, "Optimization level for Slang compiler (0=None, 1=Default, 2=Maximum)");
+  static ren::Flag<int> kSlangOptLevel("slang-opt-level", 2, "Optimization level for Slang compiler (0=None, 1=Default, 2=Maximum)");
 
   // Helper to check diagnostics
   static void checkSlangDiagnostics(slang::IBlob* diagnosticsBlob) {
@@ -148,6 +149,15 @@ namespace ren {
       }
 
 
+      {
+        slang::CompilerOptionEntry opt = {};
+        opt.name = slang::CompilerOptionName::MatrixLayoutColumn;
+        opt.value.kind = slang::CompilerOptionValueKind::Int;
+        opt.value.intValue0 = 1;
+        compilerOptions.push_back(opt);
+      }
+
+
       targetDesc.compilerOptionEntries = compilerOptions.data();
       targetDesc.compilerOptionEntryCount = static_cast<SlangInt>(compilerOptions.size());
 
@@ -206,15 +216,13 @@ namespace ren {
     // Link the modules.
     {
       Slang::ComPtr<slang::IComponentType> unlinkedProgram;
-      if (SLANG_FAILED(this->session->createCompositeComponentType(
-              allComponents.data(), allComponents.size(), unlinkedProgram.writeRef()))) {
+      if (SLANG_FAILED(this->session->createCompositeComponentType(allComponents.data(), allComponents.size(), unlinkedProgram.writeRef()))) {
         checkSlangDiagnostics(diagnosticsBlob);
         throw std::runtime_error("Failed to create composite program");
       }
 
 
-      if (SLANG_FAILED(
-              unlinkedProgram->link(this->program.writeRef(), diagnosticsBlob.writeRef()))) {
+      if (SLANG_FAILED(unlinkedProgram->link(this->program.writeRef(), diagnosticsBlob.writeRef()))) {
         checkSlangDiagnostics(diagnosticsBlob);
         throw std::runtime_error("Failed to link program");
       }
@@ -227,10 +235,9 @@ namespace ren {
 
       {
         REN_PROFILE_SCOPE("GetEntryPointCode");
-        if (SLANG_FAILED(this->program->getEntryPointCode(
-                i,  // entry point index (we only have one in this composed program)
-                0,  // target index
-                spirvCode.writeRef(), diagnosticsBlob.writeRef()))) {
+        if (SLANG_FAILED(this->program->getEntryPointCode(i,  // entry point index (we only have one in this composed program)
+                                                          0,  // target index
+                                                          spirvCode.writeRef(), diagnosticsBlob.writeRef()))) {
           checkSlangDiagnostics(diagnosticsBlob);
           throw std::runtime_error("Failed to get entry point code");
         }
@@ -247,8 +254,9 @@ namespace ren {
         VkShaderStageFlagBits vulkanStage = slangStageToVulkan(slangStage);
 
         const char* name = "unknown";
-        if (auto epName = ep->getName())
+        if (auto epName = ep->getName()) {
           name = epName;
+        }
 
         auto mod = make<ShaderModule>(name, spirv, vulkanStage);
         shaders.push_back(mod);
@@ -259,6 +267,35 @@ namespace ren {
     this->reflection->parseFromSlang(this->program->getLayout());
 
 
+    for (const auto& node : reflection->getRoot()->members) {
+      if (node->type.type != ShaderReflection::Type::PushConstant) {
+        continue;
+      }
+
+      auto pcLoc = node->location;
+      if (!pcLoc.byteOffset || !pcLoc.byteSize) {
+        ren::errln("Push constant block missing byte offset/size, skipping...");
+        continue;
+      }
+      VkPushConstantRange range{};
+      range.offset = *pcLoc.byteOffset;
+      range.size = *pcLoc.byteSize;
+      range.stageFlags = VK_SHADER_STAGE_ALL;
+      range.stageFlags = VK_SHADER_STAGE_ALL;  // TODO: get from reflection somehow?
+      pushConstantRanges.push_back(range);
+    }
+
+    for (auto& r : this->reflection->bindings) {
+      ShaderBinding b = {
+          .name = r.path,
+          .set = r.set,
+          .binding = r.index,
+          .count = r.count,
+          .type = ShaderReflection::BindingType::toVkDescriptorType(r.type.type),
+          .stages = VK_SHADER_STAGE_ALL,  // TODO!!!
+      };
+      this->bindings.push_back(b);
+    }
 
     this->bakeLayouts();
   }
@@ -277,8 +314,7 @@ namespace ren {
 
   void ShaderProgram::reflectShader(const std::vector<u32>& spirv, VkShaderStageFlagBits stage) {
     SpvReflectShaderModule module;
-    SpvReflectResult result =
-        spvReflectCreateShaderModule(spirv.size() * sizeof(u32), (u32*)spirv.data(), &module);
+    SpvReflectResult result = spvReflectCreateShaderModule(spirv.size() * sizeof(u32), (u32*)spirv.data(), &module);
 
     if (result != SPV_REFLECT_RESULT_SUCCESS) {
       throw std::runtime_error("Failed to create SPIRV reflection module");
@@ -293,8 +329,7 @@ namespace ren {
     }
 
     std::vector<SpvReflectDescriptorBinding*> reflectionBindings(bindingCount);
-    result =
-        spvReflectEnumerateDescriptorBindings(&module, &bindingCount, reflectionBindings.data());
+    result = spvReflectEnumerateDescriptorBindings(&module, &bindingCount, reflectionBindings.data());
     if (result != SPV_REFLECT_RESULT_SUCCESS) {
       spvReflectDestroyShaderModule(&module);
       throw std::runtime_error("Failed to get descriptor reflectionBindings");
@@ -319,6 +354,16 @@ namespace ren {
       bindings.push_back(desc);
     }
 
+    // Generate push constant ranges
+    for (uint32_t i = 0; i < module.push_constant_block_count; ++i) {
+      const SpvReflectBlockVariable* pushConstantBlock = &module.push_constant_blocks[i];
+      VkPushConstantRange range{};
+      range.offset = pushConstantBlock->offset;
+      range.size = pushConstantBlock->size;
+      range.stageFlags = stage;
+      pushConstantRanges.push_back(range);
+    }
+
     spvReflectDestroyShaderModule(&module);
   }
 
@@ -327,14 +372,10 @@ namespace ren {
     struct Key {
       u32 set;
       u32 binding;
-      bool operator==(const Key& o) const {
-        return set == o.set && binding == o.binding;
-      }
+      bool operator==(const Key& o) const { return set == o.set && binding == o.binding; }
     };
     struct KeyHash {
-      size_t operator()(const Key& k) const {
-        return (size_t(k.set) << 16) ^ k.binding;
-      }
+      size_t operator()(const Key& k) const { return (size_t(k.set) << 16) ^ k.binding; }
     };
 
     std::unordered_map<Key, ShaderBinding, KeyHash> mergedMap;
@@ -348,8 +389,7 @@ namespace ren {
         // Validate descriptor type and count are consistent across stages
         if (m.type != b.type) {
           throw std::runtime_error(
-              fmt::format("Descriptor type mismatch for set {} binding {} across stages ({} vs {})",
-                          m.set, m.binding, (int)m.type, (int)b.type));
+              fmt::format("Descriptor type mismatch for set {} binding {} across stages ({} vs {})", m.set, m.binding, (int)m.type, (int)b.type));
         }
         if (m.count != b.count) {
           // Take the max to be conservative
@@ -359,8 +399,9 @@ namespace ren {
         m.stages |= b.stages;
         // Prefer a non-empty, longer name if they differ
         if (m.name != b.name) {
-          if (m.name.empty() || b.name.size() > m.name.size())
+          if (m.name.empty() || b.name.size() > m.name.size()) {
             m.name = b.name;
+          }
         }
       }
     }
@@ -368,11 +409,13 @@ namespace ren {
     // Rebuild sorted list for stable ordering (by set then binding); allow sparse sets
     std::vector<ShaderBinding> out;
     out.reserve(mergedMap.size());
-    for (auto& [k, v] : mergedMap)
+    for (auto& [k, v] : mergedMap) {
       out.push_back(v);
+    }
     std::sort(out.begin(), out.end(), [](const ShaderBinding& a, const ShaderBinding& b) {
-      if (a.set != b.set)
+      if (a.set != b.set) {
         return a.set < b.set;
+      }
       return a.binding < b.binding;
     });
     bindings = std::move(out);
@@ -401,11 +444,12 @@ namespace ren {
       layoutBinding.stageFlags = binding.stages;
       layoutBinding.pImmutableSamplers = nullptr;
 
-      ren::println("Binding: set {} binding {} type={} count={} stages=0x{:X}", binding.set,
-                   binding.binding, static_cast<int>(binding.type), binding.count, binding.stages);
+      ren::println("Binding: set {} binding {} type={} count={} stages=0x{:X}", binding.set, binding.binding, static_cast<int>(binding.type),
+                   binding.count, binding.stages);
 
-      if (binding.set > maxSet)
+      if (binding.set > maxSet) {
         maxSet = binding.set;
+      }
 
       setBindings[binding.set].push_back(layoutBinding);
     }
@@ -428,24 +472,19 @@ namespace ren {
     }
 
 
-
-    // TODO: also parse this!
-    // ---- Push Constants ---- //
-    VkPushConstantRange pushConstants{};
-    // this push constant range starts at the beginning
-    pushConstants.offset = 0;
-    // this push constant range takes up the size of a MeshPushConstants struct
-    pushConstants.size = sizeof(ren::MeshPushConstants);
-    // this push constant range is accessible only in the vertex shader
-    pushConstants.stageFlags = VK_SHADER_STAGE_ALL;
-
     // Create pipeline layout
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     pipelineLayoutInfo.setLayoutCount = static_cast<u32>(setLayouts.size());
     pipelineLayoutInfo.pSetLayouts = setLayouts.empty() ? nullptr : setLayouts.data();
-    pipelineLayoutInfo.pushConstantRangeCount = 1;
-    pipelineLayoutInfo.pPushConstantRanges = &pushConstants;
+
+    if (pushConstantRanges.empty()) {
+      pipelineLayoutInfo.pushConstantRangeCount = 0;
+      pipelineLayoutInfo.pPushConstantRanges = nullptr;
+    } else {
+      pipelineLayoutInfo.pushConstantRangeCount = static_cast<u32>(pushConstantRanges.size());
+      pipelineLayoutInfo.pPushConstantRanges = pushConstantRanges.data();
+    }
     vkCreatePipelineLayout(vulkan.device, &pipelineLayoutInfo, nullptr, &this->pipelineLayout);
   }
 
@@ -461,8 +500,9 @@ namespace ren {
 
   const ShaderBinding* ShaderProgram::getBinding(u32 set, u32 binding) const {
     for (const auto& b : bindings) {
-      if (b.set == set && b.binding == binding)
+      if (b.set == set && b.binding == binding) {
         return &b;
+      }
     }
     return nullptr;
   }
@@ -470,11 +510,13 @@ namespace ren {
 
 
   void ShaderProgram::inspect(void) {
+    auto colFlags = ImGuiTableColumnFlags_NoHide | ImGuiTableColumnFlags_WidthStretch;
+    if (eui::ButtonGreen("Serialize to Disk", ICON_SAVE)) {
+      this->temporarySerialize("out/shaders");
+    }
     ImGui::Text("Shader Modules:");
-    static ImGuiTableFlags flags = ImGuiTableFlags_BordersV | ImGuiTableFlags_BordersOuterH |
-                                   ImGuiTableFlags_RowBg | ImGuiTableFlags_NoBordersInBody;
+    static ImGuiTableFlags flags = ImGuiTableFlags_BordersV | ImGuiTableFlags_BordersOuterH | ImGuiTableFlags_RowBg | ImGuiTableFlags_NoBordersInBody;
     if (ImGui::BeginTable("##ShaderProgramModules", 5, flags)) {
-      auto colFlags = ImGuiTableColumnFlags_NoHide | ImGuiTableColumnFlags_WidthStretch;
       ImGui::TableSetupColumn("Name", colFlags);
       ImGui::TableSetupColumn("Type", colFlags);
       ImGui::TableSetupColumn("SPIR-V Size", colFlags);
@@ -501,8 +543,7 @@ namespace ren {
           // Dump SPIR-V to file
           auto dumpPath = fmt::format("{}.spv", module->getFilename());
           std::ofstream ofs(dumpPath, std::ios::binary);
-          ofs.write(reinterpret_cast<const char*>(module->getCode().data()),
-                    module->getCode().size() * sizeof(u32));
+          ofs.write(reinterpret_cast<const char*>(module->getCode().data()), module->getCode().size() * sizeof(u32));
           ofs.close();
           ren::println("Dumped SPIR-V to {}", dumpPath);
 
@@ -511,13 +552,11 @@ namespace ren {
           system(cmd.c_str());
           unlink(dumpPath.c_str());
           ren::ShaderReflection refl;
-          refl.parseFromSpirv(reinterpret_cast<const u8*>(module->getCode().data()),
-                              module->getCode().size() * sizeof(u32));
+          refl.parseFromSpirv(reinterpret_cast<const u8*>(module->getCode().data()), module->getCode().size() * sizeof(u32));
           // ren::println("Reflection:\n{}", refl.getRoot()->toJson().dump(2));
 
           for (const auto& b : refl.bindings) {
-            ren::println("Binding: set {} binding {} name {} type {}", b.set, b.index, b.path,
-                         static_cast<int>(b.node->type.type));
+            ren::println("Binding: set {} binding {} name {}", b.set, b.index, b.path);
           }
         }
       }
@@ -529,7 +568,112 @@ namespace ren {
     reflection->inspect();
 
 
+    if (ImGui::BeginTable("##ShaderProgramBindings", 5, flags)) {
+      ImGui::TableSetupColumn("Set", colFlags);
+      ImGui::TableSetupColumn("Binding", colFlags);
+      ImGui::TableSetupColumn("Type", colFlags);
+      ImGui::TableSetupColumn("Count", colFlags);
+      ImGui::TableSetupColumn("Stages", colFlags);
+      ImGui::TableHeadersRow();
+
+      for (const auto& binding : bindings) {
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::Text("%u", binding.set);
+        ImGui::TableNextColumn();
+        ImGui::Text("%u", binding.binding);
+        ImGui::TableNextColumn();
+        ImGui::Text("%s", ren::VulkanInstance::stringifyEnum(binding.type));
+        ImGui::TableNextColumn();
+        ImGui::Text("%u", binding.count);
+        ImGui::TableNextColumn();
+        ImGui::Text("0x%X", binding.stages);
+      }
+      ImGui::EndTable();
+    }
+
+
     ImGui::Separator();
+    ImGui::Text("Descriptor Set Layouts:");
+    if (ImGui::BeginTable("##ShaderProgramLayouts", 2, flags)) {
+      ImGui::TableSetupColumn("Set", colFlags);
+      ImGui::TableSetupColumn("Handle", colFlags);
+      ImGui::TableHeadersRow();
+
+      for (size_t i = 0; i < setLayouts.size(); ++i) {
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::Text("%zu", i);
+        ImGui::TableNextColumn();
+        ImGui::Text("%p", (void*)setLayouts[i]);
+      }
+      ImGui::EndTable();
+    }
+
+
+    ImGui::Separator();
+    ImGui::Text("Push Constant Ranges:");
+    if (ImGui::BeginTable("##PushConstantRanges", 3, flags)) {
+      ImGui::TableSetupColumn("Offset", colFlags);
+      ImGui::TableSetupColumn("Size", colFlags);
+      ImGui::TableSetupColumn("Stages", colFlags);
+      ImGui::TableHeadersRow();
+
+      for (const auto& range : pushConstantRanges) {
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::Text("%u", range.offset);
+        ImGui::TableNextColumn();
+        ImGui::Text("%u", range.size);
+        ImGui::TableNextColumn();
+        ImGui::Text("0x%X", range.stageFlags);
+      }
+      ImGui::EndTable();
+    }
+
+
+    ImGui::Separator();
+  }
+
+
+  void ShaderProgram::temporarySerialize(const std::string_view& outDir) {
+    // Ensure output directory exists
+    std::filesystem::create_directories(outDir);
+
+    json j;
+    j["reflection"] = reflection->toJson();
+
+
+    ren::BundleBuilder bundle;
+
+    // write the shader programs to disk as spirv.
+    auto shadersJson = json::array();
+    for (auto& shader : shaders) {
+      json js;
+      js["name"] = shader->getFilename();
+      js["stage"] = shader->getStage();
+
+      auto& code = shader->getCode();
+      auto blobIndex = bundle.attachBlob(code);
+      js["blob"] = blobIndex;
+
+      shadersJson.push_back(js);
+    }
+    bundle.setKey("shaders", shadersJson);
+
+    auto outPath = std::filesystem::path(outDir) / "shader_program.bundle";
+    bundle.write(outPath.string());
+
+    // // Serialize to JSON
+    // auto json = this->toJson();
+
+    // // Write to file
+    // auto outPath = std::filesystem::path(outDir) / "shader_program.json";
+    // std::ofstream ofs(outPath);
+    // ofs << json.dump(2);
+    // ofs.close();
+
+    // ren::println("Serialized ShaderProgram to {}", outPath.string());
   }
 
 

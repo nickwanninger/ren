@@ -7,15 +7,13 @@ namespace ren {
 
   ParameterCursor::ParameterCursor(ren::ShaderReflection::Node &node)
       : node(node) {
-    ren::println(" walk node '{}' ({})", node.name,
-                 node.location.toJson().dump());
+    ren::println(" walk node '{}' ({})", node.name, node.location.toJson().dump());
   }
 
 
   ParameterCursor ParameterCursor::element(int index) {
     if (index < 0 || index >= static_cast<int>(node.members.size())) {
-      throw std::runtime_error(fmt::format(
-          "ShaderCursor: element index '{}' out of bounds in node '{}'", index, node.name));
+      throw std::runtime_error(fmt::format("ShaderCursor: element index '{}' out of bounds in node '{}'", index, node.name));
     }
     return ParameterCursor(*node.members[index]);
   }
@@ -24,13 +22,14 @@ namespace ren {
   ParameterCursor ParameterCursor::field(const char *name) {
     // TODO: index?
     for (auto *child : node.members) {
-      if (child->name == name) return ParameterCursor(*child);
+      if (child->name == name) {
+        return ParameterCursor(*child);
+      }
     }
 
     // if we got here, throw.
     // TODO: exceptions are smelly.
-    throw std::runtime_error(
-        fmt::format("ShaderCursor: element '{}' not found in node '{}'", name, node.name));
+    throw std::runtime_error(fmt::format("ShaderCursor: element '{}' not found in node '{}'", name, node.name));
   }
 
 
@@ -39,9 +38,8 @@ namespace ren {
     // doesn't have this information, default to 0 bytes.
     auto allowedBytes = node.location.byteSize.value_or(0);
     if (size > allowedBytes) {
-      throw std::runtime_error(fmt::format(
-          "ShaderCursor: write of {} bytes exceeds allowed size of {} bytes in node '{}'", size,
-          allowedBytes, node.name));
+      throw std::runtime_error(
+          fmt::format("ShaderCursor: write of {} bytes exceeds allowed size of {} bytes in node '{}'", size, allowedBytes, node.name));
     }
 
     u32 offset = node.location.byteOffset.value_or(0);
@@ -52,8 +50,7 @@ namespace ren {
     for (size_t i = 0; i < size; i++) {
       dataStr += fmt::format("{:02X} ", ((u8 *)data)[i]);
     }
-    ren::println("write {} bytes to node '{}' at binding {}, offset {}: {}", size, node.name,
-                 bindingIndex, offset, dataStr);
+    ren::println("write {} bytes to node '{}' at binding {}, offset {}: {}", size, node.name, bindingIndex, offset, dataStr);
   }
 
 
@@ -68,12 +65,13 @@ namespace ren {
 
     // now try to find the node.
     for (auto *child : root->members) {
-      if (child->name == name) { node = child; }
+      if (child->name == name) {
+        node = child;
+      }
     }
 
     if (node == nullptr) {
-      throw std::runtime_error(
-          fmt::format("ShaderRoot: parameter block '{}' not found in program", name));
+      throw std::runtime_error(fmt::format("ShaderRoot: parameter block '{}' not found in program", name));
     }
 
 
@@ -88,6 +86,12 @@ namespace ren {
 
 
     return ParameterCursor(*node);
+  }
+
+
+
+  ParameterBlock::ParameterBlock(void) {
+    //
   }
 
 

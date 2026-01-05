@@ -3,7 +3,6 @@
 #include <string>
 #include <set>
 
-#include "./SlangPrinter.h"
 #include <slang-com-ptr.h>
 #include <slang.h>
 #include <imgui/imgui.h>
@@ -40,7 +39,6 @@ namespace ren {
   // Make a child of this location
   ShaderReflection::Location ShaderReflection::Location::child(void) const {
     Location loc = *this;
-    loc.depth += 1;
     return loc;
   }
 
@@ -85,13 +83,25 @@ namespace ren {
 
   bool BindingType::allowedInTopLevel(Type type) {
     switch (type) {
-#define TYPE(a, flags, allowed) \
-  case Type::a:                 \
+#define TYPE(a, flags, allowed, vkT) \
+  case Type::a:                      \
     return allowed;
 #include "./ShaderReflectionTypes.def"
 #undef TYPE
       default:
         return false;
+    }
+  }
+
+  VkDescriptorType BindingType::toVkDescriptorType(Type type) {
+    switch (type) {
+#define TYPE(a, flags, allowed, vkT) \
+  case Type::a:                      \
+    return (VkDescriptorType)vkT;
+#include "./ShaderReflectionTypes.def"
+#undef TYPE
+      default:
+        return VK_DESCRIPTOR_TYPE_MAX_ENUM;
     }
   }
 
@@ -345,16 +355,19 @@ namespace ren {
 
 
 
-  static void applyOffset(std::optional<u32>& base, u32 offset) { base = base ? *base + offset : offset; }
+  template <typename T>
+  static void applyOffset(OptionalInt<T>& base, u32 offset) {
+    base = base ? *base + offset : offset;
+  }
 
   bool adjustLocation(const char* debugName, ShaderReflection::Location& loc, slang::ParameterCategory layoutUnit, u32 offset, u32 space) {
     switch (layoutUnit) {
       case slang::ParameterCategory::DescriptorTableSlot:
-        applyOffset(loc.bindingIndex, offset);
+        // applyOffset(loc.bindingIndex, offset);
         applyOffset(loc.bindingSet, space);
         break;
       case slang::ParameterCategory::SubElementRegisterSpace:
-        applyOffset(loc.bindingIndex, 0);
+        // applyOffset(loc.bindingIndex, 0);
         applyOffset(loc.bindingSet, offset);
         break;
       case slang::ParameterCategory::Uniform:
@@ -387,6 +400,10 @@ namespace ren {
     const char* debugName = vl->getName() ? vl->getName() : "<unnamed>";
 
     auto newLoc = loc;
+    newLoc.stage = vl->getStage();
+    // newLoc.rangeIndexInSet = vl->getBindingIndex();
+    newLoc.bindingIndex = vl->getBindingIndex();
+
     int usedLayoutUnitCount = vl->getCategoryCount();
     for (int i = 0; i < usedLayoutUnitCount; ++i) {
       auto layoutUnit = vl->getCategoryByIndex(i);
@@ -875,8 +892,9 @@ namespace ren {
       auto globalTypeLayout = globalParams->getTypeLayout();
       if (globalTypeLayout) {
         if (globalTypeLayout->getKind() != slang::TypeReflection::Kind::Struct) {
-          throw std::runtime_error(
-              "Slang globals must be explicit, and without automatically inserted constant structs or parameter blocks. This is a temporary limitation.");
+          // throw std::runtime_error(
+          //     "Slang globals must be explicit, and without automatically inserted constant structs or parameter blocks. This is a temporary
+          //     limitation.");
         }
         // Traverse global scope (usually a struct containing all globals)
         u32 fieldCount = globalTypeLayout->getFieldCount();
@@ -966,8 +984,15 @@ namespace ren {
   }
 
 
-  static bool hasRealBinding(const BindingType type) {
-    switch (type.type) {
+  static bool hasRealBinding(const Node* node) {
+
+    // special case ParameterBlock which has a byte size! They need an implicit uniform buffer binding.
+    if (node->type.type == ShaderReflection::Type::ParameterBlock && node->location.byteSize && *node->location.byteSize > 0) {
+      return true;
+    }
+
+
+    switch (node->type.type) {
 #define TYPE(a, flags, ...)       \
   case ShaderReflection::Type::a: \
     return (flags & SRT_RESOURCE) ? true : false;
@@ -1004,7 +1029,7 @@ namespace ren {
 
       std::string currentPath = path.empty() ? node->name : path + "." + node->name;
 
-      if (node->location.bindingSet && node->location.bindingIndex && hasRealBinding(node->type)) {
+      if (node->location.bindingSet && node->location.bindingIndex && hasRealBinding(node)) {
         auto& binding = ensureBinding(*node->location.bindingSet, *node->location.bindingIndex);
         binding.type = node->type;
         binding.path = currentPath;
@@ -1248,5 +1273,25 @@ namespace ren {
     }
 #endif
   }
+
+  json ShaderReflection::toJson() const {
+    json j;
+
+    if (root) {
+      j["root"] = *root;
+    }
+
+
+    j["bindings"] = json::array();
+
+    for (const auto& b : bindings) {
+      j["bindings"].push_back(b);
+    }
+
+    return j;
+  }
+
+
+
 
 }  // namespace ren

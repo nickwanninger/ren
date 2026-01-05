@@ -74,8 +74,6 @@ VertexOutput vertexMain(Vertex input, uint vertexId: SV_VertexID) {
   return output;
 }
 
-
-
 // Warp function. Variations have been around for years. This is
 // almost the same as Fabrice's version:
 // Fabrice - Plop 2
@@ -107,8 +105,12 @@ float3 smoothFract(float3 x) {
   return min(x, x * (1. - x) * 12.);
 }
 
+struct FragmentOutput {
+  float4 color : SV_Target;
+  // float4 color2 : SV_Target1;
+};
 [shader("fragment")]
-float4 fragmentMain(VertexOutput input) : SV_Target {
+FragmentOutput fragmentMain(VertexOutput input) {
   // https://www.shadertoy.com/view/4l2XWK
   float resx = 1920.0;
 
@@ -140,5 +142,8 @@ float4 fragmentMain(VertexOutput input) : SV_Target {
   float ref = max(dot(reflect(rd, sn), float3(1)), 0.);
   col += col * pow(ref, 4.) * float3(.25, .5, 1) * 3.;
 
-  return float4(sqrt(clamp(col, 0., 1.)), 1);
+  FragmentOutput output;
+  output.color = float4(sqrt(clamp(col, 0., 1.)), 1);
+  // output.color2 = 1 - output.color;
+  return output;
 }

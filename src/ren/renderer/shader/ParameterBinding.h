@@ -53,12 +53,18 @@ namespace ren {
 
   // This class represents the GPU state to wrap up a parameter block in a shader.
   // TODO: RHI
-  class ParameterBlock : public RefCounted<ParameterBlock>, public VulkanResource {
+  class ParameterBlock : public RefCounted<ParameterBlock> {
     // TODO: this needs to have a few things:
     // - DescriptorSet handle.
     // - Layout info, probably
     // - an array of bound resources. This is so we can track what is bound where, and update
     //   things like buffers by copying data into them.
+
+    public:
+
+    ParameterBlock ();
+
+    private:
   };
 
 

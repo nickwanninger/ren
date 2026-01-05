@@ -1,6 +1,7 @@
 #pragma once
 
 
+#include "ren/misc/json_serialize.h"
 namespace ren {
 
 
@@ -21,6 +22,20 @@ namespace ren {
     T value_or(T defaultValue) const { return hasValue() ? m_value : defaultValue; }
 
 
+
+
+    json toJson() const {
+      return hasValue() ? json(m_value) : json(nullptr);
+    }
+
+    bool fromJson(const json& j) {
+      if (j.is_null()) {
+        m_value = NoneValue;
+        return true;
+      }
+      m_value = j.get<T>();
+      return true;
+    }
 
    private:
     T m_value;

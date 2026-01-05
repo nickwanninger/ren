@@ -51,21 +51,21 @@ namespace ren {
 
       std::string toString(void) const;
       static bool allowedInTopLevel(Type type);
+      static VkDescriptorType toVkDescriptorType(Type type);
 
       inline bool operator==(const BindingType& other) const { return type == other.type && elementType == other.elementType; }
       inline bool operator!=(const BindingType& other) const { return !(*this == other); }
     };
 
     struct Location {
-      u8 depth = 0;               // depth in the tree.
+      SlangStage stage;
       bool pushConstant = false;  // Is this location within a push constant block
-
       OptionalInt<u16> bindingSet;             // Descriptor set
       OptionalInt<u16> bindingIndex;           // Binding index within the set
+      OptionalInt<u16> varyingIn, varyingOut;  // Varying location (if applicable)
       OptionalInt<u32> byteOffset;             // Byte offset into a buffer (scalars)
       OptionalInt<u32> byteSize;               // Size in bytes (if applicable)
       OptionalInt<u32> arrayIndex;             // Array index (if applicable)
-      OptionalInt<u16> varyingIn, varyingOut;  // Varying location (if applicable)
 
       Location child(void) const;
       json toJson() const;
@@ -83,6 +83,7 @@ namespace ren {
       json meta;  // Additional metadata (if any)
 
       json toJson(void) const;
+
     };
 
 
@@ -91,11 +92,15 @@ namespace ren {
       std::string path;  // "material.albedo", for example
       BindingType type = Type::Unknown;
       Node* node;
+
+      TO_JSON(Binding, set, index, count, path /* TODO: type */);
     };
 
 
     ShaderReflection() = default;
     ~ShaderReflection() = default;
+
+
 
     Node* getRoot() const { return root; }
     void parseFromSpirv(const u8* spirvData, size_t spirvSize);
