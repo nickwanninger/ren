@@ -1,6 +1,6 @@
-#include <ren/renderer/FrameSubmissionUnit.h>
+#include <ren/renderer/submission/FrameSubmissionUnit.h>
 #include <ren/renderer/Swapchain.h>
-#include <ren/renderer/SubmissionQueue.h>
+#include <ren/renderer/submission/SubmissionQueue.h>
 #include <ren/renderer/Image.h>
 #include <fmt/core.h>
 

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <ren/types.h>
-#include <ren/renderer/SubmissionQueue.h>
+#include <ren/renderer/submission/SubmissionQueue.h>
 #include <ren/core/Arena.h>
 #include <ren/renderer/Descriptors.h>
 

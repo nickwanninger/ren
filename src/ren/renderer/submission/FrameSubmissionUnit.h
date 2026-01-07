@@ -1,7 +1,7 @@
 #pragma once
 
 #include <ren/types.h>
-#include <ren/renderer/SubmissionUnit.h>
+#include <ren/renderer/submission/SubmissionUnit.h>
 #include <ren/renderer/Image.h>
 #include <ren/renderer/RenderTarget.h>
 

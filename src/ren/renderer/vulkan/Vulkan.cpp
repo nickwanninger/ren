@@ -1,6 +1,6 @@
 #include <ren/renderer/vulkan/Vulkan.h>
 #include <ren/renderer/shader/ShaderModule.h>
-#include <ren/renderer/SubmissionQueue.h>
+#include <ren/renderer/submission/SubmissionQueue.h>
 #include <ren/core/Instrumentation.h>
 #include <ren/misc/DeprecationLogger.h>
 

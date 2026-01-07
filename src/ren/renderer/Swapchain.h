@@ -4,7 +4,7 @@
 #include <ren/renderer/vulkan/Vulkan.h>
 #include <ren/renderer/Image.h>
 #include <SDL3/SDL.h>
-#include <ren/renderer/FrameSubmissionUnit.h>
+#include <ren/renderer/submission/FrameSubmissionUnit.h>
 
 namespace ren {
 

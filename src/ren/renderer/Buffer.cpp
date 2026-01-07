@@ -1,7 +1,7 @@
 #include <ren/renderer/Buffer.h>
 #include <ren/renderer/vulkan/Vulkan.h>
 #include <ren/core/Instrumentation.h>
-#include <ren/renderer/SubmissionQueue.h>
+#include <ren/renderer/submission/SubmissionQueue.h>
 
 
 ren::Buffer::Buffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties)

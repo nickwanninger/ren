@@ -4,7 +4,7 @@
 
 #include <ren/renderer/pipelines/PipelineStateObject.h>
 #include <ren/misc/hash.h>
-#include <ren/renderer/SubmissionQueue.h>
+#include <ren/renderer/submission/SubmissionQueue.h>
 
 #include <imgui.h>
 #include <backends/imgui_impl_vulkan.h>
@@ -418,6 +418,38 @@ namespace ren {
 
         ImGui::EndMainMenuBar();
       }
+
+
+      ImGui::Begin("VRAM");
+      {
+        auto start = std::chrono::high_resolution_clock::now();
+
+        VmaBudget budgets[VK_MAX_MEMORY_HEAPS];
+        vmaGetHeapBudgets(getVulkan().allocator, budgets);
+
+        VkPhysicalDeviceMemoryProperties memProps;
+        vkGetPhysicalDeviceMemoryProperties(getVulkan().physical_device, &memProps);
+
+        auto end = std::chrono::high_resolution_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
+
+        ImGui::Text("Query took %lluns", duration);
+        // 3. Iterate through memory heaps to find VRAM
+        for (uint32_t i = 0; i < memProps.memoryHeapCount; i++) {
+          u64 budget = budgets[i].budget;
+          u64 usage = budgets[i].usage;
+          u64 total = memProps.memoryHeaps[i].size;
+
+          float usagePercent = (float)usage / (float)budget * 100.0f;
+
+          ImGui::Text("VRAM Heap %u: %llu MB used / %llu MB budget / %llu MB total", i, usage / (1024 * 1024), budget / (1024 * 1024),
+                      total / (1024 * 1024));
+
+          // display a progress bar
+          ImGui::ProgressBar(usagePercent / 100.0f, ImVec2(-1.0f, 0.0f), fmt::format("{:.2f} %", usagePercent).c_str());
+        }
+      }
+      ImGui::End();
 
 
 

@@ -1,7 +1,7 @@
 #include <ren/renderer/Renderer.h>
 #include <ren/misc/DeprecationLogger.h>
 #include <ren/renderer/CommandEncoder.h>
-#include <ren/renderer/SubmissionQueue.h>
+#include <ren/renderer/submission/SubmissionQueue.h>
 #include <ren/core/Flag.h>
 
 namespace ren {

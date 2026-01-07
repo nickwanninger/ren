@@ -1,6 +1,6 @@
 #include <ren/renderer/CommandEncoder.h>
 #include <ren/renderer/Renderer.h>
-#include <ren/renderer/SubmissionUnit.h>
+#include <ren/renderer/submission/SubmissionUnit.h>
 
 namespace ren {
 

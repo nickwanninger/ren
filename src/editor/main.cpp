@@ -11,9 +11,9 @@
 #include <ren/core/Systems.h>
 #include <ren/core/Components.h>
 #include <ren/renderer/shader/ParameterBinding.h>
+#include <ren/renderer/submission/SubmissionUnit.h>
 
-ren::Flag<std::string> loadArg("load", "assets/test/meshes/simple_scene.glb",
-                               "Path to a mesh to load at startup");
+ren::Flag<std::string> loadArg("load", "assets/test/meshes/simple_scene.glb", "Path to a mesh to load at startup");
 
 
 ren::Flag<float> scaleArg("load-scale", 1.0f, "Uniform scale to apply to the loaded mesh");
