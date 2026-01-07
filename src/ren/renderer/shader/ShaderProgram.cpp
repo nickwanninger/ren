@@ -563,9 +563,11 @@ namespace ren {
       ImGui::EndTable();
     }
 
-    ImGui::Separator();
-    ImGui::Text("Shader Reflection:");
-    reflection->inspect();
+
+    if (reflection) {
+      ImGui::SeparatorText("Shader Reflection");
+      reflection->inspect();
+    }
 
 
     if (ImGui::BeginTable("##ShaderProgramBindings", 5, flags)) {

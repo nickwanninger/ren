@@ -1,5 +1,6 @@
 #include <ren/renderer/CommandEncoder.h>
 #include <ren/renderer/Renderer.h>
+#include <ren/renderer/SubmissionUnit.h>
 
 namespace ren {
 
@@ -28,9 +29,10 @@ namespace ren {
 
 
   void CommandEncoder::reset(void) {
-    // Reset the arena.
-    arena.clear();
+    // Nothing to do here - resources are managed by SubmissionUnit
   }
+
+  ren::Arena &CommandEncoder::getArena(void) { return submissionUnit.getArena(); }
 
 
   void RenderPassEncoder::setScissor(glm::uvec2 pos, glm::uvec2 size) {

@@ -60,11 +60,19 @@ namespace ren {
     // - an array of bound resources. This is so we can track what is bound where, and update
     //   things like buffers by copying data into them.
 
-    public:
+   public:
+    // Allcate a new ParameterBlock for the given layout, along with a node.
+    ParameterBlock(ref<ShaderReflection> refl, ren::ShaderReflection::Node& node, VkDescriptorSetLayout layout);
 
-    ParameterBlock ();
+   protected:
+    friend class ParameterCursor;
+    ref<ShaderReflection> refl;
+    ren::ShaderReflection::Node& node;
 
-    private:
+    // TODO: allow these to exist longer than per frame, which means we need to
+    // abstract descriptor sets to allow them to not all just be freed at the
+    // start of a frame with a VkDescriptorPool reset.
+    VkDescriptorSet descriptorSet;
   };
 
 
@@ -74,8 +82,8 @@ namespace ren {
   // to find fields, array elements, etc.
   class ParameterCursor {
    public:
-    // TODO: accept a CommandEncoder. (or just the ShaderRoot?)
-    ParameterCursor(ren::ShaderReflection::Node& node);
+    // TODO: accept a CommandEncoder. (or just the ShaderObject?)
+    ParameterCursor(ref<ParameterBlock> block, ShaderReflection::Node &node);
 
     ParameterCursor field(const char* name);
     ParameterCursor element(int index);
@@ -97,6 +105,7 @@ namespace ren {
     void writeBytes(const void* data, size_t size);
 
 
+    ref<ParameterBlock> block;
     ShaderReflection::Node& node;
   };
 

@@ -9,16 +9,16 @@
 
 
 
-static ren::FrameData *g_frameData = nullptr;
+static ren::FrameSubmissionUnit *g_frameUnit = nullptr;
 
 
 
 namespace ren {
-  FrameData &getFrameData(void) {
-    if (!g_frameData) {
-      throw std::runtime_error("Frame data not initialized. Call Swapchain::init() first.");
+  FrameSubmissionUnit &getFrameUnit(void) {
+    if (!g_frameUnit) {
+      throw std::runtime_error("Frame unit not initialized. Call Swapchain::init() first.");
     }
-    return *g_frameData;
+    return *g_frameUnit;
   }
 
 
@@ -76,7 +76,7 @@ namespace ren {
                deviceExtent.width, deviceExtent.height, (u32)imageFormat);
 
     for (size_t i = 0; i < images.size(); i++) {
-      frames.push_back(makeBox<ren::FrameData>((u32)i, *this, images[i], imageViews[i]));
+      frames.push_back(makeBox<ren::FrameSubmissionUnit>((u32)i, *this, images[i], imageViews[i]));
     }
   }
 
@@ -93,7 +93,7 @@ namespace ren {
   }
 
 
-  ren::FrameData *Swapchain::acquireNextFrame(void) {
+  ren::FrameSubmissionUnit *Swapchain::acquireNextFrame(void) {
     REN_PROFILE_FUNCTION();
     auto &vulkan = ren::getVulkan();
     if (frames.empty()) {
@@ -102,42 +102,24 @@ namespace ren {
     }
     frameIndex = vulkan.frame_number % frames.size();
 
-    // Get the current frame data.
-    auto frameData = frames[frameIndex].get();
-    g_frameData = frameData;
-
-    // assert(frameData->frameIndex == frameIndex);
-    {
-      REN_PROFILE_SCOPE("Wait for fences");
-      frameData->inFlightFence->awaitCompletion(true);
-    }
-
-    // Reset the command buffer for this frame.
-    vkResetCommandBuffer(frameData->commandBuffer, 0);
-
+    // Get the current frame unit
+    auto frameUnit = frames[frameIndex].get();
+    g_frameUnit = frameUnit;
 
     REN_PROFILE_SCOPE("AcquireNextImage");
     auto result = vkAcquireNextImageKHR(vulkan.device, this->swapchain, UINT64_MAX,
-                                        frameData->imageAvailableSemaphore, VK_NULL_HANDLE,
-                                        &frameData->frameIndex);
+                                        frameUnit->imageAvailableSemaphore, VK_NULL_HANDLE,
+                                        &frameUnit->frameIndex);
 
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
       ren::dbgln("Swapchain image out of date. Rebuilding...");
       return nullptr;
     } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
       ren::errln("Failed to acquire swapchain image {}", (int)result);
-      // TODO: what does this mean? I usually see -4 here.
       return nullptr;
     }
 
-    // Reset the in-flight fence for this frame *after* we successfully acquired
-    // the image, as if vkAcquireNextImageKHR returns VK_ERROR_OUT_OF_DATE_KHR
-    // (window resize), we return from the function early. If we had already
-    // reset the fence, the next time we call acquireNextFrame, we would wait on
-    // a fence that is not actually in flight, causing a stall.
-    frameData->inFlightFence->reset();
-
-    return frameData;
+    return frameUnit;
   }
 
 }  // namespace ren

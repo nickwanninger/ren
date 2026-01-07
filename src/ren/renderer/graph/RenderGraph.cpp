@@ -309,8 +309,9 @@ namespace ren {
 
     auto runStart = std::chrono::high_resolution_clock::now();
     // Execute the schedule with the provided renderer
-    GraphRunContext ctx(*this, renderer, *ren::getFrameData().commandEncoder);
-    ctx.cmd = ren::getFrameData().commandBuffer;
+    auto &frame = ren::getFrameUnit();
+    GraphRunContext ctx(*this, renderer, *frame.getMainCommandEncoder());
+    ctx.cmd = frame.getMainCommandEncoder()->buf();
     for (const auto &task : schedule.getTasks()) {
       ctx.task = task;
       task->execute(ctx);

@@ -6,6 +6,14 @@
 
 namespace ren {
 
+
+  struct SubmissionInfo {
+    std::span<VkCommandBuffer> cmds;
+    std::span<VkSemaphore> waitSemaphores = {};
+    std::span<VkPipelineStageFlags> waitStages = {};
+    std::span<VkSemaphore> signalSemaphores = {};
+  };
+
   class SubmissionQueue : public RefCounted<SubmissionQueue> {
    public:
     inline SubmissionQueue(VkQueue queue, u32 familyIndex)
@@ -17,10 +25,9 @@ namespace ren {
     void waitForIdle();
 
     inline u32 family() const { return familyIndex; }
+    ref<Fence> submit(const SubmissionInfo &info);
 
-    // Submit a raw VkCommandBuffer, assuming it is already ended.
-    ref<Fence> submit(VkCommandBuffer cmd);
-    ref<Fence> submit(std::span<VkCommandBuffer> cmds);
+    ref<Fence> submitOne(VkCommandBuffer cmd) { return submit({.cmds = {&cmd, 1}}); }
 
     inline VkQueue getHandle() const { return queue; }
 

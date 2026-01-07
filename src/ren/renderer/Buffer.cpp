@@ -66,7 +66,7 @@ void ren::Buffer::resizeBytes(size_t newSize) {
     vkCmdCopyBuffer(cmd, oldBuffer, buffer, 1, &copyRegion);
 
     vkEndCommandBuffer(cmd);
-    vk.transferQueue->submit({&cmd, 1})->awaitCompletion();
+    vk.transferQueue->submitOne(cmd)->awaitCompletion();
 
     vmaDestroyBuffer(getVulkan().allocator, oldBuffer, oldAllocation);
   }
@@ -103,7 +103,7 @@ void ren::Buffer::copyFrom(const Buffer &src, VkDeviceSize size, VkDeviceSize sr
   vkCmdCopyBuffer(cmd, src.buffer, this->buffer, 1, &copyRegion);
   vkEndCommandBuffer(cmd);
 
-  vk.transferQueue->submit({&cmd, 1})->awaitCompletion();
+  vk.transferQueue->submitOne(cmd)->awaitCompletion();
 }
 
 

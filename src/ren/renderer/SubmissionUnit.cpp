@@ -1,0 +1,52 @@
+#include <ren/renderer/SubmissionUnit.h>
+#include <ren/renderer/CommandEncoder.h>
+#include <ren/renderer/SubmissionQueue.h>
+
+namespace ren {
+
+
+
+  SubmissionUnit::SubmissionUnit() {
+    auto &vulkan = ren::getVulkan();
+    // ---- Allocate the command buffer for this frame ---- //
+    VkCommandBufferAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocInfo.commandPool = vulkan.commandPool;
+    allocInfo.commandBufferCount = 1;
+
+    VkCommandBuffer commandBuffer;
+    vkAllocateCommandBuffers(vulkan.device, &allocInfo, &this->m_vkCmd);
+
+    // Create the command encoder with reference to this submission unit
+    m_cmd = ren::make<CommandEncoder>(m_vkCmd, *this);
+  }
+
+
+  ref<CommandEncoder> SubmissionUnit::begin() {
+    m_cmd->reset();
+    m_descriptorAllocator.reset();
+    m_arena.clear();
+
+    // begin the command buffer.
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+    if (vkBeginCommandBuffer(m_vkCmd, &beginInfo) != VK_SUCCESS) {
+      throw std::runtime_error("failed to begin recording command buffer!");
+    }
+
+    return m_cmd;
+  }
+
+
+  ref<Fence> SubmissionUnit::submitTo(SubmissionQueue &queue, SubmissionInfo info) {
+    VK_CHECK(vkEndCommandBuffer(m_vkCmd));
+
+    std::array<VkCommandBuffer, 1> cmds = {m_cmd->buf()};
+    info.cmds = cmds;
+    return queue.submit(info);
+  }
+
+}  // namespace ren

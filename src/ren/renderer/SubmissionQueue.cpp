@@ -12,14 +12,21 @@ namespace ren {
   }
 
 
-  ref<Fence> SubmissionQueue::submit(std::span<VkCommandBuffer> cmds) {
+  ref<Fence> SubmissionQueue::submit(const SubmissionInfo &info) {
     // Create a fence to signal when the command buffers have finished executing
     auto fence = ren::make<Fence>(false);
 
-    VkSubmitInfo submitInfo{};
+    VkSubmitInfo submitInfo = {};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submitInfo.commandBufferCount = static_cast<u32>(cmds.size());
-    submitInfo.pCommandBuffers = cmds.data();
+    submitInfo.commandBufferCount = static_cast<u32>(info.cmds.size());
+    submitInfo.pCommandBuffers = info.cmds.data();
+
+    submitInfo.waitSemaphoreCount = static_cast<u32>(info.waitSemaphores.size());
+    submitInfo.pWaitSemaphores = info.waitSemaphores.data();
+    submitInfo.pWaitDstStageMask = info.waitStages.data();
+
+    submitInfo.signalSemaphoreCount = static_cast<u32>(info.signalSemaphores.size());
+    submitInfo.pSignalSemaphores = info.signalSemaphores.data();
 
     // Submit the command buffers to the queue
     if (vkQueueSubmit(queue, 1, &submitInfo, fence->getHandle()) != VK_SUCCESS) {
@@ -28,7 +35,5 @@ namespace ren {
 
     return fence;
   }
-
-  ref<Fence> SubmissionQueue::submit(VkCommandBuffer cmd) { return submit({&cmd, 1}); }
 
 }  // namespace ren

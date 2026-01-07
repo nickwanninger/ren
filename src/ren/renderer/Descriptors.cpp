@@ -109,7 +109,7 @@ namespace ren {
   }
 
 
-  void DescriptorAllocator::reset_pools() {
+  void DescriptorAllocator::reset() {
     REN_PROFILE_FUNCTION();
     // reset all used pools and add them to the free pools
     for (auto p : usedPools) {

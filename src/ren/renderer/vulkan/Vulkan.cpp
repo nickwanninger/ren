@@ -599,7 +599,7 @@ void ren::VulkanInstance::endSingleTimeCommands(VkCommandBuffer commandBuffer) {
   submitInfo.pCommandBuffers = &commandBuffer;
 
   // Submit the buffer to the queue and wait for it to finish with the fence.
-  graphicsQueue->submit({&commandBuffer, 1})->awaitCompletion();
+  graphicsQueue->submitOne(commandBuffer)->awaitCompletion();
 
   vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
 }

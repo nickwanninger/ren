@@ -1,12 +1,14 @@
 #include "./ParameterBinding.h"
 #include <ren/renderer/Renderer.h>
+#include "ren/renderer/Swapchain.h"
 
 namespace ren {
 
 
 
-  ParameterCursor::ParameterCursor(ren::ShaderReflection::Node &node)
-      : node(node) {
+  ParameterCursor::ParameterCursor(ref<ParameterBlock> block, ren::ShaderReflection::Node &node)
+      : block(block)
+      , node(node) {
     ren::println(" walk node '{}' ({})", node.name, node.location.toJson().dump());
   }
 
@@ -15,7 +17,7 @@ namespace ren {
     if (index < 0 || index >= static_cast<int>(node.members.size())) {
       throw std::runtime_error(fmt::format("ShaderCursor: element index '{}' out of bounds in node '{}'", index, node.name));
     }
-    return ParameterCursor(*node.members[index]);
+    return ParameterCursor(block, *node.members[index]);
   }
 
 
@@ -23,7 +25,7 @@ namespace ren {
     // TODO: index?
     for (auto *child : node.members) {
       if (child->name == name) {
-        return ParameterCursor(*child);
+        return ParameterCursor(block, *child);
       }
     }
 
@@ -78,20 +80,44 @@ namespace ren {
     // Find a ParameterBlock for the node.
     auto it = bindings.find(node);
     if (it == bindings.end()) {
+      auto set = node->location.bindingSet.value_or(0);
+      auto layout = this->program->getDescriptorSetLayouts()[set];
+      if (layout == VK_NULL_HANDLE) {
+        throw std::runtime_error(fmt::format("ShaderRoot: no descriptor set layout for set {} (node '{}')", set, node->name));
+      }
+
       // Create a new one.
-      binding = make<ParameterBlock>();
+      binding = make<ParameterBlock>(refl, *node, layout);
       ren::println("Creating ParameterBlock for node '{}'", node->name);
       bindings[node] = binding;
     }
 
 
-    return ParameterCursor(*node);
+    return ParameterCursor(binding, *node);
   }
 
 
 
-  ParameterBlock::ParameterBlock(void) {
-    //
+  ParameterBlock::ParameterBlock(ref<ShaderReflection> refl, ren::ShaderReflection::Node &node, VkDescriptorSetLayout layout)
+      : refl(refl)
+      , node(node) {
+    REN_ASSERT(layout != VK_NULL_HANDLE);
+    // node must also be a ParameterBlock
+    REN_ASSERT(node.type.type == ShaderReflection::Type::ParameterBlock);
+
+    // ren::getFrameData().descriptorAllocator.allocate(&this->descriptorSet, layout);
+
+    // REN_ASSERT(this->descriptorSet != VK_NULL_HANDLE);
+
+    ren::println("Allocated ParameterBlock for node '{}' with descriptor set {}", node.name, (void *)this->descriptorSet);
+
+
+    // Now, if the node has a byte size, we need to allcoate a uniform buffer for them and bind it to the index of the node.
+    auto loc = node.location;
+    if (loc.byteSize && *loc.byteSize > 0) {
+      u32 bindingIndex = loc.bindingIndex.value_or(0);
+      ren::println("ParameterBlock node '{}' has byte size {}, allocating uniform buffer for binding index {}", node.name, *loc.byteSize, bindingIndex);
+    }
   }
 
 

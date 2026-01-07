@@ -1,5 +1,6 @@
 #include <ren/renderer/shader/ShaderBinder.h>
 #include <ren/renderer/Renderer.h>
+#include <ren/renderer/CommandEncoder.h>
 #include <fmt/format.h>
 
 
@@ -104,7 +105,7 @@ namespace ren {
   }
 
   void ShaderBinder::apply(void) {
-    auto &frame = getFrameData();
+    auto &frame = getFrameUnit();
     // build the descriptor sets and write them.
     const auto &layouts = program.getDescriptorSetLayouts();
     if (set >= layouts.size()) {
@@ -117,7 +118,7 @@ namespace ren {
           "Descriptor set {} is sparse/unavailable (no layout). Did you reflect that set?", set));
     }
     VkDescriptorSet descriptorSet;
-    if (!frame.descriptorAllocator.allocate(&descriptorSet, layout)) {
+    if (!frame.getDescriptorAllocator().allocate(&descriptorSet, layout)) {
       ren::errln("Could not allocate descriptor set for set {} in {}", this->set,
                    json(program).dump());
       return;
@@ -131,7 +132,7 @@ namespace ren {
     vkUpdateDescriptorSets(getVulkan().device, writes.size(), writes.data(), 0, nullptr);
     writes.clear();
     // And bind that set.
-    vkCmdBindDescriptorSets(frame.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+    vkCmdBindDescriptorSets(frame.getMainCommandEncoder()->buf(), VK_PIPELINE_BIND_POINT_GRAPHICS,
                             program.getPipelineLayout(), this->set, 1, &descriptorSet, 0, nullptr);
   }
 

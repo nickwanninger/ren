@@ -4,7 +4,7 @@
 #include <ren/renderer/vulkan/Vulkan.h>
 #include <ren/renderer/Image.h>
 #include <SDL3/SDL.h>
-#include <ren/renderer/FrameData.h>
+#include <ren/renderer/FrameSubmissionUnit.h>
 
 namespace ren {
 
@@ -30,7 +30,7 @@ namespace ren {
     // We have one frame for each frame in flight.
     // In a triple buffering setup, this is 3.
     u32 frameIndex = 0;
-    std::vector<std::unique_ptr<ren::FrameData>> frames;
+    std::vector<std::unique_ptr<ren::FrameSubmissionUnit>> frames;
 
     VkExtent2D renderExtent;
     VkExtent2D deviceExtent;
@@ -48,6 +48,16 @@ namespace ren {
 
     // Acquire a frame from the swapchain.
     // If this returns NULL, the swapchain is out of date.
-    FrameData *acquireNextFrame(void);
+    FrameSubmissionUnit *acquireNextFrame(void);
   };
+
+  // Global accessor for the current frame submission unit
+  FrameSubmissionUnit &getFrameUnit(void);
+
+  inline u32 getFrameIndex(void) { return getFrameUnit().frameIndex; }
+
+  template <typename T, typename... Args>
+  inline T *frameAlloc(Args &&...args) {
+    return getFrameUnit().getArena().push<T>(std::forward<Args>(args)...);
+  }
 }  // namespace ren

@@ -115,7 +115,7 @@ namespace ren {
     REN_PROFILE_FUNCTION();
 
     // Bind the pipeline state object.
-    auto &frame = ren::getFrameData();
+    auto &frame = ren::getFrameUnit();
     auto cmd = getCommandBuffer();
 
     assert(this->currentPass != nullptr &&
@@ -167,7 +167,7 @@ namespace ren {
     bind(pso);
   }
 
-  VkCommandBuffer Renderer::getCommandBuffer() { return getFrameData().commandBuffer; }
+  VkCommandBuffer Renderer::getCommandBuffer() { return getFrameUnit().getMainCommandEncoder()->buf(); }
 
   void Renderer::beginFrame(void) {
     REN_PROFILE_FUNCTION();
@@ -175,7 +175,7 @@ namespace ren {
     this->currentPass = nullptr;
     this->currentPipeline = nullptr;
 
-    ren::FrameData *frame = nullptr;
+    ren::FrameSubmissionUnit *frame = nullptr;
 
 
     // check if the SDL window is a different size than the swapchain.
@@ -199,88 +199,17 @@ namespace ren {
 
     vulkan->frame_number += 1;
 
-    // Initialize the frame's command buffer.
-
-    auto cmd = frame->commandBuffer;
-
-    VkCommandBufferBeginInfo beginInfo{};
-    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    beginInfo.pInheritanceInfo = nullptr;
-
-    if (vkBeginCommandBuffer(cmd, &beginInfo) != VK_SUCCESS) {
-      throw std::runtime_error("failed to begin recording command buffer!");
-    }
-
-
-    // Clear the descriptor pool for this frame to make space for new descriptor sets.
-    frame->descriptorAllocator.reset_pools();
-    frame->commandEncoder->reset();
+    // Begin the frame (waits for fence and starts command buffer)
+    frame->beginFrame();
   }
 
   void Renderer::endFrame(void) {
-    // End the display pass.
     REN_PROFILE_FUNCTION();
 
-    auto &frame = ren::getFrameData();
+    auto &frame = ren::getFrameUnit();
 
-    // And we've finished recording the command buffer:
-    {
-      REN_PROFILE_SCOPE("End Command Buffer");
-      if (vkEndCommandBuffer(frame.commandBuffer) != VK_SUCCESS) {
-        throw std::runtime_error("failed to record command buffer!");
-      }
-    }
-
-
-
-
-    // TODO: abstract all this.
-    VkSemaphore signalSemaphores[] = {frame.renderFinishedSemaphore};
-
-    {
-      REN_PROFILE_SCOPE("Submit Graphics Queue");
-      VkSubmitInfo submitInfo{};
-      submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-
-      VkSemaphore waitSemaphores[] = {frame.imageAvailableSemaphore};
-      VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
-      submitInfo.waitSemaphoreCount = 1;
-      submitInfo.pWaitSemaphores = waitSemaphores;
-      submitInfo.pWaitDstStageMask = waitStages;
-
-      submitInfo.commandBufferCount = 1;
-      submitInfo.pCommandBuffers = &frame.commandBuffer;
-
-      submitInfo.signalSemaphoreCount = 1;
-      submitInfo.pSignalSemaphores = signalSemaphores;
-
-      if (vkQueueSubmit(vulkan->graphicsQueue->getHandle(), 1, &submitInfo,
-                        frame.inFlightFence->getHandle()) != VK_SUCCESS) {
-        throw std::runtime_error("failed to submit draw command buffer!");
-      }
-    }
-
-
-    {
-      REN_PROFILE_SCOPE("Presentation");
-
-      // Presentation
-      VkPresentInfoKHR presentInfo{};
-      presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-
-      presentInfo.waitSemaphoreCount = 1;
-      presentInfo.pWaitSemaphores = signalSemaphores;
-
-      VkSwapchainKHR swapChains[] = {swapchain->swapchain};
-      presentInfo.swapchainCount = 1;
-      presentInfo.pSwapchains = swapChains;
-      uint32_t index = frame.frameIndex;  // we need a u32
-      presentInfo.pImageIndices = &index;
-
-      presentInfo.pResults = nullptr;  // Optional
-      vkQueuePresentKHR(vulkan->graphicsQueue->getHandle(), &presentInfo);
-    }
+    // Submit and present using the frame unit's method
+    frame.submitAndPresent(*vulkan->graphicsQueue, swapchain->swapchain);
   }
 
 

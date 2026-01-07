@@ -13,6 +13,9 @@
 
 namespace ren {
 
+
+  class SubmissionUnit; // forward declaration
+
   /**
    * The theory of operation for rendering in the REN engine is as follows:
    * 1. You call beginFrame() on the renderer to start a new frame, which returns a CommandEncoder.
@@ -45,8 +48,9 @@ namespace ren {
   // basis for an RHI interface.
   class CommandEncoder {
    public:
-    CommandEncoder(VkCommandBuffer cmdBuf)
-        : cmd(cmdBuf) {}
+    CommandEncoder(VkCommandBuffer cmdBuf, SubmissionUnit &submissionUnit)
+        : cmd(cmdBuf)
+        , submissionUnit(submissionUnit) {}
 
 
 
@@ -72,14 +76,15 @@ namespace ren {
     // TODO: Abstraction leakage!
     VkCommandBuffer buf() const { return cmd; }
 
-    ren::Arena &getArena(void) { return arena; }
+    SubmissionUnit &getSubmissionUnit(void) { return submissionUnit; }
+    ren::Arena &getArena(void);
 
     // Reset the command encoder for reuse.
     void reset(void);
 
    private:
     VkCommandBuffer cmd;
-    ren::Arena arena;
+    SubmissionUnit &submissionUnit;
   };
 
 
@@ -90,12 +95,11 @@ namespace ren {
     virtual ~SubEncoder() = default;
 
     inline CommandEncoder &getEncoder(void) { return cmd; }
+    inline SubmissionUnit &getSubmissionUnit(void) { return cmd.getSubmissionUnit(); }
     // TODO: Abstraction leakage!
     inline VkCommandBuffer buf() { return getEncoder().buf(); }
 
-
-    ren::Arena &getArena(void) { return cmd.getArena(); }
-
+    inline ren::Arena &getArena(void) { return cmd.getArena(); }
 
    protected:
     CommandEncoder &cmd;

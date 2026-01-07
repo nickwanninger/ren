@@ -55,8 +55,7 @@ extern "C" {
 
 #include <ren/core/NodeEditorTest.h>
 
-static ren::Flag<int> kMaxFPS("max-fps", 0,
-                              "Maximum framerate for the application, 0 = vsync or uncapped.");
+static ren::Flag<int> kMaxFPS("max-fps", 0, "Maximum framerate for the application, 0 = vsync or uncapped.");
 
 static ren::Flag<bool> kHighDPI("high-dpi", true, "Enable high DPI support.");
 
@@ -86,7 +85,9 @@ namespace ren {
       REN_PROFILE_SCOPE("SDL_CreateWindow");
 
       auto flags = SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE;
-      if (kHighDPI.get()) flags |= SDL_WINDOW_HIGH_PIXEL_DENSITY;
+      if (kHighDPI.get()) {
+        flags |= SDL_WINDOW_HIGH_PIXEL_DENSITY;
+      }
 
       auto windowName = fmt::format("{} - Ren {}", app_name, REN_VERSION);
       this->window = SDL_CreateWindow(windowName.c_str(), window_size.x, window_size.y, flags);
@@ -103,7 +104,9 @@ namespace ren {
 
     world.set_threads(6);
 
-    if (kMaxFPS.get() > 0) { world.set_target_fps(kMaxFPS.get()); }
+    if (kMaxFPS.get() > 0) {
+      world.set_target_fps(kMaxFPS.get());
+    }
 
     this->globalEventEntity = world.entity("ren::events");
 
@@ -146,13 +149,11 @@ namespace ren {
     // This should kick it off.
     auto bootstrap_result = lua.do_string("require 'ren.bootstrap'");
     if (bootstrap_result.status() != sol::call_status::ok) {
-      throw std::runtime_error(
-          fmt::format("Failed to run ren.bootstrap: {}", bootstrap_result.get<std::string>()));
+      throw std::runtime_error(fmt::format("Failed to run ren.bootstrap: {}", bootstrap_result.get<std::string>()));
     }
     auto result = lua.do_string("require 'init'");
     if (result.status() != sol::call_status::ok) {
-      throw std::runtime_error(
-          fmt::format("Failed to load init.lua: {}", result.get<std::string>()));
+      throw std::runtime_error(fmt::format("Failed to load init.lua: {}", result.get<std::string>()));
     }
   }
 
@@ -162,8 +163,9 @@ namespace ren {
     // Not quite sure when to tear down lua yet.
 
     // Call exit callbacks
-    for (auto &func : exitCallbacks)
+    for (auto &func : exitCallbacks) {
       func();
+    }
 
     {
       REN_PROFILE_SCOPE("ImGuiLayer::shutdown");
@@ -204,10 +206,10 @@ namespace ren {
 
     ren::RenderGraph G;
     ren::GraphHandle nullHandleOut;
-    // ren::GraphHandle ssao;
+    ren::GraphHandle ssao;
     ren::GraphHandle gbufferAlbedo, gbufferNormal, gbufferMaterial, gbufferDepth;
     auto &gbp = ren::addGBuffer(G, gbufferAlbedo, gbufferNormal, gbufferMaterial, gbufferDepth);
-    // ren::addSSAO(G, gbufferDepth, gbufferNormal, ssao);
+    ren::addSSAO(G, gbufferDepth, gbufferNormal, ssao);
 
 
 
@@ -274,7 +276,9 @@ namespace ren {
 
 
 
-          if (ImGui_ImplSDL3_ProcessEvent(&e)) { continue; }
+          if (ImGui_ImplSDL3_ProcessEvent(&e)) {
+            continue;
+          }
         }
 
         REN_PROFILE_COUNTER("SDL Events", eventsHandled);
@@ -299,20 +303,18 @@ namespace ren {
 
 
       auto currentTime = std::chrono::high_resolution_clock::now();
-      float time =
-          std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime)
-              .count();
-      auto deltaTime =
-          std::chrono::duration<float, std::chrono::seconds::period>(currentTime - lastTime)
-              .count();
+      float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
+      auto deltaTime = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - lastTime).count();
       this->timeSeconds = time;
       lastTime = currentTime;
 
-      if (!running) break;
+      if (!running) {
+        break;
+      }
 
 
       renderer->beginFrame();
-      auto &frame = ren::getFrameData();
+      auto &frame = ren::getFrameUnit();
 
       ren::Camera::get().update(deltaTime);
 
@@ -335,17 +337,15 @@ namespace ren {
 
 
         // Before rendering, lets create a dockspace
-        ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport(),
-                                     ImGuiDockNodeFlags_PassthruCentralNode);
+        ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport(), ImGuiDockNodeFlags_PassthruCentralNode);
       }
 
 
 
-      float targetHeight = 480;
       float width = (float)windowWidth;
       float height = (float)windowHeight;
       // targetHeight = height;
-      targetHeight = height * renderScaleTemp;
+      float targetHeight = height * renderScaleTemp;
       float scale = targetHeight / height;
       scale *= renderScaleTemp;
       width *= scale;
@@ -358,7 +358,8 @@ namespace ren {
       if (ImGui::BeginMainMenuBar()) {
         // 1. Standard menus on the left
         if (ImGui::BeginMenu("File")) {
-          if (ImGui::MenuItem("New")) {}
+          if (ImGui::MenuItem("New")) {
+          }
           if (ImGui::MenuItem("Open")) {
             SDL_ShowOpenFileDialog(
                 +[](void *userdata, const char *const *filelist, int filter) {
@@ -377,7 +378,9 @@ namespace ren {
           }
           ImGui::EndMenu();
         }
-        if (ImGui::BeginMenu("Edit")) { ImGui::EndMenu(); }
+        if (ImGui::BeginMenu("Edit")) {
+          ImGui::EndMenu();
+        }
 
         if (ImGui::BeginMenu("View")) {
           if (ImGui::MenuItem("ImGui Demo")) {
@@ -388,15 +391,13 @@ namespace ren {
 
         if (ImGui::MenuItem("Boop")) {
           u64 frame = vulkan.frame_number;
-          ren::logWindow("Boop", fmt::format("boop{}", frame % 6),
-                         [=](auto &ctx) { ImGui::Text("Boop menu item clicked!"); });
+          ren::logWindow("Boop", fmt::format("boop{}", frame % 6), [=](auto &ctx) { ImGui::Text("Boop menu item clicked!"); });
         }
 
 
         if (ImGui::MenuItem("Bop")) {
           int frame = vulkan.frame_number;
-          ren::logUI("Bop",
-                     [=](auto &ctx) { ImGui::Text("Bop menu item clicked on frame %d", frame); });
+          ren::logUI("Bop", [=](auto &ctx) { ImGui::Text("Bop menu item clicked on frame %d", frame); });
         }
 
         // // 2. Calculate right-alignment
@@ -445,6 +446,10 @@ namespace ren {
                               .fg = Color(0x000000),
                               .bg = Color(0xFFFFFF),
                           });
+      eui::ShadowedText(
+          "For a softer shadow, you can draw multiple offset copies with decreasing alpha values, or blur the shadow using a multi-pass approach, though that gets more complex. The simple two-pass approach works well for most cases.");
+      ImGui::Text(
+          "For a softer shadow, you can draw multiple offset copies with decreasing alpha values, or blur the shadow using a multi-pass approach, though that gets more complex. The simple two-pass approach works well for most cases.");
 
       ImGui::Separator();
 
@@ -461,7 +466,9 @@ namespace ren {
       if (ImGui::Button("Log Inspector")) {
         ren::logInspection<ShaderProgram>("Program > A Shader Program", computeProgram);
       }
-      if (computeProgram) computeProgram->inspect();
+      if (computeProgram) {
+        computeProgram->inspect();
+      }
       ImGui::End();
 
 
@@ -499,7 +506,7 @@ namespace ren {
 
 
       try {
-        G.runFor(gbufferAlbedo, *renderer);
+        G.runFor(ssao, *renderer);
       } catch (const std::exception &e) {
         ren::println("✗ RenderPassTask execution failed: {}", e.what());
       }
@@ -510,7 +517,7 @@ namespace ren {
 
       // world.defer_begin();
 
-      auto enc = frame.commandEncoder;
+      auto enc = frame.getMainCommandEncoder();
       auto penc = enc->beginRenderPass(*renderer->getDisplayPass(), *frame.renderTarget);
       {
         if (1) {
@@ -521,7 +528,9 @@ namespace ren {
           static float p = 0.5f;
           static int segments = 6;
           static int repeatCount = 1;
-          if (segments < 3) segments = 3;
+          if (segments < 3) {
+            segments = 3;
+          }
           srand(0);
 
 
@@ -570,8 +579,7 @@ namespace ren {
             args.instanceCount = 1;
 
             pc.index = i;
-            vkCmdPushConstants(penc.buf(), trianglePSO.program->getPipelineLayout(),
-                               VK_SHADER_STAGE_ALL, 0, sizeof(pc), &pc);
+            vkCmdPushConstants(penc.buf(), trianglePSO.program->getPipelineLayout(), VK_SHADER_STAGE_ALL, 0, sizeof(pc), &pc);
             penc.drawIndexed(args);
           }
 
@@ -579,8 +587,7 @@ namespace ren {
 
           auto end = std::chrono::high_resolution_clock::now();
 
-          float allocTime =
-              std::chrono::duration<float, std::chrono::nanoseconds::period>(end - start).count();
+          float allocTime = std::chrono::duration<float, std::chrono::nanoseconds::period>(end - start).count();
 
           // ImGui::Begin("New Perf Test");
           // ImGui::SeparatorText("Push Constants");
@@ -724,8 +731,7 @@ extern "C" {
 // LUA API (FFI)
 ecs_world_t *__ren_get_world(void) { return ren::world().c_ptr(); }
 
-ecs_entity_t __ren_register_component(const char *name, size_t size, size_t alignment,
-                                      const char *desc) {
+ecs_entity_t __ren_register_component(const char *name, size_t size, size_t alignment, const char *desc) {
   auto &world = ren::world();
 
   auto entity = world.entity(name, ".", ".");

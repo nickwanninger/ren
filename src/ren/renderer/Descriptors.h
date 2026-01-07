@@ -30,7 +30,7 @@ namespace ren {
     DescriptorAllocator();
     ~DescriptorAllocator();
 
-    void reset_pools();
+    void reset();
     bool allocate(VkDescriptorSet* set, VkDescriptorSetLayout layout);
 
 
