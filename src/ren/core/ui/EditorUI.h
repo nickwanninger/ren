@@ -16,6 +16,8 @@
 namespace ren::eui {
 
 
+  static constexpr const char *__x = ICON_SAVE;
+
   enum class ButtonKind {
     Plain,    // Normal button, gray.
     Primary,  // Primary color.
@@ -29,8 +31,7 @@ namespace ren::eui {
     std::optional<ImVec4> fg, bg;
   };
 
-  bool ExtendedButton(const char *label, const char *icon, const Style &style = {},
-                      ImVec2 size_arg = ImVec2(0, 0));
+  bool ExtendedButton(const char *label, const char *icon, const Style &style = {}, ImVec2 size_arg = ImVec2(0, 0));
 
 
   inline bool ButtonGreen(const char *label, const char *icon = nullptr) {
@@ -52,14 +53,16 @@ namespace ren::eui {
   inline bool ButtonYellow(const char *label, const char *icon = nullptr) {
     return ExtendedButton(label, icon,
                           {
-                              .bg = COLOR_YELLOW,
                               .fg = Color(0x6D5700),
+                              .bg = COLOR_YELLOW,
                           });
   }
 
 
   inline bool Button(const char *label) { return eui::ExtendedButton(label, nullptr, {}); }
   inline bool IconButton(const char *icon) { return eui::ExtendedButton(nullptr, icon, {}); }
+
+  void ShadowedText(const char *text);
 
 
 

@@ -10,8 +10,7 @@ namespace ren::eui {
   static ImFont *iconFont = nullptr;
 
 
-  bool ExtendedButton(const char *label, const char *icon, const Style &buttonStyle,
-                      ImVec2 size_arg) {
+  bool ExtendedButton(const char *label, const char *icon, const Style &buttonStyle, ImVec2 size_arg) {
     constexpr float iconFontSize = 15.0f;
     bool showIcon = (iconFont && icon && icon[0]);
     bool showLabel = (label && label[0]);
@@ -29,7 +28,9 @@ namespace ren::eui {
     fgColor.w = 1.0f;  // ensure opaque foreground
 
     ImGuiWindow *window = ImGui::GetCurrentWindow();
-    if (window->SkipItems) return false;
+    if (window->SkipItems) {
+      return false;
+    }
 
     ImGuiContext &g = *GImGui;
     const ImGuiStyle &style = g.Style;
@@ -59,20 +60,24 @@ namespace ren::eui {
     const ImVec2 text_size(icon_size.x + spacing + label_size.x, ImMax(icon_size.y, label_size.y));
 
     // Calculate button size
-    ImVec2 size = ImGui::CalcItemSize(size_arg, text_size.x + style.FramePadding.x * 2.0f,
-                                      text_size.y + style.FramePadding.y * 2.0f);
+    ImVec2 size = ImGui::CalcItemSize(size_arg, text_size.x + style.FramePadding.x * 2.0f, text_size.y + style.FramePadding.y * 2.0f);
 
-    ImRect bb(window->DC.CursorPos,
-              ImVec2(window->DC.CursorPos.x + size.x, window->DC.CursorPos.y + size.y));
+    ImRect bb(window->DC.CursorPos, ImVec2(window->DC.CursorPos.x + size.x, window->DC.CursorPos.y + size.y));
     ImGui::ItemSize(size, style.FramePadding.y);
-    if (!ImGui::ItemAdd(bb, id)) return false;
+    if (!ImGui::ItemAdd(bb, id)) {
+      return false;
+    }
 
     // Handle interaction
     bool hovered, held;
     bool pressed = ImGui::ButtonBehavior(bb, id, &hovered, &held);
 
-    if (held) bgColor = bgColor + ImVec4(0.1f, 0.1f, 0.1f, 0.0f);
-    if (hovered) bgColor = bgColor + ImVec4(0.1f, 0.1f, 0.1f, 0.0f);
+    if (held) {
+      bgColor = bgColor + ImVec4(0.1f, 0.1f, 0.1f, 0.0f);
+    }
+    if (hovered) {
+      bgColor = bgColor + ImVec4(0.1f, 0.1f, 0.1f, 0.0f);
+    }
 
     float expand = 0.0f;
 
@@ -97,8 +102,8 @@ namespace ren::eui {
 
 
     ImGui::RenderNavHighlight(bb, id);
-    ImGui::RenderFrame(bb.Min + ImVec2(-expand, -expand), bb.Max + ImVec2(expand, expand),
-                       ImGui::ColorConvertFloat4ToU32(bgColor), true, style.FrameRounding);
+    ImGui::RenderFrame(bb.Min + ImVec2(-expand, -expand), bb.Max + ImVec2(expand, expand), ImGui::ColorConvertFloat4ToU32(bgColor), true,
+                       style.FrameRounding);
 
     // Render icon and text
     ImVec2 text_pos = bb.Min + style.FramePadding;
@@ -125,6 +130,26 @@ namespace ren::eui {
     return pressed;
   }
 
+
+  void ShadowedText(const char *text) {
+    ImVec2 pos = ImGui::GetCursorScreenPos();
+    ImDrawList *drawList = ImGui::GetWindowDrawList();
+
+    ImVec2 shadowOffset = ImVec2(0.0f, 1.5f);
+
+    // Draw shadow
+    drawList->AddText(ImVec2(pos.x + shadowOffset.x, pos.y + shadowOffset.y), ImGui::ColorConvertFloat4ToU32(ImVec4(0, 0, 0, 1)), text);
+
+
+    // get the text color from the current style
+    ImVec4 textColor = ImGui::GetStyleColorVec4(ImGuiCol_Text);
+    // Draw actual text
+    drawList->AddText(pos, ImGui::ColorConvertFloat4ToU32(textColor), text);
+
+    // Advance cursor (use CalcTextSize if you need precise layout)
+    ImGui::Dummy(ImGui::CalcTextSize(text));
+  }
+
   void loadRenFonts(ren::AssetManager &am) {
     auto &io = ImGui::GetIO();
     auto loadAndMergeFont = [&](const char *path, float size, bool merge) -> ImFont * {
@@ -137,8 +162,7 @@ namespace ren::eui {
         fontConfig.PixelSnapH = true;
         fontConfig.FontDataOwnedByAtlas = false;
         fontConfig.SizePixels = size;
-        return io.Fonts->AddFontFromMemoryTTF(fontBytes.data(), static_cast<int>(fontBytes.size()),
-                                              size, &fontConfig);
+        return io.Fonts->AddFontFromMemoryTTF(fontBytes.data(), static_cast<int>(fontBytes.size()), size, &fontConfig);
       } else {
         ren::warnln("Failed to load font '{}' from asset manager!", path);
       }
@@ -159,10 +183,8 @@ namespace ren::eui {
 
     auto primaryColor = hexImColor(0x008540);
 
-    auto windowBackground = ImVec4(0.001f, 0.001f, 0.001f, 1.00f);
-    auto lighten = [](const ImVec4 &color, float amount) {
-      return ImVec4(color.x + amount, color.y + amount, color.z + amount, color.w);
-    };
+    auto windowBackground = ImVec4(0.011f, 0.011f, 0.011f, 1.00f);
+    auto lighten = [](const ImVec4 &color, float amount) { return ImVec4(color.x + amount, color.y + amount, color.z + amount, color.w); };
 
 
     colors[ImGuiCol_CheckMark] = primaryColor;
@@ -206,6 +228,9 @@ namespace ren::eui {
 
 
 
+
+    colors[ImGuiCol_Text] = ImVec4(0.80f, 0.80f, 0.80f, 1.00f);
+
     // Window and Child backgrounds.
     colors[ImGuiCol_WindowBg] = windowBackground;
     colors[ImGuiCol_ChildBg] = windowBackground;
@@ -235,7 +260,7 @@ namespace ren::eui {
 
     style.TabRounding = 0.0f;
     style.WindowMenuButtonPosition = ImGuiDir_None;
-    style.FontSizeBase = 15.0f;
+    style.FontSizeBase = 14.0f;
     style.DockingSeparatorSize = 4.0f;
     style.FrameRounding = 4.0f;
     // style.FramePadding = ImVec2(8.0f, 2.0f);
