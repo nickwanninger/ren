@@ -54,7 +54,7 @@ namespace ren {
 #define COLOR_GREEN Color(0x35C759)
 #define COLOR_BLUE Color(0x9DCEFF)
 
-#define COLOR_FRAMEBG Color(0x303030)
+#define COLOR_FRAMEBG Color(0x353535)
 #define COLOR_FRAMEFG COLOR_WHITE
 
 }  // namespace ren
