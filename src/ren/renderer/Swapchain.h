@@ -11,11 +11,6 @@ namespace ren {
   class Application;
 
 
-
-  constexpr u32 target_render_width = 320;
-  constexpr u32 target_render_height = 240;
-
-
   struct SwapchainCreateInfo {
     SDL_Window *window;
     bool enableVSync = true;
@@ -32,7 +27,6 @@ namespace ren {
     u32 frameIndex = 0;
     std::vector<std::unique_ptr<ren::FrameSubmissionUnit>> frames;
 
-    VkExtent2D renderExtent;
     VkExtent2D deviceExtent;
 
     VkSwapchainKHR swapchain;

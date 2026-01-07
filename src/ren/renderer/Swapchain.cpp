@@ -35,10 +35,6 @@ namespace ren {
     this->deviceExtent.width = width;
     this->deviceExtent.height = height;
 
-    this->renderExtent.width = target_render_width;
-    this->renderExtent.height = target_render_height;
-
-
 
     // ---- Allocate the Swapchain for device target rendering ---- //
     vkb::SwapchainBuilder swapchain_builder(vulkan.physical_device, vulkan.device, vulkan.surface);
