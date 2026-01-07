@@ -201,8 +201,8 @@ namespace ren {
     // Calculate the width to fit the remaining container space
     float containerWidth = ImGui::GetContentRegionAvail().x;
     float aspectRatio = (float)image->getHeight() / (float)image->getWidth();
-    float imageWidth = containerWidth;
-    float imageHeight = containerWidth * aspectRatio;
+    float imageWidth = std::min((u32)containerWidth, image->getWidth());
+    float imageHeight = imageWidth * aspectRatio;
 
     ImGui::Image((ImTextureID)imguiTextureID, ImVec2(imageWidth, imageHeight));
 
