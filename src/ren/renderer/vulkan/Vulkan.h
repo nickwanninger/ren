@@ -31,6 +31,10 @@ namespace ren {
   ref<VulkanInstance> getVulkanRef(void);
 
 
+  template <typename T>
+  using VulkanResult = Result<T, VkResult>;
+
+
   // Every vulkan application needs at least one Vulkan instance.
   // This class also contains the physical device, device, and surface.
   class VulkanInstance : public RefCounted<VulkanInstance> {
@@ -77,8 +81,6 @@ namespace ren {
 
 
 
-
-
     inline void waitForIdle(void) {
       REN_DEPRECATION_WARNING();
       REN_PROFILE_SCOPE("Wait For Idle");
@@ -87,16 +89,6 @@ namespace ren {
 
 
     VkSampler createSampler(VkFilter filter);
-
-    void create_image(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling,
-                      VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage &image,
-                      VkDeviceMemory &imageMemory);
-
-
-    VkImageView create_image_view(VkImage image, VkFormat format,
-                                  VkImageAspectFlags aspectFlags = VK_IMAGE_ASPECT_COLOR_BIT);
-
-
     VkCommandBuffer beginSingleTimeCommands();
     void endSingleTimeCommands(VkCommandBuffer commandBuffer);
 
@@ -105,26 +97,27 @@ namespace ren {
     VkShaderModule create_shader_module(const std::vector<u8> &code);
     VkShaderModule load_shader_module(const std::string &filename);
 
-    void transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout,
-                               VkImageLayout newLayout);
-    void transitionImageLayout(VkCommandBuffer buf, VkImage image, VkFormat format,
-                               VkImageLayout oldLayout, VkImageLayout newLayout,
+    void transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout);
+    void transitionImageLayout(VkCommandBuffer buf, VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout,
                                VkImageAspectFlags aspect = VK_IMAGE_ASPECT_COLOR_BIT);
 
     inline auto findDepthFormat(void) {
-      return findSupportedFormat(
-          {VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT},
-          VK_IMAGE_TILING_OPTIMAL, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
+      return findSupportedFormat({VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT}, VK_IMAGE_TILING_OPTIMAL,
+                                 VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
     }
 
-    VkFormat findSupportedFormat(const std::vector<VkFormat> &candidates, VkImageTiling tiling,
-                                 VkFormatFeatureFlags features);
+    VkFormat findSupportedFormat(const std::vector<VkFormat> &candidates, VkImageTiling tiling, VkFormatFeatureFlags features);
     static VkSampleCountFlagBits getMaxUsableSampleCount(const VkPhysicalDeviceProperties &props) {
-      VkSampleCountFlags counts =
-          props.limits.framebufferColorSampleCounts & props.limits.framebufferDepthSampleCounts;
-      if (counts & VK_SAMPLE_COUNT_8_BIT) return VK_SAMPLE_COUNT_8_BIT;
-      if (counts & VK_SAMPLE_COUNT_4_BIT) return VK_SAMPLE_COUNT_4_BIT;
-      if (counts & VK_SAMPLE_COUNT_2_BIT) return VK_SAMPLE_COUNT_2_BIT;
+      VkSampleCountFlags counts = props.limits.framebufferColorSampleCounts & props.limits.framebufferDepthSampleCounts;
+      if (counts & VK_SAMPLE_COUNT_8_BIT) {
+        return VK_SAMPLE_COUNT_8_BIT;
+      }
+      if (counts & VK_SAMPLE_COUNT_4_BIT) {
+        return VK_SAMPLE_COUNT_4_BIT;
+      }
+      if (counts & VK_SAMPLE_COUNT_2_BIT) {
+        return VK_SAMPLE_COUNT_2_BIT;
+      }
       return VK_SAMPLE_COUNT_1_BIT;
     }
 

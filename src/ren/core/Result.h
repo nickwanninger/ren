@@ -1,9 +1,9 @@
 #pragma once
 
-#include <variant>
 #include <utility>
 #include <stdexcept>
-#include <optional>
+#include <type_traits>
+#include <ren/core/Option.h>
 
 namespace ren {
 
@@ -27,28 +27,116 @@ namespace ren {
   template <typename T, typename E>
   class Result {
    private:
-    std::variant<T, E> m_data;
+    alignas(alignof(T) > alignof(E) ? alignof(T) : alignof(E)) unsigned char m_buffer[sizeof(T) > sizeof(E) ? sizeof(T) : sizeof(E)];
+    bool m_is_ok;
+
+    T* ok_ptr() { return reinterpret_cast<T*>(m_buffer); }
+    const T* ok_ptr() const { return reinterpret_cast<const T*>(m_buffer); }
+    E* err_ptr() { return reinterpret_cast<E*>(m_buffer); }
+    const E* err_ptr() const { return reinterpret_cast<const E*>(m_buffer); }
 
    public:
+    template <typename U>
+      requires std::convertible_to<U, T>
+    Result(ren::Ok<U> ok)
+        : m_is_ok(true) {
+      new (ok_ptr()) T(static_cast<T>(std::move(ok.value)));
+    }
+
+    template <typename F>
+      requires std::convertible_to<F, E>
+    Result(ren::Err<F> err)
+        : m_is_ok(false) {
+      new (err_ptr()) E(std::move(err.value));
+    }
+
+
+    template <typename U, typename F>
+      requires std::convertible_to<U, T> && std::convertible_to<F, E>
+    Result(const Result<U, F>& other)
+        : m_is_ok(other.is_ok()) {
+      if (m_is_ok) {
+        new (ok_ptr()) T(static_cast<T>(other.unwrap()));
+      } else {
+        new (err_ptr()) E(static_cast<E>(other.unwrap_err()));
+      }
+    }
+
+
     // Constructors
     static Result Ok(T value) { return Result(ren::Ok<T>(std::move(value))); }
 
     static Result Err(E error) { return Result(ren::Err<E>(std::move(error))); }
 
+    // Destructor
+    ~Result() {
+      if (m_is_ok) {
+        if constexpr (!std::is_trivially_destructible_v<T>) {
+          ok_ptr()->~T();
+        }
+      } else {
+        if constexpr (!std::is_trivially_destructible_v<E>) {
+          err_ptr()->~E();
+        }
+      }
+    }
 
-    Result(ren::Ok<T> ok)
-        : m_data(std::in_place_index<0>, std::move(ok.value)) {}
-    Result(ren::Err<E> err)
-        : m_data(std::in_place_index<1>, std::move(err.value)) {}
+    // Copy constructor
+    Result(const Result& other)
+        : m_is_ok(other.m_is_ok) {
+      if (m_is_ok) {
+        new (ok_ptr()) T(*other.ok_ptr());
+      } else {
+        new (err_ptr()) E(*other.err_ptr());
+      }
+    }
+
+    // Move constructor
+    Result(Result&& other) noexcept
+        : m_is_ok(other.m_is_ok) {
+      if (m_is_ok) {
+        new (ok_ptr()) T(std::move(*other.ok_ptr()));
+      } else {
+        new (err_ptr()) E(std::move(*other.err_ptr()));
+      }
+    }
+
+    // Copy assignment
+    Result& operator=(const Result& other) {
+      if (this != &other) {
+        this->~Result();
+        m_is_ok = other.m_is_ok;
+        if (m_is_ok) {
+          new (ok_ptr()) T(*other.ok_ptr());
+        } else {
+          new (err_ptr()) E(*other.err_ptr());
+        }
+      }
+      return *this;
+    }
+
+    // Move assignment
+    Result& operator=(Result&& other) noexcept {
+      if (this != &other) {
+        this->~Result();
+        m_is_ok = other.m_is_ok;
+        if (m_is_ok) {
+          new (ok_ptr()) T(std::move(*other.ok_ptr()));
+        } else {
+          new (err_ptr()) E(std::move(*other.err_ptr()));
+        }
+      }
+      return *this;
+    }
 
     // Query methods
-    bool is_ok() const { return m_data.index() == 0; }
-    bool is_err() const { return m_data.index() == 1; }
+    bool is_ok() const { return m_is_ok; }
+    bool is_err() const { return !m_is_ok; }
     explicit operator bool() const { return is_ok(); }
 
 
-    std::optional<T> ok() const { return is_ok() ? std::optional<T>(std::get<0>(m_data)) : std::nullopt; }
-    std::optional<E> err() const { return is_err() ? std::optional<E>(std::get<1>(m_data)) : std::nullopt; }
+    Option<T> ok() const { return is_ok() ? Some(*ok_ptr()) : None; }
+    Option<E> err() const { return is_err() ? Some(*err_ptr()) : None; }
 
 
 
@@ -57,57 +145,57 @@ namespace ren {
       if (is_err()) {
         throw std::runtime_error("Called unwrap() on Err value");
       }
-      return std::get<0>(m_data);
+      return *ok_ptr();
     }
 
     const T& unwrap() const& {
       if (is_err()) {
         throw std::runtime_error("Called unwrap() on Err value");
       }
-      return std::get<0>(m_data);
+      return *ok_ptr();
     }
 
     T unwrap() && {
       if (is_err()) {
         throw std::runtime_error("Called unwrap() on Err value");
       }
-      return std::move(std::get<0>(m_data));
+      return std::move(*ok_ptr());
     }
 
     E& unwrap_err() & {
       if (is_ok()) {
         throw std::runtime_error("Called unwrap_err() on Ok value");
       }
-      return std::get<1>(m_data);
+      return *err_ptr();
     }
 
     const E& unwrap_err() const& {
       if (is_ok()) {
         throw std::runtime_error("Called unwrap_err() on Ok value");
       }
-      return std::get<1>(m_data);
+      return *err_ptr();
     }
 
     E unwrap_err() && {
       if (is_ok()) {
         throw std::runtime_error("Called unwrap_err() on Ok value");
       }
-      return std::move(std::get<1>(m_data));
+      return std::move(*err_ptr());
     }
 
     // Safe access with default
-    T unwrap_or(T default_value) const& { return is_ok() ? std::get<0>(m_data) : std::move(default_value); }
+    T unwrap_or(T default_value) const& { return is_ok() ? *ok_ptr() : std::move(default_value); }
 
-    T unwrap_or(T default_value) && { return is_ok() ? std::move(std::get<0>(m_data)) : std::move(default_value); }
+    T unwrap_or(T default_value) && { return is_ok() ? std::move(*ok_ptr()) : std::move(default_value); }
 
     template <typename F>
     T unwrap_or_else(F&& fn) const& {
-      return is_ok() ? std::get<0>(m_data) : fn(std::get<1>(m_data));
+      return is_ok() ? *ok_ptr() : fn(*err_ptr());
     }
 
     template <typename F>
     T unwrap_or_else(F&& fn) && {
-      return is_ok() ? std::move(std::get<0>(m_data)) : fn(std::move(std::get<1>(m_data)));
+      return is_ok() ? std::move(*ok_ptr()) : fn(std::move(*err_ptr()));
     }
 
     // Expect (unwrap with custom message)
@@ -115,21 +203,21 @@ namespace ren {
       if (is_err()) {
         throw std::runtime_error(msg);
       }
-      return std::get<0>(m_data);
+      return *ok_ptr();
     }
 
     const T& expect(const char* msg) const& {
       if (is_err()) {
         throw std::runtime_error(msg);
       }
-      return std::get<0>(m_data);
+      return *ok_ptr();
     }
 
     T expect(const char* msg) && {
       if (is_err()) {
         throw std::runtime_error(msg);
       }
-      return std::move(std::get<0>(m_data));
+      return std::move(*ok_ptr());
     }
 
     // Map operations
@@ -137,77 +225,86 @@ namespace ren {
     auto map(F&& fn) const& -> Result<decltype(fn(std::declval<T>())), E> {
       using U = decltype(fn(std::declval<T>()));
       if (is_ok()) {
-        return Result<U, E>::Ok(fn(std::get<0>(m_data)));
+        return Result<U, E>::Ok(fn(*ok_ptr()));
       }
-      return Result<U, E>::Err(std::get<1>(m_data));
+      return Result<U, E>::Err(*err_ptr());
     }
 
     template <typename F>
     auto map(F&& fn) && -> Result<decltype(fn(std::declval<T>())), E> {
       using U = decltype(fn(std::declval<T>()));
       if (is_ok()) {
-        return Result<U, E>::Ok(fn(std::move(std::get<0>(m_data))));
+        return Result<U, E>::Ok(fn(std::move(*ok_ptr())));
       }
-      return Result<U, E>::Err(std::move(std::get<1>(m_data)));
+      return Result<U, E>::Err(std::move(*err_ptr()));
     }
 
     template <typename F>
     auto map_err(F&& fn) const& -> Result<T, decltype(fn(std::declval<E>()))> {
       using F2 = decltype(fn(std::declval<E>()));
       if (is_err()) {
-        return Result<T, F2>::Err(fn(std::get<1>(m_data)));
+        return Result<T, F2>::Err(fn(*err_ptr()));
       }
-      return Result<T, F2>::Ok(std::get<0>(m_data));
+      return Result<T, F2>::Ok(*ok_ptr());
     }
 
     template <typename F>
     auto map_err(F&& fn) && -> Result<T, decltype(fn(std::declval<E>()))> {
       using F2 = decltype(fn(std::declval<E>()));
       if (is_err()) {
-        return Result<T, F2>::Err(fn(std::move(std::get<1>(m_data))));
+        return Result<T, F2>::Err(fn(std::move(*err_ptr())));
       }
-      return Result<T, F2>::Ok(std::move(std::get<0>(m_data)));
+      return Result<T, F2>::Ok(std::move(*ok_ptr()));
     }
 
     // and_then (flatMap/bind)
     template <typename F>
     auto and_then(F&& fn) const& -> decltype(fn(std::declval<T>())) {
       if (is_ok()) {
-        return fn(std::get<0>(m_data));
+        return fn(*ok_ptr());
       }
-      return decltype(fn(std::declval<T>()))::Err(std::get<1>(m_data));
+      return decltype(fn(std::declval<T>()))::Err(*err_ptr());
     }
 
     template <typename F>
     auto and_then(F&& fn) && -> decltype(fn(std::declval<T>())) {
       if (is_ok()) {
-        return fn(std::move(std::get<0>(m_data)));
+        return fn(std::move(*ok_ptr()));
       }
-      return decltype(fn(std::declval<T>()))::Err(std::move(std::get<1>(m_data)));
+      return decltype(fn(std::declval<T>()))::Err(std::move(*err_ptr()));
     }
 
     // Match-style visitor
     template <typename OkFn, typename ErrFn>
     auto match(OkFn&& ok_fn, ErrFn&& err_fn) const& {
       if (is_ok()) {
-        return ok_fn(std::get<0>(m_data));
+        return ok_fn(*ok_ptr());
       } else {
-        return err_fn(std::get<1>(m_data));
+        return err_fn(*err_ptr());
       }
     }
 
     template <typename OkFn, typename ErrFn>
     auto match(OkFn&& ok_fn, ErrFn&& err_fn) && {
       if (is_ok()) {
-        return ok_fn(std::move(std::get<0>(m_data)));
+        return ok_fn(std::move(*ok_ptr()));
       } else {
-        return err_fn(std::move(std::get<1>(m_data)));
+        return err_fn(std::move(*err_ptr()));
       }
     }
 
    private:
     Result() = default;
   };
+
+  template <typename T, typename E>
+  inline Result<T, E> OkOr(Option<T> opt, E err) {
+    if (opt.is_some()) {
+      return Ok(opt.unwrap());
+    } else {
+      return Err(err);
+    }
+  }
 
 
 #define TRY_OK(expr)                                                                           \

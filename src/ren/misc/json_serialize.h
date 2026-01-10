@@ -14,9 +14,13 @@
 
 
 
-#define __WRITE_JSON_FIELD(field) j[#field] = this->field;
-#define TO_JSON(T, ...) \
-  nlohmann::json toJson() const { json j; j["_T"] = #T; NLOHMANN_JSON_EXPAND(NLOHMANN_JSON_PASTE(__WRITE_JSON_FIELD, __VA_ARGS__)); return j; }
+#define __WRITE_JSON_FIELD(field) __j[#field] = this->field;
+#define TO_JSON(T, ...)                                                         \
+  nlohmann::json toJson() const {                                               \
+    json __j;                                                                     \
+    NLOHMANN_JSON_EXPAND(NLOHMANN_JSON_PASTE(__WRITE_JSON_FIELD, __VA_ARGS__)); \
+    return __j;                                                                   \
+  }
 
 #define JSON_SERIALIZE_ENUM(ENUM_TYPE, ...)                                                                                                         \
   inline auto getEnumMap(ENUM_TYPE e) {                                                                                                             \

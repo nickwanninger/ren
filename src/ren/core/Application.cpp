@@ -454,25 +454,7 @@ namespace ren {
 
 
       ren::inspectLog();
-
       ImGui::Begin("Compute Shader Inspection");
-
-
-
-      eui::ButtonGreen("Save", ICON_SAVE);
-      ImGui::SameLine();
-      eui::ButtonRed("Delete", ICON_TRASH_2);
-      ImGui::SameLine();
-      eui::ExtendedButton("Ship It", ICON_ARROW_UP_RIGHT);
-      ImGui::SameLine();
-      eui::ButtonYellow(NULL, ICON_ARROW_UP_RIGHT);
-      ImGui::SameLine();
-      // eui::ExtendedButton("Submit", ICON_SEND, {
-      //   .bg = Color(0xFFFFFF),
-      //   .fg = Color(0x000000),
-      // });
-
-
       eui::ExtendedButton("New Project", ICON_PLUS,
                           {
                               .fg = Color(0x000000),
