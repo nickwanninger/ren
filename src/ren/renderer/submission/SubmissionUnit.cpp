@@ -41,6 +41,14 @@ namespace ren {
   }
 
 
+
+  ShaderObject &SubmissionUnit::createShaderObject(ref<ShaderProgram> &program) {
+    // Allocate a new ShaderObject from this submission unit's arena.
+    auto *mem = m_arena.push<ShaderObject>(program, *this);
+    return *mem;
+  }
+
+
   ref<Fence> SubmissionUnit::submitTo(SubmissionQueue &queue, SubmissionInfo info) {
     VK_CHECK(vkEndCommandBuffer(m_vkCmd));
 

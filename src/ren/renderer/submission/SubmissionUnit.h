@@ -4,6 +4,7 @@
 #include <ren/renderer/submission/SubmissionQueue.h>
 #include <ren/core/Arena.h>
 #include <ren/renderer/Descriptors.h>
+#include <ren/renderer/shader/ParameterBinding.h>
 
 namespace ren {
 
@@ -44,6 +45,8 @@ namespace ren {
 
     ren::Arena &getArena(void) { return m_arena; }
     auto &getDescriptorAllocator(void) { return m_descriptorAllocator; }
+
+    ShaderObject &createShaderObject(ref<ShaderProgram> &program);
 
    private:
     VkCommandBuffer m_vkCmd;

@@ -1,11 +1,12 @@
 #pragma once
 
-#include "ren/renderer/vulkan/Vulkan.h"
+#include <ren/renderer/vulkan/Vulkan.h>
 #include <ren/renderer/shader/ShaderProgram.h>
 
 namespace ren {
 
   class ParameterCursor;  // forward declare
+  class SubmissionUnit;   // forward declare
 
   // Binding data to shaders is famously hard, so we try to simplify it by leaning on slang's
   // ParameterBlocks, which map directly to vulkan descriptor sets, and are used to group related
@@ -83,7 +84,7 @@ namespace ren {
   class ParameterCursor {
    public:
     // TODO: accept a CommandEncoder. (or just the ShaderObject?)
-    ParameterCursor(ref<ParameterBlock> block, ShaderReflection::Node &node);
+    ParameterCursor(ref<ParameterBlock> block, ShaderReflection::Node& node);
 
     ParameterCursor field(const char* name);
     ParameterCursor element(int index);
@@ -124,8 +125,9 @@ namespace ren {
   // it is bound to a CommandEncoder before drawing or dispatching.
   class ShaderObject {
    public:
-    ShaderObject(ref<ShaderProgram> program)
-        : program(program) {}
+    ShaderObject(ref<ShaderProgram> program, SubmissionUnit& unit)
+        : program(program)
+        , unit(unit) {}
 
     // TODO: we need to come up with some way to differentiate per-frame
     // "global" parameter blocks vs. per-drawcall blocks. It would be a waste to allocate new
@@ -138,6 +140,7 @@ namespace ren {
     // TODO: push constant Cursor
 
     ref<ShaderProgram> program;
+    SubmissionUnit& unit;
 
 
     // Commit the bindings to the GPU
