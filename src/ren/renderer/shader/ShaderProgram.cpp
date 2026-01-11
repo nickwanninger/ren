@@ -444,8 +444,8 @@ namespace ren {
       layoutBinding.stageFlags = binding.stages;
       layoutBinding.pImmutableSamplers = nullptr;
 
-      ren::println("Binding: set {} binding {} type={} count={} stages=0x{:X}", binding.set, binding.binding, static_cast<int>(binding.type),
-                   binding.count, binding.stages);
+      // ren::println("Binding: set {} binding {} type={} count={} stages=0x{:X}", binding.set, binding.binding, static_cast<int>(binding.type),
+      //              binding.count, binding.stages);
 
       if (binding.set > maxSet) {
         maxSet = binding.set;

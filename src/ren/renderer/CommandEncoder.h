@@ -60,7 +60,7 @@ namespace ren {
     // TODO:
     // ComputePassEncoder *beginComputePass();
 
-    void dispatchCompute(ref<ShaderProgram> program, ShaderObject& resources, glm::uvec3 groupCount);
+    void dispatchCompute(ShaderObject& resources, glm::uvec3 groupCount);
 
 
     void copyBuffer(ren::Buffer &src, ren::Buffer &dst, VkDeviceSize size,
@@ -152,6 +152,4 @@ namespace ren {
     RenderPass &pass;
     RenderTarget &target;
   };
-
-  class ComputePassEncoder : public SubEncoder {};
 }  // namespace ren

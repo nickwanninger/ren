@@ -26,7 +26,7 @@ namespace ren {
   ref<CommandEncoder> SubmissionUnit::begin() {
     m_cmd->reset();
     m_descriptorAllocator.reset();
-    m_arena.clear();
+    size_t allocatedLastTime = m_arena.clear();
 
     // begin the command buffer.
     VkCommandBufferBeginInfo beginInfo{};

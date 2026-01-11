@@ -27,13 +27,13 @@ namespace ren {
     vkCmdCopyBuffer(this->cmd, src.getHandle(), dst.getHandle(), 1, &copyRegion);
   }
 
-  void CommandEncoder::dispatchCompute(ref<ShaderProgram> program, ShaderObject& resources, glm::uvec3 groupCount) {
+  void CommandEncoder::dispatchCompute(ShaderObject& shader, glm::uvec3 groupCount) {
     auto& R = ren::Renderer::get();
-    auto pipeline = R.getPipelineCache().getCompute(program);
+    auto pipeline = R.getPipelineCache().getCompute(shader.program);
 
     vkCmdBindPipeline(this->cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline->getHandle());
 
-    resources.bind(this->cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline->getLayout());
+    shader.bind(this->cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline->getLayout());
 
     vkCmdDispatch(this->cmd, groupCount.x, groupCount.y, groupCount.z);
   }

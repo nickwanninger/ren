@@ -54,6 +54,6 @@ namespace ren {
 
 
     DescriptorAllocator m_descriptorAllocator;
-    ren::Arena m_arena{4096, true};
+    ren::Arena m_arena{0xFFFF, true}; // 64KB initial size, growable
   };
 }  // namespace ren
