@@ -27,6 +27,17 @@ namespace ren {
     vkCmdCopyBuffer(this->cmd, src.getHandle(), dst.getHandle(), 1, &copyRegion);
   }
 
+  void CommandEncoder::dispatchCompute(ref<ShaderProgram> program, ShaderObject& resources, glm::uvec3 groupCount) {
+    auto& R = ren::Renderer::get();
+    auto pipeline = R.getPipelineCache().getCompute(program);
+
+    vkCmdBindPipeline(this->cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline->getHandle());
+
+    resources.bind(this->cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline->getLayout());
+
+    vkCmdDispatch(this->cmd, groupCount.x, groupCount.y, groupCount.z);
+  }
+
 
   void CommandEncoder::reset(void) {
     // Nothing to do here - resources are managed by SubmissionUnit
@@ -103,7 +114,7 @@ namespace ren {
   ref<ShaderObject> RenderPassEncoder::bindPipeline(ren::PipelineStateObject &pso) {
 
     // TODO:
-    ref<ShaderObject> obj = ren::make<ShaderObject>(pso.program);
+    ref<ShaderObject> obj = ren::make<ShaderObject>(pso.program, getSubmissionUnit());
     bindPipeline(pso, *obj);
     return obj;
   }

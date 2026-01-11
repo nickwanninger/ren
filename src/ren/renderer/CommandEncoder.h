@@ -60,6 +60,8 @@ namespace ren {
     // TODO:
     // ComputePassEncoder *beginComputePass();
 
+    void dispatchCompute(ref<ShaderProgram> program, ShaderObject& resources, glm::uvec3 groupCount);
+
 
     void copyBuffer(ren::Buffer &src, ren::Buffer &dst, VkDeviceSize size,
                     VkDeviceSize srcOffset = 0, VkDeviceSize dstOffset = 0);
