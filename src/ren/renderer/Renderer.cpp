@@ -142,7 +142,6 @@ namespace ren {
 
 
   ShaderBinder Renderer::startBinding(u32 set) {
-    REN_PROFILE_FUNCTION();
 
     // Start binding the shader program.
     if (this->currentPipeline == nullptr) {
@@ -156,8 +155,6 @@ namespace ren {
 
 
   void Renderer::bind(ref<ShaderProgram> program) {
-    REN_PROFILE_FUNCTION();
-
     // Bind the shader program.
     if (program == nullptr) { throw std::runtime_error("Cannot bind a null shader program."); }
 
@@ -187,6 +184,7 @@ namespace ren {
       frame = this->swapchain->acquireNextFrame();
 
       if (frame == nullptr) {
+        REN_PROFILE_SCOPE("Acquire Next Frame");
         // Swapchain is out of date, rebuild it.
         rebuildSwapchain();
       }

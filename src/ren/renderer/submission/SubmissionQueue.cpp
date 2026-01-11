@@ -13,6 +13,7 @@ namespace ren {
 
 
   ref<Fence> SubmissionQueue::submit(const SubmissionInfo &info) {
+    REN_PROFILE_FUNCTION();
     // Create a fence to signal when the command buffers have finished executing
     auto fence = ren::make<Fence>(false);
 
@@ -28,9 +29,12 @@ namespace ren {
     submitInfo.signalSemaphoreCount = static_cast<u32>(info.signalSemaphores.size());
     submitInfo.pSignalSemaphores = info.signalSemaphores.data();
 
-    // Submit the command buffers to the queue
-    if (vkQueueSubmit(queue, 1, &submitInfo, fence->getHandle()) != VK_SUCCESS) {
-      throw std::runtime_error("Failed to submit command buffers to queue");
+    {
+      REN_PROFILE_SCOPE("vkQueueSubmit");
+      // Submit the command buffers to the queue
+      if (vkQueueSubmit(queue, 1, &submitInfo, fence->getHandle()) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to submit command buffers to queue");
+      }
     }
 
     return fence;

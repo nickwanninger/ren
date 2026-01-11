@@ -18,7 +18,10 @@ namespace ren {
                         VkImageView swapchainImageView);
     ~FrameSubmissionUnit();
 
-    // Begin a new frame: wait for previous frame completion, then reset resources
+    // Wait for this frame slot's previous work to complete
+    void waitForFence();
+
+    // Begin a new frame: reset resources and start command recording
     ref<CommandEncoder> beginFrame();
 
     // Submit to queue and present to swapchain

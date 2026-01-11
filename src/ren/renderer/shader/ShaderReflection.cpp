@@ -811,6 +811,7 @@ namespace ren {
             MAP(ParameterBlock, ParameterBlock);
             MAP(TypedBuffer, StorageBuffer);  // ? Maybe uniform?
             MAP(RawBuffer, StorageBuffer);
+            MAP(CombinedTextureSampler, Texture);
 
             MAP(MutableTexture, StorageImage);
             MAP(MutableTypedBuffer, StorageBuffer);

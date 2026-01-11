@@ -13,7 +13,7 @@
 
 #include <vulkan/vulkan.h>
 
-// #define REN_PROFILE
+#define REN_PROFILE
 
 namespace ren {
 

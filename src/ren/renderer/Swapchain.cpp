@@ -102,7 +102,11 @@ namespace ren {
     auto frameUnit = frames[frameIndex].get();
     g_frameUnit = frameUnit;
 
-    REN_PROFILE_SCOPE("AcquireNextImage");
+    // Wait for previous frame's work BEFORE using the semaphore
+    // This ensures imageAvailableSemaphore is not in use
+    frameUnit->waitForFence();
+
+    REN_PROFILE_SCOPE("vkAcquireNextImageKHR");
     auto result = vkAcquireNextImageKHR(vulkan.device, this->swapchain, UINT64_MAX,
                                         frameUnit->imageAvailableSemaphore, VK_NULL_HANDLE,
                                         &frameUnit->frameIndex);

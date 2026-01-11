@@ -342,45 +342,20 @@ namespace ren {
 
 
 
-      float width = (float)windowWidth;
-      float height = (float)windowHeight;
-      // targetHeight = height;
-      float targetHeight = height * renderScaleTemp;
-      float scale = targetHeight / height;
-      scale *= renderScaleTemp;
-      width *= scale;
-      height *= scale;
+      // float width = (float)windowWidth;
+      // float height = (float)windowHeight;
+      // // targetHeight = height;
+      // float targetHeight = height * renderScaleTemp;
+      // float scale = targetHeight / height;
+      // scale *= renderScaleTemp;
+      // width *= scale;
+      // height *= scale;
 
-      auto renderSize = glm::uvec2(width, height);
-      G.startFrame(renderSize);
+      // auto renderSize = glm::uvec2(width, height);
+      // G.startFrame(renderSize);
 
 
       if (ImGui::BeginMainMenuBar()) {
-        // 1. Standard menus on the left
-        if (ImGui::BeginMenu("File")) {
-          if (ImGui::MenuItem("New")) {
-          }
-          if (ImGui::MenuItem("Open")) {
-            SDL_ShowOpenFileDialog(
-                +[](void *userdata, const char *const *filelist, int filter) {
-                  if (filelist == NULL) {
-                    ren::println("No file selected");
-                  } else {
-                    ren::println("Selected files:");
-                    for (int i = 0; filelist[i] != NULL; i++) {
-                      ren::println(" - {}", filelist[i]);
-                    }
-                  }
-                },
-                nullptr, this->window, NULL,
-                // Filters
-                0, NULL, true);
-          }
-          ImGui::EndMenu();
-        }
-        if (ImGui::BeginMenu("Edit")) {
-          ImGui::EndMenu();
-        }
 
         if (ImGui::BeginMenu("View")) {
           if (ImGui::MenuItem("ImGui Demo")) {
@@ -389,19 +364,6 @@ namespace ren {
           ImGui::EndMenu();
         }
 
-        if (ImGui::MenuItem("Boop")) {
-          u64 frame = vulkan.frame_number;
-          ren::logWindow("Boop", fmt::format("boop{}", frame % 6), [=](auto &ctx) { ImGui::Text("Boop menu item clicked!"); });
-        }
-
-
-        if (ImGui::MenuItem("Bop")) {
-          int frame = vulkan.frame_number;
-          ren::logUI("Bop", [=](auto &ctx) { ImGui::Text("Bop menu item clicked on frame %d", frame); });
-        }
-
-        // // 2. Calculate right-alignment
-        // // We get the total width, subtract the width of our text, and a small margin
 
         char buf[64];
         snprintf(buf, sizeof(buf), "%4d FPS", (int)framerateCounter.getAverageFramerate());
@@ -420,6 +382,7 @@ namespace ren {
       }
 
 
+      /*
       ImGui::Begin("VRAM");
       {
         auto start = std::chrono::high_resolution_clock::now();
@@ -450,6 +413,7 @@ namespace ren {
         }
       }
       ImGui::End();
+      */
 
 
 
@@ -486,16 +450,6 @@ namespace ren {
       ImGui::End();
 
 
-      // ImGui::Begin("Debug Temp Settings");
-      // ImGui::DragFloat("Render Scale", &renderScaleTemp, 0.01f, 0.1f, 1.0f);
-      // ImGui::Text("FPS: %.1f", framerateCounter.getAverageFramerate());
-      // ImGui::Text("Frame Time: %.3f ms", framerateCounter.getAverageDeltaTime() * 1000.0f);
-
-      // if (ImGui::Button("Save Pipeline Cache")) {
-      //   renderer->getPipelineCache().save("pipeline_cache.bin");
-      // }
-      // ImGui::End();
-
       {
         REN_PROFILE_SCOPE("WorldProgress");
         world.progress(deltaTime);
@@ -519,49 +473,23 @@ namespace ren {
       // world.lookup("scene").scope([&]() { world.progress(deltaTime); });
 
 
-      try {
-        G.runFor(ssao, *renderer);
-      } catch (const std::exception &e) {
-        ren::println("✗ RenderPassTask execution failed: {}", e.what());
-      }
+      // try {
+      //   G.runFor(ssao, *renderer);
+      // } catch (const std::exception &e) {
+      //   ren::println("✗ RenderPassTask execution failed: {}", e.what());
+      // }
 
-      G.inspect();
+      // G.inspect();
 
-      // ren::resource<neko::luainspector>().draw();
-
-      // world.defer_begin();
 
       auto enc = frame.getMainCommandEncoder();
       auto penc = enc->beginRenderPass(*renderer->getDisplayPass(), *frame.renderTarget);
       {
-        if (1) {
+        if (0) {
           auto start = std::chrono::high_resolution_clock::now();
           ren::MeshBuilder b;
 
-
-          static float p = 0.5f;
-          static int segments = 6;
-          static int repeatCount = 1;
-          if (segments < 3) {
-            segments = 3;
-          }
-          srand(0);
-
-
-
           auto fb = b.beginFace();
-          // make a circle with N segments.
-          // for (int i = 0; i < segments; i++) {
-          //   // compute a random distance
-          //   float distance = 0.1f + (rand() % 1000 / 1000.0f);
-          //   distance *= 0.5f;
-
-          //   float rad = (float)i / segments * glm::two_pi<float>();
-          //   rad += time * 0.5f;
-          //   // just the point on the unit circle.
-          //   fb.vertex(glm::vec3(cosf(rad), sinf(rad), 0.0f) * distance, glm::vec3(0.0f),
-          //             glm::vec2(0.0f));
-          // }
 
           // Add triangles to make a full screen quad
           fb.vertex(glm::vec3(-1.0f, -1.0f, 0.0f), glm::vec3(0.0f), glm::vec2(0.0f, 0.0f));
@@ -582,78 +510,21 @@ namespace ren {
             int numDraws = 1;
           } pc;
 
-
           penc.bindImmediateMesh(meshData->vertices, meshData->indices);
           penc.bindPipeline(trianglePSO);
-          pc.numDraws = repeatCount;
+          pc.numDraws = 0;
           pc.time = time;
-          for (int i = 0; i < repeatCount; i++) {
-            DrawArguments args;
-            args.vertexCount = static_cast<u32>(meshData->indices.size());
-            args.instanceCount = 1;
+          DrawArguments args;
+          args.vertexCount = static_cast<u32>(meshData->indices.size());
+          args.instanceCount = 1;
 
-            pc.index = i;
-            vkCmdPushConstants(penc.buf(), trianglePSO.program->getPipelineLayout(), VK_SHADER_STAGE_ALL, 0, sizeof(pc), &pc);
-            penc.drawIndexed(args);
-          }
-
-
+          pc.index = 0;
+          vkCmdPushConstants(penc.buf(), trianglePSO.program->getPipelineLayout(), VK_SHADER_STAGE_ALL, 0, sizeof(pc), &pc);
+          penc.drawIndexed(args);
 
           auto end = std::chrono::high_resolution_clock::now();
 
           float allocTime = std::chrono::duration<float, std::chrono::nanoseconds::period>(end - start).count();
-
-          // ImGui::Begin("New Perf Test");
-          // ImGui::SeparatorText("Push Constants");
-          // if (ImGui::DragFloat("Brightness", &pc.brightness, 0.01f, 0.0f, 10.0f)) {
-          //   ren::println("Brightness: {}", pc.brightness);
-          // }
-          // ImGui::DragFloat("Stride", &pc.stride, 0.01f, 0.0f, 1.0f);
-          // ImGui::Separator();
-
-
-          // framerateCounter.inspect();
-          // ImGui::Text("Allocated VertexBuffer in %f ms", allocTime / 1000.0 / 1000.0);
-          // // Pick buildMode
-          // ImGui::DragInt("Segments", &segments, 1.0f, 3, 1024);
-          // ImGui::DragInt("Repeat Draws", &repeatCount, 1.0f, 1, 1000);
-          // if (ImGui::Button("Dump Mesh as OBJ")) { meshData->dumpObj(); }
-
-          // int width, height;
-          // SDL_GetWindowSize(ren::Application::get().getWindow(), &width, &height);
-          // ImGui::Text("Window Size: %d x %d", width, height);
-          // SDL_GetWindowSizeInPixels(ren::Application::get().getWindow(), &width, &height);
-          // ImGui::Text("Drawable Size: %d x %d", width, height);
-
-
-
-          // if (ImGui::BeginTable("Vertices Table", 5,
-          //                       ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
-          //   ImGui::TableSetupColumn("Index");
-          //   ImGui::TableSetupColumn("x");
-          //   ImGui::TableSetupColumn("y");
-          //   ImGui::TableSetupColumn("z");
-          //   ImGui::TableSetupColumn("UV");
-          //   ImGui::TableHeadersRow();
-
-          //   for (size_t i = 0; i < meshData->vertices.size(); ++i) {
-          //     const auto &vertex = meshData->vertices[i];
-          //     ImGui::TableNextRow();
-          //     ImGui::TableSetColumnIndex(0);
-          //     ImGui::Text("%zu", i);
-          //     ImGui::TableNextColumn();
-          //     ImGui::Text("%f", vertex.pos.x);
-          //     ImGui::TableNextColumn();
-          //     ImGui::Text("%f", vertex.pos.y);
-          //     ImGui::TableNextColumn();
-          //     ImGui::Text("%f", vertex.pos.z);
-          //     ImGui::TableNextColumn();
-          //     ImGui::Text("%f,%f", vertex.texCoord.x, vertex.texCoord.y);
-          //   }
-
-          //   ImGui::EndTable();
-          // }
-          // ImGui::End();
         }
 
 

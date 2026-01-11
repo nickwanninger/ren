@@ -61,7 +61,6 @@ namespace ren {
   }
 
   bool DescriptorAllocator::allocate(VkDescriptorSet* set, VkDescriptorSetLayout layout) {
-    REN_PROFILE_FUNCTION();
     // initialize the currentPool handle if it's null
     if (currentPool == VK_NULL_HANDLE) {
       currentPool = grab_pool();

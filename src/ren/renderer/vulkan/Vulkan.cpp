@@ -296,6 +296,7 @@ void ren::VulkanInstance::init_instance(void) {
   VkPhysicalDeviceProperties props;
   vkGetPhysicalDeviceProperties(physicalDevice, &props);
 
+  fmt::print("Selected GPU: {} (type: {}, ID: {}, driver: {})\n", props.deviceName, static_cast<u32>(props.deviceType), props.deviceID, props.driverVersion);
   fmt::print("Max bound descriptor sets: {}\n", props.limits.maxBoundDescriptorSets);
   fmt::print("Max samplers per set: {}\n", props.limits.maxDescriptorSetSamplers);
   fmt::print("Max UBOs per stage: {}\n", props.limits.maxPerStageDescriptorUniformBuffers);
@@ -505,7 +506,6 @@ VkFormat ren::VulkanInstance::findSupportedFormat(const std::vector<VkFormat>& c
 
 
 bool hasStencilComponent(VkFormat format) { return format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT; }
-
 
 
 

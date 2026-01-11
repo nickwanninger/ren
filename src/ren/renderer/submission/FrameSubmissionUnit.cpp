@@ -6,11 +6,11 @@
 
 namespace ren {
 
-  FrameSubmissionUnit::FrameSubmissionUnit(u32 frameIndex, Swapchain &sc, VkImage swapchainImage,
-                                           VkImageView swapchainImageView)
+  FrameSubmissionUnit::FrameSubmissionUnit(u32 frameIndex, Swapchain &sc, VkImage swapchainImage, VkImageView swapchainImageView)
       : SubmissionUnit()
       , frameIndex(frameIndex)
       , m_swapchain(sc) {
+    REN_PROFILE_FUNCTION();
     auto &vulkan = ren::getVulkan();
 
     // Create device image wrapper for swapchain image
@@ -22,8 +22,8 @@ namespace ren {
     imageCreateInfo.extent.height = sc.deviceExtent.height;
     imageCreateInfo.extent.depth = 1;
 
-    this->deviceImage = ren::Image::create(fmt::format("device #{}", frameIndex), swapchainImage,
-                                           swapchainImageView, VK_NULL_HANDLE, imageCreateInfo);
+    this->deviceImage =
+        ren::Image::create(fmt::format("device #{}", frameIndex), swapchainImage, swapchainImageView, VK_NULL_HANDLE, imageCreateInfo);
 
     // Create depth image
     this->depthImage = ren::ImageBuilder(fmt::format("depth #{}", frameIndex))
@@ -36,17 +36,14 @@ namespace ren {
 
     // Create render target
     RenderTargetDescription renderTargetDesc;
-    renderTargetDesc.setupColorAndDepth(this->deviceImage, sc.imageFormat, this->depthImage,
-                                        sc.depthFormat);
+    renderTargetDesc.setupColorAndDepth(this->deviceImage, sc.imageFormat, this->depthImage, sc.depthFormat);
     this->renderTarget = make<RenderTarget>(renderTargetDesc);
 
     // Create semaphores
     VkSemaphoreCreateInfo semaphoreInfo{};
     semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-    VK_CHECK(vkCreateSemaphore(vulkan.device, &semaphoreInfo, nullptr,
-                               &this->imageAvailableSemaphore));
-    VK_CHECK(vkCreateSemaphore(vulkan.device, &semaphoreInfo, nullptr,
-                               &this->renderFinishedSemaphore));
+    VK_CHECK(vkCreateSemaphore(vulkan.device, &semaphoreInfo, nullptr, &this->imageAvailableSemaphore));
+    VK_CHECK(vkCreateSemaphore(vulkan.device, &semaphoreInfo, nullptr, &this->renderFinishedSemaphore));
   }
 
   FrameSubmissionUnit::~FrameSubmissionUnit() {
@@ -71,16 +68,15 @@ namespace ren {
     m_inFlightFence.reset();
   }
 
-  ref<CommandEncoder> FrameSubmissionUnit::beginFrame() {
+  void FrameSubmissionUnit::waitForFence() {
     REN_PROFILE_FUNCTION();
-
-    // Wait for previous frame's work to complete
     if (m_inFlightFence) {
-      REN_PROFILE_SCOPE("Wait for fence");
       m_inFlightFence->awaitCompletion(true);
     }
+  }
 
-    // Call base class begin() to reset resources
+  ref<CommandEncoder> FrameSubmissionUnit::beginFrame() {
+    // Just call base class begin() to reset resources and start recording
     return begin();
   }
 

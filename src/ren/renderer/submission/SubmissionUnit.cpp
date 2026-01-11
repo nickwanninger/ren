@@ -1,6 +1,7 @@
 #include <ren/renderer/submission/SubmissionUnit.h>
 #include <ren/renderer/CommandEncoder.h>
 #include <ren/renderer/submission/SubmissionQueue.h>
+#include "ren/core/Instrumentation.h"
 
 namespace ren {
 
@@ -24,6 +25,7 @@ namespace ren {
 
 
   ref<CommandEncoder> SubmissionUnit::begin() {
+    REN_PROFILE_FUNCTION();
     m_cmd->reset();
     m_descriptorAllocator.reset();
     size_t allocatedLastTime = m_arena.clear();
@@ -33,8 +35,11 @@ namespace ren {
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
-    if (vkBeginCommandBuffer(m_vkCmd, &beginInfo) != VK_SUCCESS) {
-      throw std::runtime_error("failed to begin recording command buffer!");
+    {
+      REN_PROFILE_SCOPE("vkBeginCommandBuffer");
+      if (vkBeginCommandBuffer(m_vkCmd, &beginInfo) != VK_SUCCESS) {
+        throw std::runtime_error("failed to begin recording command buffer!");
+      }
     }
 
     return m_cmd;
@@ -50,6 +55,7 @@ namespace ren {
 
 
   ref<Fence> SubmissionUnit::submitTo(SubmissionQueue &queue, SubmissionInfo info) {
+    REN_PROFILE_FUNCTION();
     VK_CHECK(vkEndCommandBuffer(m_vkCmd));
 
     std::array<VkCommandBuffer, 1> cmds = {m_cmd->buf()};

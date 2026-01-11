@@ -68,7 +68,7 @@ namespace ren {
 
   static Slang::ComPtr<slang::IGlobalSession> globalSession;
 
-  static ren::Flag<int> kSlangOptLevel("slang-opt-level", 2, "Optimization level for Slang compiler (0=None, 1=Default, 2=Maximum)");
+  static ren::Flag<int> kSlangOptLevel("slang-opt-level", 0, "Optimization level for Slang compiler (0=None, 1=Default, 2=Maximum)");
 
   // Helper to check diagnostics
   static void checkSlangDiagnostics(slang::IBlob* diagnosticsBlob) {

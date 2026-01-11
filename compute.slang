@@ -1,43 +1,15 @@
-struct S {
-  Texture2D texture;
-  SamplerState sampler;
-  float x;
-}
-
-// struct Node {
-//   int x;
-//   int y;
-// }
-
-struct Material {
-  Texture2D texture;
-  SamplerState sampler;
-  float x;
-}
-
-struct Output {
-  RWBuffer<float4> outputBuffer;
-};
-
-[[vk::push_constant]]
-cbuffer pc {
-  float4 rootColor;
-  float scale;
+struct Test {
+  RWStructuredBuffer<float> outputBuffer;
+  float value;
 }
 
 
-ParameterBlock<Output> output;
-ParameterBlock<Material> material;
 
+ParameterBlock<Test> test;
 
 [shader("compute")]
-[numthreads(16, 16, 1)]
-void computeMain(uint3 id: SV_DispatchThreadID, uniform ParameterBlock<Material> mat) {
-
-  float4 color = rootColor;
-
-  color += material.texture.Sample(material.sampler, float2(0, 0)) * material.x;
-  color += mat.texture.Sample(mat.sampler, float2(0, 0)) * material.x;
-
-  output.outputBuffer[id.x] = color;
+[numthreads(1024, 1, 1)]
+void computeMain(uint3 id: SV_DispatchThreadID) {
+  if (id.x > test.outputBuffer.getCount()) return;
+  test.outputBuffer[id.x] = test.value;
 }
