@@ -115,6 +115,8 @@ namespace ren {
   using IndexBuffer = FixedUsageTypedBuffer<u32, VK_BUFFER_USAGE_INDEX_BUFFER_BIT>;
   template <typename T>
   using UniformBuffer = FixedUsageTypedBuffer<T, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT>;
+  template <typename T>
+  using StorageBuffer = FixedUsageTypedBuffer<T, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT>;
 
 
   template <typename T>
