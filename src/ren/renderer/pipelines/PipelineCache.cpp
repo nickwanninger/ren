@@ -377,4 +377,42 @@ namespace ren {
     }
   }
 
+  ref<CachedPipeline> PipelineCache::getCompute(ref<ShaderProgram> program) {
+    auto& vulkan = ren::getVulkan();
+    // Hash the program pointer
+    u64 hash = std::hash<void*>{}(program.get());
+
+    if (pipelines.count(hash)) {
+      return pipelines[hash];
+    }
+
+    VkComputePipelineCreateInfo pipelineInfo{};
+    pipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+    pipelineInfo.layout = program->getPipelineLayout();
+
+    auto shaders = program->getShaders();
+    REN_ASSERT(shaders.size() == 1); // Compute should have 1 shader
+
+    VkPipelineShaderStageCreateInfo stageInfo{};
+    stageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stageInfo.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+    stageInfo.module = shaders[0]->getHandle();
+    stageInfo.pName = "main";
+
+    pipelineInfo.stage = stageInfo;
+
+    VkPipeline pipeline;
+    if (vkCreateComputePipelines(vulkan.device, vkCache, 1, &pipelineInfo, nullptr, &pipeline) != VK_SUCCESS) {
+      throw std::runtime_error("failed to create compute pipeline!");
+    }
+
+    // Create a dummy PSO for the cached pipeline
+    PipelineStateObject dummyPso;
+    dummyPso.program = program;
+
+    auto cached = make<CachedPipeline>(pipeline, dummyPso);
+    pipelines[hash] = cached;
+    return cached;
+  }
+
 }  // namespace ren

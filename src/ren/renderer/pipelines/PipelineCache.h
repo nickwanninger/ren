@@ -38,6 +38,7 @@ namespace ren {
     PipelineCache &operator=(PipelineCache &&) = delete;
 
     ref<CachedPipeline> get(ren::RenderPass &renderPass, const PipelineStateObject &pso);
+    ref<CachedPipeline> getCompute(ref<ShaderProgram> program);
 
     void save(std::string_view filename) const;
     void load(std::string_view filename);

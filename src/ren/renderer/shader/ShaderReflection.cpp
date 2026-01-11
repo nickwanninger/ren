@@ -798,42 +798,30 @@ namespace ren {
         for (u32 i = 0; i < rangeCount; ++i) {
           auto range = tl->getBindingRangeType(i);
 
+
           switch (range) {
-            case slang::BindingType::Texture: {
-              resourceType = Type::Texture;
-              break;
-            }
-            case slang::BindingType::Sampler: {
-              resourceType = Type::Sampler;
-              break;
-            }
-            case slang::BindingType::CombinedTextureSampler: {
-              resourceType = Type::Texture;
-              break;
-            }
+#define MAP(slangType, renType)         \
+  case slang::BindingType::slangType: { \
+    resourceType = Type::renType;       \
+    break;                              \
+  }
+            MAP(Sampler, Sampler);
+            MAP(Texture, Image);  // Not 100% sure about this.
+            MAP(ConstantBuffer, UniformBuffer);
+            MAP(ParameterBlock, ParameterBlock);
+            MAP(TypedBuffer, StorageBuffer);  // ? Maybe uniform?
+            MAP(RawBuffer, StorageBuffer);
 
+            MAP(MutableTexture, StorageImage);
+            MAP(MutableTypedBuffer, StorageBuffer);
+            MAP(MutableRawBuffer, StorageBuffer);
+
+#undef MAP
             default: {
+              ren::errln("resource {} has unhandled binding type {}", name, static_cast<int>(range));
+              // abort();
               break;
             }
-          }
-        }
-
-
-
-
-        if (shape & SLANG_TEXTURE_1D || shape & SLANG_TEXTURE_2D || shape & SLANG_TEXTURE_3D || shape & SLANG_TEXTURE_CUBE) {
-          if (access == SLANG_RESOURCE_ACCESS_READ_WRITE) {
-            resourceType = Type::StorageImage;  // Storage image
-          } else {
-            resourceType = Type::Texture;  // Sampled texture
-          }
-          // } else if (shape == slanm) {
-          //   resourceType = Type::Sampler;
-        } else if (shape & SLANG_STRUCTURED_BUFFER || shape & SLANG_BYTE_ADDRESS_BUFFER) {
-          if (access == SLANG_RESOURCE_ACCESS_READ_WRITE) {
-            resourceType = Type::StorageBuffer;
-          } else {
-            resourceType = Type::UniformBuffer;
           }
         }
 
@@ -985,7 +973,6 @@ namespace ren {
 
 
   static bool hasRealBinding(const Node* node) {
-
     // special case ParameterBlock which has a byte size! They need an implicit uniform buffer binding.
     if (node->type.type == ShaderReflection::Type::ParameterBlock && node->location.byteSize && *node->location.byteSize > 0) {
       return true;
