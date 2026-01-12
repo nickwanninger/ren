@@ -101,7 +101,7 @@ namespace ren {
     }
 
 
-    int64_t size(void) {
+    int64_t size(void) const {
       int64_t b = bottom.load(std::memory_order_relaxed);
       int64_t t = top.load(std::memory_order_relaxed);
       return b - t;

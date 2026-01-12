@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <thread>
+#include "ren/core/Logging.h"
 #include <ren/core/ClDeque.h>
 #include <ren/types.h>
 
@@ -14,15 +15,11 @@ class ThreadWorker;
 class ThreadPoolTask {
  public:
   virtual ~ThreadPoolTask() = default;
-
-  // Execute the task
   virtual void execute() = 0;
-
-  // Optional: completion counter
   std::atomic<int>* m_completion_counter = nullptr;
 };
 
-// Template implementation for callable types
+
 template <typename F>
 class LambdaTask : public ThreadPoolTask {
  public:
@@ -34,7 +31,7 @@ class LambdaTask : public ThreadPoolTask {
   F m_fn;
 };
 
-// Worker thread with its own work queue
+
 class ThreadWorker {
  public:
   ThreadWorker(ThreadPool* pool, u32 id);
@@ -43,14 +40,14 @@ class ThreadWorker {
   // Push task to this worker's queue
   void push(ThreadPoolTask* task);
 
-  // Try to steal a task from this worker
   ThreadPoolTask* steal();
-
-  // Join the worker thread (called during shutdown)
   void join();
-
-  // Worker ID (for work stealing)
   u32 get_id() const { return m_id; }
+  int64_t queue_size() const { return m_queue.size(); }
+
+  // Try to execute one task (from local queue or by stealing)
+  // Returns true if a task was executed, false if no work available
+  bool schedule_one();
 
  private:
   void worker_loop();
@@ -64,13 +61,9 @@ class ThreadWorker {
 // Thread pool for parallel task execution
 class ThreadPool {
  public:
-  // Constructor: creates worker threads based on flag
   ThreadPool();
-
-  // Destructor: clean shutdown (wait for tasks, join threads)
   ~ThreadPool();
 
-  // Submit a task (template for any callable)
   template <typename F>
   void enqueue(F&& fn) {
     auto* task = new LambdaTask<F>(std::forward<F>(fn));
@@ -86,49 +79,51 @@ class ThreadPool {
     enqueue_task(task);
   }
 
-  // Wait until counter reaches zero (spin with yields)
+
   void wait_for_completion(std::atomic<int>* counter);
 
-  // Get number of worker threads
-  u32 get_num_workers() const { return static_cast<u32>(m_workers.size()); }
+  // Parallel for loop: executes fn(i) for i in [0, count) in parallel
+  // Work is divided into chunks for better cache locality and lower overhead
+  template <typename Fn>
+  void parallel_for(int count, Fn&& fn) {
+    if (count <= 0) return;
 
-  // Access to shutdown flag (for workers)
+    u32 num_workers = get_num_workers();
+    int chunk_size = (count + num_workers - 1) / num_workers;
+    if (chunk_size < 1) chunk_size = 1;
+
+    std::atomic<int> counter{0};
+
+    for (int start = 0; start < count; start += chunk_size) {
+      int end = std::min(start + chunk_size, count);
+
+      enqueue([start, end, fn = std::forward<Fn>(fn)]() {
+        for (int i = start; i < end; ++i) {
+          fn(i);
+        }
+      }, &counter);
+    }
+
+    wait_for_completion(&counter);
+  }
+
+  u32 get_num_workers() const { return static_cast<u32>(m_workers.size()); }
   bool is_shutdown() const { return m_shutdown.load(std::memory_order_relaxed); }
 
  private:
   friend class ThreadWorker;
-
-  // Internal enqueue (non-template)
   void enqueue_task(ThreadPoolTask* task);
-
-  // Try to steal work from other workers (called by ThreadWorker)
   ThreadPoolTask* try_steal(ThreadWorker* current_worker);
-
-  // Data members
   std::vector<Box<ThreadWorker>> m_workers;  // Each owns thread + queue
   std::atomic<bool> m_shutdown{false};
-  std::atomic<u32> m_next_worker{0};  // For round-robin task assignment
 };
 
-// RAII wrapper for completion tracking
-class CompletionCounter {
- public:
-  CompletionCounter() : m_counter(0) {}
-
-  // Get pointer to counter for enqueue
-  std::atomic<int>* get_counter() { return &m_counter; }
-
-  // Wait for all tasks to complete
-  void wait();
-
-  // Get current count (for debugging)
-  int get_count() const { return m_counter.load(std::memory_order_relaxed); }
-
- private:
-  std::atomic<int> m_counter;
-};
-
-// Global thread pool instance (initialized on first use)
+ 
 ThreadPool& get_thread_pool();
+
+template <typename Fn>
+void parallel_for(int count, Fn&& fn) {
+  get_thread_pool().parallel_for(count, std::forward<Fn>(fn));
+}
 
 }  // namespace ren

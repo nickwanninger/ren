@@ -10,18 +10,23 @@
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
 
-
+#include <ren/core/ThreadPool.h>
 
 
 using json = nlohmann::json;
 
 std::string getPropertyTypeName(aiPropertyTypeInfo type) {
   switch (type) {
-    case aiPTI_Float: return "float";
-    case aiPTI_String: return "string";
-    case aiPTI_Integer: return "integer";
-    case aiPTI_Buffer: return "buffer";
-    default: return "unknown";
+    case aiPTI_Float:
+      return "float";
+    case aiPTI_String:
+      return "string";
+    case aiPTI_Integer:
+      return "integer";
+    case aiPTI_Buffer:
+      return "buffer";
+    default:
+      return "unknown";
   }
 }
 
@@ -105,11 +110,10 @@ json dumpAiMaterial(const aiMaterial *mat) {
                                         aiTextureType_AMBIENT_OCCLUSION,
                                         aiTextureType_UNKNOWN};
 
-  const std::string textureTypeNames[] = {
-      "DIFFUSE",           "SPECULAR",          "AMBIENT",       "EMISSIVE",       "HEIGHT",
-      "NORMALS",           "SHININESS",         "OPACITY",       "DISPLACEMENT",   "LIGHTMAP",
-      "REFLECTION",        "BASE_COLOR",        "NORMAL_CAMERA", "EMISSION_COLOR", "METALNESS",
-      "DIFFUSE_ROUGHNESS", "AMBIENT_OCCLUSION", "UNKNOWN"};
+  const std::string textureTypeNames[] = {"DIFFUSE",           "SPECULAR",          "AMBIENT",       "EMISSIVE",       "HEIGHT",
+                                          "NORMALS",           "SHININESS",         "OPACITY",       "DISPLACEMENT",   "LIGHTMAP",
+                                          "REFLECTION",        "BASE_COLOR",        "NORMAL_CAMERA", "EMISSION_COLOR", "METALNESS",
+                                          "DIFFUSE_ROUGHNESS", "AMBIENT_OCCLUSION", "UNKNOWN"};
 
   for (size_t t = 0; t < 18; ++t) {
     unsigned int count = mat->GetTextureCount(textureTypes[t]);
@@ -122,8 +126,7 @@ json dumpAiMaterial(const aiMaterial *mat) {
         float blend;
         aiTextureOp op;
 
-        if (mat->GetTexture(textureTypes[t], i, &path, &mapping, &uvIndex, &blend, &op) ==
-            AI_SUCCESS) {
+        if (mat->GetTexture(textureTypes[t], i, &path, &mapping, &uvIndex, &blend, &op) == AI_SUCCESS) {
           json texInfo = json::object();
           texInfo["path"] = path.C_Str();
           texInfo["uvIndex"] = uvIndex;
@@ -131,31 +134,33 @@ json dumpAiMaterial(const aiMaterial *mat) {
 
           // Map enum values to strings
           std::string mappingStr = "UNKNOWN";
-          if (mapping == aiTextureMapping_UV)
+          if (mapping == aiTextureMapping_UV) {
             mappingStr = "UV";
-          else if (mapping == aiTextureMapping_SPHERE)
+          } else if (mapping == aiTextureMapping_SPHERE) {
             mappingStr = "SPHERE";
-          else if (mapping == aiTextureMapping_CYLINDER)
+          } else if (mapping == aiTextureMapping_CYLINDER) {
             mappingStr = "CYLINDER";
-          else if (mapping == aiTextureMapping_BOX)
+          } else if (mapping == aiTextureMapping_BOX) {
             mappingStr = "BOX";
-          else if (mapping == aiTextureMapping_PLANE)
+          } else if (mapping == aiTextureMapping_PLANE) {
             mappingStr = "PLANE";
+          }
           texInfo["mapping"] = mappingStr;
 
           std::string opStr = "ADD";
-          if (op == aiTextureOp_Multiply)
+          if (op == aiTextureOp_Multiply) {
             opStr = "MULTIPLY";
-          else if (op == aiTextureOp_Add)
+          } else if (op == aiTextureOp_Add) {
             opStr = "ADD";
-          else if (op == aiTextureOp_Subtract)
+          } else if (op == aiTextureOp_Subtract) {
             opStr = "SUBTRACT";
-          else if (op == aiTextureOp_Divide)
+          } else if (op == aiTextureOp_Divide) {
             opStr = "DIVIDE";
-          else if (op == aiTextureOp_SmoothAdd)
+          } else if (op == aiTextureOp_SmoothAdd) {
             opStr = "SMOOTH_ADD";
-          else if (op == aiTextureOp_SignedAdd)
+          } else if (op == aiTextureOp_SignedAdd) {
             opStr = "SIGNED_ADD";
+          }
           texInfo["operation"] = opStr;
 
           typeTextures.push_back(texInfo);
@@ -193,10 +198,14 @@ json dumpAiMaterial(const aiMaterial *mat) {
   json scalars = json::object();
 
   float shininess;
-  if (mat->Get(AI_MATKEY_SHININESS, shininess) == AI_SUCCESS) { scalars["shininess"] = shininess; }
+  if (mat->Get(AI_MATKEY_SHININESS, shininess) == AI_SUCCESS) {
+    scalars["shininess"] = shininess;
+  }
 
   float opacity;
-  if (mat->Get(AI_MATKEY_OPACITY, opacity) == AI_SUCCESS) { scalars["opacity"] = opacity; }
+  if (mat->Get(AI_MATKEY_OPACITY, opacity) == AI_SUCCESS) {
+    scalars["opacity"] = opacity;
+  }
 
   int twoSided;
   if (mat->Get(AI_MATKEY_TWOSIDED, twoSided) == AI_SUCCESS) {
@@ -220,7 +229,9 @@ namespace ren {
     // Create an entity for this node.
     Entity entity = ren::createEntity().set<comp::Name>(node.name);
 
-    if (parentEntity) entity.child_of(parentEntity);
+    if (parentEntity) {
+      entity.child_of(parentEntity);
+    }
     entity.set<comp::Transform>(node.transform);  // Set the transform component.
 
 
@@ -228,7 +239,9 @@ namespace ren {
 
 
     // If the node has a mesh, add it to the entity.
-    if (node.mesh) { entity.emplace<comp::Mesh>(node.mesh); }
+    if (node.mesh) {
+      entity.emplace<comp::Mesh>(node.mesh);
+    }
 
     // Add the entity as a child of the parent entity.
     // if (parentEntity) parentEntity.addChild(entity);
@@ -240,13 +253,9 @@ namespace ren {
     return entity;
   }
 
-  Entity MeshScene::instantiate(ren::Scene &scene) {
-    return instantiateNode(*this->rootNode, scene.getRoot());
-  }
+  Entity MeshScene::instantiate(ren::Scene &scene) { return instantiateNode(*this->rootNode, scene.getRoot()); }
 
-  Entity MeshScene::instantiate(ren::Entity parent) {
-    return instantiateNode(*this->rootNode, parent);
-  }
+  Entity MeshScene::instantiate(ren::Entity parent) { return instantiateNode(*this->rootNode, parent); }
 
 
 
@@ -274,7 +283,9 @@ namespace ren {
 
       // Assign material if available
       unsigned matIdx = scene->mMeshes[meshIdx]->mMaterialIndex;
-      if (matIdx < materials.size()) { node->material = materials[matIdx]; }
+      if (matIdx < materials.size()) {
+        node->material = materials[matIdx];
+      }
     } else if (ainode->mNumMeshes > 1) {
       // If this node has more than one mesh, create a child for each mesh
       for (unsigned i = 0; i < ainode->mNumMeshes; ++i) {
@@ -286,7 +297,9 @@ namespace ren {
 
         // Assign material if available
         unsigned matIdx = scene->mMeshes[meshIdx]->mMaterialIndex;
-        if (matIdx < materials.size()) { meshChild->material = materials[matIdx]; }
+        if (matIdx < materials.size()) {
+          meshChild->material = materials[matIdx];
+        }
 
         this->nodes.push_back(meshChild);  // Add to the scene's node list
         node->children.push_back(meshChild);
@@ -389,8 +402,7 @@ namespace ren {
           indices.push_back(face.mIndices[1]);
           indices.push_back(face.mIndices[2]);
         } else {
-          fmt::print("Warning: Non-triangle face found in mesh '{}', skipping face.\n",
-                     assimpMesh->mName.C_Str());
+          fmt::print("Warning: Non-triangle face found in mesh '{}', skipping face.\n", assimpMesh->mName.C_Str());
         }
       }
       // Create a mesh from the vertices and indices
@@ -402,19 +414,38 @@ namespace ren {
 
     // load all the textures
     // TODO(opt): load these on demand based on the needs of the meshes
+
     meshScene->textures.reserve(scene->mNumTextures);
     for (unsigned int i = 0; i < scene->mNumTextures; ++i) {
+      meshScene->textures.push_back(nullptr);
+    }
+
+    ren::parallel_for(scene->mNumTextures, [&](int i) {
+      REN_PROFILE_SCOPE("Load Assimp Texture");
       const aiTexture *assimpTexture = scene->mTextures[i];
       ref<Texture> texture;
       if (assimpTexture->mHeight == 0) {
-        std::string embeddedName =
-            fmt::format("embedded_{}_{}", i, assimpTexture->mFilename.C_Str());
+        std::string embeddedName = fmt::format("embedded_{}_{}", i, assimpTexture->mFilename.C_Str());
         texture = ren::Texture::load(embeddedName, assimpTexture->pcData, assimpTexture->mWidth);
       } else {
         texture = ren::Texture::load(assimpTexture->mFilename.C_Str());
       }
-      meshScene->textures.push_back(texture);
-    }
+      meshScene->textures[i] = texture;
+    });
+
+
+    // for (unsigned int i = 0; i < scene->mNumTextures; ++i) {
+    //   const aiTexture *assimpTexture = scene->mTextures[i];
+    //   ref<Texture> texture;
+    //   if (assimpTexture->mHeight == 0) {
+    //     std::string embeddedName =
+    //         fmt::format("embedded_{}_{}", i, assimpTexture->mFilename.C_Str());
+    //     texture = ren::Texture::load(embeddedName, assimpTexture->pcData, assimpTexture->mWidth);
+    //   } else {
+    //     texture = ren::Texture::load(assimpTexture->mFilename.C_Str());
+    //   }
+    //   meshScene->textures.push_back(texture);
+    // }
 
 
     // create all the materials
@@ -434,12 +465,10 @@ namespace ren {
 
 
       float occlusionStrength = 1.0f;
-      if (assimpMaterial->Get(AI_MATKEY_GLTF_TEXTURE_STRENGTH(aiTextureType_LIGHTMAP, 0),
-                              occlusionStrength) == aiReturn_SUCCESS) {
+      if (assimpMaterial->Get(AI_MATKEY_GLTF_TEXTURE_STRENGTH(aiTextureType_LIGHTMAP, 0), occlusionStrength) == aiReturn_SUCCESS) {
         // Got occlusion strength
         material->props.occlusionStrength = glm::clamp(occlusionStrength, 0.0f, 1.0f);
-        printf("Material %s occlusion strength: %f\n", material->getName().c_str(),
-               material->props.occlusionStrength);
+        printf("Material %s occlusion strength: %f\n", material->getName().c_str(), material->props.occlusionStrength);
       };
       // Set the material properties
       aiColor4D color;
@@ -454,14 +483,12 @@ namespace ren {
       }
 
       // metallic
-      if (assimpMaterial->Get(AI_MATKEY_METALLIC_FACTOR, material->props.metallicFactor) ==
-          aiReturn_SUCCESS) {
+      if (assimpMaterial->Get(AI_MATKEY_METALLIC_FACTOR, material->props.metallicFactor) == aiReturn_SUCCESS) {
         material->props.metallicFactor = glm::clamp(material->props.metallicFactor, 0.0f, 1.0f);
       }
 
       // roughness
-      if (assimpMaterial->Get(AI_MATKEY_ROUGHNESS_FACTOR, material->props.roughnessFactor) ==
-          aiReturn_SUCCESS) {
+      if (assimpMaterial->Get(AI_MATKEY_ROUGHNESS_FACTOR, material->props.roughnessFactor) == aiReturn_SUCCESS) {
         material->props.roughnessFactor = glm::clamp(material->props.roughnessFactor, 0.0f, 1.0f);
       }
 
@@ -482,7 +509,9 @@ namespace ren {
 
       int twoSided;
       if (assimpMaterial->Get(AI_MATKEY_TWOSIDED, twoSided) == AI_SUCCESS) {
-        if (twoSided) { material->getPSO().cullMode = ren::CullMode::None; }
+        if (twoSided) {
+          material->getPSO().cullMode = ren::CullMode::None;
+        }
       }
 
 
