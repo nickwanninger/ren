@@ -12,6 +12,7 @@
 #include <ren/core/ui/EditorUI.h>
 #include <ren/core/Bundle.h>
 #include <ren/core/Flag.h>
+#include <ren/renderer/shader/SlangFileSystem.h>
 
 
 namespace ren {
@@ -164,7 +165,12 @@ namespace ren {
       sessionDesc.targets = &targetDesc;
       sessionDesc.targetCount = 1;
 
-      // TODO: viratual filesystems from ren::AssetManager!
+      static SlangFileSystem fileSystem;
+      sessionDesc.fileSystem = &fileSystem;
+
+      const char* searchPaths[] = { "shaders" };
+      sessionDesc.searchPaths = searchPaths;
+      sessionDesc.searchPathCount = 1;
 
       if (SLANG_FAILED(globalSession->createSession(sessionDesc, this->session.writeRef()))) {
         throw std::runtime_error("Failed to create Slang session");
