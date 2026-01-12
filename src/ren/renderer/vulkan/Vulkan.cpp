@@ -187,7 +187,7 @@ void ren::VulkanInstance::init_instance(void) {
       .runtimeDescriptorArray = VK_TRUE,
   };
   selector.add_required_extension(VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME);
-  selector.add_required_extension(VK_GOOGLE_USER_TYPE_EXTENSION_NAME);
+  // selector.add_required_extension(VK_GOOGLE_USER_TYPE_EXTENSION_NAME);
   selector.set_required_features_12(vk12Features);
 
 
