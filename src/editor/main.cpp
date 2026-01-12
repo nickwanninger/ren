@@ -62,7 +62,7 @@ void testSaxpy(void) {
 
   auto out = ren::make<ren::StorageBuffer<float>>(length);
 
-  auto program = ren::make<ren::ShaderProgram>("saxpy.slang");
+  auto program = ren::make<ren::ShaderProgram>("test/saxpy");
 
 
   for (int i = 0; i < 1000; i++) {
@@ -86,18 +86,18 @@ void testSaxpy(void) {
   }
 
 
-  // // Validate the result on the CPU
-  // auto* mappedX = x->map();
-  // auto* mappedY = y->map();
-  // auto* mappedOut = out->map();
-  // for (u64 i = 0; i < length; i++) {
-  //   printf("i=%llu: %f * %f + %f = %f\n", i, a, mappedX[i], mappedY[i], mappedOut[i]);
-  //   float expected = a * mappedX[i] + mappedY[i];
-  //   REN_ASSERT(fabs(mappedOut[i] - expected) < 0.001f);
-  // }
-  // x->unmap();
-  // y->unmap();
-  // out->unmap();
+  // Validate the result on the CPU
+  auto* mappedX = x->map();
+  auto* mappedY = y->map();
+  auto* mappedOut = out->map();
+  for (u64 i = 0; i < length; i++) {
+    // printf("i=%llu: %f * %f + %f = %f\n", i, a, mappedX[i], mappedY[i], mappedOut[i]);
+    float expected = a * mappedX[i] + mappedY[i];
+    REN_ASSERT(fabs(mappedOut[i] - expected) < 0.001f);
+  }
+  x->unmap();
+  y->unmap();
+  out->unmap();
 }
 
 #include <ren/core/ThreadPool.h>
@@ -116,13 +116,13 @@ int main(int argc, char* argv[]) {
 
 
 
-  // testSaxpy();
+  testSaxpy();
   // exit(0);
 
-#if 0
+#if 1
 
   // --- Expected Compute Shader ---
-  auto program = ren::make<ren::ShaderProgram>("compute.slang");
+  auto program = ren::make<ren::ShaderProgram>("test/compute");
 
   u64 length = 2560 * 1440;
 

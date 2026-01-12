@@ -1,8 +1,8 @@
-struct Test {
-  RWStructuredBuffer<float> outputBuffer;
-  float value;
-}
 
+public struct Test {
+  public RWStructuredBuffer<float> outputBuffer;
+  public float value;
+}
 
 
 ParameterBlock<Test> test;

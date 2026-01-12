@@ -226,10 +226,6 @@ namespace ren {
     trianglePSO.fillMode = ren::FillMode::Solid;
 
 
-
-
-    auto computeProgram = make<ShaderProgram>("./compute");
-
     float renderScaleTemp = 1.0f;
 
     // TODO: Move me to a logical class, not here as static variables.
