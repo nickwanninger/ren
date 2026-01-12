@@ -10,7 +10,7 @@ namespace ren {
   ParameterCursor::ParameterCursor(ParameterBlock &block, ren::ShaderReflection::Node &node)
       : block(block)
       , node(node) {
-    ren::println(" walk node '{}' ({})", node.name, node.location.toJson().dump());
+    // ren::println(" walk node '{}' ({})", node.name, node.location.toJson().dump());
   }
 
 

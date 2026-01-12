@@ -205,6 +205,7 @@ namespace ren {
   }
 
   void inspectLog() {
+    REN_PROFILE_FUNCTION();
     ImGui::SetNextWindowSizeConstraints(ImVec2(350, 200), ImVec2(FLT_MAX, FLT_MAX));
     ImGui::Begin("Log");
     // Static state for the log inspector

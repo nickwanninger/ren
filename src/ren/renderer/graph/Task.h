@@ -117,6 +117,7 @@ namespace ren {
 
 
   inline void RenderTask::execute(GraphRunContext &ctx) {
+    REN_PROFILE_SCOPE(this->name().c_str());
     auto start = std::chrono::high_resolution_clock::now();
     preRun(ctx);
     run(ctx);

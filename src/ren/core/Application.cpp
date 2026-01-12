@@ -47,6 +47,9 @@
 #include <ren/renderer/shader/ShaderProgram.h>
 #include <ren/scripting/imgui_lua_inspector.hpp>
 
+#include <ren/core/ThreadPool.h>
+#include <ren/core/Math.h>
+
 extern "C" {
 #include <luajit.h>
 #include <lua.h>
@@ -239,10 +242,9 @@ namespace ren {
 
     while (this->running) {
       int eventsHandled = 0;
-      REN_PROFILE_SCOPE("Frame");
 
       {
-        REN_PROFILE_SCOPE("SDL Poll");
+        // REN_PROFILE_SCOPE("SDL Poll");
         // Handle events on queue
         while (SDL_PollEvent(&e) != 0) {
           REN_PROFILE_SCOPE("SDL Dispatch");
@@ -283,6 +285,9 @@ namespace ren {
 
         REN_PROFILE_COUNTER("SDL Events", eventsHandled);
       }
+
+
+      REN_PROFILE_SCOPE("Frame");
 
       // Handle swapchain rebuild if needed, and the state machine allows.
       if (swapchainNeedsRebuild && !isResizing) {
@@ -367,20 +372,12 @@ namespace ren {
 
         char buf[64];
         snprintf(buf, sizeof(buf), "%4d FPS", (int)framerateCounter.getAverageFramerate());
-
         if (ImGui::MenuItem(buf)) {
           //
         }
 
-        // // Write the right-aligned text in the menu bar.
-        // float textWidth = ImGui::CalcTextSize(rightText.c_str()).x;
-        // float windowWidth = ImGui::GetWindowWidth();
-        // ImGui::SetCursorPosX(windowWidth - textWidth - 10.0f);
-        // ImGui::Text("%s", rightText.c_str());
-
         ImGui::EndMainMenuBar();
       }
-
 
       /*
       ImGui::Begin("VRAM");
@@ -417,75 +414,59 @@ namespace ren {
 
 
 
-      ren::inspectLog();
-      ImGui::Begin("Compute Shader Inspection");
-      eui::ExtendedButton("New Project", ICON_PLUS,
-                          {
-                              .fg = Color(0x000000),
-                              .bg = Color(0xFFFFFF),
-                          });
-      eui::ShadowedText(
-          "For a softer shadow, you can draw multiple offset copies with decreasing alpha values, or blur the shadow using a multi-pass approach, though that gets more complex. The simple two-pass approach works well for most cases.");
-      ImGui::Text(
-          "For a softer shadow, you can draw multiple offset copies with decreasing alpha values, or blur the shadow using a multi-pass approach, though that gets more complex. The simple two-pass approach works well for most cases.");
+      // ren::inspectLog();
 
-      ImGui::Separator();
-
-
-
-      if (ImGui::Button("Reload")) {
-        try {
-          computeProgram = make<ShaderProgram>("./compute");
-        } catch (const std::exception &e) {
-          ren::errln("XXX Failed to reload compute shader: {}", e.what());
-        }
-      }
-      ImGui::SameLine();
-      if (ImGui::Button("Log Inspector")) {
-        ren::logInspection<ShaderProgram>("Program > A Shader Program", computeProgram);
-      }
-      if (computeProgram) {
-        computeProgram->inspect();
-      }
-      ImGui::End();
-
-
-      {
+      if (1) {
         REN_PROFILE_SCOPE("WorldProgress");
         world.progress(deltaTime);
-      }
 
-      // Update lua globals
-      lua.globals()["time"] = time;
-      lua.globals()["delta_time"] = deltaTime;
-      lua.globals()["fps"] = framerateCounter.getAverageFramerate();
-      lua.globals()["frame"] = vulkan.frame_number;
-      // Call the lua update function if it exists
-      sol::protected_function lua_update = lua["update"];
-      if (lua_update.valid()) {
-        sol::protected_function_result result = lua_update(deltaTime);
-        if (!result.valid()) {
-          sol::error err = result;
-          ren::println("Error running lua update: {}", err.what());
+        REN_PROFILE_SCOPE("LuaProgress");
+        // Update lua globals
+        lua.globals()["time"] = time;
+        lua.globals()["delta_time"] = deltaTime;
+        lua.globals()["fps"] = framerateCounter.getAverageFramerate();
+        lua.globals()["frame"] = vulkan.frame_number;
+        // Call the lua update function if it exists
+        sol::protected_function lua_update = lua["update"];
+        if (lua_update.valid()) {
+          sol::protected_function_result result = lua_update(deltaTime);
+          if (!result.valid()) {
+            sol::error err = result;
+            ren::println("Error running lua update: {}", err.what());
+          }
         }
       }
 
-      // world.lookup("scene").scope([&]() { world.progress(deltaTime); });
 
 
-      // try {
-      //   G.runFor(ssao, *renderer);
-      // } catch (const std::exception &e) {
-      //   ren::println("✗ RenderPassTask execution failed: {}", e.what());
-      // }
 
-      // G.inspect();
+      float width = (float)windowWidth;
+      float height = (float)windowHeight;
+      // targetHeight = height;
+      float targetHeight = height * renderScaleTemp;
+      float scale = targetHeight / height;
+      scale *= renderScaleTemp;
+      width *= scale;
+      height *= scale;
+      auto renderSize = glm::uvec2(width, height);
+      G.startFrame(renderSize);
+
+      try {
+        G.runFor(ssao, *renderer);
+      } catch (const std::exception &e) {
+        ren::println("✗ RenderPassTask execution failed: {}", e.what());
+      }
+
+      G.inspect();
+
 
 
       auto enc = frame.getMainCommandEncoder();
       auto penc = enc->beginRenderPass(*renderer->getDisplayPass(), *frame.renderTarget);
       {
-        if (0) {
+        REN_PROFILE_SCOPE("FullScreenPass");
+        if (1) {
+          REN_PROFILE_SCOPE("RenderBackgroundTriangle");
           auto start = std::chrono::high_resolution_clock::now();
           ren::MeshBuilder b;
 
@@ -528,10 +509,13 @@ namespace ren {
         }
 
 
-        ImGui::Render();
-        ImGui::UpdatePlatformWindows();
-        ImGui::RenderPlatformWindowsDefault();
-        ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), penc.buf());  // Gross leakage.
+        {
+          REN_PROFILE_SCOPE("RenderImGui");
+          ImGui::Render();
+          ImGui::UpdatePlatformWindows();
+          ImGui::RenderPlatformWindowsDefault();
+          ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), penc.buf());  // Gross leakage.
+        }
       }
 
       penc.end();

@@ -81,8 +81,6 @@ namespace ren {
   }
 
   void FrameSubmissionUnit::submitAndPresent(SubmissionQueue &queue, VkSwapchainKHR swapchain) {
-    REN_PROFILE_FUNCTION();
-
     // Setup synchronization for swapchain presentation
     VkSemaphore waitSems[] = {imageAvailableSemaphore};
     VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};

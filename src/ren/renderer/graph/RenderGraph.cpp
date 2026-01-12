@@ -48,7 +48,9 @@ namespace ren {
     // Results (writes)
     int ind = 0;
     for (const auto &resultHandle : getResults()) {
-      if (ind++ > 0) ss << ", ";
+      if (ind++ > 0) {
+        ss << ", ";
+      }
       ss << fmt::format("%{}", resultHandle);
     }
 
@@ -57,7 +59,9 @@ namespace ren {
     // Operands (reads)
     ind = 0;
     for (const auto &operand : getOperands()) {
-      if (ind++ > 0) ss << ", ";
+      if (ind++ > 0) {
+        ss << ", ";
+      }
       ss << operand.toString();
     }
 
@@ -88,12 +92,14 @@ namespace ren {
         }
         // Re-prepare the defining task as well, in case it needs to recreate things like
         // framebuffers.
-        if (resource->definingTask != nullptr) needToPrepare.insert(resource->definingTask);
+        if (resource->definingTask != nullptr) {
+          needToPrepare.insert(resource->definingTask);
+        }
       }
     }
 
     if (needToPrepare.size() > 0) {
-      getVulkan().waitForIdle(); // TEST
+      getVulkan().waitForIdle();  // TEST
       for (auto *task : needToPrepare) {
         task->version++;
         // Re-prepare tasks whose resources were reallocated
@@ -105,8 +111,7 @@ namespace ren {
     return anyReallocated;
   }
 
-  GraphHandle RenderGraph::createImage(const std::string_view &name, const GraphImageSpec &spec,
-                                       GraphAccess initialAccess) {
+  GraphHandle RenderGraph::createImage(const std::string_view &name, const GraphImageSpec &spec, GraphAccess initialAccess) {
     GraphHandle handle = nextHandle++;
 
     // if the spec has 0 scale, and 0 width/height, it's invalid.
@@ -133,8 +138,7 @@ namespace ren {
   GraphHandle RenderGraph::addWrite(RenderTask &task, GraphHandle handle, GraphAccess access) {
     auto resource = resourceTable[handle];
     if (resource->definingTask != nullptr) {
-      throw std::runtime_error(fmt::format("Warning: Resource {} already has a defining task '{}'",
-                                           handle, resource->definingTask->name()));
+      throw std::runtime_error(fmt::format("Warning: Resource {} already has a defining task '{}'", handle, resource->definingTask->name()));
     }
 
     resource->definingTask = &task;
@@ -170,18 +174,17 @@ namespace ren {
 
     auto *definingTask = it->second->definingTask;
     if (definingTask == nullptr) {
-      throw std::runtime_error(
-          fmt::format("Resource {} ('{}') has no defining task - it was never written to",
-                      resourceHandle, it->second->name));
+      throw std::runtime_error(fmt::format("Resource {} ('{}') has no defining task - it was never written to", resourceHandle, it->second->name));
     }
 
     return definingTask;
   }
 
   // Topological sort: DFS to order tasks respecting dependencies
-  void RenderGraph::topologicalSort(RenderTask *task, std::vector<RenderTask *> &outOrder,
-                                    std::unordered_set<RenderTask *> &visited) {
-    if (task == nullptr || visited.count(task)) return;
+  void RenderGraph::topologicalSort(RenderTask *task, std::vector<RenderTask *> &outOrder, std::unordered_set<RenderTask *> &visited) {
+    if (task == nullptr || visited.count(task)) {
+      return;
+    }
     visited.insert(task);
 
     // Visit all dependencies first (pre-order traversal)
@@ -194,6 +197,7 @@ namespace ren {
   }
 
   RenderSchedule RenderGraph::compile(GraphHandle goalResource) {
+    REN_PROFILE_SCOPE("CompileRenderGraph");
     // Step 1: Find the task that produces the goal resource
     RenderTask *goalTask = getDefiningTask(goalResource);
 
@@ -204,7 +208,9 @@ namespace ren {
     // (depth in the dependency DAG from goal to leaves)
     std::unordered_map<RenderTask *, int> taskLevels;
     std::function<int(RenderTask *)> computeLevels = [&](RenderTask *task) -> int {
-      if (taskLevels.count(task)) return taskLevels[task];
+      if (taskLevels.count(task)) {
+        return taskLevels[task];
+      }
 
       int maxDepLevel = 0;
       for (auto *dep : task->dependencies) {
@@ -224,12 +230,11 @@ namespace ren {
 
     // Step 5: Sort tasks by level (ascending) so all tasks of the same level are grouped together.
     // This allows executing all tasks of a level before moving to the next level.
-    std::sort(orderedTasks.begin(), orderedTasks.end(),
-              [&taskLevels](RenderTask *a, RenderTask *b) {
-                int levelA = taskLevels.count(a) ? taskLevels[a] : 0;
-                int levelB = taskLevels.count(b) ? taskLevels[b] : 0;
-                return levelA < levelB;
-              });
+    std::sort(orderedTasks.begin(), orderedTasks.end(), [&taskLevels](RenderTask *a, RenderTask *b) {
+      int levelA = taskLevels.count(a) ? taskLevels[a] : 0;
+      int levelB = taskLevels.count(b) ? taskLevels[b] : 0;
+      return levelA < levelB;
+    });
 
     // Step 6: Create schedule with level-sorted tasks, insert barriers, and assign levels
     RenderSchedule schedule(*this);
@@ -264,7 +269,9 @@ namespace ren {
       for (const auto &resultHandle : task->getResults()) {
         // Look up the write access from the resource table
         auto it = resourceTable.find(resultHandle);
-        if (it != resourceTable.end()) { resourceStates[resultHandle] = it->second->writeAccess; }
+        if (it != resourceTable.end()) {
+          resourceStates[resultHandle] = it->second->writeAccess;
+        }
       }
     }
 
@@ -287,6 +294,7 @@ namespace ren {
   }
 
   void RenderGraph::runFor(GraphHandle goalResource, class Renderer &renderer) {
+    REN_PROFILE_SCOPE("RunRenderGraph");
     auto it = resourceTable.find(goalResource);
     if (it == resourceTable.end()) {
       throw std::runtime_error(fmt::format("Invalid resource handle for runFor: {}", goalResource));
@@ -312,16 +320,16 @@ namespace ren {
     auto &frame = ren::getFrameUnit();
     GraphRunContext ctx(*this, renderer, *frame.getMainCommandEncoder());
     ctx.cmd = frame.getMainCommandEncoder()->buf();
+    // auto overallTik = ctx.encoder.beginTimestampQuery("RenderGraphTotal");
     for (const auto &task : schedule.getTasks()) {
       ctx.task = task;
+      auto tik = ctx.encoder.beginTimestampQuery(task->name().c_str());
       task->execute(ctx);
+      ctx.encoder.endTimestampQuery(tik);
     }
-    auto runEnd = std::chrono::high_resolution_clock::now();
+    // ctx.encoder.endTimestampQuery(overallTik);
 
-    this->compileTimeUs +=
-        std::chrono::duration_cast<std::chrono::microseconds>(scheduleEnd - scheduleStart).count();
-    this->totalRuntimeUs +=
-        std::chrono::duration_cast<std::chrono::microseconds>(runEnd - runStart).count();
+    this->compileTimeUs += std::chrono::duration_cast<std::chrono::microseconds>(scheduleEnd - scheduleStart).count();
     this->numRuns++;
   }
 
@@ -341,8 +349,7 @@ namespace ren {
         ImGui::BeginGroup();
         {
           // Left panel: Task list
-          ImGui::BeginChild("TaskListPanel", ImVec2(150, -ImGui::GetFrameHeightWithSpacing()),
-                            ImGuiChildFlags_Border);
+          ImGui::BeginChild("TaskListPanel", ImVec2(150, -ImGui::GetFrameHeightWithSpacing()), ImGuiChildFlags_Border);
           {
             // ImGui::Text("Tasks (%zu)", tasks.size());
             // ImGui::Separator();
@@ -351,8 +358,7 @@ namespace ren {
               RenderTask *taskPtr = task.get();
               bool isSelected = (taskPtr == selectedTask);
               ImGui::PushID(taskPtr);
-              if (ImGui::Selectable(task->name().c_str(), isSelected,
-                                    ImGuiSelectableFlags_AllowDoubleClick)) {
+              if (ImGui::Selectable(task->name().c_str(), isSelected, ImGuiSelectableFlags_AllowDoubleClick)) {
                 selectedTask = taskPtr;
               }
               ImGui::PopID();
@@ -367,15 +373,13 @@ namespace ren {
         // Right panel: Task details
         ImGui::BeginGroup();
         {
-          ImGui::BeginChild("TaskDetailsPanel", ImVec2(0, -ImGui::GetFrameHeightWithSpacing()),
-                            ImGuiChildFlags_Border);
+          ImGui::BeginChild("TaskDetailsPanel", ImVec2(0, -ImGui::GetFrameHeightWithSpacing()), ImGuiChildFlags_Border);
           {
             if (selectedTask) {
-              ImGui::Text("Task: %s (Version %d)", selectedTask->name().c_str(),
-                          selectedTask->version);
+              ImGui::Text("Task: %s (Version %d)", selectedTask->name().c_str(), selectedTask->version);
               ImGui::Separator();
-              ImGui::Text("Average Execution Time: %.8f ms over %llu runs",
-                          selectedTask->averageTimeNs() / 1024.0f / 1024.0f, (u64)selectedTask->numExecutions);
+              ImGui::Text("Average Execution Time: %.8f ms over %llu runs", selectedTask->averageTimeNs() / 1024.0f / 1024.0f,
+                          (u64)selectedTask->numExecutions);
 
               // Operands (reads)
               const auto &operands = selectedTask->getOperands();
@@ -383,8 +387,7 @@ namespace ren {
                 if (ImGui::TreeNode("Operands (Reads)")) {
                   for (const auto &op : operands) {
                     const char *accessStr = fmt::formatter<GraphAccess>::toString(op.access);
-                    const char *typeStr =
-                        fmt::formatter<GraphResourceType>::toString(op.resourceType);
+                    const char *typeStr = fmt::formatter<GraphResourceType>::toString(op.resourceType);
                     ImGui::Text("%%%-3u : %s (type: %s)", op.valueHandle, accessStr, typeStr);
 
                     // Show resource name if available
@@ -407,8 +410,7 @@ namespace ren {
                     if (it != resourceTable.end()) {
                       ImGui::Text("%%%-3u : %s", resultHandle, it->second->name.c_str());
                       ImGui::SameLine();
-                      const char *accessStr =
-                          fmt::formatter<GraphAccess>::toString(it->second->writeAccess);
+                      const char *accessStr = fmt::formatter<GraphAccess>::toString(it->second->writeAccess);
                       ImGui::TextDisabled("(%s)", accessStr);
                     } else {
                       ImGui::Text("%%%-3u : <unknown>", resultHandle);
@@ -452,8 +454,7 @@ namespace ren {
         ImGui::BeginGroup();
         {
           // Left panel: Resource list
-          ImGui::BeginChild("ResourceListPanel", ImVec2(150, -ImGui::GetFrameHeightWithSpacing()),
-                            ImGuiChildFlags_Border);
+          ImGui::BeginChild("ResourceListPanel", ImVec2(150, -ImGui::GetFrameHeightWithSpacing()), ImGuiChildFlags_Border);
           {
             ImGui::Text("Resources (%zu)", resourceTable.size());
             ImGui::Separator();
@@ -476,8 +477,7 @@ namespace ren {
         // Right panel: Resource details
         ImGui::BeginGroup();
         {
-          ImGui::BeginChild("ResourceDetailsPanel", ImVec2(0, -ImGui::GetFrameHeightWithSpacing()),
-                            ImGuiChildFlags_Border);
+          ImGui::BeginChild("ResourceDetailsPanel", ImVec2(0, -ImGui::GetFrameHeightWithSpacing()), ImGuiChildFlags_Border);
           {
             if (selectedResource != nullGraphHandle) {
               auto it = resourceTable.find(selectedResource);
@@ -486,10 +486,8 @@ namespace ren {
                 ImGui::Text("Resource Handle: %%%-3u", selectedResource);
                 ImGui::Text("Name: %s", resource->name.c_str());
                 const char *typeStr = fmt::formatter<GraphResourceType>::toString(resource->type);
-                const char *initialAccessStr =
-                    fmt::formatter<GraphAccess>::toString(resource->initialAccess);
-                const char *writeAccessStr =
-                    fmt::formatter<GraphAccess>::toString(resource->writeAccess);
+                const char *initialAccessStr = fmt::formatter<GraphAccess>::toString(resource->initialAccess);
+                const char *writeAccessStr = fmt::formatter<GraphAccess>::toString(resource->writeAccess);
                 ImGui::Text("Type: %s", typeStr);
                 ImGui::Text("Initial Access: %s", initialAccessStr);
                 ImGui::Text("Write Access: %s", writeAccessStr);

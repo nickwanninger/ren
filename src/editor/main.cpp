@@ -64,33 +64,43 @@ void testSaxpy(void) {
 
   auto program = ren::make<ren::ShaderProgram>("saxpy.slang");
 
-  auto cmd = unit.begin();
-  ren::ShaderObject& obj = unit.createShaderObject(program);
-  auto blk = obj.block("params");
-  blk.field("a").set<float>(a);
-  blk.field("x").bind(x);
-  blk.field("y").bind(y);
-  blk.field("out").bind(out);
 
-  cmd->dispatchCompute(obj, {length / 1024 + 1, 1, 1});
+  for (int i = 0; i < 1000; i++) {
+    auto cmd = unit.begin();
 
-  // now we submit the command buffer and wait for it to complete.
-  auto f = unit.submitTo(*getVulkan().computeQueue);
-  f->awaitCompletion();
+    auto tik = cmd->beginTimestampQuery("SAXPY Compute");
+    ren::ShaderObject& obj = unit.createShaderObject(program);
+    auto blk = obj.block("params");
+    blk.field("a").set<float>(a);
+    blk.field("x").bind(x);
+    blk.field("y").bind(y);
+    blk.field("out").bind(out);
 
-  // Validate the result on the CPU
-  auto* mappedX = x->map();
-  auto* mappedY = y->map();
-  auto* mappedOut = out->map();
-  for (u64 i = 0; i < length; i++) {
-    printf("i=%llu: %f * %f + %f = %f\n", i, a, mappedX[i], mappedY[i], mappedOut[i]);
-    float expected = a * mappedX[i] + mappedY[i];
-    REN_ASSERT(fabs(mappedOut[i] - expected) < 0.001f);
+    cmd->dispatchCompute(obj, {length / 1024 + 1, 1, 1});
+
+    cmd->endTimestampQuery(tik);
+
+    // now we submit the command buffer and wait for it to complete.
+    auto f = unit.submitTo(*getVulkan().computeQueue);
+    f->awaitCompletion();
   }
-  x->unmap();
-  y->unmap();
-  out->unmap();
+
+
+  // // Validate the result on the CPU
+  // auto* mappedX = x->map();
+  // auto* mappedY = y->map();
+  // auto* mappedOut = out->map();
+  // for (u64 i = 0; i < length; i++) {
+  //   printf("i=%llu: %f * %f + %f = %f\n", i, a, mappedX[i], mappedY[i], mappedOut[i]);
+  //   float expected = a * mappedX[i] + mappedY[i];
+  //   REN_ASSERT(fabs(mappedOut[i] - expected) < 0.001f);
+  // }
+  // x->unmap();
+  // y->unmap();
+  // out->unmap();
 }
+
+#include <ren/core/ThreadPool.h>
 
 int main(int argc, char* argv[]) {
   ren::parseFlags(argc, argv);
@@ -104,10 +114,12 @@ int main(int argc, char* argv[]) {
 
   ren::Application app("Editor", res);
 
-#if 0
-  testSaxpy();
+
+
+  // testSaxpy();
   // exit(0);
 
+#if 0
 
   // --- Expected Compute Shader ---
   auto program = ren::make<ren::ShaderProgram>("compute.slang");
