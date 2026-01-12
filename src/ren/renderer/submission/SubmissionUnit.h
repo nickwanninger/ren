@@ -48,12 +48,43 @@ namespace ren {
 
     ShaderObject &createShaderObject(ref<ShaderProgram> &program);
 
+   protected:
+    friend class CommandEncoder;
+
+    // Allocated using the arena.
+    struct Query {
+      char name[64];
+      u32 startIndex;
+      u32 endIndex;
+      Query *next;
+    };
+
+
+    Query *newQuery(const char *name) {
+      Query *q = m_arena.push<Query>();
+      std::strncpy(q->name, name, sizeof(q->name));
+      q->startIndex = nextQueryIndex++;
+      q->endIndex = nextQueryIndex++;
+      q->next = m_queries;
+      m_queries = q;
+      return q;
+    }
+    inline VkQueryPool &getQueryPool(void) { return m_timestampQueryPool; }
+
+
+
    private:
     VkCommandBuffer m_vkCmd;
     ref<CommandEncoder> m_cmd;
 
 
     DescriptorAllocator m_descriptorAllocator;
-    ren::Arena m_arena{0xFFFF, true}; // 64KB initial size, growable
+    ren::Arena m_arena{0xFFFF, true};  // 64KB initial size, growable
+
+
+    VkQueryPool m_timestampQueryPool;
+    Query *m_queries = nullptr;
+    u32 nextQueryIndex = 0;
+    float timestampPeriod;
   };
 }  // namespace ren

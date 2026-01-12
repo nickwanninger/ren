@@ -14,7 +14,7 @@
 namespace ren {
 
 
-  class SubmissionUnit; // forward declaration
+  class SubmissionUnit;  // forward declaration
 
   /**
    * The theory of operation for rendering in the REN engine is as follows:
@@ -54,17 +54,15 @@ namespace ren {
 
 
 
-    void withRenderPass(RenderPass &pass, RenderTarget &target,
-                        std::function<void(RenderPassEncoder &)> func);
+    void withRenderPass(RenderPass &pass, RenderTarget &target, std::function<void(RenderPassEncoder &)> func);
     RenderPassEncoder beginRenderPass(RenderPass &pass, RenderTarget &target);
     // TODO:
     // ComputePassEncoder *beginComputePass();
 
-    void dispatchCompute(ShaderObject& resources, glm::uvec3 groupCount);
+    void dispatchCompute(ShaderObject &resources, glm::uvec3 groupCount);
 
 
-    void copyBuffer(ren::Buffer &src, ren::Buffer &dst, VkDeviceSize size,
-                    VkDeviceSize srcOffset = 0, VkDeviceSize dstOffset = 0);
+    void copyBuffer(ren::Buffer &src, ren::Buffer &dst, VkDeviceSize size, VkDeviceSize srcOffset = 0, VkDeviceSize dstOffset = 0);
 
     // TODO:
     // - copyTexture
@@ -83,6 +81,15 @@ namespace ren {
 
     // Reset the command encoder for reuse.
     void reset(void);
+
+
+    // Call beginTimestampQuery before some section of GPU work, then call
+    // endTimestampQuery after it.  The timestamps can be resolved after GPU
+    // execution. Eventually, this information is collected and reported back to
+    // the CPU and is associated with the logical name provided.
+    using QueryTicket = u32;
+    QueryTicket beginTimestampQuery(const char *logical_name);
+    void endTimestampQuery(QueryTicket ticket);
 
    private:
     VkCommandBuffer cmd;

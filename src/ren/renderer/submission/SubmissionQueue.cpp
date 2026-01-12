@@ -13,7 +13,6 @@ namespace ren {
 
 
   ref<Fence> SubmissionQueue::submit(const SubmissionInfo &info) {
-    REN_PROFILE_FUNCTION();
     // Create a fence to signal when the command buffers have finished executing
     auto fence = ren::make<Fence>(false);
 

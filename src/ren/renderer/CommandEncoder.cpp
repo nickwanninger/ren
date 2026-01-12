@@ -5,8 +5,7 @@
 namespace ren {
 
 
-  void CommandEncoder::withRenderPass(RenderPass &pass, RenderTarget &target,
-                                      std::function<void(RenderPassEncoder &)> func) {
+  void CommandEncoder::withRenderPass(RenderPass &pass, RenderTarget &target, std::function<void(RenderPassEncoder &)> func) {
     RenderPassEncoder encoder = beginRenderPass(pass, target);
     func(encoder);
     encoder.end();
@@ -18,8 +17,7 @@ namespace ren {
     return encoder;
   }
 
-  void CommandEncoder::copyBuffer(ren::Buffer &src, ren::Buffer &dst, VkDeviceSize size,
-                                  VkDeviceSize srcOffset, VkDeviceSize dstOffset) {
+  void CommandEncoder::copyBuffer(ren::Buffer &src, ren::Buffer &dst, VkDeviceSize size, VkDeviceSize srcOffset, VkDeviceSize dstOffset) {
     VkBufferCopy copyRegion{};
     copyRegion.srcOffset = srcOffset;
     copyRegion.dstOffset = dstOffset;
@@ -27,8 +25,8 @@ namespace ren {
     vkCmdCopyBuffer(this->cmd, src.getHandle(), dst.getHandle(), 1, &copyRegion);
   }
 
-  void CommandEncoder::dispatchCompute(ShaderObject& shader, glm::uvec3 groupCount) {
-    auto& R = ren::Renderer::get();
+  void CommandEncoder::dispatchCompute(ShaderObject &shader, glm::uvec3 groupCount) {
+    auto &R = ren::Renderer::get();
     auto pipeline = R.getPipelineCache().getCompute(shader.program);
 
     vkCmdBindPipeline(this->cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline->getHandle());
@@ -42,6 +40,19 @@ namespace ren {
   void CommandEncoder::reset(void) {
     // Nothing to do here - resources are managed by SubmissionUnit
   }
+
+
+  CommandEncoder::QueryTicket CommandEncoder::beginTimestampQuery(const char *logical_name) {
+    auto *q = submissionUnit.newQuery(logical_name);
+    vkCmdWriteTimestamp(this->cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, submissionUnit.getQueryPool(), q->startIndex);
+    return q->endIndex;
+  }
+
+
+  void CommandEncoder::endTimestampQuery(QueryTicket ticket) {
+    vkCmdWriteTimestamp(this->cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, submissionUnit.getQueryPool(), ticket);
+  }
+
 
   ren::Arena &CommandEncoder::getArena(void) { return submissionUnit.getArena(); }
 
@@ -81,8 +92,7 @@ namespace ren {
     for (const auto &attachment : pass.getDescription().attachments) {
       if (attachment.loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR) {
         // If the attachment is a color attachment, clear it to white.
-        if (attachment.format != VK_FORMAT_D32_SFLOAT &&
-            attachment.format != VK_FORMAT_D24_UNORM_S8_UINT) {
+        if (attachment.format != VK_FORMAT_D32_SFLOAT && attachment.format != VK_FORMAT_D24_UNORM_S8_UINT) {
           clearValues.push_back({.color = {{0.0f, 0.0f, 0.0f, 0.0f}}});
         } else {
           // Otherwise, it's a depth attachment, clear it to 1.0f.
@@ -112,7 +122,6 @@ namespace ren {
 
 
   ref<ShaderObject> RenderPassEncoder::bindPipeline(ren::PipelineStateObject &pso) {
-
     // TODO:
     ref<ShaderObject> obj = ren::make<ShaderObject>(pso.program, getSubmissionUnit());
     bindPipeline(pso, *obj);
@@ -130,18 +139,15 @@ namespace ren {
   }
 
 
-  void RenderPassEncoder::bindImmediateMesh(std::span<ren::Vertex> vertices,
-                                            std::span<u32> indices) {
+  void RenderPassEncoder::bindImmediateMesh(std::span<ren::Vertex> vertices, std::span<u32> indices) {
     // Create vertex buffer
-    auto vbuf = getEncoder().getArena().push<ren::VertexBuffer<ren::Vertex>>(
-        sizeof(ren::Vertex) * static_cast<VkDeviceSize>(vertices.size()));
+    auto vbuf = getEncoder().getArena().push<ren::VertexBuffer<ren::Vertex>>(sizeof(ren::Vertex) * static_cast<VkDeviceSize>(vertices.size()));
     vbuf->map();
     std::memcpy(vbuf->map(), vertices.data(), sizeof(ren::Vertex) * vertices.size());
     vbuf->unmap();
 
     // Create index buffer
-    auto ibuf = getEncoder().getArena().push<ren::IndexBuffer>(
-        sizeof(u32) * static_cast<VkDeviceSize>(indices.size()));
+    auto ibuf = getEncoder().getArena().push<ren::IndexBuffer>(sizeof(u32) * static_cast<VkDeviceSize>(indices.size()));
     ibuf->map();
     std::memcpy(ibuf->map(), indices.data(), sizeof(u32) * indices.size());
     ibuf->unmap();
@@ -154,8 +160,7 @@ namespace ren {
 
 
   void RenderPassEncoder::drawIndexed(const DrawArguments &args) {
-    vkCmdDrawIndexed(buf(), args.vertexCount, args.instanceCount, args.firstIndex, args.firstVertex,
-                     args.firstInstance);
+    vkCmdDrawIndexed(buf(), args.vertexCount, args.instanceCount, args.firstIndex, args.firstVertex, args.firstInstance);
   }
 
   void RenderPassEncoder::drawFullscreenQuad(void) {
