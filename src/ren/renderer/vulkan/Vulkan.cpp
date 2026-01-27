@@ -135,6 +135,10 @@ void ren::VulkanInstance::init_instance(void) {
   REN_PROFILE_FUNCTION();
   vkb::InstanceBuilder builder;
 
+
+  int required_major = 1;
+  int required_minor = 3;
+
   ren::println("Enabling validation layers: {}", validationLayers.get() ? "Yes" : "No");
 
   // Configure validation layers with custom debug callback
@@ -145,7 +149,7 @@ void ren::VulkanInstance::init_instance(void) {
                                                     VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT)  // Skip verbose by default
                       .add_debug_messenger_type(VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT)
                       .add_debug_messenger_type(VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT)
-                      .require_api_version(1, 3, 0)
+                      .require_api_version(required_major, required_minor)
                       .build();
 
   if (!inst_ret) {
@@ -172,7 +176,7 @@ void ren::VulkanInstance::init_instance(void) {
   vkb::PhysicalDeviceSelector selector{vkb_inst};
   VkPhysicalDeviceFeatures requiredFeatures = {};
   // requiredFeatures.geometryShader = VK_FALSE;    // Enable geometry shaders
-  requiredFeatures.samplerAnisotropy = VK_TRUE;  // Enable anisotropic filtering
+  requiredFeatures.samplerAnisotropy = true;  // Enable anisotropic filtering
   // requiredFeatures.fillModeNonSolid = VK_TRUE;
 
   selector.set_required_features(requiredFeatures);
@@ -180,18 +184,29 @@ void ren::VulkanInstance::init_instance(void) {
   // Request the specific features you need
   VkPhysicalDeviceVulkan12Features vk12Features{
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
-      .descriptorIndexing = VK_TRUE,
-      .shaderSampledImageArrayNonUniformIndexing = VK_TRUE,
-      .descriptorBindingSampledImageUpdateAfterBind = VK_TRUE,
-      .descriptorBindingPartiallyBound = VK_TRUE,
-      .runtimeDescriptorArray = VK_TRUE,
+      .descriptorIndexing = true,
+      .shaderSampledImageArrayNonUniformIndexing = true,
+      .descriptorBindingSampledImageUpdateAfterBind = true,
+      .descriptorBindingPartiallyBound = true,
+      .descriptorBindingVariableDescriptorCount = true,
+      .runtimeDescriptorArray = true,
+      .bufferDeviceAddress = true,
   };
-  selector.add_required_extension(VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME);
-  // selector.add_required_extension(VK_GOOGLE_USER_TYPE_EXTENSION_NAME);
   selector.set_required_features_12(vk12Features);
 
 
-  selector.set_minimum_version(1, 3);
+  VkPhysicalDeviceVulkan13Features vk13Features{
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
+      .synchronization2 = true,
+      .dynamicRendering = true,
+  };
+  selector.set_required_features_13(vk13Features);
+
+  selector.add_required_extension(VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME);
+  // selector.add_required_extension(VK_GOOGLE_USR_TYPE_EXTENSION_NAME);
+
+
+  selector.set_minimum_version(required_major, required_minor);
   selector.set_surface(surface);
 
 
@@ -296,7 +311,8 @@ void ren::VulkanInstance::init_instance(void) {
   VkPhysicalDeviceProperties props;
   vkGetPhysicalDeviceProperties(physicalDevice, &props);
 
-  fmt::print("Selected GPU: {} (type: {}, ID: {}, driver: {})\n", props.deviceName, static_cast<u32>(props.deviceType), props.deviceID, props.driverVersion);
+  fmt::print("Selected GPU: {} (type: {}, ID: {}, driver: {})\n", props.deviceName, static_cast<u32>(props.deviceType), props.deviceID,
+             props.driverVersion);
   fmt::print("Max bound descriptor sets: {}\n", props.limits.maxBoundDescriptorSets);
   fmt::print("Max samplers per set: {}\n", props.limits.maxDescriptorSetSamplers);
   fmt::print("Max UBOs per stage: {}\n", props.limits.maxPerStageDescriptorUniformBuffers);
