@@ -11,11 +11,21 @@ ren::Buffer::Buffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropert
 
   // Allocate the buffer using vma
   switch (usage) {
-    case VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT: setName("UniformBuffer"); break;
-    case VK_BUFFER_USAGE_STORAGE_BUFFER_BIT: setName("StorageBuffer"); break;
-    case VK_BUFFER_USAGE_VERTEX_BUFFER_BIT: setName("VertexBuffer"); break;
-    case VK_BUFFER_USAGE_INDEX_BUFFER_BIT: setName("IndexBuffer"); break;
-    default: setName("GenericBuffer"); break;
+    case VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT:
+      setName("UniformBuffer");
+      break;
+    case VK_BUFFER_USAGE_STORAGE_BUFFER_BIT:
+      setName("StorageBuffer");
+      break;
+    case VK_BUFFER_USAGE_VERTEX_BUFFER_BIT:
+      setName("VertexBuffer");
+      break;
+    case VK_BUFFER_USAGE_INDEX_BUFFER_BIT:
+      setName("IndexBuffer");
+      break;
+    default:
+      setName("GenericBuffer");
+      break;
   }
 
   resizeBytes(size);
@@ -28,7 +38,9 @@ ren::Buffer::~Buffer() {
 }
 
 void ren::Buffer::resizeBytes(size_t newSize) {
-  if (isMapped()) { throw std::runtime_error("Cannot resize a mapped buffer"); }
+  if (isMapped()) {
+    throw std::runtime_error("Cannot resize a mapped buffer");
+  }
 
   auto oldBuffer = buffer;
   auto oldAllocation = allocation;
@@ -50,10 +62,17 @@ void ren::Buffer::resizeBytes(size_t newSize) {
 
 
 
+  // Get the device address
+  // VkBufferDeviceAddressInfo addressInfo = {.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO, .buffer = buffer};
+  // VkDeviceAddress address = vkGetBufferDeviceAddress(getVulkan().device, &addressInfo);
+  // ren::println("New buffer address: 0x{:x}", address);
+
   // copy data from the old buffer to the new buffer if it exists.
   if (oldBuffer != VK_NULL_HANDLE) {
     auto copySize = oldSize;
-    if (newSize < copySize) { copySize = newSize; }
+    if (newSize < copySize) {
+      copySize = newSize;
+    }
     ren::dbgln("Resizing buffer from {} to {}, copying {} bytes", oldSize, newSize, copySize);
 
     auto &vk = getVulkan();
@@ -91,8 +110,7 @@ void ren::Buffer::unmap(void) {
 }
 
 
-void ren::Buffer::copyFrom(const Buffer &src, VkDeviceSize size, VkDeviceSize srcOffset,
-                           VkDeviceSize dstOffset) {
+void ren::Buffer::copyFrom(const Buffer &src, VkDeviceSize size, VkDeviceSize srcOffset, VkDeviceSize dstOffset) {
   auto &vk = getVulkan();
   auto cmd = vk.beginSingleTimeCommands();
 
@@ -109,7 +127,9 @@ void ren::Buffer::copyFrom(const Buffer &src, VkDeviceSize size, VkDeviceSize sr
 
 void ren::Buffer::copyFromHost(const void *data, VkDeviceSize size, VkDeviceSize offset) {
   // Ensure the size is within bounds
-  if (offset + size > this->size) { throw std::runtime_error("Buffer copy exceeds buffer size"); }
+  if (offset + size > this->size) {
+    throw std::runtime_error("Buffer copy exceeds buffer size");
+  }
 
   // Map the buffer and copy the data
   void *mappedData = this->map();

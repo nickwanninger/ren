@@ -5,22 +5,24 @@
 #include <ren/renderer/RenderWorld.h>
 
 #include <ren/Camera.h>
+#include <ren/renderer/graph/RunContext.h>
+
 
 namespace ren {
 
   DepthPrepassTask::DepthPrepassTask(ren::RenderGraph &G)
       : ren::RenderPassTask(G) {
     auto scale = glm::vec2(1.0);
-    this->depthOut = addDepthAttachment("dpp_depth", {.scale = scale});
-    this->normalOut =
-        addColorAttachment("dpp_normal", {.scale = scale, .format = VK_FORMAT_R16G16B16A16_SFLOAT});
+    this->depthOut = addDepthAttachment("dpp_depth", {.relativeScale = scale});
+    this->normalOut = addColorAttachment("dpp_normal", {.relativeScale = scale, .format = VK_FORMAT_R16G16B16A16_SFLOAT});
 
     pso.program = make<ShaderProgram>("shaders/depth_pre_pass");
     pso.depthWrite = true;
     pso.cullMode = ren::CullMode::Back;
   }
 
-  void DepthPrepassTask::run(ren::GraphRunContext &ctx) {
+  void DepthPrepassTask::run(ren::GraphRenderPassContext &ctx) {
+#if 0
     auto &camera = ren::Camera::get();
 
     auto &megaMesh = ren::world().get_mut<ren::MegaMeshBuffer>();
@@ -48,5 +50,6 @@ namespace ren {
 
       vkCmdDrawIndexed(ctx.cmd, entry.indexCount, 1, entry.indexOffset, entry.vertexOffset, 0);
     }
+#endif
   }
 }  // namespace ren

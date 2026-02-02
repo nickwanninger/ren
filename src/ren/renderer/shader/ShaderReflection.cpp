@@ -6,6 +6,7 @@
 #include <slang-com-ptr.h>
 #include <slang.h>
 #include <imgui/imgui.h>
+#include "./SlangPrinter.h"
 
 namespace ren {
 
@@ -763,6 +764,13 @@ namespace ren {
         return fieldNode;
       }
 
+      case Kind::Pointer: {
+        auto sizeInBytes = tl->getSize();
+        loc.byteSize = sizeInBytes;
+        auto* fieldNode = newNode(Pointer, name, loc);
+        return fieldNode;
+      }
+
       case Kind::Struct: {
         // TODO: store the Location!
 
@@ -855,22 +863,21 @@ namespace ren {
       std::cerr << "Invalid ProgramLayout pointer" << std::endl;
       return;
     }
-    // {
-    //   Slang::ComPtr<slang::IBlob> jsonBlob;
-    //   programLayout->toJson(jsonBlob.writeRef());
+    {
+      Slang::ComPtr<slang::IBlob> jsonBlob;
+      programLayout->toJson(jsonBlob.writeRef());
 
-    //   json j = json::parse(
-    //       std::string_view((const char*)jsonBlob->getBufferPointer(),
-    //       jsonBlob->getBufferSize()));
-    //   FILE* f = fopen("slang_program_layout.json", "w");
-    //   auto formatted = j.dump(2);
-    //   fwrite(formatted.data(), 1, formatted.size(), f);
-    //   fclose(f);
-    // }
+      json j = json::parse(std::string_view((const char*)jsonBlob->getBufferPointer(), jsonBlob->getBufferSize()));
+      ren::println("{}", j.dump(2));
+      // FILE* f = fopen("slang_program_layout.json", "w");
+      // auto formatted = j.dump(2);
+      // fwrite(formatted.data(), 1, formatted.size(), f);
+      // fclose(f);
+    }
 
     // Optional: Print debug info (uncomment to see detailed reflection)
-    // ReflectingPrinting printer;
-    // printer.printProgramLayout(programLayout, SlangCompileTarget::SLANG_SPIRV);
+    ren::ReflectingPrinting printer;
+    printer.printProgramLayout(programLayout, SlangCompileTarget::SLANG_SPIRV);
 
     // Create root node
     auto root = newNode(Type::LogicalGroup, "Root", {/* empty on purpose */});

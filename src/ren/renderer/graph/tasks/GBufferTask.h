@@ -27,7 +27,7 @@ namespace ren {
 
     GBufferTask(ren::RenderGraph &G);
 
-    void run(ren::GraphRunContext &ctx) override;
+    void run(ren::GraphRenderPassContext &ctx) override;
     void inspect(void) override;
   };
 

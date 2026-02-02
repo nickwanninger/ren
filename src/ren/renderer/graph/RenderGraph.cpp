@@ -5,10 +5,10 @@
 #include <imgui/imgui.h>
 #include <ImGuizmo/ImGuizmo.h>
 #include <ImGuizmo/GraphEditor.h>
+#include <imnodes/imnodes.h>
 
 #include <unordered_map>
 #include <unordered_set>
-#include <queue>
 #include <chrono>
 
 
@@ -36,7 +36,7 @@ namespace ren {
 
   RenderTask &RenderTask::write(GraphHandle handle, GraphAccess access) {
     m_graph.addWrite(*this, handle, access);
-    m_results.push_back(handle);
+    m_results.push_back(GraphHandleUsage{handle, access});
     return *this;
   }
 
@@ -47,11 +47,11 @@ namespace ren {
 
     // Results (writes)
     int ind = 0;
-    for (const auto &resultHandle : getResults()) {
+    for (const auto &result : getResults()) {
       if (ind++ > 0) {
         ss << ", ";
       }
-      ss << fmt::format("%{}", resultHandle);
+      ss << fmt::format("%{}", result.handle);
     }
 
     ss << " ← " << name() << "(";
@@ -90,10 +90,9 @@ namespace ren {
         for (auto *userTask : resource->users) {
           needToPrepare.insert(userTask);
         }
-        // Re-prepare the defining task as well, in case it needs to recreate things like
-        // framebuffers.
-        if (resource->definingTask != nullptr) {
-          needToPrepare.insert(resource->definingTask);
+        // Re-prepare all writing tasks as well, in case they need to recreate things like framebuffers.
+        for (auto *writer : resource->writingTasks) {
+          needToPrepare.insert(writer);
         }
       }
     }
@@ -114,8 +113,8 @@ namespace ren {
   GraphHandle RenderGraph::createImage(const std::string_view &name, const GraphImageSpec &spec, GraphAccess initialAccess) {
     GraphHandle handle = nextHandle++;
 
-    // if the spec has 0 scale, and 0 width/height, it's invalid.
-    if (spec.scale == glm::vec2(0.0f) && spec.width == 0 && spec.height == 0) {
+
+    if (spec.relativeScale.isNone() && spec.absoluteSize.isNone()) {
       throw std::runtime_error("Invalid GraphImageSpec: must have non-zero scale or fixed size");
     }
 
@@ -137,47 +136,87 @@ namespace ren {
 
   GraphHandle RenderGraph::addWrite(RenderTask &task, GraphHandle handle, GraphAccess access) {
     auto resource = resourceTable[handle];
-    if (resource->definingTask != nullptr) {
-      throw std::runtime_error(fmt::format("Warning: Resource {} already has a defining task '{}'", handle, resource->definingTask->name()));
-    }
-
-    resource->definingTask = &task;
-    resource->writeAccess = access;  // Track what access state this resource is written to
+    resource->writingTasks.push_back(&task);
     return handle;
   }
 
 
   // Compute data dependencies based on operand/result relationships
-  // For each task, its dependencies are the tasks that write to resources it reads.
   void RenderGraph::computeDependencies(void) {
-    // Clear existing dependencies
     for (const auto &task : tasks) {
       task->dependencies.clear();
     }
 
-    // Build dependencies from resource flow:
-    // For each resource, all readers depend on the writer
     for (const auto &[handle, resource] : resourceTable) {
-      if (resource->definingTask != nullptr) {
+      auto &writers = resource->writingTasks;
+
+      // Chain writers: writer[i] depends on writer[i-1]
+      for (size_t i = 1; i < writers.size(); ++i) {
+        writers[i]->dependencies.insert(writers[i - 1]);
+      }
+
+      // Readers depend on last writer
+      if (!writers.empty()) {
+        RenderTask *lastWriter = writers.back();
         for (auto *reader : resource->users) {
-          reader->dependencies.insert(resource->definingTask);
+          // Avoid self-dependency if task reads and writes
+          if (std::find(writers.begin(), writers.end(), reader) == writers.end()) {
+            reader->dependencies.insert(lastWriter);
+          }
         }
       }
     }
   }
 
-  RenderTask *RenderGraph::getDefiningTask(GraphHandle resourceHandle) {
-    auto it = resourceTable.find(resourceHandle);
-    if (it == resourceTable.end()) {
-      throw std::runtime_error(fmt::format("Invalid resource handle: {}", resourceHandle));
+  void RenderGraph::reportCycle(const std::vector<RenderTask *> &path) {
+    std::stringstream ss;
+    ss << "Cycle detected in render graph:\n";
+    for (size_t i = 0; i < path.size(); ++i) {
+      ss << "  " << path[i]->name();
+      if (i + 1 < path.size()) {
+        ss << " → ";
+      }
+    }
+    throw std::runtime_error(ss.str());
+  }
+
+  void RenderGraph::detectAndReportCycle() {
+    enum Color { WHITE, GRAY, BLACK };
+    std::unordered_map<RenderTask *, Color> colors;
+    std::vector<RenderTask *> path;
+
+    std::function<bool(RenderTask *)> hasCycle = [&](RenderTask *task) -> bool {
+      colors[task] = GRAY;
+      path.push_back(task);
+
+      for (auto *dep : task->dependencies) {
+        if (colors[dep] == GRAY) {
+          // Back edge found - we have a cycle
+          path.push_back(dep);
+          reportCycle(path);
+          return true;
+        }
+        if (colors[dep] == WHITE && hasCycle(dep)) {
+          return true;
+        }
+      }
+
+      path.pop_back();
+      colors[task] = BLACK;
+      return false;
+    };
+
+    for (auto &task : tasks) {
+      colors[task.get()] = WHITE;
     }
 
-    auto *definingTask = it->second->definingTask;
-    if (definingTask == nullptr) {
-      throw std::runtime_error(fmt::format("Resource {} ('{}') has no defining task - it was never written to", resourceHandle, it->second->name));
+    for (auto &task : tasks) {
+      if (colors[task.get()] == WHITE) {
+        if (hasCycle(task.get())) {
+          return;
+        }
+      }
     }
-
-    return definingTask;
   }
 
   // Topological sort: DFS to order tasks respecting dependencies
@@ -196,16 +235,62 @@ namespace ren {
     outOrder.push_back(task);
   }
 
-  RenderSchedule RenderGraph::compile(GraphHandle goalResource) {
+  RenderSchedule RenderGraph::compile() {
     REN_PROFILE_SCOPE("CompileRenderGraph");
-    // Step 1: Find the task that produces the goal resource
-    RenderTask *goalTask = getDefiningTask(goalResource);
 
-    // Step 2: Compute dependencies from operand/result relationships
+    // Step 1: Compute dependencies from operand/result relationships
     computeDependencies();
 
-    // Step 3: Compute scheduling levels via DFS to determine parallelism
-    // (depth in the dependency DAG from goal to leaves)
+    // Step 2: Find all root tasks (tasks with no dependencies)
+    std::vector<RenderTask *> rootTasks;
+    for (auto &task : tasks) {
+      if (task->dependencies.empty()) {
+        rootTasks.push_back(task.get());
+      }
+    }
+
+    if (rootTasks.empty()) {
+      // No roots means we have a cycle
+      detectAndReportCycle();
+      throw std::runtime_error("Cycle detected in render graph");
+    }
+
+    // Step 3: Topologically sort all tasks using Kahn's algorithm
+    std::vector<RenderTask *> orderedTasks;
+    std::unordered_map<RenderTask *, int> inDegree;
+
+    // Calculate in-degree for each task
+    for (auto &task : tasks) {
+      inDegree[task.get()] = task->dependencies.size();
+    }
+
+    // Queue starts with all root tasks
+    std::vector<RenderTask *> queue = rootTasks;
+
+    // Process tasks in topological order
+    while (!queue.empty()) {
+      RenderTask *current = queue.back();
+      queue.pop_back();
+      orderedTasks.push_back(current);
+
+      // Find all tasks that depend on current task
+      for (auto &task : tasks) {
+        if (task->dependencies.count(current)) {
+          inDegree[task.get()]--;
+          if (inDegree[task.get()] == 0) {
+            queue.push_back(task.get());
+          }
+        }
+      }
+    }
+
+    // Sanity check: all tasks scheduled
+    if (orderedTasks.size() != tasks.size()) {
+      throw std::runtime_error(
+          fmt::format("Internal error: topological sort scheduled {} tasks but graph has {} tasks", orderedTasks.size(), tasks.size()));
+    }
+
+    // Step 4: Compute scheduling levels via DFS to determine parallelism
     std::unordered_map<RenderTask *, int> taskLevels;
     std::function<int(RenderTask *)> computeLevels = [&](RenderTask *task) -> int {
       if (taskLevels.count(task)) {
@@ -221,12 +306,10 @@ namespace ren {
       taskLevels[task] = level;
       return level;
     };
-    computeLevels(goalTask);
 
-    // Step 4: Topologically sort tasks starting from goal
-    std::vector<RenderTask *> orderedTasks;
-    std::unordered_set<RenderTask *> visited;
-    topologicalSort(goalTask, orderedTasks, visited);
+    for (auto &task : tasks) {
+      computeLevels(task.get());
+    }
 
     // Step 5: Sort tasks by level (ascending) so all tasks of the same level are grouped together.
     // This allows executing all tasks of a level before moving to the next level.
@@ -266,12 +349,8 @@ namespace ren {
       schedule.addTask(task);
 
       // Update resource states based on what this task writes (results)
-      for (const auto &resultHandle : task->getResults()) {
-        // Look up the write access from the resource table
-        auto it = resourceTable.find(resultHandle);
-        if (it != resourceTable.end()) {
-          resourceStates[resultHandle] = it->second->writeAccess;
-        }
+      for (const auto &result : task->getResults()) {
+        resourceStates[result.handle] = result.access;
       }
     }
 
@@ -287,21 +366,68 @@ namespace ren {
       }
     }
 
+
     // Copy task levels into the schedule
     schedule.taskLevels = taskLevels;
+
 
     return schedule;
   }
 
-  void RenderGraph::runFor(GraphHandle goalResource, class Renderer &renderer) {
-    REN_PROFILE_SCOPE("RunRenderGraph");
-    auto it = resourceTable.find(goalResource);
-    if (it == resourceTable.end()) {
-      throw std::runtime_error(fmt::format("Invalid resource handle for runFor: {}", goalResource));
+  void RenderGraph::printDot() const {
+    ren::println("digraph RenderGraph {{");
+    ren::println("  rankdir=LR;");
+    ren::println("  node [shape=box];");
+    ren::println("");
+
+    // Print tasks
+    ren::println("  // Tasks");
+    for (const auto &task : tasks) {
+      ren::println("  \"{}\" [style=filled, fillcolor=lightblue];", task->name());
+    }
+    ren::println("");
+
+    // Print resources
+    ren::println("  // Resources");
+    for (const auto &[handle, resource] : resourceTable) {
+      ren::println("  \"res_{}\" [label=\"{}\", shape=ellipse];", handle, resource->name);
+    }
+    ren::println("");
+
+    // Print write edges (task -> resource)
+    ren::println("  // Write edges");
+    for (const auto &[handle, resource] : resourceTable) {
+      for (auto *writer : resource->writingTasks) {
+        ren::println("  \"{}\" -> \"res_{}\" [color=blue, label=\"W\"];", writer->name(), handle);
+      }
+    }
+    ren::println("");
+
+    // Print read edges (resource -> task)
+    ren::println("  // Read edges");
+    for (const auto &[handle, resource] : resourceTable) {
+      for (auto *reader : resource->users) {
+        ren::println("  \"res_{}\" -> \"{}\" [color=green, label=\"R\"];", handle, reader->name());
+      }
+    }
+    ren::println("");
+
+    // Print task dependencies
+    ren::println("  // Task dependencies");
+    for (const auto &task : tasks) {
+      for (auto *dep : task->dependencies) {
+        ren::println("  \"{}\" -> \"{}\" [color=red, style=dashed];", dep->name(), task->name());
+      }
     }
 
+    ren::println("}}");
+  }
+
+  void RenderGraph::run(class Renderer &renderer) {
+    REN_PROFILE_SCOPE("RunRenderGraph");
+
     auto scheduleStart = std::chrono::high_resolution_clock::now();
-    auto schedule = compile(goalResource);
+    auto schedule = compile();
     auto scheduleEnd = std::chrono::high_resolution_clock::now();
 
 #if 0
@@ -320,14 +446,10 @@ namespace ren {
     auto &frame = ren::getFrameUnit();
     GraphRunContext ctx(*this, renderer, *frame.getMainCommandEncoder());
     ctx.cmd = frame.getMainCommandEncoder()->buf();
-    // auto overallTik = ctx.encoder.beginTimestampQuery("RenderGraphTotal");
     for (const auto &task : schedule.getTasks()) {
       ctx.task = task;
-      auto tik = ctx.encoder.beginTimestampQuery(task->name().c_str());
       task->execute(ctx);
-      ctx.encoder.endTimestampQuery(tik);
     }
-    // ctx.encoder.endTimestampQuery(overallTik);
 
     this->compileTimeUs += std::chrono::duration_cast<std::chrono::microseconds>(scheduleEnd - scheduleStart).count();
     this->numRuns++;
@@ -344,6 +466,97 @@ namespace ren {
 
     // Draw tab bar
     if (ImGui::BeginTabBar("InspectorTabs", ImGuiTabBarFlags_None)) {
+      if (ImGui::BeginTabItem("Schedule")) {
+        ImGui::Text("Render Graph Schedule");
+        ImGui::Separator();
+        auto start = std::chrono::high_resolution_clock::now();
+        auto sched = compile();
+        auto end = std::chrono::high_resolution_clock::now();
+        float compileTimeMs = std::chrono::duration<float, std::chrono::milliseconds::period>(end - start).count();
+        ImGui::Text("Compile Time: %.3f ms", compileTimeMs);
+        ImGui::Separator();
+
+
+
+        int next_id = 0;
+
+        std::map<RenderTask *, int> taskIDs;
+        for (auto *task : sched.getTasks()) {
+          int level = sched.getLevel(task);
+          if (level == -1) continue;
+
+          taskIDs[task] = next_id++;
+        }
+
+
+
+        // Resources:
+        // ImGui::Text("Resources:");
+        // for (const auto &[handle, resource] : resourceTable) {
+        //   ImGui::Text("%%%-3u : %s", handle, resource->name.c_str());
+        // }
+
+        // Tasks:
+        for (const auto &task : sched.getTasks()) {
+          int level = sched.getLevel(task);
+          ImGui::Text("[%d] %s", level, task->toString().c_str());
+        }
+        ImGui::EndTabItem();
+
+        ImNodes::BeginNodeEditor();
+
+
+        ImVec2 location(0, 0);
+        auto &tasks = sched.getTasks();
+        int last_level = -100;  // magic number.
+        for (auto *task : sched.getTasks()) {
+          int id = taskIDs[task];
+          int level = sched.getLevel(task);
+          if (level == -1) continue;
+
+          ImNodes::BeginNode(id);
+          ImNodes::BeginNodeTitleBar();
+          ImGui::TextUnformatted(task->name().c_str());
+          ImNodes::EndNodeTitleBar();
+
+          ImGui::Text("Task: %d, Level: %d", id, level);
+
+          ImNodes::BeginInputAttribute(next_id++, ImNodesPinShape_Triangle);
+          ImGui::TextUnformatted("Input 1");
+          ImNodes::EndInputAttribute();
+
+          ImNodes::BeginInputAttribute(next_id++, ImNodesPinShape_TriangleFilled);
+          ImGui::TextUnformatted("Input 2");
+          ImNodes::EndInputAttribute();
+
+
+          ImNodes::BeginOutputAttribute(next_id++, ImNodesPinShape_Circle);
+          ImGui::TextUnformatted("Output 1");
+          ImNodes::EndOutputAttribute();
+          ImNodes::BeginOutputAttribute(next_id++, ImNodesPinShape_CircleFilled);
+          ImGui::TextUnformatted("Output 2");
+          ImNodes::EndOutputAttribute();
+
+
+          ImNodes::EndNode();
+
+          ImNodes::SnapNodeToGrid(id);
+
+          // ImNodes::SetNodeGridSpacePos(id, location);
+
+          if (level != last_level) {
+            location.x += 140;
+            location.y = 0;
+            last_level = level;
+          } else {
+            location.y += 220;
+          }
+        }
+        // ImNodes::MiniMap();
+        ImNodes::EndNodeEditor();
+      }
+
+
       // ==================== TASKS TAB ====================
       if (ImGui::BeginTabItem("Tasks")) {
         ImGui::BeginGroup();
@@ -405,15 +618,15 @@ namespace ren {
               const auto &results = selectedTask->getResults();
               if (!results.empty()) {
                 if (ImGui::TreeNode("Results (Writes)")) {
-                  for (GraphHandle resultHandle : results) {
-                    auto it = resourceTable.find(resultHandle);
+                  for (const auto &result : results) {
+                    auto it = resourceTable.find(result.handle);
                     if (it != resourceTable.end()) {
-                      ImGui::Text("%%%-3u : %s", resultHandle, it->second->name.c_str());
+                      ImGui::Text("%%%-3u : %s", result.handle, it->second->name.c_str());
                       ImGui::SameLine();
-                      const char *accessStr = fmt::formatter<GraphAccess>::toString(it->second->writeAccess);
+                      const char *accessStr = fmt::formatter<GraphAccess>::toString(result.access);
                       ImGui::TextDisabled("(%s)", accessStr);
                     } else {
-                      ImGui::Text("%%%-3u : <unknown>", resultHandle);
+                      ImGui::Text("%%%-3u : <unknown>", result.handle);
                     }
                   }
                   ImGui::TreePop();
@@ -451,6 +664,7 @@ namespace ren {
 
       // ==================== RESOURCES TAB ====================
       if (ImGui::BeginTabItem("Resources")) {
+#if 0
         ImGui::BeginGroup();
         {
           // Left panel: Resource list
@@ -487,18 +701,21 @@ namespace ren {
                 ImGui::Text("Name: %s", resource->name.c_str());
                 const char *typeStr = fmt::formatter<GraphResourceType>::toString(resource->type);
                 const char *initialAccessStr = fmt::formatter<GraphAccess>::toString(resource->initialAccess);
-                const char *writeAccessStr = fmt::formatter<GraphAccess>::toString(resource->writeAccess);
                 ImGui::Text("Type: %s", typeStr);
                 ImGui::Text("Initial Access: %s", initialAccessStr);
-                ImGui::Text("Write Access: %s", writeAccessStr);
 
                 // Delegate to resource-specific inspection
                 ImGui::Separator();
                 resource->inspect();
 
                 ImGui::Separator();
-                if (resource->definingTask) {
-                  ImGui::Text("Defined by: %s", resource->definingTask->name().c_str());
+                if (!resource->writingTasks.empty()) {
+                  if (ImGui::TreeNode("Written by:")) {
+                    for (auto *writer : resource->writingTasks) {
+                      ImGui::BulletText("%s", writer->name().c_str());
+                    }
+                    ImGui::TreePop();
+                  }
                 }
 
                 if (!resource->users.empty()) {
@@ -517,7 +734,57 @@ namespace ren {
           ImGui::EndChild();
         }
         ImGui::EndGroup();
+#endif
 
+
+        if (resourceTable.empty()) {
+          ImGui::TextDisabled("(No resources)");
+        } else {
+          if (ImGui::BeginTable("ResourceTable", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
+            ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableSetupColumn("Handle", ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthStretch);
+
+            ImGui::TableHeadersRow();
+
+            for (const auto &[handle, resource] : resourceTable) {
+              ImGui::PushID((int)handle);
+              ImGui::TableNextRow();
+
+              // If hovering on the row
+              ImGui::TableNextColumn();
+              if (ImGui::Selectable(resource->name.c_str(), false, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap)) {
+                // Handle row click if needed
+              }
+
+              if (ImGui::IsItemHovered()) {
+                ImGui::BeginTooltip();
+                resource->inspect();
+                ImGui::EndTooltip();
+              }
+
+              ImGui::TableNextColumn();
+              ImGui::Text("%%%-3u", handle);
+
+              ImGui::TableNextColumn();
+              switch (resource->type) {
+                case GraphResourceType::Image:
+                  ImGui::Text("Image");
+                  break;
+                case GraphResourceType::Buffer:
+                  ImGui::Text("Buffer");
+                  break;
+                default:
+                  ImGui::Text("???");
+                  break;
+              }
+
+              ImGui::PopID();
+            }
+
+            ImGui::EndTable();
+          }
+        }
 
 
 
@@ -539,6 +806,7 @@ namespace ren {
     }
     ImGui::End();
   }
+
 
 
 }  // namespace ren

@@ -46,8 +46,6 @@
 #include <ren/core/Flag.h>
 #include <ren/renderer/shader/ShaderProgram.h>
 #include <ren/scripting/imgui_lua_inspector.hpp>
-
-#include <ren/core/ThreadPool.h>
 #include <ren/core/Math.h>
 
 extern "C" {
@@ -216,14 +214,25 @@ namespace ren {
 
 
 
+    G.pass("gizmo").execute([&](ren::GraphRunContext &ctx) {});
 
-    static auto program = make<ShaderProgram>("./test");
+
+    GraphHandle buzz;
+    G.pass("Fizbuzz").createColorAttachment("buzz", {.absoluteSize = glm::uvec2(512, 512)}, buzz).render([&](ren::GraphRenderPassContext &ctx) {});
+    // for (int i = 0; i < 128; i++) {
+    //   G.pass("gadget").execute([&](ren::GraphRunContext &ctx) { printf("Gadget pass %d\n", i); });
+    // }
+
     ren::PipelineStateObject trianglePSO;
     trianglePSO.debugName = "Test Triangle PSO";
-    trianglePSO.program = program;
+    trianglePSO.program = make<ShaderProgram>("./test");
     trianglePSO.cullMode = ren::CullMode::None;
     trianglePSO.hasVertexBinding = true;
     trianglePSO.fillMode = ren::FillMode::Solid;
+
+
+
+    auto computeProgram = ren::make<ren::ShaderProgram>("test/compute");
 
 
     float renderScaleTemp = 1.0f;
@@ -343,21 +352,7 @@ namespace ren {
 
 
 
-      // float width = (float)windowWidth;
-      // float height = (float)windowHeight;
-      // // targetHeight = height;
-      // float targetHeight = height * renderScaleTemp;
-      // float scale = targetHeight / height;
-      // scale *= renderScaleTemp;
-      // width *= scale;
-      // height *= scale;
-
-      // auto renderSize = glm::uvec2(width, height);
-      // G.startFrame(renderSize);
-
-
       if (ImGui::BeginMainMenuBar()) {
-
         if (ImGui::BeginMenu("View")) {
           if (ImGui::MenuItem("ImGui Demo")) {
             ren::logUI("ImGui Demo", [](auto &ctx) { ImGui::ShowDemoWindow(&ctx.opened); });
@@ -375,42 +370,21 @@ namespace ren {
         ImGui::EndMainMenuBar();
       }
 
-      /*
-      ImGui::Begin("VRAM");
-      {
-        auto start = std::chrono::high_resolution_clock::now();
+      ImGui::Begin("Compute");
+      ImGui::Button("My Button");
 
-        VmaBudget budgets[VK_MAX_MEMORY_HEAPS];
-        vmaGetHeapBudgets(getVulkan().allocator, budgets);
-
-        VkPhysicalDeviceMemoryProperties memProps;
-        vkGetPhysicalDeviceMemoryProperties(getVulkan().physical_device, &memProps);
-
-        auto end = std::chrono::high_resolution_clock::now();
-        auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
-
-        ImGui::Text("Query took %lluns", duration);
-        // 3. Iterate through memory heaps to find VRAM
-        for (uint32_t i = 0; i < memProps.memoryHeapCount; i++) {
-          u64 budget = budgets[i].budget;
-          u64 usage = budgets[i].usage;
-          u64 total = memProps.memoryHeaps[i].size;
-
-          float usagePercent = (float)usage / (float)budget * 100.0f;
-
-          ImGui::Text("VRAM Heap %u: %llu MB used / %llu MB budget / %llu MB total", i, usage / (1024 * 1024), budget / (1024 * 1024),
-                      total / (1024 * 1024));
-
-          // display a progress bar
-          ImGui::ProgressBar(usagePercent / 100.0f, ImVec2(-1.0f, 0.0f), fmt::format("{:.2f} %", usagePercent).c_str());
-        }
+      if (ImGui::IsItemHovered()) {
+        ImGui::BeginTooltip();
+        computeProgram->inspect();
+        // // Customize the tooltip content here
+        // ImGui::Text("This is a custom tooltip!");
+        // ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "It can have color.");
+        // ImGui::TextWrapped("You can also add longer descriptions that wrap around a specified width.");
+        ImGui::EndTooltip();
       }
       ImGui::End();
-      */
 
-
-
-      // ren::inspectLog();
+      ren::inspectLog();
 
       if (1) {
         REN_PROFILE_SCOPE("WorldProgress");
@@ -434,6 +408,36 @@ namespace ren {
       }
 
 
+      // G.pass("GBuffer")
+      //     .writes(gbufferAlbedo, GraphAccess::RenderTarget)
+      //     .writes(gbufferNormal, GraphAccess::RenderTarget)
+      //     .writes(gbufferMaterial, GraphAccess::RenderTarget)
+      //     .writes(gbufferDepth, GraphAccess::DepthTarget)
+      //     .render([&](ren::GraphRenderPassContext &ctx) { gbp.execute(ctx); });
+
+#if 0
+      ren::RenderGraph G;
+      ren::GraphHandle hdr;
+
+      // G.pass makes a builder.
+      // You can chain reads/writes before calling render or compute to finalize it.
+      G.pass("lighting").reads(gbufferAlbedo, gbufferNormal, gbufferDepth, ssao).targets(hdr).render([&](ren::GraphRenderPassContext &ctx) {
+        REN_PROFILE_SCOPE("TestRenderPass");
+        auto &penc = ctx.encoder;
+        penc.bindPipeline(trianglePSO);
+
+        DrawArguments args;
+        args.vertexCount = 3;
+        args.instanceCount = 1;
+        penc.draw(args);
+      });
+
+      auto computeProgram = ...;
+      G.pass("SsaoUpscale").reads(ssaoHalf).writes(ssaoFull).compute([&](ren::GraphComputeContext &ctx) {
+        // bind!
+        enc.dispatch(computeProgram, 64, 64, 64);
+      });
+#endif
 
 
       float width = (float)windowWidth;
@@ -448,7 +452,7 @@ namespace ren {
       G.startFrame(renderSize);
 
       try {
-        G.runFor(ssao, *renderer);
+        G.run(*renderer);
       } catch (const std::exception &e) {
         ren::println("✗ RenderPassTask execution failed: {}", e.what());
       }
@@ -551,9 +555,6 @@ namespace ren {
     pool_info.pPoolSizes = pool_sizes;
 
     VK_CHECK(vkCreateDescriptorPool(vulkan.device, &pool_info, nullptr, &state.imguiPool));
-
-
-    // 2: initialize imgui library
 
     // this initializes the core structures of imgui
     ImGui::CreateContext();

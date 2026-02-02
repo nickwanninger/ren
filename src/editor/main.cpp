@@ -37,6 +37,22 @@ void loadMeshIntoScene(const char* path, float scaleChange = 0.0f) {
 }
 
 
+
+void testCalibration(void) {
+  SubmissionUnit unit;
+
+
+  for (int i = 0; i < 1000; i++) {
+    auto cmd = unit.begin();
+
+    auto tik = cmd->beginTimestampQuery("Calibration");
+    cmd->endTimestampQuery(tik);
+
+    auto f = unit.submitTo(*getVulkan().computeQueue);
+    f->awaitCompletion();
+  }
+}
+
 void testSaxpy(void) {
   using namespace ren;
 
@@ -100,7 +116,7 @@ void testSaxpy(void) {
   out->unmap();
 }
 
-#include <ren/core/ThreadPool.h>
+// #include <ren/core/ThreadPool.h>
 
 int main(int argc, char* argv[]) {
   ren::parseFlags(argc, argv);
@@ -119,7 +135,7 @@ int main(int argc, char* argv[]) {
   testSaxpy();
   // exit(0);
 
-#if 1
+#if 0
 
   // --- Expected Compute Shader ---
   auto program = ren::make<ren::ShaderProgram>("test/compute");

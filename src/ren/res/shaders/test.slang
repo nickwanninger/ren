@@ -144,6 +144,70 @@ FragmentOutput fragmentMain(VertexOutput input) {
 
   FragmentOutput output;
   output.color = float4(sqrt(clamp(col, 0., 1.)), 1);
-  // output.color2 = 1 - output.color;
+  // output.color = float4(0, 0, 0, 1);
+
+  float4 textColor = float4(1, 0, 0, 1);
+
+  output.color = lerp(output.color, textColor, PrintValueRight(uv, 4, 2, time));
   return output;
+}
+
+// fixed-point print adapted from P_Malin https://www.shadertoy.com/view/4sBSWW
+// converted to HLSL, font glyphs flipped vertically, use integer types, less compact style
+//   @param StringCoords  position and scale of text. Numbers are 1x1 units in size, right-justified at 0,0
+//   @param Value         float value to print
+//   @return  0 for non-text, 1 for text values.
+
+const static float2 screenResolution = float2(1920, 1080);
+const static float2 fontSize = float2(8.0, 15.0);
+const static float2 cellSize = fontSize + float2(0.0, 1.0);
+const static uint2 cellCount = uint2(screenResolution / cellSize);
+float PrintValue(float2 screenUV, uint2 cellLocation, int DecimalPlaces, float Value) {
+
+  float2 fragCoordPixel = float2(screenUV.x * screenResolution.x, screenUV.y * screenResolution.y);
+
+  uint2 cellInd = uint2(fragCoordPixel / cellSize);
+
+  int NegativeValue = Value < 0.0 ? 1 : 0;
+  Value = abs(Value);
+  int Digits = max(int(log2(Value) / log2(10.0)), 0) + 1;
+  int Decimal = DecimalPlaces > 0 ? 1 : 0;
+  int iValue = int(floor(Value * pow(10., DecimalPlaces)));
+
+  uint2 shift = uint2(Digits + Decimal + DecimalPlaces, 0);
+  shift = 0;
+
+  float2 StringCoords = (fragCoordPixel - ((cellLocation + shift) * cellSize)) / fontSize;
+  if ((StringCoords.y < 0.0) || (StringCoords.y >= 1.0))
+    return 0.0;
+  int iCoord = -int(floor(StringCoords.x));
+
+  int CharBin = 0, DigitIndex = 0;
+  if (iCoord < 0)
+    return 0.; // right of number
+  else if (iCoord < DecimalPlaces)
+    DigitIndex = iCoord; // fractional digit
+  else if (iCoord == DecimalPlaces && bool(DecimalPlaces))
+    CharBin = 131072; // decimal point
+  else if (iCoord < Digits + Decimal + DecimalPlaces)
+    DigitIndex = iCoord - Decimal; // integer digit
+  else if (iCoord < NegativeValue + Digits + Decimal + DecimalPlaces)
+    CharBin = 1792; // minus sign
+  else
+    return 0.; // left of number
+
+  // has to be a digit
+  if (CharBin == 0) {
+    const int digits[] = { 480599, 139810, 464711, 476999, 280405, 476951, 481047, 279623, 481111, 477015 };
+    int Digit = int(iValue / pow(10, DigitIndex)) % 10;
+    CharBin = digits[Digit];
+  }
+
+  // convert binary to 4x5 array of points
+  int2 DigitCoord = int2(int(frac(StringCoords.x) * 4), int(StringCoords.y * 5));
+  return float((CharBin >> (DigitCoord.x + DigitCoord.y * 4)) & 1);
+}
+
+float PrintValueRight(float2 screenUV, uint line, int DecimalPlaces, float Value) {
+  return PrintValue(screenUV, uint2(cellCount.x - 1, line), DecimalPlaces, Value);
 }

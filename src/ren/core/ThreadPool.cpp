@@ -50,7 +50,7 @@ namespace ren {
 
     if (task) {
       // Execute task
-      fmt::println("Executing task on worker {}", m_id);
+      // fmt::println("Executing task on worker {}", m_id);
       task->execute();
 
       // Decrement completion counter if present
@@ -72,7 +72,7 @@ namespace ren {
 
     while (!m_pool->is_shutdown()) {
       if (!schedule_one()) {
-        std::this_thread::yield();
+        // std::this_thread::yield();
       }
     }
   }
@@ -137,7 +137,7 @@ namespace ren {
     }
 
     // Try to steal from random workers
-    std::uniform_int_distribution<u32> dist(0, num_workers - 2);
+    static std::uniform_int_distribution<u32> dist(0, num_workers - 2);
     for (u32 i = 0; i < num_workers; ++i) {
       // Pick random victim (avoid self)
       u32 offset = dist(t_rng);
@@ -177,7 +177,7 @@ namespace ren {
   }
 
 
-  ThreadPool& get_thread_pool() {
+  ThreadPool& getThreadPool() {
     static ThreadPool instance;
     return instance;
   }

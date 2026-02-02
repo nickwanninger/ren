@@ -37,4 +37,14 @@ namespace ren {
         , cmd(VK_NULL_HANDLE)
         , encoder(e) {}
   };
+
+  struct GraphRenderPassContext : public GraphRunContext {
+    ren::RenderPassEncoder &encoder;
+
+
+    GraphRenderPassContext(ren::RenderGraph &g, ren::Renderer &r, RenderPassEncoder &e)
+        : GraphRunContext(g, r, e.getEncoder())
+        , encoder(e) {}
+  };
+
 }  // namespace ren

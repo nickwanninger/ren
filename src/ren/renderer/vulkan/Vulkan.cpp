@@ -214,22 +214,23 @@ void ren::VulkanInstance::init_instance(void) {
 
   // get physical device properties for version info
   if (!physicalDeviceResult) {
-    fmt::print("Failed to select a physical device: {}\n", physicalDeviceResult.error().message());
+    ren::errln("Failed to select a physical device: {}", physicalDeviceResult.error().message());
     exit(-1);
   }
   auto physicalDevice = physicalDeviceResult.value();
 
 
   // Print the selected physical device information
-  fmt::print("Selected physical device: {}\n", physicalDevice.name);
-  fmt::print("Physical device features:\n");
-  fmt::print("  Geometry Shader: {}\n", physicalDevice.features.geometryShader ? "Enabled" : "Disabled");
-  fmt::print("  Anisotropic Filtering: {}\n", physicalDevice.features.samplerAnisotropy ? "Enabled" : "Disabled");
-  fmt::print("  Fill Mode Non-Solid: {}\n", physicalDevice.features.fillModeNonSolid ? "Enabled" : "Disabled");
-  fmt::print("Physical device properties:\n");
-  fmt::print("  Driver Version: {}\n", physicalDevice.properties.driverVersion);
-  fmt::print("  API Version: {}.{}.{}\n", VK_VERSION_MAJOR(physicalDevice.properties.apiVersion),
-             VK_VERSION_MINOR(physicalDevice.properties.apiVersion), VK_VERSION_PATCH(physicalDevice.properties.apiVersion));
+  ren::println("Selected physical device: {}", physicalDevice.name);
+  ren::println("Physical device features:\n");
+  ren::println("  Geometry Shader: {}", physicalDevice.features.geometryShader ? "Enabled" : "Disabled");
+  ren::println("  Anisotropic Filtering: {}", physicalDevice.features.samplerAnisotropy ? "Enabled" : "Disabled");
+  ren::println("  Fill Mode Non-Solid: {}", physicalDevice.features.fillModeNonSolid ? "Enabled" : "Disabled");
+  ren::println("Physical device properties:\n");
+  ren::println("  Driver Version: {}", physicalDevice.properties.driverVersion);
+  ren::println("  API Version: {}.{}.{}", VK_VERSION_MAJOR(physicalDevice.properties.apiVersion),
+               VK_VERSION_MINOR(physicalDevice.properties.apiVersion), VK_VERSION_PATCH(physicalDevice.properties.apiVersion));
+  ren::println("  Max Push Constant Size: {}", physicalDevice.properties.limits.maxPushConstantsSize);
 
   this->physical_device = physicalDevice.physical_device;
 

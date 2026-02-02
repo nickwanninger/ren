@@ -5,9 +5,12 @@
 #include <vulkan/vulkan_core.h>
 #include <ren/renderer/Swapchain.h>  // To get the current frame index.
 #include <vector>
+#include <ren/core/Builder.h>
 
 namespace ren {
   class VulkanInstance;
+
+
 
   // Represents a buffer in Vulkan memory.
   class Buffer {
@@ -26,8 +29,7 @@ namespace ren {
     void *map(void);
     void unmap(void);
 
-    void copyFrom(const Buffer &src, VkDeviceSize size, VkDeviceSize srcOffset = 0,
-                  VkDeviceSize dstOffset = 0);
+    void copyFrom(const Buffer &src, VkDeviceSize size, VkDeviceSize srcOffset = 0, VkDeviceSize dstOffset = 0);
     void copyFromHost(const void *data, VkDeviceSize size, VkDeviceSize offset = 0);
 
 
@@ -86,8 +88,7 @@ namespace ren {
 
 
   template <typename T, VkBufferUsageFlags usage,
-            VkMemoryPropertyFlags properties =
-                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT>
+            VkMemoryPropertyFlags properties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT>
   class FixedUsageTypedBuffer : public TypedBuffer<T> {
    public:
     FixedUsageTypedBuffer(size_t count)
@@ -129,9 +130,7 @@ namespace ren {
   }
 
 
-  inline void bind(VkCommandBuffer cmd, IndexBuffer &buf) {
-    vkCmdBindIndexBuffer(cmd, buf.getHandle(), 0, VK_INDEX_TYPE_UINT32);
-  }
+  inline void bind(VkCommandBuffer cmd, IndexBuffer &buf) { vkCmdBindIndexBuffer(cmd, buf.getHandle(), 0, VK_INDEX_TYPE_UINT32); }
 
 
 
@@ -157,9 +156,7 @@ namespace ren {
     void unmap(void) { getCurrentBuffer()->unmap(); }
 
     // Copy data from host memory to the current buffer.
-    void update(const T *data, VkDeviceSize count, VkDeviceSize offset = 0) {
-      getCurrentBuffer()->copyFromHost(data, count, offset);
-    }
+    void update(const T *data, VkDeviceSize count, VkDeviceSize offset = 0) { getCurrentBuffer()->copyFromHost(data, count, offset); }
 
     void update(const T &data) { update(&data, 1, 0); }
     VkBuffer getHandle() const { return getCurrentBuffer()->getHandle(); }
@@ -170,8 +167,7 @@ namespace ren {
       auto &buffer = buffers[index];
       if (buffer->getSize() != expectedArrayLength * sizeof(T)) {
         // resize the buffer!
-        ren::dbgln("Frame {} of UBS isn't the right size. resizing from {} to {}", index,
-                     buffer->getSize(), expectedArrayLength * sizeof(T));
+        ren::dbgln("Frame {} of UBS isn't the right size. resizing from {} to {}", index, buffer->getSize(), expectedArrayLength * sizeof(T));
         buffer->resizeCount(expectedArrayLength);
       }
       return buffer;
@@ -186,8 +182,7 @@ namespace ren {
 
 
   template <typename T, VkBufferUsageFlags usage,
-            VkMemoryPropertyFlags props =
-                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT>
+            VkMemoryPropertyFlags props = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT>
   class ArenaBuffer : public FixedUsageTypedBuffer<T, usage, props> {
    public:
     ArenaBuffer(size_t initialCount)
@@ -206,11 +201,15 @@ namespace ren {
 
 
     void ensure(u64 count) {
-      if (count > this->count()) { this->resizeCount(count); }
+      if (count > this->count()) {
+        this->resizeCount(count);
+      }
     }
 
     void reset(u64 to = 0) {
-      if (to <= this->count()) bumpNext = to;
+      if (to <= this->count()) {
+        bumpNext = to;
+      }
     }
 
     u64 committed(void) const { return bumpNext; }

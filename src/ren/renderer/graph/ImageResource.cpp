@@ -82,15 +82,13 @@ namespace ren {
   ImageResource::ImageResource(const GraphImageSpec &spec)
       : spec(spec) {
     this->type = GraphResourceType::Image;
-    this->definingTask = nullptr;
-    this->writeAccess = GraphAccess::ShaderRead;
     this->image = nullptr;
   }
 
   bool ImageResource::update(RenderGraph &G) {
     auto swapchainSize = G.getSwapchainSize();
 
-    bool isRelativeScale = !(spec.scale.x == 0.0f && spec.scale.y == 0.0f);
+    bool isRelativeScale = spec.relativeScale.isSome();
 
     // Determine if we need to rebuild
     bool needsRebuild = false;
@@ -99,17 +97,24 @@ namespace ren {
       // Image hasn't been allocated yet
       needsRebuild = true;
     } else if (isRelativeScale) {
+      auto relativeScale = spec.relativeScale.unwrap();
       // For swapchain-relative images, check if size changed
-      u32 expectedWidth = static_cast<u32>(swapchainSize.x * spec.scale.x);
-      u32 expectedHeight = static_cast<u32>(swapchainSize.y * spec.scale.y);
+      u32 expectedWidth = static_cast<u32>(swapchainSize.x * relativeScale.x);
+      u32 expectedHeight = static_cast<u32>(swapchainSize.y * relativeScale.y);
 
-      if (expectedWidth < 1) expectedWidth = 1;
-      if (expectedHeight < 1) expectedHeight = 1;
+      if (expectedWidth < 1) {
+        expectedWidth = 1;
+      }
+      if (expectedHeight < 1) {
+        expectedHeight = 1;
+      }
 
       u32 currentWidth = image->getWidth();
       u32 currentHeight = image->getHeight();
 
-      if (currentWidth != expectedWidth || currentHeight != expectedHeight) { needsRebuild = true; }
+      if (currentWidth != expectedWidth || currentHeight != expectedHeight) {
+        needsRebuild = true;
+      }
     }
     // Fixed-size images are never rebuilt once allocated (handled by null check above)
 
@@ -122,35 +127,46 @@ namespace ren {
   }
 
   void ImageResource::buildImage(glm::uvec2 swapchainSize) {
-    bool isRelativeScale = !(spec.scale.x == 0.0f && spec.scale.y == 0.0f);
+    bool isRelativeScale = spec.relativeScale.isSome();
 
-    u32 width = spec.width;
-    u32 height = spec.height;
+    assert(spec.relativeScale.isSome() || spec.absoluteSize.isSome());
 
-    if (isRelativeScale) {
-      width = static_cast<u32>(swapchainSize.x * spec.scale.x);
-      height = static_cast<u32>(swapchainSize.y * spec.scale.y);
+    u32 width = 0;
+    u32 height = 0;
+
+    if (spec.absoluteSize.isSome()) {
+      auto absoluteSize = spec.absoluteSize.unwrap();
+      width = absoluteSize.x;
+      height = absoluteSize.y;
+    } else {
+      auto relativeScale = spec.relativeScale.unwrap();
+      width = static_cast<u32>(swapchainSize.x * relativeScale.x);
+      height = static_cast<u32>(swapchainSize.y * relativeScale.y);
     }
 
-    if (width < 1) width = 1;
-    if (height < 1) height = 1;
+
+    if (width < 1) {
+      width = 1;
+    }
+    if (height < 1) {
+      height = 1;
+    }
 
     ren::ImageBuilder b(name);
 
     // Set usage flags based on initial access type
     switch (initialAccess) {
       case GraphAccess::RenderTarget:
-        b.setUsage(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
-                   VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT);
+        b.setUsage(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                   VK_IMAGE_USAGE_TRANSFER_DST_BIT);
         break;
       case GraphAccess::DepthTarget:
-        b.setUsage(VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
-                   VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT);
+        b.setUsage(VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                   VK_IMAGE_USAGE_TRANSFER_DST_BIT);
         b.setViewAspectMask(VK_IMAGE_ASPECT_DEPTH_BIT);
         break;
       default:
-        b.setUsage(VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
-                   VK_IMAGE_USAGE_TRANSFER_DST_BIT);
+        b.setUsage(VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT);
         break;
     }
 
@@ -175,28 +191,26 @@ namespace ren {
   }
 
   void ImageResource::inspect() const {
-    ImGui::Text("Image Details:");
-    ImGui::Text("  Format: %u", spec.format);
-    ImGui::Text("  Scale: (%.2f, %.2f)", spec.scale.x, spec.scale.y);
-    ImGui::Text("  Handle: %p %p", (void *)image->getImage(), (void*)image->getImageView());
+    ImGui::Text("Vulkan Image: %p, View: %p", (void *)image->getImage(), (void *)image->getImageView());
+    ImGui::Text("Format: %u", spec.format);
 
-    if (spec.scale.x != 0 || spec.scale.y != 0) {
-      ImGui::Text("  Relative to swapchain");
-    } else {
-      ImGui::Text("  Absolute size: %u x %u", spec.width, spec.height);
-    }
+    spec.relativeScale.ifSome([](auto scale) {
+      ImGui::Text("Swapchain-relative Scale: (%.2f, %.2f)", scale.x, scale.y);
+    });
+
+    spec.absoluteSize.ifSome([&](auto size) {
+      ImGui::Text("Absolute Size: %u x %u", size.x, size.y);
+    });
 
     if (image) {
-      ImGui::Text("  Allocated size: %u x %u", image->getWidth(), image->getHeight());
+      ImGui::Text("Allocated size: %u x %u", image->getWidth(), image->getHeight());
     } else {
-      ImGui::TextDisabled("  (not yet allocated)");
+      ImGui::TextDisabled("... not yet allocated!");
     }
     if (imguiTextureID == VK_NULL_HANDLE) {
-      imguiTextureID = ImGui_ImplVulkan_AddTexture(sampler.getHandle(), image->getImageView(),
-                                                   VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-      // ImGui::TextDisabled("  (no ImGui texture ID)");
+      imguiTextureID = ImGui_ImplVulkan_AddTexture(sampler.getHandle(), image->getImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     }
-    ImGui::Text("  ImGui Texture ID: %p", (void *)imguiTextureID);
+    ImGui::Text("ImGui Texture ID: %p", (void *)imguiTextureID);
 
     // Calculate the width to fit the remaining container space
     float containerWidth = ImGui::GetContentRegionAvail().x;
@@ -206,12 +220,14 @@ namespace ren {
 
     ImGui::Image((ImTextureID)imguiTextureID, ImVec2(imageWidth, imageHeight));
 
+    ImGui::Separator();
+
+
     // ImGui::Image((ImTextureID)imguiTextureID,
     //              ImVec2(256, 256 * ((float)image->getHeight() / (float)image->getWidth())));
   }
 
-  void ImageResource::emitBarrier(GraphRunContext &ctx, GraphAccess fromAccess,
-                                  GraphAccess toAccess) {
+  void ImageResource::emitBarrier(GraphRunContext &ctx, GraphAccess fromAccess, GraphAccess toAccess) {
     // if (fromAccess == toAccess) {
     //   return;  // No barrier needed
     // }
@@ -239,8 +255,7 @@ namespace ren {
     barrier.subresourceRange.baseArrayLayer = 0;
     barrier.subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
 
-    vkCmdPipelineBarrier(ctx.cmd, fromInfo.stage, toInfo.stage, 0, 0, nullptr, 0, nullptr, 1,
-                         &barrier);
+    vkCmdPipelineBarrier(ctx.encoder.buf(), fromInfo.stage, toInfo.stage, 0, 0, nullptr, 0, nullptr, 1, &barrier);
   }
 
 }  // namespace ren

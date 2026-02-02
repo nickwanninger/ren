@@ -6,8 +6,6 @@
 
 
 namespace ren {
-  typedef SlangResult Result;
-
   struct ReflectingPrinting {
     // Scoping things in a type allows us to declare functions
     // out of order more easily, but we still have to forward-declare

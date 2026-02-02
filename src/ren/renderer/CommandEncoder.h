@@ -61,8 +61,10 @@ namespace ren {
 
     void dispatchCompute(ShaderObject &resources, glm::uvec3 groupCount);
 
-
     void copyBuffer(ren::Buffer &src, ren::Buffer &dst, VkDeviceSize size, VkDeviceSize srcOffset = 0, VkDeviceSize dstOffset = 0);
+
+
+    inline ShaderObject &createShaderObject(ref<ShaderProgram> program) { return submissionUnit.createShaderObject(program); }
 
     // TODO:
     // - copyTexture

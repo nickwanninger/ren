@@ -18,7 +18,7 @@ namespace ren {
 
     DepthPrepassTask(ren::RenderGraph &G);
 
-    void run(ren::GraphRunContext &ctx) override;
+    void run(ren::GraphRenderPassContext &ctx) override;
   };
 
 

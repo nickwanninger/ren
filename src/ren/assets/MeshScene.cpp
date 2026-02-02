@@ -420,7 +420,7 @@ namespace ren {
       meshScene->textures.push_back(nullptr);
     }
 
-    ren::parallel_for(scene->mNumTextures, [&](int i) {
+    for (unsigned int i = 0; i < scene->mNumTextures; ++i) {
       REN_PROFILE_SCOPE("Load Assimp Texture");
       const aiTexture *assimpTexture = scene->mTextures[i];
       ref<Texture> texture;
@@ -431,7 +431,7 @@ namespace ren {
         texture = ren::Texture::load(assimpTexture->mFilename.C_Str());
       }
       meshScene->textures[i] = texture;
-    });
+    }
 
 
     // for (unsigned int i = 0; i < scene->mNumTextures; ++i) {

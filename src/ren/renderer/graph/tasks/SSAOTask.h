@@ -5,8 +5,6 @@
 #include <ren/renderer/pipelines/PipelineStateObject.h>
 #include <ren/renderer/graph/RenderGraph.h>
 #include <ren/renderer/Buffer.h>
-#include "ShadowMapTask.h"
-#include <ren/renderer/graph/tasks/ShadowMapTask.h>
 
 namespace ren {
 
@@ -24,9 +22,7 @@ namespace ren {
       float intensity = 1.0f;  // WARNING: artistic control! (BAD)
       float bias = 0.025f;
       int num_samples = 12;
-      float noise_divide = 4.0f;
     };
-    UniformBufferSet<SSAOUniform> uSSAO;
     SSAOUniform ssao;
 
     ref<ren::Image> noiseTexture;
@@ -41,7 +37,7 @@ namespace ren {
 
     SSAOTask(ren::RenderGraph &G, float scale, GraphHandle depthHandle, GraphHandle normalHandle);
 
-    void run(ren::GraphRunContext &ctx) override;
+    void run(ren::GraphRenderPassContext &ctx) override;
 
     // inspect
     void inspect(void) override;
@@ -66,7 +62,7 @@ namespace ren {
     SSAOBlurTask(ren::RenderGraph &G, float scale, GraphHandle ssaoHandle, GraphHandle depthHandle,
                  GraphHandle normalHandle);
 
-    void run(ren::GraphRunContext &ctx) override;
+    void run(ren::GraphRenderPassContext &ctx) override;
   };
 
 

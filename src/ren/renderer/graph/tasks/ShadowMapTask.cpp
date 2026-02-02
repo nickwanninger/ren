@@ -8,8 +8,7 @@
 
 #include <imgui/imgui.h>
 #include <ren/Camera.h>
-#include <array>
-#include <limits>
+#include "ren/renderer/graph/RunContext.h"
 
 namespace ren {
 
@@ -18,7 +17,7 @@ namespace ren {
 
   ShadowMapTask::ShadowMapTask(ren::RenderGraph &G, u32 resolution)
       : ren::RenderPassTask(G) {
-    out.shadow = addDepthAttachment("shadow_map", {.width = resolution, .height = resolution});
+    out.shadow = addDepthAttachment("shadow_map", {.absoluteSize = glm::uvec2(resolution, resolution)});
 
     pso.program = make<ShaderProgram>("shaders/shadow_map");
     pso.depthWrite = true;
@@ -26,7 +25,8 @@ namespace ren {
     pso.cullMode = ren::CullMode::Front;
   }
 
-  void ShadowMapTask::run(ren::GraphRunContext &ctx) {
+  void ShadowMapTask::run(ren::GraphRenderPassContext &ctx) {
+#if 0
     auto &viewCamera = ren::Camera::get();
 
     auto &megaMesh = ren::world().get_mut<ren::MegaMeshBuffer>();
@@ -77,6 +77,7 @@ namespace ren {
 
       vkCmdDrawIndexed(ctx.cmd, entry.indexCount, 1, entry.indexOffset, entry.vertexOffset, 0);
     }
+#endif
   }
 
   void ShadowMapTask::inspect(void) {

@@ -3,26 +3,25 @@
 #include <ren/renderer/RenderWorld.h>
 #include <ren/core/Application.h>
 #include <ren/core/DebugLines.hpp>
+#include "ren/renderer/graph/RunContext.h"
 
 namespace ren {
 
   GBufferTask::GBufferTask(ren::RenderGraph &G)
       : ren::RenderPassTask(G) {
+    auto scale = glm::vec2(1.0f);
     // Location 0
-    this->out.albedo = addColorAttachment(
-        "gbufferAlbedo", {.scale = glm::vec2(1.0f), .format = VK_FORMAT_R16G16B16A16_SFLOAT});
+    this->out.albedo = addColorAttachment("gbufferAlbedo", {.relativeScale = scale, .format = VK_FORMAT_R16G16B16A16_SFLOAT});
     // Location 1
-    this->out.normal = addColorAttachment(
-        "gbufferNormal", {.scale = glm::vec2(1.0f), .format = VK_FORMAT_R16G16B16A16_SFLOAT});
+    this->out.normal = addColorAttachment("gbufferNormal", {.relativeScale = scale, .format = VK_FORMAT_R16G16B16A16_SFLOAT});
     // Location 2
-    this->out.metallicRoughness = addColorAttachment(
-        "gbufferMetallicRoughness", {.scale = glm::vec2(1.0f), .format = VK_FORMAT_R8G8B8A8_UNORM});
-    this->out.depth = addDepthAttachment(
-        "gbufferDepth", {.scale = glm::vec2(1.0f), .format = VK_FORMAT_D32_SFLOAT});
+    this->out.metallicRoughness = addColorAttachment("gbufferMetallicRoughness", {.relativeScale = scale, .format = VK_FORMAT_R8G8B8A8_UNORM});
+    this->out.depth = addDepthAttachment("gbufferDepth", {.relativeScale = scale, .format = VK_FORMAT_D32_SFLOAT});
   }
 
 
-  void GBufferTask::run(ren::GraphRunContext &ctx) {
+  void GBufferTask::run(ren::GraphRenderPassContext &ctx) {
+#if 0
     auto &cam = ren::Camera::get();
     auto viewMatrix = cam.view_matrix();
 
@@ -91,6 +90,7 @@ namespace ren {
       vkCmdDrawIndexed(ctx.cmd, meshEntry.indexCount, instanceCount, meshEntry.indexOffset,
                        meshEntry.vertexOffset, 0);
     }
+#endif
   }
 
 

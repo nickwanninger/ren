@@ -5,7 +5,7 @@
 #include <ren/renderer/RenderPass.h>
 #include <ren/renderer/RenderTarget.h>
 
-#include <map>
+#include "ren/renderer/graph/RunContext.h"
 
 namespace ren {
 
@@ -21,25 +21,8 @@ namespace ren {
    * - Creates GraphImageResources for each attachment
    * - Builds a VkRenderPass via caching (deduplication)
    * - Constructs a VkFramebuffer for the current frame
-   * - Calls beginPass() before run() and endPass() after (via preRun/postRun)
-   *
-   * Example:
-   * ```cpp
-   * class GeometryPass : public RenderPassTask {
-   *   GraphHandle colorOut, depthOut;
-   *
-   *   GeometryPass(RenderGraph& graph) : RenderPassTask(graph) {
-   *     colorOut = addColorAttachment("color", {.scale = 1.0f, ...});
-   *     depthOut = addDepthAttachment("depth", {.scale = 1.0f, ...});
-   *   }
-   *
-   *   void run(GraphRunContext& ctx) override {
-   *     ctx.renderer->bind(pso);
-   *     ctx.renderer->draw(...);
-   *   }
-   * };
-   * ```
-   *
+   * - Calls run() within a render pass context
+   * 
    * @see RenderTask, RenderPass, RenderTarget
    */
   class RenderPassTask : public RenderTask {
@@ -55,14 +38,12 @@ namespace ren {
     void prepare() override;
     void unprepare() override;
 
-    // Render pass lifecycle hooks
-    void preRun(GraphRunContext &ctx) override;
-    void postRun(GraphRunContext &ctx) override;
+    virtual void run(GraphRenderPassContext &ctx) = 0;
 
    protected:
     // Derived classes override run() to implement rendering logic.
     // beginPass/endPass are handled automatically by preRun/postRun.
-    virtual void run(GraphRunContext &ctx) override = 0;
+    virtual void run(GraphRunContext &ctx) override final;
 
     // Accessors for derived classes
     ref<RenderPass> getRenderPass() const { return pass; }
@@ -80,20 +61,6 @@ namespace ren {
 
     // Maps attachment names to their graph resource handles
     std::vector<std::pair<std::string, GraphHandle>> attachmentHandles;
-  };
-
-
-
-  class RenderPassTaskLambda : public RenderPassTask {
-   public:
-    RenderPassTaskLambda(RenderGraph &graph, std::function<void(GraphRunContext &ctx)> &&func)
-        : RenderPassTask(graph)
-        , m_func(std::move(func)) {}
-
-    void run(GraphRunContext &ctx) override { m_func(ctx); }
-
-   private:
-    std::function<void(GraphRunContext &ctx)> m_func;
   };
 
 }  // namespace ren

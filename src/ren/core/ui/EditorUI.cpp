@@ -3,6 +3,7 @@
 
 #include <imgui/imgui.h>
 #include <imgui/imgui_internal.h>
+#include <imnodes/imnodes.h>
 #include <ren/core/Application.h>
 
 namespace ren::eui {
@@ -183,7 +184,8 @@ namespace ren::eui {
 
     auto primaryColor = hexImColor(0x008540);
 
-    auto windowBackground = ImVec4(0.011f, 0.011f, 0.011f, 1.00f);
+    // auto windowBackground = ImVec4(0.011f, 0.011f, 0.011f, 1.00f);
+    auto windowBackground = ImVec4(0.005f, 0.005f, 0.005f, 1.00f);
     auto lighten = [](const ImVec4 &color, float amount) { return ImVec4(color.x + amount, color.y + amount, color.z + amount, color.w); };
 
 
@@ -218,7 +220,7 @@ namespace ren::eui {
     colors[ImGuiCol_TabDimmedSelected] = lighten(windowBackground, 0.02f);
     colors[ImGuiCol_DockingPreview] = ImVec4(0.98f, 0.99f, 1.00f, 0.09f);
     colors[ImGuiCol_DockingEmptyBg] = ImVec4(1.00f, 1.00f, 1.00f, 1.00f);
-    colors[ImGuiCol_TableHeaderBg] = hexImColor(0x030303);
+    colors[ImGuiCol_TableHeaderBg] = hexImColor(0x161616);
     colors[ImGuiCol_TableBorderStrong] = lighten(windowBackground, 0.02f);
     colors[ImGuiCol_TableBorderLight] = ImVec4(0.07f, 0.07f, 0.07f, 1.00f);
     colors[ImGuiCol_TableRowBg] = ImVec4(0.00f, 0.00f, 0.00f, 0.03f);
@@ -228,11 +230,11 @@ namespace ren::eui {
 
 
 
-
     colors[ImGuiCol_Text] = ImVec4(0.80f, 0.80f, 0.80f, 1.00f);
 
     // Window and Child backgrounds.
     colors[ImGuiCol_WindowBg] = windowBackground;
+    colors[ImGuiCol_PopupBg] = windowBackground;
     colors[ImGuiCol_ChildBg] = windowBackground;
     colors[ImGuiCol_Border] = lighten(windowBackground, 0.05f);
     colors[ImGuiCol_BorderShadow] = ImVec4(0.00f, 0.00f, 0.00f, 1.00f);
@@ -268,6 +270,25 @@ namespace ren::eui {
     // style.WindowRounding = 5.0f;
 
     style.WindowPadding = ImVec2(10.0f, 2.0f);
+
+
+    // imnodes style.
+    // set the titlebar color for all nodes
+    {
+      ImNodesStyle &style = ImNodes::GetStyle();
+      style.Colors[ImNodesCol_TitleBar] = ImColor(lighten(windowBackground, -0.1f));
+      style.Colors[ImNodesCol_TitleBarSelected] = ImColor(primaryColor);
+      style.Colors[ImNodesCol_TitleBarHovered] = ImColor(lighten(windowBackground, 0.05f));
+
+      style.Colors[ImNodesCol_NodeBackground] = ImColor(windowBackground);
+      style.Colors[ImNodesCol_NodeBackgroundHovered] = ImColor(lighten(windowBackground, 0.01f));
+      style.Colors[ImNodesCol_NodeBackgroundSelected] = ImColor(lighten(windowBackground, 0.01f));
+      style.Colors[ImNodesCol_NodeOutline] = ImColor(lighten(windowBackground, 0.06f));
+
+      style.Colors[ImNodesCol_GridBackground] = ImColor(lighten(windowBackground, 0.02f));
+      style.Colors[ImNodesCol_GridLine] = ImColor(lighten(windowBackground, 0.03f));
+      style.Colors[ImNodesCol_GridLinePrimary] = ImColor(lighten(windowBackground, 0.1f));
+    }
 
 
     auto &am = ren::ensureResource<ren::AssetManager>();

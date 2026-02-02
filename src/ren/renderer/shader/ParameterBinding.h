@@ -122,6 +122,19 @@ namespace ren {
       setBytes((const void*)&value, sizeof(T));
     }
 
+    template <typename T>
+    bool setEntireBuffer(const T& value) {
+      // write the entire buffer
+      if (!node.location.byteSize || *node.location.byteSize != sizeof(T)) {
+        return false;
+      }
+      if (!node.location.byteOffset || *node.location.byteOffset != 0) {
+        return false;
+      }
+      setBytes((const void*)&value, sizeof(T));
+      return true;
+    }
+
 
     // template <typename T>
     //   requires std::is_trivially_copyable_v<T>

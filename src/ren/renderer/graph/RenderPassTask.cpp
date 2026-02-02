@@ -2,6 +2,7 @@
 #include <ren/renderer/graph/RenderGraph.h>
 #include <ren/renderer/graph/ImageResource.h>
 #include <ren/renderer/Renderer.h>
+#include "ren/renderer/graph/RunContext.h"
 
 namespace ren {
 
@@ -10,8 +11,7 @@ namespace ren {
       , pass(nullptr)
       , target(nullptr) {}
 
-  GraphHandle RenderPassTask::addColorAttachment(const std::string_view &name,
-                                                 const GraphImageSpec &spec) {
+  GraphHandle RenderPassTask::addColorAttachment(const std::string_view &name, const GraphImageSpec &spec) {
     RenderGraph &graph = this->graph();
     GraphHandle handle = graph.createImage(name, spec, GraphAccess::RenderTarget);
     this->write(handle, GraphAccess::RenderTarget);
@@ -24,8 +24,7 @@ namespace ren {
     return handle;
   }
 
-  GraphHandle RenderPassTask::addDepthAttachment(const std::string_view &name,
-                                                 const GraphImageSpec &uspec) {
+  GraphHandle RenderPassTask::addDepthAttachment(const std::string_view &name, const GraphImageSpec &uspec) {
     GraphImageSpec spec = uspec;  // Copy to allow format modification
 
     RenderGraph &graph = this->graph();
@@ -57,15 +56,20 @@ namespace ren {
       // Get the image resource from the graph
       ren::ImageRef image = graph().getImage(handle);
 
-      // Get the resource metadata to determine attachment type
-      auto resource = graph().get<ren::GraphResource>(handle);
+      // Find the write access for this attachment from this task's results
+      GraphAccess writeAccess = GraphAccess::RenderTarget;  // Default
+      for (const auto &result : getResults()) {
+        if (result.handle == handle) {
+          writeAccess = result.access;
+          break;
+        }
+      }
+
       RenderTargetAttachmentType attachmentType =
-          (resource->writeAccess == GraphAccess::DepthTarget) ? RenderTargetAttachmentTypeDepth
-                                                              : RenderTargetAttachmentTypeColor;
+          (writeAccess == GraphAccess::DepthTarget) ? RenderTargetAttachmentTypeDepth : RenderTargetAttachmentTypeColor;
 
       // Add attachment to the description
-      targetDesc.attachments.push_back(
-          RenderTargetAttachment(attachmentType, image, image->getFormat(), name));
+      targetDesc.attachments.push_back(RenderTargetAttachment(attachmentType, image, image->getFormat(), name));
     }
 
     Renderer &renderer = Renderer::get();
@@ -85,22 +89,13 @@ namespace ren {
     target.reset();
   }
 
-  void RenderPassTask::preRun(GraphRunContext &ctx) {
-    REN_PROFILE_FUNCTION();
-
-    if (!pass || !target) { prepare(); }
-
-    // Initialize the render pass before user code runs.
-    // This records vkCmdBeginRenderPass and sets up the framebuffer.
-    ctx.renderer.beginPass(*pass, *target);
-  }
-
-  void RenderPassTask::postRun(GraphRunContext &ctx) {
-    REN_PROFILE_FUNCTION();
-
-    // Finalize the render pass after user code runs.
-    // This records vkCmdEndRenderPass.
-    ctx.renderer.endPass();
+  void RenderPassTask::run(GraphRunContext &ctx) {
+    auto timestampTicket = ctx.encoder.beginTimestampQuery(this->name().c_str());
+    auto rpe = ctx.encoder.beginRenderPass(*pass, *target);
+    GraphRenderPassContext rctx(ctx.graph, ctx.renderer, rpe);
+    this->run(rctx);
+    rpe.end();
+    ctx.encoder.endTimestampQuery(timestampTicket);
   }
 
 }  // namespace ren

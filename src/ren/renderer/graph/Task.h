@@ -11,6 +11,15 @@ namespace ren {
   class RenderGraph;  // Forward declaration
   class RenderTask;   // Forward declaration
 
+  struct GraphHandleUsage {
+    GraphHandle handle;
+    GraphAccess access;
+
+    GraphHandleUsage(GraphHandle h, GraphAccess a)
+        : handle(h)
+        , access(a) {}
+  };
+
 
   /**
    * @class RenderTask
@@ -48,8 +57,6 @@ namespace ren {
      *            during this function call.
      */
     virtual void run(GraphRunContext &ctx) = 0;
-    virtual void preRun(GraphRunContext &ctx) {}
-    virtual void postRun(GraphRunContext &ctx) {}
 
 
     /**
@@ -91,7 +98,9 @@ namespace ren {
     void execute(GraphRunContext &ctx);
 
     inline float averageTimeNs(void) {
-      if (numExecutions == 0) return 0.0f;
+      if (numExecutions == 0) {
+        return 0.0f;
+      }
       return static_cast<float>(totalTimeNs / static_cast<double>(numExecutions));
     }
 
@@ -100,7 +109,7 @@ namespace ren {
     RenderGraph &m_graph;  ///< Reference to owning render graph
 
     std::vector<GraphOperand> m_operands;
-    std::vector<GraphHandle> m_results;
+    std::vector<GraphHandleUsage> m_results;
 
     int version = 1;  // Every time the task is re-prepared, this goes up
 
@@ -119,15 +128,65 @@ namespace ren {
   inline void RenderTask::execute(GraphRunContext &ctx) {
     REN_PROFILE_SCOPE(this->name().c_str());
     auto start = std::chrono::high_resolution_clock::now();
-    preRun(ctx);
     run(ctx);
-    postRun(ctx);
     auto end = std::chrono::high_resolution_clock::now();
     float durationNs = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
 
     totalTimeNs += durationNs;
     numExecutions++;
   }
+
+
+  // This is a builder class for constructing tasks in a clean declarative way.
+  // It allows you to configure things like read/write resources, and then
+  // finalize it and construct a task with a given execution function (like a
+  // lambda).  For example, a RenderTask can be constructed by setting up
+  // reads/writes and then calling render().  A simple compute task can be
+  // constructed with execute() and manually binding resources.
+  class TaskBuilder {
+   public:
+    TaskBuilder(RenderGraph &graph, std::string name);
+
+    // Move-only (prevent copying and reuse)
+    TaskBuilder(const TaskBuilder &) = delete;
+    TaskBuilder &operator=(const TaskBuilder &) = delete;
+    TaskBuilder(TaskBuilder &&) = default;
+    TaskBuilder &operator=(TaskBuilder &&) = delete;
+
+    // Fluent API for dependencies
+    TaskBuilder &reads(GraphHandle handle, GraphAccess access);
+    TaskBuilder &writes(GraphHandle handle, GraphAccess access);
+
+    // Convenience overloads
+    TaskBuilder &reads(GraphHandleUsage resource);
+    TaskBuilder &writes(GraphHandleUsage resource);
+
+    // Attachment creation (for render passes)
+    TaskBuilder &createColorAttachment(const std::string_view &name, const GraphImageSpec &spec, GraphHandle &out_handle);
+
+    TaskBuilder &createDepthAttachment(const std::string_view &name, const GraphImageSpec &spec, GraphHandle &out_handle);
+
+    // Finalizers (consume builder)
+    RenderTask &execute(std::function<void(GraphRunContext &)> func);
+    RenderTask &render(std::function<void(GraphRenderPassContext &)> func);
+
+   private:
+    struct AttachmentSpec {
+      std::string name;
+      GraphImageSpec spec;
+      GraphHandle *out_handle;
+      bool is_depth;
+    };
+
+    RenderGraph *m_graph;
+    std::string m_name;
+    std::vector<GraphHandleUsage> m_reads;
+    std::vector<GraphHandleUsage> m_writes;
+    std::vector<AttachmentSpec> m_attachments;
+    bool m_finalized = false;
+
+    void applyDependencies(RenderTask &task);
+  };
 
 
 

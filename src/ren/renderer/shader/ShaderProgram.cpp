@@ -5,6 +5,7 @@
 #include <slang.h>
 #include <unistd.h>
 #include <algorithm>
+#include "ren/renderer/shader/ParameterBinding.h"
 #include <ren/assets/AssetManager.h>
 #include <fmt/format.h>
 #include <ren/misc/DeprecationLogger.h>
@@ -168,7 +169,7 @@ namespace ren {
       static SlangFileSystem fileSystem;
       sessionDesc.fileSystem = &fileSystem;
 
-      const char* searchPaths[] = { "shaders" };
+      const char* searchPaths[] = {"shaders"};
       sessionDesc.searchPaths = searchPaths;
       sessionDesc.searchPathCount = 1;
 
@@ -517,9 +518,9 @@ namespace ren {
 
   void ShaderProgram::inspect(void) {
     auto colFlags = ImGuiTableColumnFlags_NoHide | ImGuiTableColumnFlags_WidthStretch;
-    if (eui::ButtonGreen("Serialize to Disk", ICON_SAVE)) {
-      this->temporarySerialize("out/shaders");
-    }
+    // if (eui::ButtonGreen("Serialize to Disk", ICON_SAVE)) {
+    //   this->temporarySerialize("out/shaders");
+    // }
     ImGui::Text("Shader Modules:");
     static ImGuiTableFlags flags = ImGuiTableFlags_BordersV | ImGuiTableFlags_BordersOuterH | ImGuiTableFlags_RowBg | ImGuiTableFlags_NoBordersInBody;
     if (ImGui::BeginTable("##ShaderProgramModules", 5, flags)) {
@@ -531,6 +532,7 @@ namespace ren {
       ImGui::TableHeadersRow();
 
       for (auto& module : shaders) {
+        ImGui::PushID(&module);
         ImGui::TableNextRow();
         ImGui::TableNextColumn();
         ImGui::Text("%s", module->getFilename().c_str());
@@ -554,8 +556,8 @@ namespace ren {
           ren::println("Dumped SPIR-V to {}", dumpPath);
 
           // if `system` is defined, call spirv-dis on it
-          auto cmd = fmt::format("spirv-dis {}", dumpPath);
-          system(cmd.c_str());
+          system(fmt::format("spirv-dis {}", dumpPath).c_str());
+          system(fmt::format("spirv-reflect {}", dumpPath).c_str());
           unlink(dumpPath.c_str());
           ren::ShaderReflection refl;
           refl.parseFromSpirv(reinterpret_cast<const u8*>(module->getCode().data()), module->getCode().size() * sizeof(u32));
@@ -565,6 +567,7 @@ namespace ren {
             ren::println("Binding: set {} binding {} name {}", b.set, b.index, b.path);
           }
         }
+        ImGui::PopID();
       }
       ImGui::EndTable();
     }

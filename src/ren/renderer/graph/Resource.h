@@ -3,6 +3,7 @@
 #include <ren/renderer/graph/Handle.h>
 #include <ren/renderer/graph/RunContext.h>
 #include <unordered_set>
+#include <ren/core/Option.h>
 
 namespace ren {
   class RenderTask;  // Forward declaration
@@ -55,12 +56,10 @@ namespace ren {
   struct GraphImageSpec {
     // Resolution should come from the swapchain size multiplied by this scale factor.
     // If this value is 0, the size is absolute. (.width, .height)
-    glm::vec2 scale = glm::vec2(0.0f);
+    Option<glm::vec2> relativeScale = None;
 
     // Absolute width/height.
-    u32 width = 0;
-    u32 height = 0;
-
+    Option<glm::uvec2> absoluteSize = None;
     VkFormat format = VK_FORMAT_B8G8R8A8_SRGB;
   };
 
@@ -125,8 +124,7 @@ namespace ren {
     std::string name;           ///< Human-readable name of the resource
     GraphResourceType type;     ///< The type of the resource (Image, Buffer, etc.)
     GraphAccess initialAccess;  ///< The initial access state of the resource
-    RenderTask *definingTask;   ///< The task that defines (writes to) this resource
-    GraphAccess writeAccess;    ///< The access state after the defining task writes to it
+    std::vector<RenderTask*> writingTasks;   ///< Tasks that write to this resource, in declaration order
 
     std::unordered_set<RenderTask *> users;  ///< Tasks that read/use this resource
   };
