@@ -15,11 +15,16 @@ struct Varying
     float2 uv : TEXCOORD0;
 };
 
-struct SquareBConstants
+struct SquareBTransform
 {
     float2 center;
     float extent;
     float rotationSpeed;
+};
+
+struct SquareBConstants
+{
+    SquareBTransform transform;
     float4 tint;
     Texture2D<float4>.Handle pattern;
     SamplerState.Handle linearSampler;
@@ -32,13 +37,14 @@ ConstantBuffer<SquareBConstants> pushConstants;
 Varying vertexMain(Vertex input)
 {
     Varying output;
-    float angle = frameGlobals.time * pushConstants.rotationSpeed;
+    float angle =
+        frameGlobals.time * pushConstants.transform.rotationSpeed;
     float2x2 rotation = float2x2(
         cos(angle), -sin(angle),
         sin(angle), cos(angle));
     output.position = float4(
-        mul(rotation, input.position.xy * pushConstants.extent) +
-            pushConstants.center,
+        mul(rotation, input.position.xy * pushConstants.transform.extent) +
+            pushConstants.transform.center,
         input.position.z, 1.0f);
     output.uv = input.texCoord;
     return output;

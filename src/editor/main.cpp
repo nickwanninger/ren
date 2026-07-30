@@ -78,7 +78,9 @@ void testSaxpy(void) {
   auto program = ren::make<ren::ShaderProgram>("test/saxpy");
   auto cmd = unit.begin();
   auto cursor = cmd->bindCompute(program);
-  cursor.set("a", a)
+  auto pushConstants = cursor.pushConstant("pushConstants");
+  pushConstants
+      .set("a", a)
       .set("length", length)
       .set("x", x.devicePointer<float>())
       .set("y", y.devicePointer<float>())

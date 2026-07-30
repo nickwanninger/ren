@@ -67,13 +67,6 @@ namespace ren {
 
     auto getReflection() const { return reflection; }
 
-    struct PushConstantField {
-      u32 offset;
-      u32 size;
-    };
-    std::optional<PushConstantField> findPushConstantField(
-        std::string_view name) const;
-
 
     // Inspect the shader program in imgui.
     void inspect(void);

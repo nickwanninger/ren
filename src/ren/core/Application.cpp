@@ -475,22 +475,37 @@ namespace ren {
           REN_PROFILE_SCOPE("RenderBackgroundTriangle");
           penc.bindImmediateMesh(squareAMesh->vertices, squareAMesh->indices);
           auto squareACursor = penc.bindGraphics(squareAPSO);
-          squareACursor
-              .set("offset", glm::vec2(-0.5f, 0.0f))
-              .set("scale", 0.32f)
-              .set("pulseAmount", 0.08f)
-              .set("image", warmHandle)
-              .set("sampler", samplerHandle);
+          struct SquareAConstants {
+            glm::vec2 offset;
+            float scale;
+            float pulseAmount;
+            SampledImageHandle image;
+            SamplerHandle sampler;
+          };
+          static_assert(sizeof(SquareAConstants) == 32);
+          auto squareAConstants =
+              squareACursor.pushConstant("pushConstants");
+          squareAConstants.set(SquareAConstants{
+              .offset = {-0.5f, 0.0f},
+              .scale = 0.32f,
+              .pulseAmount = 0.08f,
+              .image = warmHandle,
+              .sampler = samplerHandle,
+          });
           penc.drawIndexed(
               squareACursor,
               {.vertexCount = static_cast<u32>(squareAMesh->indices.size())});
 
           penc.bindImmediateMesh(squareBMesh->vertices, squareBMesh->indices);
           auto squareBCursor = penc.bindGraphics(squareBPSO);
-          squareBCursor
+          auto squareBConstants =
+              squareBCursor.pushConstant("pushConstants");
+          auto squareBTransform = squareBConstants.get("transform");
+          squareBTransform
               .set("center", glm::vec2(0.5f, 0.0f))
               .set("extent", 0.32f)
-              .set("rotationSpeed", 0.35f)
+              .set("rotationSpeed", 0.35f);
+          squareBConstants
               .set("tint", glm::vec4(1.0f))
               .set("pattern", coolHandle)
               .set("linearSampler", samplerHandle);

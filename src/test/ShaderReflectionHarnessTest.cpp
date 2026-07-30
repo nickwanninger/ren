@@ -228,4 +228,104 @@ namespace ren::test {
     EXPECT_EQ(reflected.physical.bindings.at({1, 3}).count, 0);
   }
 
+  TEST_F(ShaderReflectionTest, NamedPushConstantsPreserveRecursiveFieldLocations) {
+    constexpr std::string_view source = R"slang(
+      export T getDescriptorFromHandle<T>(DescriptorHandle<T> handle)
+          where T : IOpaqueDescriptor
+      {
+        return defaultGetDescriptorFromHandle(
+            handle, BindlessDescriptorOptions.None);
+      }
+
+      struct Transform
+      {
+        float2 offset;
+        float scale;
+      };
+
+      struct DrawConstants
+      {
+        Transform transform;
+        uint materialIndex;
+        Texture2D<float4>.Handle pattern;
+        SamplerState.Handle sampler;
+      };
+
+      [[vk::push_constant]]
+      ConstantBuffer<DrawConstants> draw;
+
+      struct Varying
+      {
+        float4 position : SV_Position;
+      };
+
+      [shader("vertex")]
+      Varying vertexMain(uint id : SV_VertexID)
+      {
+        Varying output;
+        output.position = float4(
+            draw.transform.offset * draw.transform.scale,
+            float(draw.materialIndex), 1.0f);
+        return output;
+      }
+
+      [shader("fragment")]
+      float4 fragmentMain(Varying input) : SV_Target
+      {
+        return draw.pattern.Sample(draw.sampler, input.position.xy) + float4(
+            input.position.xy, draw.transform.scale,
+            float(draw.materialIndex));
+      }
+    )slang";
+
+    ReflectedSlangCase reflected;
+    ASSERT_NO_THROW(
+        reflected = reflectSource(
+            source,
+            {.vulkanEmitReflection = false},
+            "recursive_push_constant"));
+
+    auto* root = reflected.slangReflection->getRoot();
+    ASSERT_NE(root, nullptr);
+    auto* draw = static_cast<ShaderReflection::Node*>(nullptr);
+    for (auto* member : root->members) {
+      if (member != nullptr && member->name == "draw") {
+        draw = member;
+        break;
+      }
+    }
+    ASSERT_NE(draw, nullptr);
+    EXPECT_EQ(draw->name, "draw");
+    EXPECT_EQ(draw->type.type, ShaderReflection::Type::PushConstant);
+    EXPECT_TRUE(draw->location.pushConstant);
+    ASSERT_TRUE(draw->location.byteOffset);
+    ASSERT_TRUE(draw->location.byteSize);
+    EXPECT_EQ(*draw->location.byteOffset, 0);
+    EXPECT_EQ(*draw->location.byteSize, 40);
+
+    ASSERT_EQ(draw->members.size(), 4);
+    auto* transform = draw->members[0];
+    ASSERT_NE(transform, nullptr);
+    EXPECT_EQ(transform->name, "transform");
+    EXPECT_TRUE(transform->location.pushConstant);
+    ASSERT_TRUE(transform->location.byteOffset);
+    ASSERT_TRUE(transform->location.byteSize);
+    EXPECT_EQ(*transform->location.byteOffset, 0);
+    EXPECT_EQ(*transform->location.byteSize, 16);
+
+    ASSERT_EQ(transform->members.size(), 2);
+    EXPECT_EQ(transform->members[0]->name, "offset");
+    EXPECT_EQ(*transform->members[0]->location.byteOffset, 0);
+    EXPECT_EQ(*transform->members[0]->location.byteSize, 8);
+    EXPECT_EQ(transform->members[1]->name, "scale");
+    EXPECT_EQ(*transform->members[1]->location.byteOffset, 8);
+    EXPECT_EQ(*transform->members[1]->location.byteSize, 4);
+
+    auto* materialIndex = draw->members[1];
+    ASSERT_NE(materialIndex, nullptr);
+    EXPECT_EQ(materialIndex->name, "materialIndex");
+    EXPECT_EQ(*materialIndex->location.byteOffset, 16);
+    EXPECT_EQ(*materialIndex->location.byteSize, 4);
+  }
+
 }  // namespace ren::test

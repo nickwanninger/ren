@@ -15,6 +15,9 @@ namespace ren::test {
     // Keep every declared resource by default so exact reflection comparisons
     // are possible. Tests for production pruning can request MAXIMAL.
     SlangOptimizationLevel optimization = SLANG_OPTIMIZATION_LEVEL_NONE;
+    // Production omits this option because it emits SPV_GOOGLE_user_type.
+    // Most reflection comparison tests enable it for richer SPIR-V metadata.
+    bool vulkanEmitReflection = true;
   };
 
   // Owns all Slang objects needed by a reflected test program. Tests can use

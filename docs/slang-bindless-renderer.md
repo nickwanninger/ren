@@ -81,7 +81,8 @@ auto& heap = renderer.getGlobalDescriptors();
 auto image = heap.registerSampledImage(texture->getImage());
 auto sampler = heap.registerSampler(renderer.getSampler(VK_FILTER_LINEAR));
 
-cursor.set("image", image).set("sampler", sampler);
+auto constants = cursor.pushConstant("pushConstants");
+constants.set("image", image).set("sampler", sampler);
 ```
 
 Shader fields use Slang's native handle types:
@@ -124,28 +125,74 @@ struct DrawConstants
 {
     float2 offset;
     float scale;
+    float pulseAmount;
     Texture2D<float4>.Handle image;
+    SamplerState.Handle sampler;
 };
 
 [[vk::push_constant]]
 ConstantBuffer<DrawConstants> pushConstants;
 ```
 
-Binding a program returns a command-scoped `ShaderCursor`. `set()` resolves a
-field name through Slang reflection and immediately emits `vkCmdPushConstants`:
+Binding a program returns a command-scoped root `ShaderCursor`. The cursor owns
+all reflection-tree traversal. Select a named top-level push constant, then
+walk direct children with `get()` or the named `set()` convenience:
 
 ```cpp
 auto cursor = pass.bindGraphics(pso);
-cursor.set("offset", glm::vec2(-0.5f, 0.0f))
-      .set("scale", 0.3f)
-      .set("image", imageHandle);
+auto constants = cursor.pushConstant("pushConstants");
+constants.set("offset", glm::vec2(-0.5f, 0.0f))
+         .set("scale", 0.3f)
+         .set("image", imageHandle);
 pass.drawIndexed(cursor, {.vertexCount = indexCount});
 ```
 
-`set()` requires the C++ value size to exactly match the reflected field.
-Missing, ambiguous, or oversized fields fail immediately. REN intentionally
-does not keep a parameter block, shadow copy, initialization mask, or
-completeness check.
+Each cursor represents one reflection node. Lookup is direct rather than a
+recursive global name search, so identically named fields in separate blocks
+are unambiguous:
+
+```cpp
+auto constants = cursor.pushConstant("pushConstants");
+auto transform = constants.get("transform");
+transform.set("offset", offset).set("scale", scale);
+```
+
+Named top-level selection also avoids assuming that a program has exactly one
+logical push-constant block. The current Vulkan ABI still exposes one physical
+128-byte range, but adding reflected blocks or another backing source does not
+require name handling in `CommandEncoder`.
+
+Arrays may be traversed with `element(index)`, and `operator[]` aliases
+`get()`. The same tree API can later expose parameter blocks or other reflected
+storage without teaching `CommandEncoder` about names.
+
+Calling `set(value)` on a node writes the entire reflected value:
+
+```cpp
+struct DrawConstants {
+    glm::vec2 offset;
+    float scale;
+    float pulseAmount;
+    SampledImageHandle image;
+    SamplerHandle sampler;
+};
+
+static_assert(sizeof(DrawConstants) == 32);
+constants.set(
+    DrawConstants{offset, scale, pulseAmount, imageHandle, samplerHandle});
+```
+
+The C++ struct must reproduce Slang's padding and total size exactly. Both
+whole-node and field writes require the C++ value size to equal the reflected
+node size. Vulkan also requires offsets and write sizes to be multiples of four
+bytes. Missing children, wrong node kinds, layout mismatches, and unaligned
+writes fail before recording a command.
+
+`ShaderCursor` resolves the name, node kind, byte offset, and byte size.
+`CommandEncoder` receives only the resolved offset and payload, validates the
+cursor generation and fixed 128-byte range, then emits `vkCmdPushConstants`.
+REN intentionally keeps no parameter block, shadow copy, initialization mask,
+or completeness check.
 
 A cursor belongs to one encoder, bind point, program, and binding generation.
 Binding another graphics or compute program makes the previous cursor for that
@@ -166,8 +213,9 @@ auto input = allocateBuffer<float>(count, BufferDomain::Upload);
 auto output = allocateBuffer<float>(count, BufferDomain::Readback);
 
 input.copyFromHost(values.data(), values.size() * sizeof(float));
-cursor.set("input", input.devicePointer<float>())
-      .set("output", output.devicePointer<float>());
+auto constants = cursor.pushConstant("pushConstants");
+constants.set("input", input.devicePointer<float>())
+         .set("output", output.devicePointer<float>());
 ```
 
 - `Device`: device-local and not CPU mapped.
@@ -189,11 +237,12 @@ Compute uses the same program, cursor, global ABI, and push-constant machinery:
 auto program = make<ShaderProgram>("test/saxpy");
 auto command = submission.begin();
 auto cursor = command->bindCompute(program);
-cursor.set("a", a)
-      .set("length", length)
-      .set("x", x.devicePointer<float>())
-      .set("y", y.devicePointer<float>())
-      .set("output", output.devicePointer<float>());
+auto constants = cursor.pushConstant("pushConstants");
+constants.set("a", a)
+         .set("length", length)
+         .set("x", x.devicePointer<float>())
+         .set("y", y.devicePointer<float>())
+         .set("output", output.devicePointer<float>());
 command->dispatch(cursor, {(length + 255) / 256, 1, 1});
 submission.submitTo(*getVulkan().graphicsQueue);
 ```

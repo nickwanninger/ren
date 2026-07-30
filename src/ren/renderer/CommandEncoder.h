@@ -81,13 +81,6 @@ namespace ren {
     // Reset the command encoder for reuse.
     void reset(void);
 
-    void writePushConstant(
-        const ShaderCursor& cursor,
-        std::string_view name,
-        const void* data,
-        size_t size);
-
-
     // Call beginTimestampQuery before some section of GPU work, then call
     // endTimestampQuery after it.  The timestamps can be resolved after GPU
     // execution. Eventually, this information is collected and reported back to
@@ -97,7 +90,13 @@ namespace ren {
     void endTimestampQuery(QueryTicket ticket);
 
    private:
+    friend class ShaderCursor;
     friend class RenderPassEncoder;
+    void writePushConstant(
+        const ShaderCursor& cursor,
+        u32 byteOffset,
+        const void* data,
+        size_t size);
     ShaderCursor activateGraphics(
         ref<ShaderProgram> program, VkPipelineLayout pipelineLayout);
     void validate(

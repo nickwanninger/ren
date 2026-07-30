@@ -313,33 +313,6 @@ namespace ren {
     VK_CHECK(vkCreatePipelineLayout(
         vulkan.device, &pipelineLayoutInfo, nullptr, &pipelineLayout));
   }
-
-  std::optional<ShaderProgram::PushConstantField>
-  ShaderProgram::findPushConstantField(std::string_view name) const {
-    if (!reflection || !reflection->getRoot()) {
-      return std::nullopt;
-    }
-
-    std::optional<PushConstantField> result;
-    std::function<void(const ShaderReflection::Node*)> visit =
-        [&](const ShaderReflection::Node* node) {
-          if (node->name == name && node->location.pushConstant &&
-              node->location.byteOffset && node->location.byteSize) {
-            if (result) {
-              throw std::runtime_error(fmt::format(
-                  "Push constant field '{}' is ambiguous", name));
-            }
-            result = PushConstantField{
-                *node->location.byteOffset, *node->location.byteSize};
-          }
-          for (const auto* member : node->members) {
-            visit(member);
-          }
-        };
-    visit(reflection->getRoot());
-    return result;
-  }
-
   const ShaderBinding* ShaderProgram::getBinding(const std::string_view& name) const {
     // TODO: as we grow, we need a faster lookup mechanism!
     for (const auto& binding : bindings) {

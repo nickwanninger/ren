@@ -1,5 +1,6 @@
 #include "SlangTestHarness.h"
 
+#include <array>
 #include <atomic>
 #include <cstring>
 #include <stdexcept>
@@ -58,25 +59,38 @@ namespace ren::test {
       throw std::runtime_error("Failed to create Slang global session");
     }
 
-    slang::CompilerOptionEntry compilerOptions[4] = {};
-    compilerOptions[0].name = slang::CompilerOptionName::VulkanEmitReflection;
-    compilerOptions[0].value.kind = slang::CompilerOptionValueKind::Int;
-    compilerOptions[0].value.intValue0 = 1;
-    compilerOptions[1].name = slang::CompilerOptionName::MatrixLayoutColumn;
-    compilerOptions[1].value.kind = slang::CompilerOptionValueKind::Int;
-    compilerOptions[1].value.intValue0 = 1;
-    compilerOptions[2].name = slang::CompilerOptionName::Optimization;
-    compilerOptions[2].value.kind = slang::CompilerOptionValueKind::Int;
-    compilerOptions[2].value.intValue0 = options.optimization;
-    compilerOptions[3].name = slang::CompilerOptionName::BindlessSpaceIndex;
-    compilerOptions[3].value.kind = slang::CompilerOptionValueKind::Int;
-    compilerOptions[3].value.intValue0 = 1;
+    std::array<slang::CompilerOptionEntry, 4> compilerOptions{};
+    SlangInt compilerOptionCount = 0;
+    if (options.vulkanEmitReflection) {
+      auto& option = compilerOptions[compilerOptionCount++];
+      option.name = slang::CompilerOptionName::VulkanEmitReflection;
+      option.value.kind = slang::CompilerOptionValueKind::Int;
+      option.value.intValue0 = 1;
+    }
+    {
+      auto& option = compilerOptions[compilerOptionCount++];
+      option.name = slang::CompilerOptionName::MatrixLayoutColumn;
+      option.value.kind = slang::CompilerOptionValueKind::Int;
+      option.value.intValue0 = 1;
+    }
+    {
+      auto& option = compilerOptions[compilerOptionCount++];
+      option.name = slang::CompilerOptionName::Optimization;
+      option.value.kind = slang::CompilerOptionValueKind::Int;
+      option.value.intValue0 = options.optimization;
+    }
+    {
+      auto& option = compilerOptions[compilerOptionCount++];
+      option.name = slang::CompilerOptionName::BindlessSpaceIndex;
+      option.value.kind = slang::CompilerOptionValueKind::Int;
+      option.value.intValue0 = 1;
+    }
 
     slang::TargetDesc target = {};
     target.format = SLANG_SPIRV;
     target.profile = result.globalSession->findProfile("spirv_1_5");
-    target.compilerOptionEntries = compilerOptions;
-    target.compilerOptionEntryCount = 4;
+    target.compilerOptionEntries = compilerOptions.data();
+    target.compilerOptionEntryCount = compilerOptionCount;
 
     slang::SessionDesc sessionDesc = {};
     sessionDesc.targets = &target;

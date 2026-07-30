@@ -87,30 +87,25 @@ namespace ren {
 
   void CommandEncoder::writePushConstant(
       const ShaderCursor& cursor,
-      std::string_view name,
+      u32 byteOffset,
       const void* data,
       size_t size) {
     validate(cursor, cursor.m_bindPoint);
-    auto field = cursor.m_program->findPushConstantField(name);
-    if (!field) {
-      throw std::runtime_error(
-          fmt::format("Push constant field '{}' was not found", name));
-    }
-    if (size != field->size) {
+    if (byteOffset % 4 != 0 || size % 4 != 0) {
       throw std::runtime_error(fmt::format(
-          "Push constant field '{}' is {} bytes, but {} bytes were provided",
-          name, field->size, size));
+          "Push-constant writes require 4-byte aligned offsets and sizes "
+          "(offset {}, size {})",
+          byteOffset, size));
     }
-    if (field->offset + field->size > GlobalDescriptorABI::pushConstantBytes) {
+    if (byteOffset + size > GlobalDescriptorABI::pushConstantBytes) {
       throw std::runtime_error(fmt::format(
-          "Push constant field '{}' exceeds REN's {} byte ABI",
-          name, GlobalDescriptorABI::pushConstantBytes));
+          "Push-constant write at byte {} with size {} exceeds REN's {} byte ABI",
+          byteOffset, size, GlobalDescriptorABI::pushConstantBytes));
     }
     const auto& state =
         cursor.m_bindPoint == VK_PIPELINE_BIND_POINT_COMPUTE ? compute : graphics;
     vkCmdPushConstants(
-        cmd, state.layout, VK_SHADER_STAGE_ALL, field->offset,
-        field->size, data);
+        cmd, state.layout, VK_SHADER_STAGE_ALL, byteOffset, size, data);
   }
 
 
