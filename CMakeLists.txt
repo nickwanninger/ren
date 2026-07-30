@@ -3,6 +3,7 @@ cmake_minimum_required(VERSION 3.20)
 project(ren CXX C)
 
 include(FetchContent)
+include(CTest)
 
 
 message(STATUS "C Compiler: ${CMAKE_C_COMPILER}")

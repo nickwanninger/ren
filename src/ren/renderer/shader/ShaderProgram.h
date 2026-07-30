@@ -43,7 +43,7 @@ namespace ren {
     // Load from slang
     ShaderProgram(const std::string& shader);
 
-    // DEPRECATED!!!
+    // Legacy GLSL path. Remove after the remaining GLSL programs (PBR and fullscreen/SSAO) migrate to Slang.
     ShaderProgram(const std::string& glslVertexShader, const std::string& glslFragmentShader);
     ~ShaderProgram();
 

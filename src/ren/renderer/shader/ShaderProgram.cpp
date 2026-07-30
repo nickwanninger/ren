@@ -23,13 +23,16 @@ namespace ren {
     this->compileFromSlangPath(slangPath);
 
     // Reflect the spirv to compare with the slang reflection.
-    // ren::println("-- Spirv --");
-    // ShaderReflection spirvReflection;
-    // for (auto& shader : shaders) {
-    //   spirvReflection.parseFromSpirv(reinterpret_cast<const u8*>(shader->getCode().data()), shader->getCode().size() * sizeof(u32));
-    // }
+    ren::println("-- Spirv --");
+    ShaderReflection spirvReflection;
 
-    // ren::println("Slang Reflection: {}", this->reflection->toJson().dump(2));
+    for (auto& shader : shaders) {
+      spirvReflection.parseFromSpirv(reinterpret_cast<const u8*>(shader->getCode().data()), shader->getCode().size() * sizeof(u32));
+    }
+
+
+    ren::println("Slang Reflection: {}", this->reflection->toJson().dump(2));
+    ren::println("Spirv Reflection: {}", spirvReflection.toJson().dump(2));
   }
 
   ShaderProgram::ShaderProgram(const std::string& vertexPath, const std::string& fragmentPath)
@@ -38,7 +41,6 @@ namespace ren {
     REN_DEPRECATION_WARNING();
     shaders.push_back(ren::getAsset<VertexShader>(vertexPath));
     shaders.push_back(ren::getAsset<FragmentShader>(fragmentPath));
-
 
     reflectShaders();
     bakeLayouts();
@@ -142,23 +144,11 @@ namespace ren {
       compilerOptions.push_back(reflectionOption);
       compilerOptions.push_back(optimizationOption);
 
-      {
-        slang::CompilerOptionEntry opt = {};
-        opt.name = slang::CompilerOptionName::VulkanEmitReflection;
-        opt.value.kind = slang::CompilerOptionValueKind::Int;
-        opt.value.intValue0 = 1;
-        compilerOptions.push_back(opt);
-      }
-
-
-      {
-        slang::CompilerOptionEntry opt = {};
-        opt.name = slang::CompilerOptionName::MatrixLayoutColumn;
-        opt.value.kind = slang::CompilerOptionValueKind::Int;
-        opt.value.intValue0 = 1;
-        compilerOptions.push_back(opt);
-      }
-
+      slang::CompilerOptionEntry matrixLayoutOption = {};
+      matrixLayoutOption.name = slang::CompilerOptionName::MatrixLayoutColumn;
+      matrixLayoutOption.value.kind = slang::CompilerOptionValueKind::Int;
+      matrixLayoutOption.value.intValue0 = 1;
+      compilerOptions.push_back(matrixLayoutOption);
 
       targetDesc.compilerOptionEntries = compilerOptions.data();
       targetDesc.compilerOptionEntryCount = static_cast<SlangInt>(compilerOptions.size());
@@ -298,7 +288,7 @@ namespace ren {
           .set = r.set,
           .binding = r.index,
           .count = r.count,
-          .type = ShaderReflection::BindingType::toVkDescriptorType(r.type.type),
+          .type = r.type.toVkDescriptorType(),
           .stages = VK_SHADER_STAGE_ALL,  // TODO!!!
       };
       this->bindings.push_back(b);
