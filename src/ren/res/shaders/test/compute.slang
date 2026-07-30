@@ -71,7 +71,7 @@ uniform float *z;
 [shader("compute")]
 [numthreads(1, 1, 1)]
 void mainA(uniform Foo *foo, uniform float m, uniform float a, Sampler2D tex) {
-  *foo.output = *foo.input * m + a + tex.Sample(float2(0, 0)).x;
+  *foo.output = *foo.input * m + a + tex.SampleLevel(float2(0, 0), 0.0).x;
 }
 
 [shader("compute")]

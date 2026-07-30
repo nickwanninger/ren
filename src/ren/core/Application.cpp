@@ -206,19 +206,19 @@ namespace ren {
 
 
     ren::RenderGraph G;
-    ren::GraphHandle nullHandleOut;
-    ren::GraphHandle ssao;
-    ren::GraphHandle gbufferAlbedo, gbufferNormal, gbufferMaterial, gbufferDepth;
-    auto &gbp = ren::addGBuffer(G, gbufferAlbedo, gbufferNormal, gbufferMaterial, gbufferDepth);
-    ren::addSSAO(G, gbufferDepth, gbufferNormal, ssao);
+    // ren::GraphHandle nullHandleOut;
+    // ren::GraphHandle ssao;
+    // ren::GraphHandle gbufferAlbedo, gbufferNormal, gbufferMaterial, gbufferDepth;
+    // auto &gbp = ren::addGBuffer(G, gbufferAlbedo, gbufferNormal, gbufferMaterial, gbufferDepth);
+    // ren::addSSAO(G, gbufferDepth, gbufferNormal, ssao);
 
 
 
-    G.pass("gizmo").execute([&](ren::GraphRunContext &ctx) {});
+    // G.pass("gizmo").execute([&](ren::GraphRunContext &ctx) {});
 
 
-    GraphHandle buzz;
-    G.pass("Fizbuzz").createColorAttachment("buzz", {.absoluteSize = glm::uvec2(512, 512)}, buzz).render([&](ren::GraphRenderPassContext &ctx) {});
+    // GraphHandle buzz;
+    // G.pass("Fizbuzz").createColorAttachment("buzz", {.absoluteSize = glm::uvec2(512, 512)}, buzz).render([&](ren::GraphRenderPassContext &ctx) {});
     // for (int i = 0; i < 128; i++) {
     //   G.pass("gadget").execute([&](ren::GraphRunContext &ctx) { printf("Gadget pass %d\n", i); });
     // }
@@ -361,32 +361,27 @@ namespace ren {
         }
 
 
+        // Simply print the framerate in the menu bar.
         char buf[64];
         snprintf(buf, sizeof(buf), "%4d FPS", (int)framerateCounter.getAverageFramerate());
-        if (ImGui::MenuItem(buf)) {
-          //
-        }
+        ImGui::MenuItem(buf);
 
         ImGui::EndMainMenuBar();
       }
 
-      ImGui::Begin("Compute");
-      ImGui::Button("My Button");
-
-      if (ImGui::IsItemHovered()) {
-        ImGui::BeginTooltip();
-        computeProgram->inspect();
-        // // Customize the tooltip content here
-        // ImGui::Text("This is a custom tooltip!");
-        // ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "It can have color.");
-        // ImGui::TextWrapped("You can also add longer descriptions that wrap around a specified width.");
-        ImGui::EndTooltip();
-      }
-      ImGui::End();
-
+      /**
+       * Show the console log inspection.
+       * see: https://nickw.io/post/logging-user-interfaces
+       */
       ren::inspectLog();
 
-      if (1) {
+      /**
+       * Tick the world and run lua update functions. This is where all the
+       * game logic happens, in effect. This currently runs on the main thread,
+       * but needs to be moved to a worker thread in the future to avoid
+       * blocking the main render thread with game logic.
+       */
+       {
         REN_PROFILE_SCOPE("WorldProgress");
         world.progress(deltaTime);
 
@@ -408,58 +403,26 @@ namespace ren {
       }
 
 
-      // G.pass("GBuffer")
-      //     .writes(gbufferAlbedo, GraphAccess::RenderTarget)
-      //     .writes(gbufferNormal, GraphAccess::RenderTarget)
-      //     .writes(gbufferMaterial, GraphAccess::RenderTarget)
-      //     .writes(gbufferDepth, GraphAccess::DepthTarget)
-      //     .render([&](ren::GraphRenderPassContext &ctx) { gbp.execute(ctx); });
-
-#if 0
-      ren::RenderGraph G;
-      ren::GraphHandle hdr;
-
-      // G.pass makes a builder.
-      // You can chain reads/writes before calling render or compute to finalize it.
-      G.pass("lighting").reads(gbufferAlbedo, gbufferNormal, gbufferDepth, ssao).targets(hdr).render([&](ren::GraphRenderPassContext &ctx) {
-        REN_PROFILE_SCOPE("TestRenderPass");
-        auto &penc = ctx.encoder;
-        penc.bindPipeline(trianglePSO);
-
-        DrawArguments args;
-        args.vertexCount = 3;
-        args.instanceCount = 1;
-        penc.draw(args);
-      });
-
-      auto computeProgram = ...;
-      G.pass("SsaoUpscale").reads(ssaoHalf).writes(ssaoFull).compute([&](ren::GraphComputeContext &ctx) {
-        // bind!
-        enc.dispatch(computeProgram, 64, 64, 64);
-      });
-#endif
-
-
+      /**
+       * Calculate the size of the render target based on the current window size.
+       */
       float width = (float)windowWidth;
       float height = (float)windowHeight;
-      // targetHeight = height;
       float targetHeight = height * renderScaleTemp;
       float scale = targetHeight / height;
       scale *= renderScaleTemp;
       width *= scale;
       height *= scale;
       auto renderSize = glm::uvec2(width, height);
-      G.startFrame(renderSize);
+      // G.startFrame(renderSize);
 
       try {
-        G.run(*renderer);
+        // G.run(*renderer);
       } catch (const std::exception &e) {
         ren::println("✗ RenderPassTask execution failed: {}", e.what());
       }
 
-      G.inspect();
-
-
+      // G.inspect();
 
       auto enc = frame.getMainCommandEncoder();
       auto penc = enc->beginRenderPass(*renderer->getDisplayPass(), *frame.renderTarget);
@@ -467,7 +430,6 @@ namespace ren {
         REN_PROFILE_SCOPE("FullScreenPass");
         if (1) {
           REN_PROFILE_SCOPE("RenderBackgroundTriangle");
-          auto start = std::chrono::high_resolution_clock::now();
           ren::MeshBuilder b;
 
           auto fb = b.beginFace();
@@ -502,25 +464,25 @@ namespace ren {
           pc.index = 0;
           vkCmdPushConstants(penc.buf(), trianglePSO.program->getPipelineLayout(), VK_SHADER_STAGE_ALL, 0, sizeof(pc), &pc);
           penc.drawIndexed(args);
-
-          auto end = std::chrono::high_resolution_clock::now();
-
-          float allocTime = std::chrono::duration<float, std::chrono::nanoseconds::period>(end - start).count();
         }
 
-
+        /**
+         * Finally, render the ImGui draw data that has been accumulated over
+         * the course of the frame. This needs to be rendered at the end of the
+         * frame to ensure that it appears on top of all other rendered content.
+         */
         {
           REN_PROFILE_SCOPE("RenderImGui");
           ImGui::Render();
           ImGui::UpdatePlatformWindows();
           ImGui::RenderPlatformWindowsDefault();
-          ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), penc.buf());  // Gross leakage.
+          auto commandBuffer = penc.buf(); // Gross Leakage...
+          ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer);
         }
       }
 
       penc.end();
 
-      // world.defer_end();
       renderer->endFrame();
     }
     renderer->waitForIdle();
