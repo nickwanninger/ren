@@ -64,6 +64,24 @@ using f64 = double;
     }                                                             \
   } while (0)
 
+// Generate bitwise operators for a scoped enum used as flags.
+// Usage:  REN_FLAG_ENUM(MyFlags, u32)
+// Gives you | & ~ |= &= on MyFlags values.
+#define REN_FLAG_ENUM(T, Underlying)                                            \
+    inline T operator|(T a, T b) {                                              \
+        return static_cast<T>(static_cast<Underlying>(a) |                     \
+                              static_cast<Underlying>(b));                      \
+    }                                                                           \
+    inline T operator&(T a, T b) {                                              \
+        return static_cast<T>(static_cast<Underlying>(a) &                     \
+                              static_cast<Underlying>(b));                      \
+    }                                                                           \
+    inline T operator~(T a) {                                                   \
+        return static_cast<T>(~static_cast<Underlying>(a));                     \
+    }                                                                           \
+    inline T& operator|=(T& a, T b) { a = a | b; return a; }                    \
+    inline T& operator&=(T& a, T b) { a = a & b; return a; }
+
 
 
 namespace ren {

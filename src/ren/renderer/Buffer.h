@@ -6,11 +6,76 @@
 #include <ren/renderer/Swapchain.h>  // To get the current frame index.
 #include <vector>
 #include <ren/core/Builder.h>
+#include <string>
+#include "glm/gtc/constants.hpp"
+#include "ren/renderer/vulkan/Vulkan.h"
 
 namespace ren {
   class VulkanInstance;
 
 
+
+
+  // Nicer names than the vulkan ones...
+  enum class MemoryUsage : VkBufferUsageFlags {
+    Uniform = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+    Storage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+    Vertex = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+    Index = VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+    Indirect = VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT,
+
+    Transfer = VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+  };
+  REN_FLAG_ENUM(MemoryUsage, VkBufferUsageFlags)
+
+  enum class MemoryProperty : u32 {
+    DeviceLocal = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+    HostVisible = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+    HostCoherent = VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+    HostCached = VK_MEMORY_PROPERTY_HOST_CACHED_BIT,
+    LazilyAllocated = VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT,
+  };
+  REN_FLAG_ENUM(MemoryProperty, u32)
+
+  // this is the base class for buffer memory. Logically, this is the
+  // "allocation" of buffer memory, and the below Buffer types are more "views"
+  // over this.
+  class BufferMemory {
+   public:
+    BufferMemory(size_t byteCount, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VmaAllocationCreateFlags vmaFlags = 0);
+
+    // Destructor - unmaps (if mapped) and destroys VMA allocation
+    ~BufferMemory();
+
+    // Non-copyable (owns GPU resource)
+    BufferMemory(const BufferMemory &) = delete;
+    BufferMemory &operator=(const BufferMemory &) = delete;
+
+    // Movable (transfers ownership)
+    BufferMemory(BufferMemory &&other) noexcept;
+    BufferMemory &operator=(BufferMemory &&other) noexcept;
+
+    // Public interface
+    VkBuffer getHandle() const { return buffer; }
+    uintptr_t getGPUAddress() const { return gpuAddress; }
+    void *getHostAddress() const { return hostAddress; }
+    size_t getByteCount() const { return byteCount; }
+    bool isMapped() const { return hostAddress != nullptr; }
+    bool isValid() const { return buffer != VK_NULL_HANDLE; }
+
+   private:
+    // Constructor parameters
+    size_t byteCount = 0;
+    VkBufferUsageFlags usage = 0;
+    VkMemoryPropertyFlags properties = 0;
+    VmaAllocationCreateFlags vmaFlags = 0;
+
+    // Runtime state
+    uintptr_t gpuAddress = 0;
+    void *hostAddress = nullptr;
+    VmaAllocation allocation = VK_NULL_HANDLE;
+    VkBuffer buffer = VK_NULL_HANDLE;
+  };
 
   // Represents a buffer in Vulkan memory.
   class Buffer {
