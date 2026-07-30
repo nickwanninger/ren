@@ -25,7 +25,7 @@ namespace ren {
     vkCmdCopyBuffer(this->cmd, src.getHandle(), dst.getHandle(), 1, &copyRegion);
   }
 
-  ShaderCursor CommandEncoder::bindCompute(ref<ShaderProgram> program) {
+  BoundComputeEncoder CommandEncoder::bindCompute(ref<ShaderProgram> program) {
     auto &R = ren::Renderer::get();
     auto pipeline = R.getPipelineCache().getCompute(program);
 
@@ -37,15 +37,21 @@ namespace ren {
     compute.program = std::move(program);
     compute.layout = pipeline->getLayout();
     ++compute.generation;
-    return ShaderCursor(
-        *this, compute.program, VK_PIPELINE_BIND_POINT_COMPUTE,
-        compute.generation);
+    return BoundComputeEncoder(
+        *this,
+        ShaderCursor(
+            *this, compute.program, VK_PIPELINE_BIND_POINT_COMPUTE,
+            compute.generation));
   }
 
-  void CommandEncoder::dispatch(
-      const ShaderCursor &cursor, glm::uvec3 groupCount) {
-    validate(cursor, VK_PIPELINE_BIND_POINT_COMPUTE);
-    vkCmdDispatch(this->cmd, groupCount.x, groupCount.y, groupCount.z);
+  void BoundShaderEncoder::validate(
+      VkPipelineBindPoint expectedBindPoint) const {
+    cmd.validate(shader, expectedBindPoint);
+  }
+
+  void BoundComputeEncoder::dispatch(glm::uvec3 groupCount) {
+    validate(VK_PIPELINE_BIND_POINT_COMPUTE);
+    vkCmdDispatch(buf(), groupCount.x, groupCount.y, groupCount.z);
   }
 
 
@@ -185,13 +191,17 @@ namespace ren {
 
 
 
-  ShaderCursor RenderPassEncoder::bindGraphics(ren::PipelineStateObject &pso) {
+  BoundGraphicsEncoder RenderPassEncoder::bindGraphics(
+      ren::PipelineStateObject &pso) {
     auto &R = ren::Renderer::get();
 
     auto cachedPipeline = R.getPipelineCache().get(this->pass, pso);
 
     vkCmdBindPipeline(buf(), VK_PIPELINE_BIND_POINT_GRAPHICS, cachedPipeline->getHandle());
-    return getEncoder().activateGraphics(pso.program, cachedPipeline->getLayout());
+    return BoundGraphicsEncoder(
+        getEncoder(),
+        getEncoder().activateGraphics(
+            pso.program, cachedPipeline->getLayout()));
   }
 
 
@@ -215,14 +225,13 @@ namespace ren {
   }
 
 
-  void RenderPassEncoder::drawIndexed(
-      const ShaderCursor &cursor, const DrawArguments &args) {
-    getEncoder().validate(cursor, VK_PIPELINE_BIND_POINT_GRAPHICS);
+  void BoundGraphicsEncoder::drawIndexed(const DrawArguments &args) {
+    validate(VK_PIPELINE_BIND_POINT_GRAPHICS);
     vkCmdDrawIndexed(buf(), args.vertexCount, args.instanceCount, args.firstIndex, args.firstVertex, args.firstInstance);
   }
 
-  void RenderPassEncoder::drawFullscreenTriangle(const ShaderCursor &cursor) {
-    getEncoder().validate(cursor, VK_PIPELINE_BIND_POINT_GRAPHICS);
+  void BoundGraphicsEncoder::drawFullscreenTriangle() {
+    validate(VK_PIPELINE_BIND_POINT_GRAPHICS);
     vkCmdDraw(buf(), 3, 1, 0, 0);
   }
 

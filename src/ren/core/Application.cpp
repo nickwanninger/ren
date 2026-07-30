@@ -474,7 +474,7 @@ namespace ren {
         if (1) {
           REN_PROFILE_SCOPE("RenderBackgroundTriangle");
           penc.bindImmediateMesh(squareAMesh->vertices, squareAMesh->indices);
-          auto squareACursor = penc.bindGraphics(squareAPSO);
+          auto squareA = penc.bindGraphics(squareAPSO);
           struct SquareAConstants {
             glm::vec2 offset;
             float scale;
@@ -484,7 +484,7 @@ namespace ren {
           };
           static_assert(sizeof(SquareAConstants) == 32);
           auto squareAConstants =
-              squareACursor.pushConstant("pushConstants");
+              squareA.pushConstant("pushConstants");
           squareAConstants.set(SquareAConstants{
               .offset = {-0.5f, 0.0f},
               .scale = 0.32f,
@@ -492,14 +492,13 @@ namespace ren {
               .image = warmHandle,
               .sampler = samplerHandle,
           });
-          penc.drawIndexed(
-              squareACursor,
+          squareA.drawIndexed(
               {.vertexCount = static_cast<u32>(squareAMesh->indices.size())});
 
           penc.bindImmediateMesh(squareBMesh->vertices, squareBMesh->indices);
-          auto squareBCursor = penc.bindGraphics(squareBPSO);
+          auto squareB = penc.bindGraphics(squareBPSO);
           auto squareBConstants =
-              squareBCursor.pushConstant("pushConstants");
+              squareB.pushConstant("pushConstants");
           auto squareBTransform = squareBConstants.get("transform");
           squareBTransform
               .set("center", glm::vec2(0.5f, 0.0f))
@@ -509,8 +508,7 @@ namespace ren {
               .set("tint", glm::vec4(1.0f))
               .set("pattern", coolHandle)
               .set("linearSampler", samplerHandle);
-          penc.drawIndexed(
-              squareBCursor,
+          squareB.drawIndexed(
               {.vertexCount = static_cast<u32>(squareBMesh->indices.size())});
         }
 

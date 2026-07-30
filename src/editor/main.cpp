@@ -77,15 +77,15 @@ void testSaxpy(void) {
 
   auto program = ren::make<ren::ShaderProgram>("test/saxpy");
   auto cmd = unit.begin();
-  auto cursor = cmd->bindCompute(program);
-  auto pushConstants = cursor.pushConstant("pushConstants");
+  auto compute = cmd->bindCompute(program);
+  auto pushConstants = compute.pushConstant("pushConstants");
   pushConstants
       .set("a", a)
       .set("length", length)
       .set("x", x.devicePointer<float>())
       .set("y", y.devicePointer<float>())
       .set("output", out.devicePointer<float>());
-  cmd->dispatch(cursor, {(length + 255) / 256, 1, 1});
+  compute.dispatch({(length + 255) / 256, 1, 1});
   unit.submitTo(*getVulkan().graphicsQueue)->awaitCompletion();
 
   // Validate the result on the CPU
