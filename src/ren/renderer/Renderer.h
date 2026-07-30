@@ -112,6 +112,9 @@ namespace ren {
 
     const Swapchain &getSwapchain(void) const { return *swapchain; }
     GlobalDescriptors &getGlobalDescriptors() { return *globalDescriptors; }
+    ref<GlobalDescriptors> getGlobalDescriptorsRef() {
+      return globalDescriptors;
+    }
 
    private:
     inline const PipelineStateObject &getCurrentPSO() const {
@@ -132,7 +135,7 @@ namespace ren {
     SDL_Window *window;
     ren::RenderPassCache renderPassCache;
     ref<VulkanInstance> vulkan = nullptr;
-    Box<GlobalDescriptors> globalDescriptors;
+    ref<GlobalDescriptors> globalDescriptors;
     ref<Swapchain> swapchain = nullptr;
     ref<RenderPass> displayPass = nullptr;
 

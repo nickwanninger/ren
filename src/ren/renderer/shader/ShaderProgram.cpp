@@ -28,6 +28,9 @@ namespace ren {
            binding == GlobalDescriptorABI::samplerBinding &&
            type == VK_DESCRIPTOR_TYPE_SAMPLER) ||
           (set == GlobalDescriptorABI::heapSet &&
+           binding == GlobalDescriptorABI::combinedImageSamplerBinding &&
+           type == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER) ||
+          (set == GlobalDescriptorABI::heapSet &&
            binding == GlobalDescriptorABI::sampledImageBinding &&
            type == VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE) ||
           (set == GlobalDescriptorABI::heapSet &&

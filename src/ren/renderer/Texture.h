@@ -2,6 +2,7 @@
 
 #include <ren/types.h>
 #include <ren/renderer/Image.h>
+#include <ren/renderer/GlobalDescriptors.h>
 #include <ren/core/Builder.h>
 #include <ren/core/Instrumentation.h>
 #include <ren/assets/Asset.h>
@@ -50,6 +51,9 @@ namespace ren {
 
     // Get the Vulkan sampler handle.
     VkSampler getSampler(void) const { return sampler; }
+    CombinedImageSamplerHandle getHandle(void) const {
+      return bindlessHandle;
+    }
 
     VkDescriptorSet getImGui(void);
 
@@ -65,6 +69,8 @@ namespace ren {
 
     ren::Image::Ref image;
     VkSampler sampler = VK_NULL_HANDLE;
+    ref<GlobalDescriptors> bindlessDescriptors;
+    CombinedImageSamplerHandle bindlessHandle;
 
     VkDescriptorSet imguiTextureID = VK_NULL_HANDLE;
   };

@@ -260,13 +260,8 @@ namespace ren {
         Texture::create("bindless-warm", 2, 2, warmPixels.data());
     auto coolTexture =
         Texture::create("bindless-cool", 2, 2, coolPixels.data());
-    auto& globalDescriptors = renderer->getGlobalDescriptors();
-    auto warmHandle =
-        globalDescriptors.registerSampledImage(warmTexture->getImage());
-    auto coolHandle =
-        globalDescriptors.registerSampledImage(coolTexture->getImage());
-    auto samplerHandle =
-        globalDescriptors.registerSampler(renderer->getSampler(VK_FILTER_LINEAR));
+    auto warmHandle = warmTexture->getHandle();
+    auto coolHandle = coolTexture->getHandle();
 
 
     float renderScaleTemp = 1.0f;
@@ -479,10 +474,9 @@ namespace ren {
             glm::vec2 offset;
             float scale;
             float pulseAmount;
-            SampledImageHandle image;
-            SamplerHandle sampler;
+            CombinedImageSamplerHandle image;
           };
-          static_assert(sizeof(SquareAConstants) == 32);
+          static_assert(sizeof(SquareAConstants) == 24);
           auto squareAConstants =
               squareA.pushConstant("pushConstants");
           squareAConstants.set(SquareAConstants{
@@ -490,7 +484,6 @@ namespace ren {
               .scale = 0.32f,
               .pulseAmount = 0.08f,
               .image = warmHandle,
-              .sampler = samplerHandle,
           });
           squareA.drawIndexed(
               {.vertexCount = static_cast<u32>(squareAMesh->indices.size())});
@@ -506,8 +499,7 @@ namespace ren {
               .set("rotationSpeed", 0.35f);
           squareBConstants
               .set("tint", glm::vec4(1.0f))
-              .set("pattern", coolHandle)
-              .set("linearSampler", samplerHandle);
+              .set("pattern", coolHandle);
           squareB.drawIndexed(
               {.vertexCount = static_cast<u32>(squareBMesh->indices.size())});
         }

@@ -2,6 +2,7 @@
 #include <ren/renderer/Texture.h>
 #include <ren/renderer/Buffer.h>
 #include <ren/renderer/vulkan/Vulkan.h>
+#include <ren/renderer/Renderer.h>
 #include <ren/core/Instrumentation.h>
 
 #include <stb/stb_image.h>
@@ -23,7 +24,6 @@ const std::vector<ren::Texture *> ren::Texture::allTextures(void) { return g_all
 ren::Texture::Texture(const std::string_view &name, u32 width, u32 height, u8 *pixels)
     : name(name) {
   REN_PROFILE_FUNCTION();
-  g_all_textures.push_back(this);
   ren::ImageBuilder ib(this->name);
 
   ib.setWidth(width).setHeight(height);
@@ -97,6 +97,18 @@ ren::Texture::Texture(const std::string_view &name, u32 width, u32 height, u8 *p
   if (vkCreateSampler(vulkan.device, &samplerInfo, nullptr, &sampler) != VK_SUCCESS) {
     throw std::runtime_error("failed to create texture sampler!");
   }
+
+  try {
+    bindlessDescriptors = Renderer::get().getGlobalDescriptorsRef();
+    bindlessHandle =
+        bindlessDescriptors->registerCombinedImageSampler(
+            image, sampler);
+  } catch (...) {
+    vkDestroySampler(vulkan.device, sampler, nullptr);
+    sampler = VK_NULL_HANDLE;
+    throw;
+  }
+  g_all_textures.push_back(this);
 }
 
 
@@ -111,7 +123,6 @@ VkDescriptorSet ren::Texture::getImGui(void) {
 
 
 ren::Texture::Texture(ren::ImageRef image) {
-  g_all_textures.push_back(this);
   REN_PROFILE_FUNCTION();
   auto &vulkan = ren::getVulkan();
   this->image = image;
@@ -145,6 +156,18 @@ ren::Texture::Texture(ren::ImageRef image) {
     throw std::runtime_error("failed to create texture sampler!");
   }
 
+  try {
+    bindlessDescriptors = Renderer::get().getGlobalDescriptorsRef();
+    bindlessHandle =
+        bindlessDescriptors->registerCombinedImageSampler(
+            this->image, sampler);
+  } catch (...) {
+    vkDestroySampler(vulkan.device, sampler, nullptr);
+    sampler = VK_NULL_HANDLE;
+    throw;
+  }
+  g_all_textures.push_back(this);
+
   // create the imgui texture ID so we can display it in imgui
   imguiTextureID = ImGui_ImplVulkan_AddTexture(this->getSampler(), this->getImageView(),
                                                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
@@ -156,6 +179,13 @@ ren::Texture::~Texture(void) {
   g_all_textures.erase(std::remove(g_all_textures.begin(), g_all_textures.end(), this),
                        g_all_textures.end());
   auto &vulkan = ren::getVulkan();
+  try {
+    bindlessDescriptors->release(bindlessHandle);
+  } catch (const std::exception& error) {
+    ren::errln(
+        "Failed to release bindless handle for texture '{}': {}",
+        name, error.what());
+  }
   // Remove the imgui texture ID first,
   if (imguiTextureID != VK_NULL_HANDLE) { ImGui_ImplVulkan_RemoveTexture(imguiTextureID); }
 

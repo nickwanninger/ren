@@ -228,6 +228,47 @@ namespace ren::test {
     EXPECT_EQ(reflected.physical.bindings.at({1, 3}).count, 0);
   }
 
+  TEST_F(ShaderReflectionTest, CombinedImageSamplerHandlesUseCombinedHeapBinding) {
+    constexpr std::string_view source = R"slang(
+      export T getDescriptorFromHandle<T>(DescriptorHandle<T> handle)
+          where T : IOpaqueDescriptor
+      {
+        return defaultGetDescriptorFromHandle(
+            handle, BindlessDescriptorOptions.None);
+      }
+
+      struct PushConstants
+      {
+        Sampler2D<float4>.Handle source;
+        RWTexture2D<float4>.Handle destination;
+      };
+
+      [[vk::push_constant]]
+      ConstantBuffer<PushConstants> pushConstants;
+
+      [shader("compute")]
+      [numthreads(1, 1, 1)]
+      void main(uint3 id : SV_DispatchThreadID)
+      {
+        pushConstants.destination[id.xy] =
+            pushConstants.source.SampleLevel(float2(0.5f), 0.0f);
+      }
+    )slang";
+
+    ReflectedSlangCase reflected;
+    ASSERT_NO_THROW(
+        reflected = reflectSource(source, {}, "combined_image_sampler_handle"));
+
+    ASSERT_EQ(reflected.physical.bindings.size(), 2);
+    EXPECT_EQ(
+        reflected.physical.bindings.at({1, 1}).type,
+        VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    EXPECT_EQ(reflected.physical.bindings.at({1, 1}).count, 0);
+    EXPECT_EQ(
+        reflected.physical.bindings.at({1, 3}).type,
+        VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+  }
+
   TEST_F(ShaderReflectionTest, NamedPushConstantsPreserveRecursiveFieldLocations) {
     constexpr std::string_view source = R"slang(
       export T getDescriptorFromHandle<T>(DescriptorHandle<T> handle)

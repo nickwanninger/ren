@@ -23,7 +23,7 @@ namespace ren {
 
     // Create the Vulkan instance
     this->vulkan = make<VulkanInstance>(this->window);
-    this->globalDescriptors = makeBox<GlobalDescriptors>();
+    this->globalDescriptors = make<GlobalDescriptors>();
 
 
     rebuildSwapchain();

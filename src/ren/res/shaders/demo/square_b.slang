@@ -26,8 +26,7 @@ struct SquareBConstants
 {
     SquareBTransform transform;
     float4 tint;
-    Texture2D<float4>.Handle pattern;
-    SamplerState.Handle linearSampler;
+    Sampler2D<float4>.Handle pattern;
 };
 
 [[vk::push_constant]]
@@ -53,6 +52,5 @@ Varying vertexMain(Vertex input)
 [shader("fragment")]
 float4 fragmentMain(Varying input) : SV_Target
 {
-    return pushConstants.pattern.Sample(
-        pushConstants.linearSampler, input.uv) * pushConstants.tint;
+    return pushConstants.pattern.Sample(input.uv) * pushConstants.tint;
 }

@@ -42,6 +42,13 @@ namespace ren {
             .stageFlags = VK_SHADER_STAGE_ALL,
         },
         VkDescriptorSetLayoutBinding{
+            .binding = GlobalDescriptorABI::combinedImageSamplerBinding,
+            .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            .descriptorCount =
+                GlobalDescriptorABI::maxCombinedImageSamplers,
+            .stageFlags = VK_SHADER_STAGE_ALL,
+        },
+        VkDescriptorSetLayoutBinding{
             .binding = GlobalDescriptorABI::sampledImageBinding,
             .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
             .descriptorCount = GlobalDescriptorABI::maxSampledImages,
@@ -58,7 +65,7 @@ namespace ren {
         VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT |
         VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT;
     std::array<VkDescriptorBindingFlags, heapBindings.size()> heapBindingFlags{
-        bindingFlags, bindingFlags, bindingFlags};
+        bindingFlags, bindingFlags, bindingFlags, bindingFlags};
     VkDescriptorSetLayoutBindingFlagsCreateInfo flagsInfo{
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO,
         .bindingCount = static_cast<u32>(heapBindingFlags.size()),
@@ -79,6 +86,9 @@ namespace ren {
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 32},
         VkDescriptorPoolSize{
             VK_DESCRIPTOR_TYPE_SAMPLER, GlobalDescriptorABI::maxSamplers},
+        VkDescriptorPoolSize{
+            VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            GlobalDescriptorABI::maxCombinedImageSamplers},
         VkDescriptorPoolSize{
             VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
             GlobalDescriptorABI::maxSampledImages},
@@ -111,6 +121,7 @@ namespace ren {
 
   GlobalDescriptors::~GlobalDescriptors() {
     auto device = getVulkan().device;
+    m_combinedImageSamplers.clear();
     m_sampledImages.clear();
     m_storageImages.clear();
     if (m_pool != VK_NULL_HANDLE) {
@@ -194,6 +205,51 @@ namespace ren {
     return handle;
   }
 
+  CombinedImageSamplerHandle
+  GlobalDescriptors::registerCombinedImageSampler(
+      ref<Image> image, VkSampler sampler, VkImageLayout layout) {
+    if (!image || sampler == VK_NULL_HANDLE) {
+      throw std::runtime_error(
+          "Cannot register a null combined image sampler");
+    }
+
+    u32 index = 0;
+    if (!m_freeCombinedImageSamplers.empty()) {
+      index = m_freeCombinedImageSamplers.back();
+      m_freeCombinedImageSamplers.pop_back();
+    } else {
+      if (m_combinedImageSamplers.size() >=
+          GlobalDescriptorABI::maxCombinedImageSamplers) {
+        throw std::runtime_error(
+            "Combined image sampler descriptor heap is full");
+      }
+      index = static_cast<u32>(m_combinedImageSamplers.size());
+      m_combinedImageSamplers.emplace_back();
+    }
+
+    auto& slot = m_combinedImageSamplers[index];
+    CombinedImageSamplerHandle handle{index, slot.generation};
+    slot.image = std::move(image);
+    slot.sampler = sampler;
+
+    VkDescriptorImageInfo imageInfo{
+        .sampler = sampler,
+        .imageView = slot.image->getImageView(),
+        .imageLayout = layout,
+    };
+    VkWriteDescriptorSet write{
+        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        .dstSet = m_heapSet,
+        .dstBinding = GlobalDescriptorABI::combinedImageSamplerBinding,
+        .dstArrayElement = index,
+        .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        .pImageInfo = &imageInfo,
+    };
+    vkUpdateDescriptorSets(getVulkan().device, 1, &write, 0, nullptr);
+    return handle;
+  }
+
   void GlobalDescriptors::replace(
       SampledImageHandle handle, ref<Image> image, VkImageLayout layout) {
     if (!image || handle.index >= m_nextSampledImage) {
@@ -259,6 +315,61 @@ namespace ren {
         .pImageInfo = &imageInfo,
     };
     vkUpdateDescriptorSets(getVulkan().device, 1, &write, 0, nullptr);
+  }
+
+  void GlobalDescriptors::replace(
+      CombinedImageSamplerHandle handle,
+      ref<Image> image,
+      VkSampler sampler,
+      VkImageLayout layout) {
+    if (!image || sampler == VK_NULL_HANDLE ||
+        handle.index >= m_combinedImageSamplers.size()) {
+      throw std::runtime_error(
+          "Invalid combined image sampler descriptor replacement");
+    }
+    auto& slot = m_combinedImageSamplers[handle.index];
+    if (!slot.image || slot.generation != handle.auxiliary) {
+      throw std::runtime_error(
+          "Stale combined image sampler descriptor handle");
+    }
+
+    slot.image = std::move(image);
+    slot.sampler = sampler;
+    VkDescriptorImageInfo imageInfo{
+        .sampler = sampler,
+        .imageView = slot.image->getImageView(),
+        .imageLayout = layout,
+    };
+    VkWriteDescriptorSet write{
+        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        .dstSet = m_heapSet,
+        .dstBinding = GlobalDescriptorABI::combinedImageSamplerBinding,
+        .dstArrayElement = handle.index,
+        .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        .pImageInfo = &imageInfo,
+    };
+    vkUpdateDescriptorSets(getVulkan().device, 1, &write, 0, nullptr);
+  }
+
+  void GlobalDescriptors::release(CombinedImageSamplerHandle handle) {
+    if (handle.index >= m_combinedImageSamplers.size()) {
+      throw std::runtime_error(
+          "Invalid combined image sampler descriptor release");
+    }
+    auto& slot = m_combinedImageSamplers[handle.index];
+    if (!slot.image || slot.generation != handle.auxiliary) {
+      throw std::runtime_error(
+          "Stale combined image sampler descriptor handle");
+    }
+
+    slot.image.reset();
+    slot.sampler = VK_NULL_HANDLE;
+    ++slot.generation;
+    if (slot.generation == 0) {
+      ++slot.generation;
+    }
+    m_freeCombinedImageSamplers.push_back(handle.index);
   }
 
   void GlobalDescriptors::bind(

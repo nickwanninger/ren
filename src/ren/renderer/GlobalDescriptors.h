@@ -9,16 +9,21 @@ namespace ren {
   class Sampler;
 
   // The native Vulkan shader ABI. Set 0 is one per-submission uniform buffer.
-  // Set 1 is Slang's typed bindless heap using BindlessDescriptorOptions.None.
+  // Set 1 is Slang's typed bindless heap using BindlessDescriptorOptions.None:
+  // samplers, combined image samplers, sampled images, then storage images.
   struct GlobalDescriptorABI {
     static constexpr u32 frameSet = 0;
     static constexpr u32 frameBinding = 0;
     static constexpr u32 heapSet = 1;
     static constexpr u32 samplerBinding = 0;
+    static constexpr u32 combinedImageSamplerBinding = 1;
     static constexpr u32 sampledImageBinding = 2;
     static constexpr u32 storageImageBinding = 3;
 
-    static constexpr u32 maxSamplers = 64;
+    // Sampler and combined-image-sampler descriptors share Vulkan's sampler
+    // limit. MoltenVK exposes 80, so keep their total at 80.
+    static constexpr u32 maxSamplers = 16;
+    static constexpr u32 maxCombinedImageSamplers = 64;
     static constexpr u32 maxSampledImages = 4096;
     static constexpr u32 maxStorageImages = 1024;
     static constexpr u32 pushConstantBytes = 128;
@@ -46,12 +51,16 @@ namespace ren {
   struct SampledImageTag;
   struct StorageImageTag;
   struct SamplerTag;
+  struct CombinedImageSamplerTag;
   using SampledImageHandle = DescriptorHandle<SampledImageTag>;
   using StorageImageHandle = DescriptorHandle<StorageImageTag>;
   using SamplerHandle = DescriptorHandle<SamplerTag>;
+  using CombinedImageSamplerHandle =
+      DescriptorHandle<CombinedImageSamplerTag>;
   static_assert(sizeof(SampledImageHandle) == sizeof(u32) * 2);
   static_assert(sizeof(StorageImageHandle) == sizeof(u32) * 2);
   static_assert(sizeof(SamplerHandle) == sizeof(u32) * 2);
+  static_assert(sizeof(CombinedImageSamplerHandle) == sizeof(u32) * 2);
 
   class GlobalDescriptors : public VulkanResource {
    public:
@@ -73,6 +82,10 @@ namespace ren {
         ref<Image> image,
         VkImageLayout layout = VK_IMAGE_LAYOUT_GENERAL);
     SamplerHandle registerSampler(const Sampler& sampler);
+    CombinedImageSamplerHandle registerCombinedImageSampler(
+        ref<Image> image,
+        VkSampler sampler,
+        VkImageLayout layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
     void replace(
         SampledImageHandle handle,
@@ -83,6 +96,14 @@ namespace ren {
         ref<Image> image,
         VkImageLayout layout = VK_IMAGE_LAYOUT_GENERAL);
     void replace(SamplerHandle handle, const Sampler& sampler);
+    void replace(
+        CombinedImageSamplerHandle handle,
+        ref<Image> image,
+        VkSampler sampler,
+        VkImageLayout layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    // The caller must ensure no in-flight GPU work still uses this handle,
+    // matching the lifetime requirement for destroying its image and sampler.
+    void release(CombinedImageSamplerHandle handle);
 
     void bind(
         VkCommandBuffer cmd,
@@ -101,5 +122,13 @@ namespace ren {
     u32 m_nextSampler = 0;
     std::vector<ref<Image>> m_sampledImages;
     std::vector<ref<Image>> m_storageImages;
+
+    struct CombinedImageSamplerSlot {
+      ref<Image> image;
+      VkSampler sampler = VK_NULL_HANDLE;
+      u32 generation = 1;
+    };
+    std::vector<CombinedImageSamplerSlot> m_combinedImageSamplers;
+    std::vector<u32> m_freeCombinedImageSamplers;
   };
 }  // namespace ren

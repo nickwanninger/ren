@@ -20,8 +20,7 @@ struct SquareAConstants
     float2 offset;
     float scale;
     float pulseAmount;
-    Texture2D<float4>.Handle image;
-    SamplerState.Handle sampler;
+    Sampler2D<float4>.Handle image;
 };
 
 [[vk::push_constant]]
@@ -42,5 +41,5 @@ Varying vertexMain(Vertex input)
 [shader("fragment")]
 float4 fragmentMain(Varying input) : SV_Target
 {
-    return pushConstants.image.Sample(pushConstants.sampler, input.uv);
+    return pushConstants.image.Sample(input.uv);
 }
