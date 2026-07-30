@@ -7,7 +7,7 @@
 #include <ren/renderer/RenderPass.h>
 #include <ren/renderer/RenderTarget.h>
 #include <ren/assets/Vertex.h>
-#include <ren/renderer/shader/ParameterBinding.h>
+#include <ren/renderer/shader/ShaderCursor.h>
 #include <ren/renderer/pipelines/PipelineStateObject.h>
 #include <functional>
 
@@ -22,11 +22,9 @@ namespace ren {
    * 2. You use the CommandEncoder to record rendering commands.
    *   - You can create RenderPassEncoders to record render passes.
    *   - with a RenderPassEncoder, you use a PipelineStateObject to bind a pipeline which returns a
-   *     ShaderObject.
-   *   - A ShaderObject represents an instance of the shader program with its own descriptor sets
-   *     and resource usages. You use a shader object to bind resources (textures, buffers) to the
-   *     pipeline.
-   *   - Optionally, you can provide your own ShaderObject.
+   *     ShaderCursor.
+   *   - A ShaderCursor writes reflected push-constant fields for the currently
+   *     bound program. Global descriptor sets are always bound by the encoder.
    * 4. You call endFrame() on the renderer to submit the recorded commands for execution.
    */
 
@@ -59,12 +57,11 @@ namespace ren {
     // TODO:
     // ComputePassEncoder *beginComputePass();
 
-    void dispatchCompute(ShaderObject &resources, glm::uvec3 groupCount);
+    ShaderCursor bindCompute(ref<ShaderProgram> program);
+    void dispatch(const ShaderCursor &cursor, glm::uvec3 groupCount);
 
     void copyBuffer(ren::Buffer &src, ren::Buffer &dst, VkDeviceSize size, VkDeviceSize srcOffset = 0, VkDeviceSize dstOffset = 0);
 
-
-    inline ShaderObject &createShaderObject(ref<ShaderProgram> program) { return submissionUnit.createShaderObject(program); }
 
     // TODO:
     // - copyTexture
@@ -84,6 +81,12 @@ namespace ren {
     // Reset the command encoder for reuse.
     void reset(void);
 
+    void writePushConstant(
+        const ShaderCursor& cursor,
+        std::string_view name,
+        const void* data,
+        size_t size);
+
 
     // Call beginTimestampQuery before some section of GPU work, then call
     // endTimestampQuery after it.  The timestamps can be resolved after GPU
@@ -94,8 +97,22 @@ namespace ren {
     void endTimestampQuery(QueryTicket ticket);
 
    private:
+    friend class RenderPassEncoder;
+    ShaderCursor activateGraphics(
+        ref<ShaderProgram> program, VkPipelineLayout pipelineLayout);
+    void validate(
+        const ShaderCursor& cursor, VkPipelineBindPoint expectedBindPoint) const;
+
+    struct BoundShader {
+      ref<ShaderProgram> program;
+      VkPipelineLayout layout = VK_NULL_HANDLE;
+      u64 generation = 0;
+    };
+
     VkCommandBuffer cmd;
     SubmissionUnit &submissionUnit;
+    BoundShader graphics;
+    BoundShader compute;
   };
 
 
@@ -135,9 +152,7 @@ namespace ren {
     ~RenderPassEncoder() = default;
 
 
-    // TODO: this should really return a ShaderEncoder of some kind.
-    ref<ShaderObject> bindPipeline(ren::PipelineStateObject &pso);
-    void bindPipeline(ren::PipelineStateObject &pso, ShaderObject &object);
+    ShaderCursor bindGraphics(ren::PipelineStateObject &pso);
 
     void bindImmediateMesh(std::span<ren::Vertex> vertices, std::span<u32> indices);
 
@@ -145,9 +160,8 @@ namespace ren {
     void setViewport(glm::uvec2 pos, glm::uvec2 size);
 
 
-    void drawIndexed(const DrawArguments &args);
-    // Issue a full screen triangle draw call (for blit and post-processes)
-    void drawFullscreenQuad(void);
+    void drawIndexed(const ShaderCursor &cursor, const DrawArguments &args);
+    void drawFullscreenTriangle(const ShaderCursor &cursor);
 
 
     // End the render pass.

@@ -4,7 +4,8 @@
 #include <ren/renderer/submission/SubmissionQueue.h>
 #include <ren/core/Arena.h>
 #include <ren/renderer/Descriptors.h>
-#include <ren/renderer/shader/ParameterBinding.h>
+#include <ren/renderer/Buffer.h>
+#include <ren/renderer/GlobalDescriptors.h>
 
 namespace ren {
 
@@ -29,6 +30,7 @@ namespace ren {
   class SubmissionUnit {
    public:
     SubmissionUnit();
+    virtual ~SubmissionUnit();
 
 
     // Prepare the submission unit for a new 'frame' of work.
@@ -46,7 +48,8 @@ namespace ren {
     ren::Arena &getArena(void) { return m_arena; }
     auto &getDescriptorAllocator(void) { return m_descriptorAllocator; }
 
-    ShaderObject &createShaderObject(ref<ShaderProgram> &program);
+    void updateFrameGlobals(const FrameGlobals &globals);
+    VkDescriptorSet getFrameDescriptorSet() const { return m_frameDescriptorSet; }
 
    protected:
     friend class CommandEncoder;
@@ -80,6 +83,8 @@ namespace ren {
 
     DescriptorAllocator m_descriptorAllocator;
     ren::Arena m_arena{0xFFFF, true};  // 64KB initial size, growable
+    BufferMemory m_frameGlobalsBuffer;
+    VkDescriptorSet m_frameDescriptorSet = VK_NULL_HANDLE;
 
 
     VkQueryPool m_timestampQueryPool;

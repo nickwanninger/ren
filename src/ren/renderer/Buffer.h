@@ -3,7 +3,6 @@
 #include <ren/types.h>
 #include <ren/core/Instrumentation.h>
 #include <vulkan/vulkan_core.h>
-#include <ren/renderer/Swapchain.h>  // To get the current frame index.
 #include <vector>
 #include <ren/core/Builder.h>
 #include <string>
@@ -12,6 +11,7 @@
 
 namespace ren {
   class VulkanInstance;
+  u32 getFrameIndex(void);
 
 
 
@@ -63,6 +63,19 @@ namespace ren {
     bool isMapped() const { return hostAddress != nullptr; }
     bool isValid() const { return buffer != VK_NULL_HANDLE; }
 
+    template <typename T>
+    T *hostData() const {
+      return static_cast<T *>(hostAddress);
+    }
+
+    template <typename T>
+    VkDeviceAddress devicePointer(size_t elementOffset = 0) const {
+      static_assert(std::is_trivially_copyable_v<T>);
+      return static_cast<VkDeviceAddress>(gpuAddress + elementOffset * sizeof(T));
+    }
+
+    void copyFromHost(const void *data, size_t size, size_t offset = 0);
+
    private:
     // Constructor parameters
     size_t byteCount = 0;
@@ -76,6 +89,26 @@ namespace ren {
     VmaAllocation allocation = VK_NULL_HANDLE;
     VkBuffer buffer = VK_NULL_HANDLE;
   };
+
+  enum class BufferDomain {
+    Device,
+    Upload,
+    Readback,
+  };
+
+  BufferMemory allocateBuffer(
+      size_t byteCount,
+      BufferDomain domain = BufferDomain::Device,
+      VkBufferUsageFlags usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+
+  template <typename T>
+  BufferMemory allocateBuffer(
+      size_t count,
+      BufferDomain domain = BufferDomain::Device,
+      VkBufferUsageFlags usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT) {
+    static_assert(std::is_trivially_copyable_v<T>);
+    return allocateBuffer(count * sizeof(T), domain, usage);
+  }
 
   // Represents a buffer in Vulkan memory.
   class Buffer {

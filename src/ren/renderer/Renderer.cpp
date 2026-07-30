@@ -23,6 +23,7 @@ namespace ren {
 
     // Create the Vulkan instance
     this->vulkan = make<VulkanInstance>(this->window);
+    this->globalDescriptors = makeBox<GlobalDescriptors>();
 
 
     rebuildSwapchain();
@@ -34,9 +35,15 @@ namespace ren {
 
     // For various reasons, we want to explicitly clear the render pass cache
     // before destroying the vulkan instance or anything else.
+    this->currentPipeline.reset();
+    this->currentPass.reset();
+    this->displayPass.reset();
     this->renderPassCache.clearCache();
 
+    this->pipelineCache.reset();
     this->swapchain.reset();
+    this->globalDescriptors.reset();
+    this->samplers.clear();
     this->vulkan.reset();
   }
 
@@ -139,21 +146,6 @@ namespace ren {
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, currentPipeline->getHandle());
   }
 
-
-
-  ShaderBinder Renderer::startBinding(u32 set) {
-
-    // Start binding the shader program.
-    if (this->currentPipeline == nullptr) {
-      throw std::runtime_error(
-          "Cannot start binding without a current pipeline set. Call bind() first.");
-    }
-
-    // Create a shader binder for the current program.
-    return ShaderBinder(*getCurrentProgram(), set);
-  }
-
-
   void Renderer::bind(ref<ShaderProgram> program) {
     // Bind the shader program.
     if (program == nullptr) { throw std::runtime_error("Cannot bind a null shader program."); }
@@ -199,6 +191,13 @@ namespace ren {
 
     // Begin the frame (waits for fence and starts command buffer)
     frame->beginFrame();
+    const glm::vec2 renderSize{
+        frame->deviceImage->getWidth(), frame->deviceImage->getHeight()};
+    frame->updateFrameGlobals({
+        .frameNumber = static_cast<u32>(vulkan->frame_number),
+        .renderSize = renderSize,
+        .inverseRenderSize = 1.0f / renderSize,
+    });
   }
 
   void Renderer::endFrame(void) {

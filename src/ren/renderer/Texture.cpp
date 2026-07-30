@@ -10,8 +10,9 @@
 #include <ren/core/Flag.h>
 
 
-static ren::Flag<bool> enableMipmaps("texture-mipmaps",
-                                     "Enable mipmap generation for loaded textures");
+static ren::Flag<bool> enableMipmaps(
+    "texture-mipmaps", false,
+    "Enable mipmap generation for loaded textures");
 
 
 static std::vector<ren::Texture *> g_all_textures;
@@ -62,11 +63,13 @@ ren::Texture::Texture(const std::string_view &name, u32 width, u32 height, u8 *p
 
 
   // Generate mipmaps
-  if (mipLevels > 1) { image->generateMipmaps(); }
-
-
-  vulkan.transitionImageLayout(image->getImage(), format, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                               VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+  if (mipLevels > 1) {
+    image->generateMipmaps();
+  } else {
+    vulkan.transitionImageLayout(
+        image->getImage(), format, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+  }
 
   // Texture Sampler
   VkSamplerCreateInfo samplerInfo{};

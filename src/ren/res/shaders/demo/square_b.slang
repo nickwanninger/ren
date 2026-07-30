@@ -1,0 +1,52 @@
+import ren;
+
+struct Vertex
+{
+    [[vk::location(0)]] float3 position;
+    [[vk::location(1)]] float3 normal;
+    [[vk::location(2)]] float2 texCoord;
+    [[vk::location(3)]] float3 tangent;
+    [[vk::location(4)]] float3 bitangent;
+};
+
+struct Varying
+{
+    float4 position : SV_Position;
+    float2 uv : TEXCOORD0;
+};
+
+struct SquareBConstants
+{
+    float2 center;
+    float extent;
+    float rotationSpeed;
+    float4 tint;
+    Texture2D<float4>.Handle pattern;
+    SamplerState.Handle linearSampler;
+};
+
+[[vk::push_constant]]
+ConstantBuffer<SquareBConstants> pushConstants;
+
+[shader("vertex")]
+Varying vertexMain(Vertex input)
+{
+    Varying output;
+    float angle = frameGlobals.time * pushConstants.rotationSpeed;
+    float2x2 rotation = float2x2(
+        cos(angle), -sin(angle),
+        sin(angle), cos(angle));
+    output.position = float4(
+        mul(rotation, input.position.xy * pushConstants.extent) +
+            pushConstants.center,
+        input.position.z, 1.0f);
+    output.uv = input.texCoord;
+    return output;
+}
+
+[shader("fragment")]
+float4 fragmentMain(Varying input) : SV_Target
+{
+    return pushConstants.pattern.Sample(
+        pushConstants.linearSampler, input.uv) * pushConstants.tint;
+}

@@ -25,20 +25,92 @@ namespace ren {
     vkCmdCopyBuffer(this->cmd, src.getHandle(), dst.getHandle(), 1, &copyRegion);
   }
 
-  void CommandEncoder::dispatchCompute(ShaderObject &shader, glm::uvec3 groupCount) {
+  ShaderCursor CommandEncoder::bindCompute(ref<ShaderProgram> program) {
     auto &R = ren::Renderer::get();
-    auto pipeline = R.getPipelineCache().getCompute(shader.program);
+    auto pipeline = R.getPipelineCache().getCompute(program);
 
     vkCmdBindPipeline(this->cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline->getHandle());
+    R.getGlobalDescriptors().bind(
+        cmd, VK_PIPELINE_BIND_POINT_COMPUTE, program->getPipelineLayout(),
+        submissionUnit.getFrameDescriptorSet());
 
-    shader.bind(this->cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline->getLayout());
+    compute.program = std::move(program);
+    compute.layout = pipeline->getLayout();
+    ++compute.generation;
+    return ShaderCursor(
+        *this, compute.program, VK_PIPELINE_BIND_POINT_COMPUTE,
+        compute.generation);
+  }
 
+  void CommandEncoder::dispatch(
+      const ShaderCursor &cursor, glm::uvec3 groupCount) {
+    validate(cursor, VK_PIPELINE_BIND_POINT_COMPUTE);
     vkCmdDispatch(this->cmd, groupCount.x, groupCount.y, groupCount.z);
   }
 
 
   void CommandEncoder::reset(void) {
-    // Nothing to do here - resources are managed by SubmissionUnit
+    graphics.program.reset();
+    graphics.layout = VK_NULL_HANDLE;
+    ++graphics.generation;
+    compute.program.reset();
+    compute.layout = VK_NULL_HANDLE;
+    ++compute.generation;
+  }
+
+  ShaderCursor CommandEncoder::activateGraphics(
+      ref<ShaderProgram> program, VkPipelineLayout pipelineLayout) {
+    Renderer::get().getGlobalDescriptors().bind(
+        cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout,
+        submissionUnit.getFrameDescriptorSet());
+    graphics.program = std::move(program);
+    graphics.layout = pipelineLayout;
+    ++graphics.generation;
+    return ShaderCursor(
+        *this, graphics.program, VK_PIPELINE_BIND_POINT_GRAPHICS,
+        graphics.generation);
+  }
+
+  void CommandEncoder::validate(
+      const ShaderCursor &cursor,
+      VkPipelineBindPoint expectedBindPoint) const {
+    if (cursor.m_encoder != this || cursor.m_bindPoint != expectedBindPoint) {
+      throw std::runtime_error("ShaderCursor belongs to a different encoder or bind point");
+    }
+    const auto& state =
+        expectedBindPoint == VK_PIPELINE_BIND_POINT_COMPUTE ? compute : graphics;
+    if (!state.program || state.program != cursor.m_program ||
+        state.generation != cursor.m_generation) {
+      throw std::runtime_error("ShaderCursor is stale; bind its shader again");
+    }
+  }
+
+  void CommandEncoder::writePushConstant(
+      const ShaderCursor& cursor,
+      std::string_view name,
+      const void* data,
+      size_t size) {
+    validate(cursor, cursor.m_bindPoint);
+    auto field = cursor.m_program->findPushConstantField(name);
+    if (!field) {
+      throw std::runtime_error(
+          fmt::format("Push constant field '{}' was not found", name));
+    }
+    if (size != field->size) {
+      throw std::runtime_error(fmt::format(
+          "Push constant field '{}' is {} bytes, but {} bytes were provided",
+          name, field->size, size));
+    }
+    if (field->offset + field->size > GlobalDescriptorABI::pushConstantBytes) {
+      throw std::runtime_error(fmt::format(
+          "Push constant field '{}' exceeds REN's {} byte ABI",
+          name, GlobalDescriptorABI::pushConstantBytes));
+    }
+    const auto& state =
+        cursor.m_bindPoint == VK_PIPELINE_BIND_POINT_COMPUTE ? compute : graphics;
+    vkCmdPushConstants(
+        cmd, state.layout, VK_SHADER_STAGE_ALL, field->offset,
+        field->size, data);
   }
 
 
@@ -118,21 +190,13 @@ namespace ren {
 
 
 
-  ref<ShaderObject> RenderPassEncoder::bindPipeline(ren::PipelineStateObject &pso) {
-    // TODO:
-    ref<ShaderObject> obj = ren::make<ShaderObject>(pso.program, getSubmissionUnit());
-    bindPipeline(pso, *obj);
-    return obj;
-  }
-
-
-  void RenderPassEncoder::bindPipeline(ren::PipelineStateObject &pso, ShaderObject &object) {
+  ShaderCursor RenderPassEncoder::bindGraphics(ren::PipelineStateObject &pso) {
     auto &R = ren::Renderer::get();
 
     auto cachedPipeline = R.getPipelineCache().get(this->pass, pso);
 
-    // // Bind the pipeline described by the PSO.
     vkCmdBindPipeline(buf(), VK_PIPELINE_BIND_POINT_GRAPHICS, cachedPipeline->getHandle());
+    return getEncoder().activateGraphics(pso.program, cachedPipeline->getLayout());
   }
 
 
@@ -156,12 +220,14 @@ namespace ren {
   }
 
 
-  void RenderPassEncoder::drawIndexed(const DrawArguments &args) {
+  void RenderPassEncoder::drawIndexed(
+      const ShaderCursor &cursor, const DrawArguments &args) {
+    getEncoder().validate(cursor, VK_PIPELINE_BIND_POINT_GRAPHICS);
     vkCmdDrawIndexed(buf(), args.vertexCount, args.instanceCount, args.firstIndex, args.firstVertex, args.firstInstance);
   }
 
-  void RenderPassEncoder::drawFullscreenQuad(void) {
-    // Draw a full screen triangle (3 vertices, no vertex buffer)
+  void RenderPassEncoder::drawFullscreenTriangle(const ShaderCursor &cursor) {
+    getEncoder().validate(cursor, VK_PIPELINE_BIND_POINT_GRAPHICS);
     vkCmdDraw(buf(), 3, 1, 0, 0);
   }
 

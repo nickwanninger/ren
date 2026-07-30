@@ -1,17 +1,23 @@
-struct Saxpy {
-  float a;
-  RWStructuredBuffer<float> x;
-  RWStructuredBuffer<float> y;
+import ren;
 
-  RWStructuredBuffer<float> out;
-}
+struct SaxpyConstants
+{
+    float a;
+    uint length;
+    float* x;
+    float* y;
+    float* output;
+};
 
-ParameterBlock<Saxpy> params;
+[[vk::push_constant]]
+ConstantBuffer<SaxpyConstants> pushConstants;
 
 [shader("compute")]
-[numthreads(1024, 1, 1)]
-void saxpy(uint3 id: SV_DispatchThreadID) {
-  if (id.x > params.x.getCount())
-    return;
-  params.out[id.x] = params.a * params.x[id.x] + params.y[id.x];
+[numthreads(256, 1, 1)]
+void saxpy(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= pushConstants.length)
+        return;
+    pushConstants.output[id.x] =
+        pushConstants.a * pushConstants.x[id.x] + pushConstants.y[id.x];
 }

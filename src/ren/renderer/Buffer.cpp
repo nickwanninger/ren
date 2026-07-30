@@ -11,14 +11,15 @@ namespace ren {
 
   BufferMemory::BufferMemory(size_t byteCount, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VmaAllocationCreateFlags vmaFlags)
       : byteCount(byteCount)
-      , usage(usage | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT)
+      , usage(usage | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+              VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT)
       , properties(properties)
       , vmaFlags(vmaFlags) {
     // Setup Vulkan buffer creation
     VkBufferCreateInfo bufferInfo{};
     bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     bufferInfo.size = byteCount;
-    bufferInfo.usage = usage;
+    bufferInfo.usage = this->usage;
     bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
     // Setup VMA allocation
@@ -71,6 +72,7 @@ namespace ren {
       : byteCount(other.byteCount)
       , usage(other.usage)
       , properties(other.properties)
+      , vmaFlags(other.vmaFlags)
       , gpuAddress(other.gpuAddress)
       , hostAddress(other.hostAddress)
       , allocation(other.allocation)
@@ -79,6 +81,7 @@ namespace ren {
     other.byteCount = 0;
     other.usage = 0;
     other.properties = 0;
+    other.vmaFlags = 0;
     other.gpuAddress = 0;
     other.hostAddress = nullptr;
     other.allocation = VK_NULL_HANDLE;
@@ -99,6 +102,7 @@ namespace ren {
       byteCount = other.byteCount;
       usage = other.usage;
       properties = other.properties;
+      vmaFlags = other.vmaFlags;
       gpuAddress = other.gpuAddress;
       hostAddress = other.hostAddress;
       allocation = other.allocation;
@@ -108,12 +112,46 @@ namespace ren {
       other.byteCount = 0;
       other.usage = 0;
       other.properties = 0;
+      other.vmaFlags = 0;
       other.gpuAddress = 0;
       other.hostAddress = nullptr;
       other.allocation = VK_NULL_HANDLE;
       other.buffer = VK_NULL_HANDLE;
     }
     return *this;
+  }
+
+  void BufferMemory::copyFromHost(const void *data, size_t size, size_t offset) {
+    if (hostAddress == nullptr) {
+      throw std::runtime_error("Cannot copy host data into a device-only buffer");
+    }
+    if (offset + size > byteCount) {
+      throw std::runtime_error("BufferMemory copy exceeds immutable allocation size");
+    }
+    std::memcpy(static_cast<u8 *>(hostAddress) + offset, data, size);
+  }
+
+  BufferMemory allocateBuffer(
+      size_t byteCount, BufferDomain domain, VkBufferUsageFlags usage) {
+    switch (domain) {
+      case BufferDomain::Device:
+        return BufferMemory(
+            byteCount, usage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+      case BufferDomain::Upload:
+        return BufferMemory(
+            byteCount, usage,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+            VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT);
+      case BufferDomain::Readback:
+        return BufferMemory(
+            byteCount, usage,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
+                VK_MEMORY_PROPERTY_HOST_CACHED_BIT,
+            VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT);
+    }
+    throw std::runtime_error("Unknown buffer memory domain");
   }
 
 

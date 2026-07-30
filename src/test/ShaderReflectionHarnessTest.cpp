@@ -180,4 +180,52 @@ namespace ren::test {
         reflected, UnusedResourcePolicy::AllowPrunedEngineBindings);
   }
 
+  TEST_F(ShaderReflectionTest, DescriptorHandlesUseTypedGlobalHeapWithoutMutableDescriptors) {
+    constexpr std::string_view source = R"slang(
+      export T getDescriptorFromHandle<T>(DescriptorHandle<T> handle)
+          where T : IOpaqueDescriptor
+      {
+        return defaultGetDescriptorFromHandle(
+            handle, BindlessDescriptorOptions.None);
+      }
+
+      struct PushConstants
+      {
+        Texture2D<float4>.Handle source;
+        RWTexture2D<float4>.Handle destination;
+        SamplerState.Handle sampler;
+      };
+
+      [[vk::push_constant]]
+      ConstantBuffer<PushConstants> pushConstants;
+
+      [shader("compute")]
+      [numthreads(1, 1, 1)]
+      void main(uint3 id : SV_DispatchThreadID)
+      {
+        float4 value = pushConstants.source.SampleLevel(
+            pushConstants.sampler, float2(0.5f), 0.0f);
+        pushConstants.destination[id.xy] = value;
+      }
+    )slang";
+
+    ReflectedSlangCase reflected;
+    ASSERT_NO_THROW(
+        reflected = reflectSource(source, {}, "descriptor_handle_heap"));
+
+    ASSERT_EQ(reflected.physical.bindings.size(), 3);
+    EXPECT_EQ(
+        reflected.physical.bindings.at({1, 0}).type,
+        VK_DESCRIPTOR_TYPE_SAMPLER);
+    EXPECT_EQ(
+        reflected.physical.bindings.at({1, 2}).type,
+        VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
+    EXPECT_EQ(
+        reflected.physical.bindings.at({1, 3}).type,
+        VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+    EXPECT_EQ(reflected.physical.bindings.at({1, 0}).count, 0);
+    EXPECT_EQ(reflected.physical.bindings.at({1, 2}).count, 0);
+    EXPECT_EQ(reflected.physical.bindings.at({1, 3}).count, 0);
+  }
+
 }  // namespace ren::test

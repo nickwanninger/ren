@@ -6,11 +6,12 @@
 #include <ren/renderer/RenderPass.h>
 #include <ren/renderer/Image.h>
 #include <ren/renderer/Texture.h>
+#include <ren/renderer/Sampler.h>
 #include <ren/renderer/vulkan/Vulkan.h>
 #include <ren/renderer/RenderPassCache.h>
 #include <ren/renderer/pipelines/PipelineCache.h>
 #include <ren/renderer/pipelines/PipelineStateObject.h>
-#include <ren/renderer/shader/ShaderBinder.h>
+#include <ren/renderer/GlobalDescriptors.h>
 #include <SDL3/SDL.h>
 
 namespace ren {
@@ -96,9 +97,6 @@ namespace ren {
     }
 
 
-    ShaderBinder startBinding(u32 set);
-
-
     // TODO: move me to .cpp
     inline Sampler &getSampler(VkFilter filter = VK_FILTER_NEAREST) {
       // Get or create a sampler with the given filter.
@@ -113,6 +111,7 @@ namespace ren {
 
 
     const Swapchain &getSwapchain(void) const { return *swapchain; }
+    GlobalDescriptors &getGlobalDescriptors() { return *globalDescriptors; }
 
    private:
     inline const PipelineStateObject &getCurrentPSO() const {
@@ -133,6 +132,7 @@ namespace ren {
     SDL_Window *window;
     ren::RenderPassCache renderPassCache;
     ref<VulkanInstance> vulkan = nullptr;
+    Box<GlobalDescriptors> globalDescriptors;
     ref<Swapchain> swapchain = nullptr;
     ref<RenderPass> displayPass = nullptr;
 

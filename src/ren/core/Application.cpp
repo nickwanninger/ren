@@ -168,19 +168,22 @@ namespace ren {
       func();
     }
 
+    VkDescriptorPool imguiPool = VK_NULL_HANDLE;
     {
       REN_PROFILE_SCOPE("ImGuiLayer::shutdown");
 
       auto &vulkan = ren::getVulkan();
       auto &state = ren::resource<ren::Application::ImGuiState>();
+      imguiPool = state.imguiPool;
 
-      vkDestroyDescriptorPool(vulkan.device, state.imguiPool, nullptr);
-      state.imguiPool = VK_NULL_HANDLE;
-
+      // ECS-owned textures unregister their ImGui descriptors during teardown,
+      // so destroy them before shutting down ImGui or its pool.
+      world.reset();
       ImGui_ImplVulkan_Shutdown();
       ImGui_ImplSDL3_Shutdown();
       ImNodes::DestroyContext();
       ImGui::DestroyContext();
+      vkDestroyDescriptorPool(vulkan.device, imguiPool, nullptr);
     }
 
     // Nuke the renderer.
@@ -223,16 +226,47 @@ namespace ren {
     //   G.pass("gadget").execute([&](ren::GraphRunContext &ctx) { printf("Gadget pass %d\n", i); });
     // }
 
-    ren::PipelineStateObject trianglePSO;
-    trianglePSO.debugName = "Test Triangle PSO";
-    trianglePSO.program = make<ShaderProgram>("./test");
-    trianglePSO.cullMode = ren::CullMode::None;
-    trianglePSO.hasVertexBinding = true;
-    trianglePSO.fillMode = ren::FillMode::Solid;
+    ren::PipelineStateObject squareAPSO;
+    squareAPSO.debugName = "Bindless Square A";
+    squareAPSO.program = make<ShaderProgram>("demo/square_a");
+    squareAPSO.cullMode = ren::CullMode::None;
+    squareAPSO.depthTest = false;
+    squareAPSO.depthWrite = false;
 
+    ren::PipelineStateObject squareBPSO = squareAPSO;
+    squareBPSO.debugName = "Bindless Square B";
+    squareBPSO.program = make<ShaderProgram>("demo/square_b");
 
+    auto makeSquare = [] {
+      ren::MeshBuilder builder;
+      auto face = builder.beginFace();
+      face.vertex(glm::vec3(-1.0f, -1.0f, 0.0f), glm::vec3(0.0f), glm::vec2(0.0f, 0.0f));
+      face.vertex(glm::vec3(1.0f, -1.0f, 0.0f), glm::vec3(0.0f), glm::vec2(1.0f, 0.0f));
+      face.vertex(glm::vec3(1.0f, 1.0f, 0.0f), glm::vec3(0.0f), glm::vec2(1.0f, 1.0f));
+      face.vertex(glm::vec3(-1.0f, 1.0f, 0.0f), glm::vec3(0.0f), glm::vec2(0.0f, 1.0f));
+      face.end();
+      return builder.stampOut();
+    };
+    auto squareAMesh = makeSquare();
+    auto squareBMesh = makeSquare();
 
-    auto computeProgram = ren::make<ren::ShaderProgram>("test/compute");
+    std::array<u8, 16> warmPixels{
+        255, 80, 32, 255, 255, 190, 32, 255,
+        255, 190, 32, 255, 255, 80, 32, 255};
+    std::array<u8, 16> coolPixels{
+        32, 120, 255, 255, 32, 255, 190, 255,
+        32, 255, 190, 255, 32, 120, 255, 255};
+    auto warmTexture =
+        Texture::create("bindless-warm", 2, 2, warmPixels.data());
+    auto coolTexture =
+        Texture::create("bindless-cool", 2, 2, coolPixels.data());
+    auto& globalDescriptors = renderer->getGlobalDescriptors();
+    auto warmHandle =
+        globalDescriptors.registerSampledImage(warmTexture->getImage());
+    auto coolHandle =
+        globalDescriptors.registerSampledImage(coolTexture->getImage());
+    auto samplerHandle =
+        globalDescriptors.registerSampler(renderer->getSampler(VK_FILTER_LINEAR));
 
 
     float renderScaleTemp = 1.0f;
@@ -325,6 +359,15 @@ namespace ren {
 
       renderer->beginFrame();
       auto &frame = ren::getFrameUnit();
+      const glm::vec2 frameSize{
+          frame.deviceImage->getWidth(), frame.deviceImage->getHeight()};
+      frame.updateFrameGlobals({
+          .time = time,
+          .deltaTime = deltaTime,
+          .frameNumber = static_cast<u32>(vulkan.frame_number),
+          .renderSize = frameSize,
+          .inverseRenderSize = 1.0f / frameSize,
+      });
 
       ren::Camera::get().update(deltaTime);
 
@@ -430,40 +473,30 @@ namespace ren {
         REN_PROFILE_SCOPE("FullScreenPass");
         if (1) {
           REN_PROFILE_SCOPE("RenderBackgroundTriangle");
-          ren::MeshBuilder b;
+          penc.bindImmediateMesh(squareAMesh->vertices, squareAMesh->indices);
+          auto squareACursor = penc.bindGraphics(squareAPSO);
+          squareACursor
+              .set("offset", glm::vec2(-0.5f, 0.0f))
+              .set("scale", 0.32f)
+              .set("pulseAmount", 0.08f)
+              .set("image", warmHandle)
+              .set("sampler", samplerHandle);
+          penc.drawIndexed(
+              squareACursor,
+              {.vertexCount = static_cast<u32>(squareAMesh->indices.size())});
 
-          auto fb = b.beginFace();
-
-          // Add triangles to make a full screen quad
-          fb.vertex(glm::vec3(-1.0f, -1.0f, 0.0f), glm::vec3(0.0f), glm::vec2(0.0f, 0.0f));
-          fb.vertex(glm::vec3(1.0f, -1.0f, 0.0f), glm::vec3(0.0f), glm::vec2(1.0f, 0.0f));
-          fb.vertex(glm::vec3(1.0f, 1.0f, 0.0f), glm::vec3(0.0f), glm::vec2(1.0f, 1.0f));
-          fb.vertex(glm::vec3(-1.0f, 1.0f, 0.0f), glm::vec3(0.0f), glm::vec2(0.0f, 1.0f));
-
-          fb.end();
-
-          auto meshData = b.stampOut();
-
-
-          static struct {
-            float brightness = 1.0f;
-            float time = 0.0f;
-            float stride = 0.001f;
-            int index = 1;
-            int numDraws = 1;
-          } pc;
-
-          penc.bindImmediateMesh(meshData->vertices, meshData->indices);
-          penc.bindPipeline(trianglePSO);
-          pc.numDraws = 0;
-          pc.time = time;
-          DrawArguments args;
-          args.vertexCount = static_cast<u32>(meshData->indices.size());
-          args.instanceCount = 1;
-
-          pc.index = 0;
-          vkCmdPushConstants(penc.buf(), trianglePSO.program->getPipelineLayout(), VK_SHADER_STAGE_ALL, 0, sizeof(pc), &pc);
-          penc.drawIndexed(args);
+          penc.bindImmediateMesh(squareBMesh->vertices, squareBMesh->indices);
+          auto squareBCursor = penc.bindGraphics(squareBPSO);
+          squareBCursor
+              .set("center", glm::vec2(0.5f, 0.0f))
+              .set("extent", 0.32f)
+              .set("rotationSpeed", 0.35f)
+              .set("tint", glm::vec4(1.0f))
+              .set("pattern", coolHandle)
+              .set("linearSampler", samplerHandle);
+          penc.drawIndexed(
+              squareBCursor,
+              {.vertexCount = static_cast<u32>(squareBMesh->indices.size())});
         }
 
         /**

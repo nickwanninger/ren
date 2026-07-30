@@ -186,9 +186,10 @@ void ren::VulkanInstance::init_instance(void) {
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
       .descriptorIndexing = true,
       .shaderSampledImageArrayNonUniformIndexing = true,
+      .shaderStorageImageArrayNonUniformIndexing = true,
       .descriptorBindingSampledImageUpdateAfterBind = true,
+      .descriptorBindingStorageImageUpdateAfterBind = true,
       .descriptorBindingPartiallyBound = true,
-      .descriptorBindingVariableDescriptorCount = true,
       .runtimeDescriptorArray = true,
       .bufferDeviceAddress = true,
   };
@@ -201,10 +202,6 @@ void ren::VulkanInstance::init_instance(void) {
       .dynamicRendering = true,
   };
   selector.set_required_features_13(vk13Features);
-
-  selector.add_required_extension(VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME);
-  // selector.add_required_extension(VK_GOOGLE_USR_TYPE_EXTENSION_NAME);
-
 
   selector.set_minimum_version(required_major, required_minor);
   selector.set_surface(surface);
@@ -231,6 +228,9 @@ void ren::VulkanInstance::init_instance(void) {
   ren::println("  API Version: {}.{}.{}", VK_VERSION_MAJOR(physicalDevice.properties.apiVersion),
                VK_VERSION_MINOR(physicalDevice.properties.apiVersion), VK_VERSION_PATCH(physicalDevice.properties.apiVersion));
   ren::println("  Max Push Constant Size: {}", physicalDevice.properties.limits.maxPushConstantsSize);
+  if (physicalDevice.properties.limits.maxPushConstantsSize < 128) {
+    throw std::runtime_error("REN requires at least 128 bytes of Vulkan push constants");
+  }
 
   this->physical_device = physicalDevice.physical_device;
 
@@ -301,7 +301,7 @@ void ren::VulkanInstance::init_instance(void) {
 
   VmaAllocatorCreateInfo allocatorCreateInfo = {};
   allocatorCreateInfo.flags = VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT | VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
-  allocatorCreateInfo.vulkanApiVersion = VK_API_VERSION_1_2;
+  allocatorCreateInfo.vulkanApiVersion = VK_API_VERSION_1_3;
   allocatorCreateInfo.physicalDevice = physicalDevice;
   allocatorCreateInfo.device = device;
   allocatorCreateInfo.instance = instance;
@@ -369,6 +369,12 @@ void ren::VulkanInstance::init_instance(void) {
 
 ren::VulkanInstance::~VulkanInstance() {
   // ImGui_ImplVulkan_Shutdown();
+
+  // Queue wrappers call vkQueueWaitIdle in their destructors and therefore
+  // must die before the VkDevice.
+  transferQueue.reset();
+  computeQueue.reset();
+  graphicsQueue.reset();
 
   // Command Pool
   vkDestroyCommandPool(device, commandPool, nullptr);

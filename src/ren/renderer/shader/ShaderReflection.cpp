@@ -1015,7 +1015,8 @@ namespace ren {
             if (node->name.empty()) {
               node->name = "$Globals";
             }
-            if (!BindingType::allowedInTopLevel(node->type.type)) {
+            if (!BindingType::allowedInTopLevel(node->type.type) &&
+                node->type.type != Type::UniformBuffer) {
               ren::warnln("Unsupported top-level global variable '{}', type={}", node->name, node->type.toString());
             }
             root->members.push_back(node);
@@ -1035,7 +1036,8 @@ namespace ren {
                   // There's a little check we have to do here - we only want to
                   // support *some* types at the top level, to simplify the shader resource management
                   // system down the line.
-                  if (!BindingType::allowedInTopLevel(node->type.type)) {
+                  if (!BindingType::allowedInTopLevel(node->type.type) &&
+                      node->type.type != Type::UniformBuffer) {
                     ren::warnln("Unsupported top-level global variable '{}', type={}", node->name, node->type.toString());
                   }
 
@@ -1102,8 +1104,6 @@ namespace ren {
       for (int bindingIdx = 0; bindingIdx < static_cast<int>(setInfo.bindings.size()); ++bindingIdx) {
         auto& binding = setInfo.bindings[bindingIdx];
 
-        ren::dbgln("Set {} Binding {}: type={} count={} stages=0x{:X}", setInfo.set, binding.binding, static_cast<int>(binding.type), binding.count,
-                   binding.stageFlags);
       }
     }
     extractBindings();
@@ -1200,10 +1200,6 @@ namespace ren {
     });
 
 
-    ren::dbgln("Extracted {} bindings:", bindings.size());
-    for (auto& binding : bindings) {
-      ren::dbgln("- {}.{} [{}] = {} ({})", binding.set, binding.index, binding.count, binding.path, binding.type.toString());
-    }
   }
 
   // Helper function to check if two Location objects are compatible

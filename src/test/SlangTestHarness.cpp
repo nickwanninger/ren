@@ -58,7 +58,7 @@ namespace ren::test {
       throw std::runtime_error("Failed to create Slang global session");
     }
 
-    slang::CompilerOptionEntry compilerOptions[3] = {};
+    slang::CompilerOptionEntry compilerOptions[4] = {};
     compilerOptions[0].name = slang::CompilerOptionName::VulkanEmitReflection;
     compilerOptions[0].value.kind = slang::CompilerOptionValueKind::Int;
     compilerOptions[0].value.intValue0 = 1;
@@ -68,12 +68,15 @@ namespace ren::test {
     compilerOptions[2].name = slang::CompilerOptionName::Optimization;
     compilerOptions[2].value.kind = slang::CompilerOptionValueKind::Int;
     compilerOptions[2].value.intValue0 = options.optimization;
+    compilerOptions[3].name = slang::CompilerOptionName::BindlessSpaceIndex;
+    compilerOptions[3].value.kind = slang::CompilerOptionValueKind::Int;
+    compilerOptions[3].value.intValue0 = 1;
 
     slang::TargetDesc target = {};
     target.format = SLANG_SPIRV;
     target.profile = result.globalSession->findProfile("spirv_1_5");
     target.compilerOptionEntries = compilerOptions;
-    target.compilerOptionEntryCount = 3;
+    target.compilerOptionEntryCount = 4;
 
     slang::SessionDesc sessionDesc = {};
     sessionDesc.targets = &target;

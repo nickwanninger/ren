@@ -143,7 +143,6 @@ namespace ren {
     // }
 
 
-    // auto &obj = ctx.encoder.createShaderObject(this->pso.program);
     // if (!obj.block("params").setEntireBuffer(ssao)) {
     //   throw std::runtime_error("Failed to set SSAO uniform buffer");
     // }
