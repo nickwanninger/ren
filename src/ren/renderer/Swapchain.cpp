@@ -39,9 +39,6 @@ namespace ren {
     // ---- Allocate the Swapchain for device target rendering ---- //
     vkb::SwapchainBuilder swapchain_builder(vulkan.physical_device, vulkan.device, vulkan.surface);
 
-    fmt::print("Creating ren::Swapchain for window size: {}x{}, vsync={}\n", width, height,
-               info.enableVSync);
-
 
     auto presentMode = VK_PRESENT_MODE_IMMEDIATE_KHR;
     if (info.enableVSync) {
@@ -68,9 +65,6 @@ namespace ren {
     this->imageFormat = vkb_swapchain.image_format;
     this->depthFormat = vulkan.findDepthFormat();
 
-    fmt::print("Vulkan swapchain created with {} images, extent: {}x{}. format={}\n", images.size(),
-               deviceExtent.width, deviceExtent.height, (u32)imageFormat);
-
     for (size_t i = 0; i < images.size(); i++) {
       frames.push_back(makeBox<ren::FrameSubmissionUnit>((u32)i, *this, images[i], imageViews[i]));
     }
@@ -81,7 +75,6 @@ namespace ren {
     auto &vulkan = ren::getVulkan();
     // wait for idle.
     vkDeviceWaitIdle(vulkan.device);
-    fmt::print("Destroying Swapchain with {} frames\n", frames.size());
     // Clear the swapchain data.
     // TODO: make sure nobody is using any of these!
     frames.clear();
