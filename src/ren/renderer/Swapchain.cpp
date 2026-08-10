@@ -25,7 +25,7 @@ namespace ren {
   Swapchain::Swapchain(SwapchainCreateInfo &info)
       : window(info.window) {
     REN_PROFILE_SCOPE("Build Swapchain");
-    this->frameIndex = 0;
+    this->frameSlotIndex = 0;
     auto &vulkan = ren::getVulkan();
     vulkan.frame_number = 0;
 
@@ -89,10 +89,10 @@ namespace ren {
       fmt::print("No frames available in swapchain\n");
       return nullptr;
     }
-    frameIndex = vulkan.frame_number % frames.size();
+    frameSlotIndex = vulkan.frame_number % frames.size();
 
     // Get the current frame unit
-    auto frameUnit = frames[frameIndex].get();
+    auto frameUnit = frames[frameSlotIndex].get();
     g_frameUnit = frameUnit;
 
     // Wait for previous frame's work BEFORE using the semaphore
@@ -102,7 +102,7 @@ namespace ren {
     REN_PROFILE_SCOPE("vkAcquireNextImageKHR");
     auto result = vkAcquireNextImageKHR(vulkan.device, this->swapchain, UINT64_MAX,
                                         frameUnit->imageAvailableSemaphore, VK_NULL_HANDLE,
-                                        &frameUnit->frameIndex);
+                                        &frameUnit->swapchainImageIndex);
 
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
       ren::dbgln("Swapchain image out of date. Rebuilding...");

@@ -9,8 +9,8 @@ namespace ren {
 #define NUM_QUERY_POOL_ENTRIES 1024
 
   SubmissionUnit::SubmissionUnit()
-      : m_frameGlobalsBuffer(allocateBuffer<FrameGlobals>(
-            1, BufferDomain::Upload, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT)) {
+      : m_frameGlobals(
+            Renderer::get().getFrameGlobalsAllocator().allocate()) {
     auto &vulkan = ren::getVulkan();
     // ---- Allocate the command buffer for this frame ---- //
     VkCommandBufferAllocateInfo allocInfo{};
@@ -39,10 +39,6 @@ namespace ren {
     vkGetPhysicalDeviceProperties(getVulkan().physical_device, &props);
     this->timestampPeriod = props.limits.timestampPeriod;
 
-    m_frameDescriptorSet =
-        Renderer::get().getGlobalDescriptors().allocateFrameSet(
-            m_frameGlobalsBuffer);
-    updateFrameGlobals({});
   }
 
   SubmissionUnit::~SubmissionUnit() {
@@ -56,8 +52,6 @@ namespace ren {
       vkFreeCommandBuffers(vulkan.device, vulkan.commandPool, 1, &m_vkCmd);
       m_vkCmd = VK_NULL_HANDLE;
     }
-    Renderer::get().getGlobalDescriptors().freeFrameSet(m_frameDescriptorSet);
-    m_frameDescriptorSet = VK_NULL_HANDLE;
   }
 
 
@@ -110,11 +104,6 @@ namespace ren {
 
     return m_cmd;
   }
-
-  void SubmissionUnit::updateFrameGlobals(const FrameGlobals &globals) {
-    m_frameGlobalsBuffer.copyFromHost(&globals, sizeof(globals));
-  }
-
 
   ref<Fence> SubmissionUnit::submitTo(SubmissionQueue &queue, SubmissionInfo info) {
     VK_CHECK(vkEndCommandBuffer(m_vkCmd));

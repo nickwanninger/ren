@@ -180,104 +180,38 @@ namespace ren::test {
         reflected, UnusedResourcePolicy::AllowPrunedEngineBindings);
   }
 
-  TEST_F(ShaderReflectionTest, DescriptorHandlesUseTypedGlobalHeapWithoutMutableDescriptors) {
+  TEST_F(ShaderReflectionTest, ExplicitImageAliasesShareOnePhysicalBinding) {
     constexpr std::string_view source = R"slang(
-      export T getDescriptorFromHandle<T>(DescriptorHandle<T> handle)
-          where T : IOpaqueDescriptor
-      {
-        return defaultGetDescriptorFromHandle(
-            handle, BindlessDescriptorOptions.None);
-      }
+      [[vk::binding(0, 1)]] Texture2D<float4> images2D[];
+      [[vk::binding(0, 1)]] TextureCube<float4> imagesCube[];
+      [[vk::binding(0, 2)]] SamplerState samplers[];
 
-      struct PushConstants
+      [shader("fragment")]
+      float4 main(float3 uv : TEXCOORD) : SV_Target
       {
-        Texture2D<float4>.Handle source;
-        RWTexture2D<float4>.Handle destination;
-        SamplerState.Handle sampler;
-      };
-
-      [[vk::push_constant]]
-      ConstantBuffer<PushConstants> pushConstants;
-
-      [shader("compute")]
-      [numthreads(1, 1, 1)]
-      void main(uint3 id : SV_DispatchThreadID)
-      {
-        float4 value = pushConstants.source.SampleLevel(
-            pushConstants.sampler, float2(0.5f), 0.0f);
-        pushConstants.destination[id.xy] = value;
+        uint index = NonUniformResourceIndex(1);
+        return images2D[index].Sample(samplers[0], uv.xy) +
+            imagesCube[index].Sample(samplers[0], uv);
       }
     )slang";
 
     ReflectedSlangCase reflected;
     ASSERT_NO_THROW(
-        reflected = reflectSource(source, {}, "descriptor_handle_heap"));
-
-    ASSERT_EQ(reflected.physical.bindings.size(), 3);
-    EXPECT_EQ(
-        reflected.physical.bindings.at({1, 0}).type,
-        VK_DESCRIPTOR_TYPE_SAMPLER);
-    EXPECT_EQ(
-        reflected.physical.bindings.at({1, 2}).type,
-        VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
-    EXPECT_EQ(
-        reflected.physical.bindings.at({1, 3}).type,
-        VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
-    EXPECT_EQ(reflected.physical.bindings.at({1, 0}).count, 0);
-    EXPECT_EQ(reflected.physical.bindings.at({1, 2}).count, 0);
-    EXPECT_EQ(reflected.physical.bindings.at({1, 3}).count, 0);
-  }
-
-  TEST_F(ShaderReflectionTest, CombinedImageSamplerHandlesUseCombinedHeapBinding) {
-    constexpr std::string_view source = R"slang(
-      export T getDescriptorFromHandle<T>(DescriptorHandle<T> handle)
-          where T : IOpaqueDescriptor
-      {
-        return defaultGetDescriptorFromHandle(
-            handle, BindlessDescriptorOptions.None);
-      }
-
-      struct PushConstants
-      {
-        Sampler2D<float4>.Handle source;
-        RWTexture2D<float4>.Handle destination;
-      };
-
-      [[vk::push_constant]]
-      ConstantBuffer<PushConstants> pushConstants;
-
-      [shader("compute")]
-      [numthreads(1, 1, 1)]
-      void main(uint3 id : SV_DispatchThreadID)
-      {
-        pushConstants.destination[id.xy] =
-            pushConstants.source.SampleLevel(float2(0.5f), 0.0f);
-      }
-    )slang";
-
-    ReflectedSlangCase reflected;
-    ASSERT_NO_THROW(
-        reflected = reflectSource(source, {}, "combined_image_sampler_handle"));
+        reflected = reflectSource(source, {}, "explicit_image_aliases"));
 
     ASSERT_EQ(reflected.physical.bindings.size(), 2);
     EXPECT_EQ(
-        reflected.physical.bindings.at({1, 1}).type,
-        VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-    EXPECT_EQ(reflected.physical.bindings.at({1, 1}).count, 0);
+        reflected.physical.bindings.at({1, 0}).type,
+        VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
     EXPECT_EQ(
-        reflected.physical.bindings.at({1, 3}).type,
-        VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+        reflected.physical.bindings.at({2, 0}).type,
+        VK_DESCRIPTOR_TYPE_SAMPLER);
+    EXPECT_EQ(reflected.physical.bindings.at({1, 0}).count, 0);
+    EXPECT_EQ(reflected.physical.bindings.at({2, 0}).count, 0);
   }
 
   TEST_F(ShaderReflectionTest, NamedPushConstantsPreserveRecursiveFieldLocations) {
     constexpr std::string_view source = R"slang(
-      export T getDescriptorFromHandle<T>(DescriptorHandle<T> handle)
-          where T : IOpaqueDescriptor
-      {
-        return defaultGetDescriptorFromHandle(
-            handle, BindlessDescriptorOptions.None);
-      }
-
       struct Transform
       {
         float2 offset;
@@ -288,8 +222,7 @@ namespace ren::test {
       {
         Transform transform;
         uint materialIndex;
-        Texture2D<float4>.Handle pattern;
-        SamplerState.Handle sampler;
+        uint pattern;
       };
 
       [[vk::push_constant]]
@@ -313,8 +246,7 @@ namespace ren::test {
       [shader("fragment")]
       float4 fragmentMain(Varying input) : SV_Target
       {
-        return draw.pattern.Sample(draw.sampler, input.position.xy) + float4(
-            input.position.xy, draw.transform.scale,
+        return float4(input.position.xy, draw.transform.scale,
             float(draw.materialIndex));
       }
     )slang";
@@ -342,9 +274,9 @@ namespace ren::test {
     ASSERT_TRUE(draw->location.byteOffset);
     ASSERT_TRUE(draw->location.byteSize);
     EXPECT_EQ(*draw->location.byteOffset, 0);
-    EXPECT_EQ(*draw->location.byteSize, 40);
+    EXPECT_EQ(*draw->location.byteSize, 24);
 
-    ASSERT_EQ(draw->members.size(), 4);
+    ASSERT_EQ(draw->members.size(), 3);
     auto* transform = draw->members[0];
     ASSERT_NE(transform, nullptr);
     EXPECT_EQ(transform->name, "transform");

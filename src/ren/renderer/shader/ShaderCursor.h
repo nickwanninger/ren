@@ -6,6 +6,9 @@
 
 namespace ren {
   class CommandEncoder;
+  class Texture;
+  class Image;
+  class Sampler;
 
   // A command-scoped cursor into a bound program's reflection tree. Child
   // lookup and reflected write validation live here; CommandEncoder only
@@ -24,10 +27,29 @@ namespace ren {
       setBytes(&value, sizeof(value));
     }
 
+    void set(const ref<Texture>& texture);
+    void set(const ref<Image>& image);
+    void set(const ref<Sampler>& sampler);
+
     template <typename T>
       requires std::is_trivially_copyable_v<T>
     ShaderCursor& set(std::string_view name, const T& value) {
       get(name).set(value);
+      return *this;
+    }
+
+    ShaderCursor& set(std::string_view name, const ref<Texture>& texture) {
+      get(name).set(texture);
+      return *this;
+    }
+
+    ShaderCursor& set(std::string_view name, const ref<Image>& image) {
+      get(name).set(image);
+      return *this;
+    }
+
+    ShaderCursor& set(std::string_view name, const ref<Sampler>& sampler) {
+      get(name).set(sampler);
       return *this;
     }
 

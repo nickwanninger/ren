@@ -1,8 +1,32 @@
 #include <ren/renderer/shader/ShaderCursor.h>
 
 #include <ren/renderer/CommandEncoder.h>
+#include <ren/renderer/Image.h>
+#include <ren/renderer/Sampler.h>
+#include <ren/renderer/Texture.h>
 
 namespace ren {
+  void ShaderCursor::set(const ref<Texture>& texture) {
+    if (!texture) {
+      throw std::invalid_argument("ShaderCursor cannot bind a null Texture");
+    }
+    set(texture->handle());
+  }
+
+  void ShaderCursor::set(const ref<Image>& image) {
+    if (!image) {
+      throw std::invalid_argument("ShaderCursor cannot bind a null Image");
+    }
+    set(image->sampledIndex());
+  }
+
+  void ShaderCursor::set(const ref<Sampler>& sampler) {
+    if (!sampler) {
+      throw std::invalid_argument("ShaderCursor cannot bind a null Sampler");
+    }
+    set(sampler->index());
+  }
+
   ShaderCursor ShaderCursor::get(std::string_view name) const {
     if (m_node == nullptr) {
       throw std::runtime_error("ShaderCursor has no reflection node");

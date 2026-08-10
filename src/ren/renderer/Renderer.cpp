@@ -23,7 +23,10 @@ namespace ren {
 
     // Create the Vulkan instance
     this->vulkan = make<VulkanInstance>(this->window);
-    this->globalDescriptors = make<GlobalDescriptors>();
+    this->imageHeap = make<ImageDescriptorHeap>();
+    this->samplerHeap = make<SamplerDescriptorHeap>();
+    this->samplerCache = make<SamplerCache>(this->samplerHeap);
+    this->frameGlobalsAllocator = makeBox<FrameGlobalsAllocator>();
 
 
     rebuildSwapchain();
@@ -42,8 +45,10 @@ namespace ren {
 
     this->pipelineCache.reset();
     this->swapchain.reset();
-    this->globalDescriptors.reset();
-    this->samplers.clear();
+    this->samplerCache.reset();
+    this->imageHeap.reset();
+    this->samplerHeap.reset();
+    this->frameGlobalsAllocator.reset();
     this->vulkan.reset();
   }
 
@@ -144,6 +149,12 @@ namespace ren {
     // printf("Binding PSO: %s (%p)\n", pso.debugName.c_str(), currentPipeline->getHandle());
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, currentPipeline->getHandle());
+    std::array sets{
+        frame.getFrameGlobalsSet(), imageHeap->getSet(), samplerHeap->getSet()};
+    vkCmdBindDescriptorSets(
+        cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, currentPipeline->getLayout(),
+        ShaderABI::frameSet, static_cast<u32>(sets.size()),
+        sets.data(), 0, nullptr);
   }
 
   void Renderer::bind(ref<ShaderProgram> program) {
@@ -189,15 +200,7 @@ namespace ren {
 
     vulkan->frame_number += 1;
 
-    // Begin the frame (waits for fence and starts command buffer)
     frame->beginFrame();
-    const glm::vec2 renderSize{
-        frame->deviceImage->getWidth(), frame->deviceImage->getHeight()};
-    frame->updateFrameGlobals({
-        .frameNumber = static_cast<u32>(vulkan->frame_number),
-        .renderSize = renderSize,
-        .inverseRenderSize = 1.0f / renderSize,
-    });
   }
 
   void Renderer::endFrame(void) {

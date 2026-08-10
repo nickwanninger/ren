@@ -258,10 +258,9 @@ namespace ren {
         32, 255, 190, 255, 32, 120, 255, 255};
     auto warmTexture =
         Texture::create("bindless-warm", 2, 2, warmPixels.data());
+
     auto coolTexture =
         Texture::create("bindless-cool", 2, 2, coolPixels.data());
-    auto warmHandle = warmTexture->getHandle();
-    auto coolHandle = coolTexture->getHandle();
 
 
     float renderScaleTemp = 1.0f;
@@ -356,7 +355,7 @@ namespace ren {
       auto &frame = ren::getFrameUnit();
       const glm::vec2 frameSize{
           frame.deviceImage->getWidth(), frame.deviceImage->getHeight()};
-      frame.updateFrameGlobals({
+      frame.setFrameGlobals({
           .time = time,
           .deltaTime = deltaTime,
           .frameNumber = static_cast<u32>(vulkan.frame_number),
@@ -470,21 +469,14 @@ namespace ren {
           REN_PROFILE_SCOPE("RenderBackgroundTriangle");
           penc.bindImmediateMesh(squareAMesh->vertices, squareAMesh->indices);
           auto squareA = penc.bindGraphics(squareAPSO);
-          struct SquareAConstants {
-            glm::vec2 offset;
-            float scale;
-            float pulseAmount;
-            CombinedImageSamplerHandle image;
-          };
-          static_assert(sizeof(SquareAConstants) == 24);
           auto squareAConstants =
               squareA.pushConstant("pushConstants");
-          squareAConstants.set(SquareAConstants{
-              .offset = {-0.5f, 0.0f},
-              .scale = 0.32f,
-              .pulseAmount = 0.08f,
-              .image = warmHandle,
-          });
+          squareAConstants
+              .set("offset", glm::vec2(-0.5f, 0.0f))
+              .set("scale", 0.32f)
+              .set("pulseAmount", 0.08f)
+              .set("image", warmTexture);
+
           squareA.drawIndexed(
               {.vertexCount = static_cast<u32>(squareAMesh->indices.size())});
 
@@ -499,7 +491,7 @@ namespace ren {
               .set("rotationSpeed", 0.35f);
           squareBConstants
               .set("tint", glm::vec4(1.0f))
-              .set("pattern", coolHandle);
+              .set("pattern", coolTexture);
           squareB.drawIndexed(
               {.vertexCount = static_cast<u32>(squareBMesh->indices.size())});
         }

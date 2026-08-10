@@ -188,8 +188,9 @@ void ren::VulkanInstance::init_instance(void) {
       .shaderSampledImageArrayNonUniformIndexing = true,
       .shaderStorageImageArrayNonUniformIndexing = true,
       .descriptorBindingSampledImageUpdateAfterBind = true,
-      .descriptorBindingStorageImageUpdateAfterBind = true,
+      .descriptorBindingUpdateUnusedWhilePending = true,
       .descriptorBindingPartiallyBound = true,
+      .descriptorBindingVariableDescriptorCount = true,
       .runtimeDescriptorArray = true,
       .bufferDeviceAddress = true,
   };

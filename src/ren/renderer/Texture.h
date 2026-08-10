@@ -2,7 +2,8 @@
 
 #include <ren/types.h>
 #include <ren/renderer/Image.h>
-#include <ren/renderer/GlobalDescriptors.h>
+#include <ren/renderer/TextureHandle.h>
+#include <ren/renderer/SamplerCache.h>
 #include <ren/core/Builder.h>
 #include <ren/core/Instrumentation.h>
 #include <ren/assets/Asset.h>
@@ -18,6 +19,7 @@ namespace ren {
     // Use the load methods to create textures.
     Texture(const std::string_view &name, u32 width, u32 height, u8 *data = nullptr);
     explicit Texture(ren::ImageRef image);
+    Texture(ref<Image> image, ref<Sampler> sampler);
 
     ~Texture();
 
@@ -49,11 +51,18 @@ namespace ren {
     ren::Image::Ref getImage(void) const { return this->image; }
     VkImageView getImageView(void) const { return this->image->getImageView(); }
 
-    // Get the Vulkan sampler handle.
-    VkSampler getSampler(void) const { return sampler; }
-    CombinedImageSamplerHandle getHandle(void) const {
-      return bindlessHandle;
+    // Get the Vulkan sampler handle (shared, from the sampler cache).
+    VkSampler getSampler(void) const { return sampler->getHandle(); }
+
+    // Wire handles for this texture's sampled image and its (shared,
+    // deduped) sampler. Transient: fetch at record time, never store
+    // across frames.
+    SampledImageIndex sampledIndex() const { return image->sampledIndex(); }
+    SamplerIndex samplerIndex() const;
+    TextureHandle handle() const {
+      return TextureHandle::pack(sampledIndex(), samplerIndex());
     }
+    const ref<Sampler>& getSamplerRef() const { return sampler; }
 
     VkDescriptorSet getImGui(void);
 
@@ -68,9 +77,7 @@ namespace ren {
     std::string name;
 
     ren::Image::Ref image;
-    VkSampler sampler = VK_NULL_HANDLE;
-    ref<GlobalDescriptors> bindlessDescriptors;
-    CombinedImageSamplerHandle bindlessHandle;
+    ref<Sampler> sampler;
 
     VkDescriptorSet imguiTextureID = VK_NULL_HANDLE;
   };

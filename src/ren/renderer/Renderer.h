@@ -11,8 +11,10 @@
 #include <ren/renderer/RenderPassCache.h>
 #include <ren/renderer/pipelines/PipelineCache.h>
 #include <ren/renderer/pipelines/PipelineStateObject.h>
-#include <ren/renderer/GlobalDescriptors.h>
+#include <ren/renderer/SamplerCache.h>
+#include <ren/renderer/FrameGlobals.h>
 #include <SDL3/SDL.h>
+#include <ren/renderer/DescriptorHeap.h>
 
 namespace ren {
 
@@ -97,24 +99,19 @@ namespace ren {
     }
 
 
-    // TODO: move me to .cpp
     inline Sampler &getSampler(VkFilter filter = VK_FILTER_NEAREST) {
-      // Get or create a sampler with the given filter.
-      auto it = samplers.find(filter);
-      if (it != samplers.end()) {
-        return *it->second;
-      } else {
-        samplers.insert({filter, make<Sampler>(filter)});
-        return *samplers[filter];
-      }
+      SamplerDesc desc{.magFilter = filter, .minFilter = filter};
+      return *samplerCache->get(desc);
     }
 
 
     const Swapchain &getSwapchain(void) const { return *swapchain; }
-    GlobalDescriptors &getGlobalDescriptors() { return *globalDescriptors; }
-    ref<GlobalDescriptors> getGlobalDescriptorsRef() {
-      return globalDescriptors;
+    ImageDescriptorHeap &getImageDescriptorHeap() { return *imageHeap; }
+    SamplerDescriptorHeap &getSamplerDescriptorHeap() { return *samplerHeap; }
+    FrameGlobalsAllocator &getFrameGlobalsAllocator() {
+      return *frameGlobalsAllocator;
     }
+    SamplerCache &getSamplerCache() { return *samplerCache; }
 
    private:
     inline const PipelineStateObject &getCurrentPSO() const {
@@ -131,14 +128,19 @@ namespace ren {
     ref<RenderPass> currentPass = nullptr;
     ref<CachedPipeline> currentPipeline = nullptr;
 
+
+
+    ref<ImageDescriptorHeap> imageHeap;
+    ref<SamplerDescriptorHeap> samplerHeap;
+
     VkCommandBuffer getCommandBuffer();
     SDL_Window *window;
     ren::RenderPassCache renderPassCache;
     ref<VulkanInstance> vulkan = nullptr;
-    ref<GlobalDescriptors> globalDescriptors;
+    Box<FrameGlobalsAllocator> frameGlobalsAllocator;
+    ref<SamplerCache> samplerCache;
     ref<Swapchain> swapchain = nullptr;
     ref<RenderPass> displayPass = nullptr;
 
-    std::unordered_map<VkFilter, ref<Sampler>> samplers;
   };
 }  // namespace ren

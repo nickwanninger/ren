@@ -24,7 +24,7 @@ namespace ren {
    public:
     // We have one frame for each frame in flight.
     // In a triple buffering setup, this is 3.
-    u32 frameIndex = 0;
+    u32 frameSlotIndex = 0;
     std::vector<std::unique_ptr<ren::FrameSubmissionUnit>> frames;
 
     VkExtent2D deviceExtent;
@@ -48,7 +48,7 @@ namespace ren {
   // Global accessor for the current frame submission unit
   FrameSubmissionUnit &getFrameUnit(void);
 
-  inline u32 getFrameIndex(void) { return getFrameUnit().frameIndex; }
+  inline u32 getFrameIndex(void) { return getFrameUnit().slotIndex; }
 
   template <typename T, typename... Args>
   inline T *frameAlloc(Args &&...args) {

@@ -1,4 +1,4 @@
-import ren;
+import ren.core;
 
 struct Vertex
 {
@@ -26,7 +26,7 @@ struct SquareBConstants
 {
     SquareBTransform transform;
     float4 tint;
-    Sampler2D<float4>.Handle pattern;
+    TextureHandle pattern;
 };
 
 [[vk::push_constant]]

@@ -1,6 +1,7 @@
 #include <ren/renderer/CommandEncoder.h>
 #include <ren/renderer/Renderer.h>
 #include <ren/renderer/submission/SubmissionUnit.h>
+#include <ren/renderer/FrameGlobals.h>
 
 namespace ren {
 
@@ -30,13 +31,10 @@ namespace ren {
     auto pipeline = R.getPipelineCache().getCompute(program);
 
     vkCmdBindPipeline(this->cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline->getHandle());
-    R.getGlobalDescriptors().bind(
-        cmd, VK_PIPELINE_BIND_POINT_COMPUTE, program->getPipelineLayout(),
-        submissionUnit.getFrameDescriptorSet());
-
     compute.program = std::move(program);
     compute.layout = pipeline->getLayout();
     ++compute.generation;
+    bindDescriptorHeaps(VK_PIPELINE_BIND_POINT_COMPUTE, compute.layout);
     return BoundComputeEncoder(
         *this,
         ShaderCursor(
@@ -64,14 +62,25 @@ namespace ren {
     ++compute.generation;
   }
 
+  void CommandEncoder::bindDescriptorHeaps(
+      VkPipelineBindPoint bindPoint, VkPipelineLayout pipelineLayout) {
+    auto& renderer = Renderer::get();
+    std::array sets{
+        submissionUnit.getFrameGlobalsSet(),
+        renderer.getImageDescriptorHeap().getSet(),
+        renderer.getSamplerDescriptorHeap().getSet(),
+    };
+    vkCmdBindDescriptorSets(
+        cmd, bindPoint, pipelineLayout, ShaderABI::frameSet,
+        static_cast<u32>(sets.size()), sets.data(), 0, nullptr);
+  }
+
   ShaderCursor CommandEncoder::activateGraphics(
       ref<ShaderProgram> program, VkPipelineLayout pipelineLayout) {
-    Renderer::get().getGlobalDescriptors().bind(
-        cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout,
-        submissionUnit.getFrameDescriptorSet());
     graphics.program = std::move(program);
     graphics.layout = pipelineLayout;
     ++graphics.generation;
+    bindDescriptorHeaps(VK_PIPELINE_BIND_POINT_GRAPHICS, graphics.layout);
     return ShaderCursor(
         *this, graphics.program, VK_PIPELINE_BIND_POINT_GRAPHICS,
         graphics.generation);
@@ -103,10 +112,10 @@ namespace ren {
           "(offset {}, size {})",
           byteOffset, size));
     }
-    if (byteOffset + size > GlobalDescriptorABI::pushConstantBytes) {
+    if (byteOffset + size > ShaderABI::pushConstantBytes) {
       throw std::runtime_error(fmt::format(
           "Push-constant write at byte {} with size {} exceeds REN's {} byte ABI",
-          byteOffset, size, GlobalDescriptorABI::pushConstantBytes));
+          byteOffset, size, ShaderABI::pushConstantBytes));
     }
     const auto& state =
         cursor.m_bindPoint == VK_PIPELINE_BIND_POINT_COMPUTE ? compute : graphics;

@@ -19,9 +19,8 @@ using namespace ren;
 
 ren::Flag<std::string> loadArg("load", "assets/test/meshes/simple_scene.glb", "Path to a mesh to load at startup");
 ren::Flag<float> scaleArg("load-scale", 1.0f, "Uniform scale to apply to the loaded mesh");
-ren::Flag<bool> runSaxpyArg(
-    "run-saxpy", false,
-    "Run the synchronous Slang/BDA SAXPY smoke test before opening the editor");
+ren::Flag<bool> runSaxpyArg("run-saxpy", false, "Run the synchronous Slang/BDA SAXPY smoke test before opening the editor");
+ren::Flag<bool> runImageHeapArg("run-imageheap", false, "Run the bindless image heap smoke test before opening the editor");
 
 
 void loadMeshIntoScene(const char* path, float scaleChange = 0.0f) {
@@ -42,8 +41,6 @@ void loadMeshIntoScene(const char* path, float scaleChange = 0.0f) {
 
 void testCalibration(void) {
   SubmissionUnit unit;
-
-
   for (int i = 0; i < 1000; i++) {
     auto cmd = unit.begin();
 
@@ -79,8 +76,7 @@ void testSaxpy(void) {
   auto cmd = unit.begin();
   auto compute = cmd->bindCompute(program);
   auto pushConstants = compute.pushConstant("pushConstants");
-  pushConstants
-      .set("a", a)
+  pushConstants.set("a", a)
       .set("length", length)
       .set("x", x.devicePointer<float>())
       .set("y", y.devicePointer<float>())
@@ -100,6 +96,54 @@ void testSaxpy(void) {
 }
 
 // #include <ren/core/ThreadPool.h>
+#include <ren/renderer/DescriptorHeap.h>
+
+void imageHeapSampleTest() {
+  constexpr u32 size = 2;
+  auto img = ren::ImageBuilder("image heap sample").setSize(size).setFormat(VK_FORMAT_R8G8B8A8_UNORM).build();
+
+  std::array<u8, size * size * 4> pixels;
+  for (u32 pixel = 0; pixel < size * size; ++pixel) {
+    pixels[pixel * 4 + 0] = 128;
+    pixels[pixel * 4 + 1] = 128;
+    pixels[pixel * 4 + 2] = 128;
+    pixels[pixel * 4 + 3] = 255;
+  }
+  img->uploadPixels(pixels.data());
+  auto program = ren::make<ren::ShaderProgram>("test/imageheap");
+
+
+
+  auto outBuffer = allocateBuffer<glm::vec4>(1, BufferDomain::Readback);
+
+  SubmissionUnit unit;
+
+  for (int i = 0; i < 15; i++) {
+    auto start = std::chrono::high_resolution_clock::now();
+    auto cmd = unit.begin();
+
+    auto compute = cmd->bindCompute(program);
+    auto args = compute.pushConstant("pc");
+
+    auto& renderer = Renderer::get();
+    auto sampler = renderer.getSamplerCache().get(SamplerDesc{});
+
+    args.set("image", img).set("sampler", sampler).set("out", outBuffer.devicePointer<glm::vec4>());
+
+    compute.dispatch({1, 1, 1});  // Fire off the compute shader.
+
+    // Submit, and wait for completion
+    unit.submitTo(*getVulkan().computeQueue)->awaitCompletion();
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+    ren::println("Image heap sample test completed in {} microseconds", duration);
+  }
+
+
+  // Validate the result
+  const glm::vec4 result = *outBuffer.hostData<glm::vec4>();
+  ren::println("Image heap sample passed: [{}, {}, {}, {}]", result.x, result.y, result.z, result.w);
+}
 
 int main(int argc, char* argv[]) {
   ren::parseFlags(argc, argv);
@@ -110,21 +154,19 @@ int main(int argc, char* argv[]) {
   res.x = 1920;
   res.y = 1080;
 
-
   ren::Application app("Editor", res);
+
+
 
   if (runSaxpyArg.get()) {
     testSaxpy();
     return 0;
   }
 
-  // if (loadArg.get() == "SPONZA") {
-  //   loadMeshIntoScene("/Users/nick/Downloads/main_sponza/NewSponza_Main_glTF_003.gltf", scaleArg.get());
-  //   loadMeshIntoScene("/Users/nick/Downloads/pkg_a_curtains/NewSponza_Curtains_glTF.gltf", scaleArg.get());
-  //   loadMeshIntoScene("/Users/nick/Downloads/pkg_b_ivy/NewSponza_IvyGrowth_glTF.gltf", scaleArg.get());
-  // } else {
-  //   loadMeshIntoScene(loadArg.get().c_str(), scaleArg.get());
-  // }
+  if (runImageHeapArg.get()) {
+    imageHeapSampleTest();
+    return 0;
+  }
 
   app.run();
   REN_PROFILE_END_SESSION();

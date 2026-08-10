@@ -22,7 +22,8 @@ namespace ren {
   // - using VkType = VkImageView or VkSampler
   // - static constexpr VkDescriptorType DescriptorType
 
-  template <typename RenType, typename VkType, VkDescriptorType DescriptorType, int MaxDescriptors, int BindingIndex>
+  template <typename RenType, typename VkType, VkDescriptorType DescriptorType,
+            int MaxDescriptors, int BindingIndex, int FirstDescriptor = 0>
   class DescriptorHeap {
    public:
     static constexpr u32 kMaxDescriptors = MaxDescriptors;
@@ -42,7 +43,7 @@ namespace ren {
       createSet();
 
       // Then, we initialize the bump allocator.
-      m_bump = 0;
+      m_bump = FirstDescriptor;
     }
 
 
@@ -84,6 +85,7 @@ namespace ren {
         m_freelist.pop_back();
         // Track the resource in the map
         m_resources[resource] = index;
+        writeDescriptor(index, vkHandle(resource));
         return Some(index);
       }
 
@@ -94,6 +96,7 @@ namespace ren {
 
       index = m_bump++;
       m_resources[resource] = index;
+      writeDescriptor(index, vkHandle(resource));
 
       return Some(index);
     }
@@ -108,6 +111,17 @@ namespace ren {
     VkDescriptorSetLayout getLayout() const { return m_layout; }
 
    private:
+    static VkType vkHandle(const RenTypeRef& resource) {
+      if constexpr (std::is_same_v<VkType, VkImageView>) {
+        return resource->getImageView();
+      } else if constexpr (std::is_same_v<VkType, VkSampler>) {
+        return resource->getHandle();
+      } else {
+        static_assert(std::is_same_v<VkType, void>,
+                      "Unsupported VkType for DescriptorHeap");
+      }
+    }
+
     void createPool() {
       VkDescriptorPoolSize pool_size{};
       // We want a pool with kMaxDescriptors of the type specified in the Traits.
@@ -189,7 +203,8 @@ namespace ren {
         image_info.sampler = vkThing;
       } else {
         // throw a compile time error.
-        static_assert(false, "Unsupported VkType for DescriptorHeap");
+        static_assert(std::is_same_v<VkType, void>,
+                      "Unsupported VkType for DescriptorHeap");
       }
 
       VkWriteDescriptorSet write{};
@@ -223,7 +238,9 @@ namespace ren {
 
 
   class Image; class Sampler;
-  using ImageDescriptorHeap = DescriptorHeap<ren::Image, VkImageView, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 64 * 1024, 0>;
-  using SamplerDescriptorHeap = DescriptorHeap<ren::Sampler, VkSampler, VK_DESCRIPTOR_TYPE_SAMPLER, 128, 1>;
+  using ImageDescriptorHeap = DescriptorHeap<ren::Image, VkImageView,
+      VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 64 * 1024, 0, 1>;
+  using SamplerDescriptorHeap = DescriptorHeap<ren::Sampler, VkSampler,
+      VK_DESCRIPTOR_TYPE_SAMPLER, 128, 0>;
 
 }  // namespace ren

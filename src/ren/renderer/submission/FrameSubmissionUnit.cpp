@@ -6,9 +6,10 @@
 
 namespace ren {
 
-  FrameSubmissionUnit::FrameSubmissionUnit(u32 frameIndex, Swapchain &sc, VkImage swapchainImage, VkImageView swapchainImageView)
+  FrameSubmissionUnit::FrameSubmissionUnit(u32 slotIndex, Swapchain &sc, VkImage swapchainImage, VkImageView swapchainImageView)
       : SubmissionUnit()
-      , frameIndex(frameIndex)
+      , slotIndex(slotIndex)
+      , swapchainImageIndex(slotIndex)
       , m_swapchain(sc) {
     REN_PROFILE_FUNCTION();
     auto &vulkan = ren::getVulkan();
@@ -23,10 +24,10 @@ namespace ren {
     imageCreateInfo.extent.depth = 1;
 
     this->deviceImage =
-        ren::Image::create(fmt::format("device #{}", frameIndex), swapchainImage, swapchainImageView, VK_NULL_HANDLE, imageCreateInfo);
+        ren::Image::create(fmt::format("device #{}", slotIndex), swapchainImage, swapchainImageView, VK_NULL_HANDLE, imageCreateInfo);
 
     // Create depth image
-    this->depthImage = ren::ImageBuilder(fmt::format("depth #{}", frameIndex))
+    this->depthImage = ren::ImageBuilder(fmt::format("depth #{}", slotIndex))
                            .setWidth(sc.deviceExtent.width)
                            .setHeight(sc.deviceExtent.height)
                            .setFormat(sc.depthFormat)
@@ -108,7 +109,7 @@ namespace ren {
       presentInfo.pWaitSemaphores = &renderFinishedSemaphore;
       presentInfo.swapchainCount = 1;
       presentInfo.pSwapchains = &swapchain;
-      u32 imageIndex = frameIndex;
+      u32 imageIndex = swapchainImageIndex;
       presentInfo.pImageIndices = &imageIndex;
 
       VK_CHECK(vkQueuePresentKHR(queue.getHandle(), &presentInfo));

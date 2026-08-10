@@ -5,7 +5,7 @@
 #include <ren/core/Arena.h>
 #include <ren/renderer/Descriptors.h>
 #include <ren/renderer/Buffer.h>
-#include <ren/renderer/GlobalDescriptors.h>
+#include <ren/renderer/FrameGlobals.h>
 
 namespace ren {
 
@@ -47,9 +47,12 @@ namespace ren {
 
     ren::Arena &getArena(void) { return m_arena; }
     auto &getDescriptorAllocator(void) { return m_descriptorAllocator; }
-
-    void updateFrameGlobals(const FrameGlobals &globals);
-    VkDescriptorSet getFrameDescriptorSet() const { return m_frameDescriptorSet; }
+    void setFrameGlobals(const FrameGlobals& globals) {
+      m_frameGlobals.set(globals);
+    }
+    VkDescriptorSet getFrameGlobalsSet() const {
+      return m_frameGlobals.getSet();
+    }
 
    protected:
     friend class CommandEncoder;
@@ -82,11 +85,8 @@ namespace ren {
 
 
     DescriptorAllocator m_descriptorAllocator;
+    FrameGlobalsBinding m_frameGlobals;
     ren::Arena m_arena{0xFFFF, true};  // 64KB initial size, growable
-    BufferMemory m_frameGlobalsBuffer;
-    VkDescriptorSet m_frameDescriptorSet = VK_NULL_HANDLE;
-
-
     VkQueryPool m_timestampQueryPool;
     Query *m_queries = nullptr;
     u32 nextQueryIndex = 0;

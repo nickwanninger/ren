@@ -1,4 +1,5 @@
 add_executable(ren-reflection-tests
+  TextureHandleTest.cpp
   ShaderReflectionHarnessTest.cpp
   ShaderReflectionTestHarness.cpp
   ShaderReflectionTestHarness.h

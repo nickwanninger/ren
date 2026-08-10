@@ -6,7 +6,7 @@
 #include <unistd.h>
 #include <algorithm>
 #include <ren/renderer/Renderer.h>
-#include <ren/renderer/GlobalDescriptors.h>
+#include <ren/renderer/FrameGlobals.h>
 #include <ren/assets/AssetManager.h>
 #include <fmt/format.h>
 #include <ren/misc/DeprecationLogger.h>
@@ -21,21 +21,15 @@ namespace ren {
   namespace {
     bool isGlobalABIBinding(u32 set, u32 binding, VkDescriptorType type) {
       return
-          (set == GlobalDescriptorABI::frameSet &&
-           binding == GlobalDescriptorABI::frameBinding &&
+          (set == ShaderABI::frameSet &&
+           binding == ShaderABI::frameBinding &&
            type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER) ||
-          (set == GlobalDescriptorABI::heapSet &&
-           binding == GlobalDescriptorABI::samplerBinding &&
-           type == VK_DESCRIPTOR_TYPE_SAMPLER) ||
-          (set == GlobalDescriptorABI::heapSet &&
-           binding == GlobalDescriptorABI::combinedImageSamplerBinding &&
-           type == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER) ||
-          (set == GlobalDescriptorABI::heapSet &&
-           binding == GlobalDescriptorABI::sampledImageBinding &&
+          (set == ShaderABI::sampledImageSet &&
+           binding == ShaderABI::sampledImageBinding &&
            type == VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE) ||
-          (set == GlobalDescriptorABI::heapSet &&
-           binding == GlobalDescriptorABI::storageImageBinding &&
-           type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+          (set == ShaderABI::samplerSet &&
+           binding == ShaderABI::samplerBinding &&
+           type == VK_DESCRIPTOR_TYPE_SAMPLER);
     }
   }  // namespace
 
@@ -73,7 +67,7 @@ namespace ren {
       pipelineLayout = VK_NULL_HANDLE;
     }
 
-    // Descriptor set layouts are owned by Renderer::GlobalDescriptors.
+    // Descriptor set layouts are owned by Renderer.
   }
 
 
@@ -150,12 +144,6 @@ namespace ren {
       matrixLayoutOption.value.kind = slang::CompilerOptionValueKind::Int;
       matrixLayoutOption.value.intValue0 = 1;
       compilerOptions.push_back(matrixLayoutOption);
-
-      slang::CompilerOptionEntry bindlessSpaceOption = {};
-      bindlessSpaceOption.name = slang::CompilerOptionName::BindlessSpaceIndex;
-      bindlessSpaceOption.value.kind = slang::CompilerOptionValueKind::Int;
-      bindlessSpaceOption.value.intValue0 = GlobalDescriptorABI::heapSet;
-      compilerOptions.push_back(bindlessSpaceOption);
 
       targetDesc.compilerOptionEntries = compilerOptions.data();
       targetDesc.compilerOptionEntryCount = static_cast<SlangInt>(compilerOptions.size());
@@ -298,12 +286,16 @@ namespace ren {
 
   void ShaderProgram::bakeLayouts() {
     auto& vulkan = getVulkan();
-    auto& globals = Renderer::get().getGlobalDescriptors();
-    setLayouts = {globals.frameLayout(), globals.heapLayout()};
+    auto& renderer = Renderer::get();
+    setLayouts = {
+        renderer.getFrameGlobalsAllocator().getLayout(),
+        renderer.getImageDescriptorHeap().getLayout(),
+        renderer.getSamplerDescriptorHeap().getLayout(),
+    };
     pushConstantRanges = {{
         .stageFlags = VK_SHADER_STAGE_ALL,
         .offset = 0,
-        .size = GlobalDescriptorABI::pushConstantBytes,
+        .size = ShaderABI::pushConstantBytes,
     }};
 
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{

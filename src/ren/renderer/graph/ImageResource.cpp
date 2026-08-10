@@ -1,4 +1,5 @@
 #include <ren/renderer/graph/ImageResource.h>
+#include <ren/renderer/Renderer.h>
 #include <ren/renderer/graph/RenderGraph.h>
 #include <fmt/core.h>
 #include <vulkan/vulkan.h>
@@ -83,6 +84,7 @@ namespace ren {
       : spec(spec) {
     this->type = GraphResourceType::Image;
     this->image = nullptr;
+    sampler = Renderer::get().getSamplerCache().get({});
   }
 
   bool ImageResource::update(RenderGraph &G) {
@@ -208,7 +210,7 @@ namespace ren {
       ImGui::TextDisabled("... not yet allocated!");
     }
     if (imguiTextureID == VK_NULL_HANDLE) {
-      imguiTextureID = ImGui_ImplVulkan_AddTexture(sampler.getHandle(), image->getImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+      imguiTextureID = ImGui_ImplVulkan_AddTexture(sampler->getHandle(), image->getImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     }
     ImGui::Text("ImGui Texture ID: %p", (void *)imguiTextureID);
 

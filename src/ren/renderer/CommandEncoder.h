@@ -103,6 +103,8 @@ namespace ren {
         size_t size);
     ShaderCursor activateGraphics(
         ref<ShaderProgram> program, VkPipelineLayout pipelineLayout);
+    void bindDescriptorHeaps(
+        VkPipelineBindPoint bindPoint, VkPipelineLayout pipelineLayout);
     void validate(
         const ShaderCursor& cursor, VkPipelineBindPoint expectedBindPoint) const;
 
