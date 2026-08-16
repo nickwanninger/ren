@@ -52,6 +52,9 @@ namespace ren {
       std::string toString(void) const;
       static bool allowedInTopLevel(Type type);
       static VkDescriptorType toVkDescriptorType(Type type);
+      // Resolves ResourceArray through its element type; use this over the
+      // static overload whenever a full BindingType is available.
+      VkDescriptorType toVkDescriptorType() const;
 
       inline bool operator==(const BindingType& other) const { return type == other.type && elementType == other.elementType; }
       inline bool operator!=(const BindingType& other) const { return !(*this == other); }
@@ -104,7 +107,7 @@ namespace ren {
 
     Node* getRoot() const { return root; }
     void parseFromSpirv(const u8* spirvData, size_t spirvSize);
-    void parseFromSlang(slang::ProgramLayout* programLayout);
+    void parseFromSlang(slang::ProgramLayout* programLayout, bool dumpDebugInfo = false);
     void inspect();
     json toJson() const;
 

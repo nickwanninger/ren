@@ -1,6 +1,7 @@
 #include <ren/renderer/CommandEncoder.h>
 #include <ren/renderer/Renderer.h>
 #include <ren/renderer/submission/SubmissionUnit.h>
+#include <ren/renderer/FrameGlobals.h>
 
 namespace ren {
 
@@ -17,7 +18,7 @@ namespace ren {
     return encoder;
   }
 
-  void CommandEncoder::copyBuffer(ren::Buffer &src, ren::Buffer &dst, VkDeviceSize size, VkDeviceSize srcOffset, VkDeviceSize dstOffset) {
+  void CommandEncoder::copyBuffer(ren::BufferMemory &src, ren::BufferMemory &dst, VkDeviceSize size, VkDeviceSize srcOffset, VkDeviceSize dstOffset) {
     VkBufferCopy copyRegion{};
     copyRegion.srcOffset = srcOffset;
     copyRegion.dstOffset = dstOffset;
@@ -25,20 +26,101 @@ namespace ren {
     vkCmdCopyBuffer(this->cmd, src.getHandle(), dst.getHandle(), 1, &copyRegion);
   }
 
-  void CommandEncoder::dispatchCompute(ShaderObject &shader, glm::uvec3 groupCount) {
+  BoundComputeEncoder CommandEncoder::bindCompute(ref<ShaderProgram> program) {
     auto &R = ren::Renderer::get();
-    auto pipeline = R.getPipelineCache().getCompute(shader.program);
+    auto pipeline = R.getPipelineCache().getCompute(program);
 
     vkCmdBindPipeline(this->cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline->getHandle());
+    compute.program = std::move(program);
+    compute.layout = pipeline->getLayout();
+    ++compute.generation;
+    bindDescriptorHeaps(VK_PIPELINE_BIND_POINT_COMPUTE, compute.layout);
+    return BoundComputeEncoder(
+        *this,
+        ShaderCursor(
+            *this, compute.program, VK_PIPELINE_BIND_POINT_COMPUTE,
+            compute.generation));
+  }
 
-    shader.bind(this->cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline->getLayout());
+  void BoundShaderEncoder::validate(
+      VkPipelineBindPoint expectedBindPoint) const {
+    cmd.validate(shader, expectedBindPoint);
+  }
 
-    vkCmdDispatch(this->cmd, groupCount.x, groupCount.y, groupCount.z);
+  void BoundComputeEncoder::dispatch(glm::uvec3 groupCount) {
+    validate(VK_PIPELINE_BIND_POINT_COMPUTE);
+    vkCmdDispatch(buf(), groupCount.x, groupCount.y, groupCount.z);
   }
 
 
   void CommandEncoder::reset(void) {
-    // Nothing to do here - resources are managed by SubmissionUnit
+    graphics.program.reset();
+    graphics.layout = VK_NULL_HANDLE;
+    ++graphics.generation;
+    compute.program.reset();
+    compute.layout = VK_NULL_HANDLE;
+    ++compute.generation;
+  }
+
+  void CommandEncoder::bindDescriptorHeaps(
+      VkPipelineBindPoint bindPoint, VkPipelineLayout pipelineLayout) {
+    auto& renderer = Renderer::get();
+    std::array sets{
+        submissionUnit.getFrameGlobalsSet(),
+        renderer.getImageDescriptorHeap().getSet(),
+        renderer.getSamplerDescriptorHeap().getSet(),
+    };
+    vkCmdBindDescriptorSets(
+        cmd, bindPoint, pipelineLayout, ShaderABI::frameSet,
+        static_cast<u32>(sets.size()), sets.data(), 0, nullptr);
+  }
+
+  ShaderCursor CommandEncoder::activateGraphics(
+      ref<ShaderProgram> program, VkPipelineLayout pipelineLayout) {
+    graphics.program = std::move(program);
+    graphics.layout = pipelineLayout;
+    ++graphics.generation;
+    bindDescriptorHeaps(VK_PIPELINE_BIND_POINT_GRAPHICS, graphics.layout);
+    return ShaderCursor(
+        *this, graphics.program, VK_PIPELINE_BIND_POINT_GRAPHICS,
+        graphics.generation);
+  }
+
+  void CommandEncoder::validate(
+      const ShaderCursor &cursor,
+      VkPipelineBindPoint expectedBindPoint) const {
+    if (cursor.m_encoder != this || cursor.m_bindPoint != expectedBindPoint) {
+      throw std::runtime_error("ShaderCursor belongs to a different encoder or bind point");
+    }
+    const auto& state =
+        expectedBindPoint == VK_PIPELINE_BIND_POINT_COMPUTE ? compute : graphics;
+    if (!state.program || state.program != cursor.m_program ||
+        state.generation != cursor.m_generation) {
+      throw std::runtime_error("ShaderCursor is stale; bind its shader again");
+    }
+  }
+
+  void CommandEncoder::writePushConstant(
+      const ShaderCursor& cursor,
+      u32 byteOffset,
+      const void* data,
+      size_t size) {
+    validate(cursor, cursor.m_bindPoint);
+    if (byteOffset % 4 != 0 || size % 4 != 0) {
+      throw std::runtime_error(fmt::format(
+          "Push-constant writes require 4-byte aligned offsets and sizes "
+          "(offset {}, size {})",
+          byteOffset, size));
+    }
+    if (byteOffset + size > ShaderABI::pushConstantBytes) {
+      throw std::runtime_error(fmt::format(
+          "Push-constant write at byte {} with size {} exceeds REN's {} byte ABI",
+          byteOffset, size, ShaderABI::pushConstantBytes));
+    }
+    const auto& state =
+        cursor.m_bindPoint == VK_PIPELINE_BIND_POINT_COMPUTE ? compute : graphics;
+    vkCmdPushConstants(
+        cmd, state.layout, VK_SHADER_STAGE_ALL, byteOffset, size, data);
   }
 
 
@@ -118,36 +200,28 @@ namespace ren {
 
 
 
-  ref<ShaderObject> RenderPassEncoder::bindPipeline(ren::PipelineStateObject &pso) {
-    // TODO:
-    ref<ShaderObject> obj = ren::make<ShaderObject>(pso.program, getSubmissionUnit());
-    bindPipeline(pso, *obj);
-    return obj;
-  }
-
-
-  void RenderPassEncoder::bindPipeline(ren::PipelineStateObject &pso, ShaderObject &object) {
+  BoundGraphicsEncoder RenderPassEncoder::bindGraphics(
+      ren::PipelineStateObject &pso) {
     auto &R = ren::Renderer::get();
 
     auto cachedPipeline = R.getPipelineCache().get(this->pass, pso);
 
-    // // Bind the pipeline described by the PSO.
     vkCmdBindPipeline(buf(), VK_PIPELINE_BIND_POINT_GRAPHICS, cachedPipeline->getHandle());
+    return BoundGraphicsEncoder(
+        getEncoder(),
+        getEncoder().activateGraphics(
+            pso.program, cachedPipeline->getLayout()));
   }
 
 
   void RenderPassEncoder::bindImmediateMesh(std::span<ren::Vertex> vertices, std::span<u32> indices) {
     // Create vertex buffer
     auto vbuf = getEncoder().getArena().push<ren::VertexBuffer<ren::Vertex>>(sizeof(ren::Vertex) * static_cast<VkDeviceSize>(vertices.size()));
-    vbuf->map();
-    std::memcpy(vbuf->map(), vertices.data(), sizeof(ren::Vertex) * vertices.size());
-    vbuf->unmap();
+    vbuf->copyFromHost(vertices.data(), vertices.size());
 
     // Create index buffer
     auto ibuf = getEncoder().getArena().push<ren::IndexBuffer>(sizeof(u32) * static_cast<VkDeviceSize>(indices.size()));
-    ibuf->map();
-    std::memcpy(ibuf->map(), indices.data(), sizeof(u32) * indices.size());
-    ibuf->unmap();
+    ibuf->copyFromHost(indices.data(), indices.size());
 
     VkDeviceSize offsets[] = {0};
     VkBuffer vbufHandle = vbuf->getHandle();
@@ -156,12 +230,13 @@ namespace ren {
   }
 
 
-  void RenderPassEncoder::drawIndexed(const DrawArguments &args) {
+  void BoundGraphicsEncoder::drawIndexed(const DrawArguments &args) {
+    validate(VK_PIPELINE_BIND_POINT_GRAPHICS);
     vkCmdDrawIndexed(buf(), args.vertexCount, args.instanceCount, args.firstIndex, args.firstVertex, args.firstInstance);
   }
 
-  void RenderPassEncoder::drawFullscreenQuad(void) {
-    // Draw a full screen triangle (3 vertices, no vertex buffer)
+  void BoundGraphicsEncoder::drawFullscreenTriangle() {
+    validate(VK_PIPELINE_BIND_POINT_GRAPHICS);
     vkCmdDraw(buf(), 3, 1, 0, 0);
   }
 

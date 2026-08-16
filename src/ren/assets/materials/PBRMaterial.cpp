@@ -25,44 +25,14 @@ namespace ren {
     this->emissiveTexture = defaultTexture;
     this->normalTexture = defaultNormalTexture;
 
-    if (PBRMaterial::pso.program == nullptr) {
-      // If the PSO is not initialized, create it.
-      PBRMaterial::pso.program = make<ShaderProgram>("shaders/pbr.frag", "shaders/pbr.vert");
-      // ren::logInspection<ShaderProgram>("Programs > PBRMaterial PSO Program", PBRMaterial::pso.program);
-
-      PBRMaterial::pso.blendMode = ren::BlendMode::Alpha;
-      // PBRMaterial::pso.fillMode = ren::FillMode::Wireframe;
-
-      PBRMaterial::pso.cullMode = ren::CullMode::Back;
-    }
+    // PBR restoration is intentionally deferred until its resources are
+    // expressed as bindless handles and buffer addresses.
   }
 
   ren::PipelineStateObject &PBRMaterial::getPSO() { return PBRMaterial::pso; }
 
   bool PBRMaterial::bind(Renderer &R) {
-    // Bind the PBR Material's pipeline state object
-    R.bind(PBRMaterial::pso);
-
-
-    // we should also bind the textures to the right spot according to shaders/pbr
-    this->materialPropsBuffer.update(this->props);
-
-    // set 1 is the PBR material set for the fragment shader.
-    auto binder = R.startBinding(1);
-
-    binder.bind("material", this->materialPropsBuffer);
-    binder.bind("baseColorTexture", *this->baseColorTexture);
-    binder.bind("metallicRoughnessTexture", *this->metallicRoughnessTexture);
-    binder.bind("emissiveTexture", *this->emissiveTexture);
-    binder.bind("normalTexture", *this->normalTexture);
-
-
-    // std::vector<ref<Texture>> textures = {this->baseColorTexture, this->metallicRoughnessTexture,
-    //                                       this->emissiveTexture, this->normalTexture};
-    // binder.bind("textures", std::span{textures});
-    binder.apply();
-
-    return true;
+    return false;
   }
 
   void PBRMaterial::inspect(void) {

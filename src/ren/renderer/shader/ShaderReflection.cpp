@@ -5,7 +5,6 @@
 
 #include <slang-com-ptr.h>
 #include <slang.h>
-#include <imgui/imgui.h>
 #include "./SlangPrinter.h"
 
 namespace ren {
@@ -104,6 +103,13 @@ namespace ren {
       default:
         return VK_DESCRIPTOR_TYPE_MAX_ENUM;
     }
+  }
+
+  VkDescriptorType BindingType::toVkDescriptorType() const {
+    if (type == Type::ResourceArray && elementType.has_value()) {
+      return toVkDescriptorType(*elementType);
+    }
+    return toVkDescriptorType(type);
   }
 
   json Node::toJson() const {
@@ -258,21 +264,29 @@ namespace ren {
         loc.bindingIndex = binding->binding;
         loc.bindingSet = binding->set;
         loc.byteSize = binding->block.size;
+
+        BindingType nodeType{type};
+        u32 descriptorCount = 1;
         if (binding->array.dims_count > 0) {
-          // TODO: handle this? Idk.
-          u32 array_size = binding->array.dims[0];
+          // Arrayed descriptor binding: descriptorCount is the product of the
+          // dimensions. A runtime (unbounded) array reports a dimension of 0.
+          nodeType = BindingType(Type::ResourceArray, type);
+          descriptorCount = 1;
+          for (u32 d = 0; d < binding->array.dims_count; ++d) {
+            descriptorCount *= binding->array.dims[d];
+          }
         }
 
-
-        auto* node = newNode(type, binding->name, loc);
+        auto* node = newNode(nodeType, binding->name, loc);
+        if (binding->array.dims_count > 0) {
+          node->meta["elementCount"] = descriptorCount;
+          if (descriptorCount == 0) {
+            node->meta["unbounded"] = true;
+          }
+        }
 
         root->members.push_back(node);
 
-        // Handle array bindings
-        if (binding->array.dims_count > 0) {
-          u32 array_size = binding->array.dims[0];
-        } else if (type == UniformBuffer || type == StorageBuffer) {
-        }
         parseBlockVariableMembers(&binding->block, node, loc.child());
       }
     }
@@ -357,18 +371,22 @@ namespace ren {
 
 
   template <typename T>
-  static void applyOffset(OptionalInt<T>& base, u32 offset) {
-    base = base ? *base + offset : offset;
+  static void applyOffset(OptionalInt<T>& base, size_t offset) {
+    base = base ? static_cast<T>(*base + offset) : static_cast<T>(offset);
   }
 
-  bool adjustLocation(const char* debugName, ShaderReflection::Location& loc, slang::ParameterCategory layoutUnit, u32 offset, u32 space) {
+  // Slang's layout model is relative: every VariableLayoutReflection stores
+  // offsets relative to its enclosing scope, and the absolute location of a
+  // parameter is the *sum* of the offsets along the entire access path. This
+  // function applies one variable's offsets on top of the accumulated `loc`.
+  bool adjustLocation(const char* debugName, ShaderReflection::Location& loc, slang::ParameterCategory layoutUnit, size_t offset, size_t space) {
     switch (layoutUnit) {
       case slang::ParameterCategory::DescriptorTableSlot:
-        // applyOffset(loc.bindingIndex, offset);
+        applyOffset(loc.bindingIndex, offset);
         applyOffset(loc.bindingSet, space);
         break;
+      case slang::ParameterCategory::RegisterSpace:
       case slang::ParameterCategory::SubElementRegisterSpace:
-        // applyOffset(loc.bindingIndex, 0);
         applyOffset(loc.bindingSet, offset);
         break;
       case slang::ParameterCategory::Uniform:
@@ -402,14 +420,19 @@ namespace ren {
 
     auto newLoc = loc;
     newLoc.stage = vl->getStage();
-    // newLoc.rangeIndexInSet = vl->getBindingIndex();
-    newLoc.bindingIndex = vl->getBindingIndex();
 
     int usedLayoutUnitCount = vl->getCategoryCount();
     for (int i = 0; i < usedLayoutUnitCount; ++i) {
       auto layoutUnit = vl->getCategoryByIndex(i);
       auto offset = vl->getOffset(layoutUnit);
       auto space = vl->getBindingSpace(layoutUnit);
+
+      // SLANG_UNKNOWN_SIZE / SLANG_UNBOUNDED_SIZE mean the value depends on
+      // unresolved generics or link-time constants; don't fold them in.
+      if (offset >= SLANG_UNKNOWN_SIZE || space >= SLANG_UNKNOWN_SIZE) {
+        ren::warnln("Variable '{}' has an unresolved offset for layoutUnit={}, skipping", debugName, static_cast<int>(layoutUnit));
+        continue;
+      }
 
       if (!adjustLocation(debugName, newLoc, layoutUnit, offset, space)) {
         return false;
@@ -437,16 +460,59 @@ namespace ren {
     }
   }
 
+  static ShaderReflection::Type mapSlangBindingType(slang::BindingType bindingType) {
+    using Type = ShaderReflection::Type;
+    switch (bindingType) {
+      case slang::BindingType::Sampler:
+        return Type::Sampler;
+      case slang::BindingType::Texture:
+        return Type::Image;
+      case slang::BindingType::CombinedTextureSampler:
+        return Type::Texture;
+      case slang::BindingType::MutableTexture:
+        return Type::StorageImage;
+      case slang::BindingType::ConstantBuffer:
+        return Type::UniformBuffer;
+      case slang::BindingType::ParameterBlock:
+        return Type::ParameterBlock;
+      case slang::BindingType::TypedBuffer:
+      case slang::BindingType::RawBuffer:
+      case slang::BindingType::MutableTypedBuffer:
+      case slang::BindingType::MutableRawBuffer:
+        return Type::StorageBuffer;
+      default:
+        return Type::Unknown;
+    }
+  }
+
+  // Determine the engine resource type for a type layout by consulting its
+  // binding ranges. Binding ranges see through arrays and report the leaf
+  // descriptor type, so this works for both `Texture2D` and `Texture2D[4]`.
+  static ShaderReflection::Type resourceTypeFromTypeLayout(TypeLayoutReflection* tl) {
+    using Type = ShaderReflection::Type;
+    auto rangeCount = tl->getBindingRangeCount();
+    for (SlangInt i = 0; i < rangeCount; ++i) {
+      Type t = mapSlangBindingType(tl->getBindingRangeType(i));
+      if (t != Type::Unknown) {
+        return t;
+      }
+    }
+    if (auto type = tl->getType()) {
+      return mapSlangType(type->getResourceShape(), type->getResourceAccess());
+    }
+    return Type::Unknown;
+  }
+
 
 
 
   /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
   struct DescriptorBinding {
-    uint32_t binding;
-    VkDescriptorType type;
-    uint32_t count;
-    VkShaderStageFlags stageFlags;
+    uint32_t binding = 0;
+    VkDescriptorType type = VK_DESCRIPTOR_TYPE_MAX_ENUM;
+    uint32_t count = 0;
+    VkShaderStageFlags stageFlags = 0;
   };
 
   struct DescriptorSetLayoutInfo {
@@ -488,46 +554,82 @@ namespace ren {
     }
   }
 
-  static void extractBindingsFromTypeLayout(slang::TypeLayoutReflection* typeLayout, VkShaderStageFlags stageFlags,
+  // Walk a type layout's descriptor sets and record every descriptor range at
+  // its absolute (set, binding) location. `spaceOffset` is the accumulated
+  // register space of the enclosing scope; each descriptor set's actual space
+  // is that plus getDescriptorSetSpaceOffset() (the set index passed to the
+  // getDescriptorSet* functions is an index into the type layout's list of
+  // sets, *not* a space number). The contents of ParameterBlock sub-objects
+  // are not part of this type layout's ranges and are reached by recursing
+  // through the sub-object ranges with their space offsets.
+  static void extractBindingsFromTypeLayout(slang::TypeLayoutReflection* typeLayout, uint32_t spaceOffset, VkShaderStageFlags stageFlags,
                                             std::unordered_map<uint32_t, std::unordered_map<uint32_t, DescriptorBinding>>& setBindings) {
     if (!typeLayout) {
       return;
     }
 
-    auto bindingRangeCount = typeLayout->getBindingRangeCount();
-
-    for (SlangInt i = 0; i < bindingRangeCount; ++i) {
-      auto bindingType = typeLayout->getBindingRangeType(i);
-
-      // Skip non-descriptor bindings (e.g., push constants, varying)
-      VkDescriptorType vkType = slangBindingTypeToVk(bindingType);
-      if (vkType == VK_DESCRIPTOR_TYPE_MAX_ENUM) {
+    auto setCount = typeLayout->getDescriptorSetCount();
+    for (SlangInt setIndex = 0; setIndex < setCount; ++setIndex) {
+      auto relativeSpace = typeLayout->getDescriptorSetSpaceOffset(setIndex);
+      if (static_cast<size_t>(relativeSpace) >= SLANG_UNKNOWN_SIZE) {
         continue;
       }
+      uint32_t space = spaceOffset + static_cast<uint32_t>(relativeSpace);
 
-      auto bindingCount = typeLayout->getBindingRangeBindingCount(i);
-      auto descriptorSetIndex = typeLayout->getBindingRangeDescriptorSetIndex(i);
-      auto firstDescriptorIndex = typeLayout->getBindingRangeFirstDescriptorRangeIndex(i);
+      auto rangeCount = typeLayout->getDescriptorSetDescriptorRangeCount(setIndex);
+      for (SlangInt rangeIndex = 0; rangeIndex < rangeCount; ++rangeIndex) {
+        // Only DescriptorTableSlot ranges are real Vulkan descriptors; push
+        // constant and specialization-constant ranges are not.
+        if (typeLayout->getDescriptorSetDescriptorRangeCategory(setIndex, rangeIndex) != slang::ParameterCategory::DescriptorTableSlot) {
+          continue;
+        }
 
-      // Get the actual binding index from the descriptor range
-      auto descRangeCount = typeLayout->getDescriptorSetDescriptorRangeCount(descriptorSetIndex);
+        VkDescriptorType vkType = slangBindingTypeToVk(typeLayout->getDescriptorSetDescriptorRangeType(setIndex, rangeIndex));
+        if (vkType == VK_DESCRIPTOR_TYPE_MAX_ENUM) {
+          continue;
+        }
 
-      // For each descriptor range in this binding range
-      auto rangeIndexInSet = firstDescriptorIndex;
-      if (rangeIndexInSet < descRangeCount) {
-        auto bindingIndex = typeLayout->getDescriptorSetDescriptorRangeIndexOffset(descriptorSetIndex, rangeIndexInSet);
+        auto bindingIndex = typeLayout->getDescriptorSetDescriptorRangeIndexOffset(setIndex, rangeIndex);
+        if (static_cast<size_t>(bindingIndex) >= SLANG_UNKNOWN_SIZE) {
+          continue;
+        }
+        auto descriptorCount = typeLayout->getDescriptorSetDescriptorRangeDescriptorCount(setIndex, rangeIndex);
+        // Unbounded ranges get a count of 0; a real cap must be chosen by the
+        // consumer (e.g. from a device limit) when building the set layout.
+        uint32_t count = static_cast<size_t>(descriptorCount) >= SLANG_UNKNOWN_SIZE ? 0 : static_cast<uint32_t>(descriptorCount);
 
-        auto& binding = setBindings[descriptorSetIndex][bindingIndex];
-        if (binding.type == VkDescriptorType{}) {
+        auto& binding = setBindings[space][static_cast<uint32_t>(bindingIndex)];
+        if (binding.type == VK_DESCRIPTOR_TYPE_MAX_ENUM) {
           binding.binding = static_cast<uint32_t>(bindingIndex);
           binding.type = vkType;
-          binding.count = static_cast<uint32_t>(bindingCount);
+          binding.count = count;
           binding.stageFlags = stageFlags;
         } else {
           // Merge stage flags if binding already exists
           binding.stageFlags |= stageFlags;
         }
       }
+    }
+
+    // Recurse into sub-objects. ParameterBlocks contribute their descriptor
+    // sets in their own register space.
+    auto subObjectCount = typeLayout->getSubObjectRangeCount();
+    for (SlangInt subObjectIndex = 0; subObjectIndex < subObjectCount; ++subObjectIndex) {
+      auto bindingRangeIndex = typeLayout->getSubObjectRangeBindingRangeIndex(subObjectIndex);
+      if (typeLayout->getBindingRangeType(bindingRangeIndex) != slang::BindingType::ParameterBlock) {
+        continue;
+      }
+      auto subSpace = typeLayout->getSubObjectRangeSpaceOffset(subObjectIndex);
+      if (static_cast<size_t>(subSpace) >= SLANG_UNKNOWN_SIZE) {
+        continue;
+      }
+      auto* leaf = typeLayout->getBindingRangeLeafTypeLayout(bindingRangeIndex);
+      // A ParameterBlock type layout lists itself as one of its own
+      // sub-object ranges; don't recurse into it forever.
+      if (leaf == typeLayout) {
+        continue;
+      }
+      extractBindingsFromTypeLayout(leaf, spaceOffset + static_cast<uint32_t>(subSpace), stageFlags, setBindings);
     }
   }
 
@@ -539,7 +641,7 @@ namespace ren {
 
     // Extract from global scope parameters
     auto globalScope = programLayout->getGlobalParamsTypeLayout();
-    extractBindingsFromTypeLayout(globalScope, VK_SHADER_STAGE_ALL, setBindings);
+    extractBindingsFromTypeLayout(globalScope, 0, VK_SHADER_STAGE_ALL, setBindings);
 
     // Extract from each entry point
     auto entryPointCount = programLayout->getEntryPointCount();
@@ -597,7 +699,7 @@ namespace ren {
       }
 
       auto entryPointLayout = entryPoint->getTypeLayout();
-      extractBindingsFromTypeLayout(entryPointLayout, vkStage, setBindings);
+      extractBindingsFromTypeLayout(entryPointLayout, 0, vkStage, setBindings);
     }
 
     // Convert map to sorted vector structure
@@ -626,11 +728,11 @@ namespace ren {
 
 
   Node* ShaderReflection::extractVariableLayout(VariableLayoutReflection* vl, TypeLayoutReflection* tl, Location loc) {
-    // if (!vl) return nullptr;
-    // if (!tl) return nullptr;
+    if (!tl) {
+      return nullptr;
+    }
 
-
-    if (vl && tl) {
+    if (vl) {
       if (adjustLocation(vl, loc) == false) {
         return nullptr;
       }
@@ -646,7 +748,9 @@ namespace ren {
 
 
     size_t uniformSize = tl->getSize(slang::ParameterCategory::Uniform);
-    loc.byteSize = uniformSize;
+    if (uniformSize < SLANG_UNKNOWN_SIZE) {
+      loc.byteSize = static_cast<u32>(uniformSize);
+    }
 
     using Kind = slang::TypeReflection::Kind;
     auto kind = tl->getKind();
@@ -654,28 +758,69 @@ namespace ren {
     // ren::println("name={} kind={} size={}", name, static_cast<int>(kind), uniformSize);
     switch (kind) {
       case Kind::ParameterBlock: {
+        // A parameter block introduces its own register space (descriptor
+        // set). The space offset arrived through the SubElementRegisterSpace
+        // category of the variable itself (already applied to loc above), but
+        // binding indices restart inside the new space, so any accumulated
+        // index from the enclosing scope must not leak in.
+        Location blockLoc = loc.child();
+        blockLoc.bindingIndex = {};
+
+        // The container var layout describes the implicit constant buffer the
+        // block allocates when its element type has ordinary uniform data.
+        // Container and element offsets both apply relative to the same base.
+        Location containerLoc = blockLoc.child();
+        if (auto cvl = tl->getContainerVarLayout()) {
+          ren::adjustLocation(cvl, containerLoc);
+        }
+
+        // The element var layout's offsets (e.g. the descriptor slot skip past
+        // the implicit constant buffer) pair with *its own* type layout, whose
+        // field offsets are relative. tl->getElementTypeLayout() returns a
+        // layout with absolute field offsets and would double-count.
         auto evl = tl->getElementVarLayout();
-        auto etl = tl->getElementTypeLayout();
+        auto etl = evl ? evl->getTypeLayout() : tl->getElementTypeLayout();
 
         // TODO: we need to handle the case where the parameter block is more than just a collection
         // of bindings (that is, it includes fields.)
-        auto* node = extractVariableLayout(evl, etl, loc.child());
+        auto* node = extractVariableLayout(evl, etl, blockLoc.child());
+        if (!node) {
+          node = newNode(Type::ParameterBlock, name, blockLoc);
+        }
         node->name = name;
         node->type = Type::ParameterBlock;
+        // The block node itself represents the implicit constant buffer (if
+        // any): bindingIndex stays unset when the element has no uniform data.
+        node->location.bindingIndex = containerLoc.bindingIndex;
+        node->location.bindingSet = containerLoc.bindingSet;
 
         return node;
       }
 
       case Kind::ConstantBuffer: {
+        // The buffer's own descriptor slot (or push constant range) lives on
+        // the container var layout, applied on top of the variable's offsets
+        // which are already accumulated into loc.
+        Location containerLoc = loc.child();
+        if (auto cvl = tl->getContainerVarLayout()) {
+          ren::adjustLocation(cvl, containerLoc);
+        }
+
+        // See the ParameterBlock case: pair the element var layout with its
+        // own type layout so relative offsets are not double-counted.
         auto evl = tl->getElementVarLayout();
-        auto etl = tl->getElementTypeLayout();
+        auto etl = evl ? evl->getTypeLayout() : tl->getElementTypeLayout();
 
         auto* node = extractVariableLayout(evl, etl, loc.child());
-
+        if (!node) {
+          node = newNode(Type::UniformBuffer, name, containerLoc);
+        }
 
         node->name = name;
+        node->location.bindingIndex = containerLoc.bindingIndex;
+        node->location.bindingSet = containerLoc.bindingSet;
 
-        if (loc.pushConstant) {
+        if (containerLoc.pushConstant) {
           node->type = PushConstant;
         } else {
           Type bindingType = Type::UniformBuffer;
@@ -688,8 +833,11 @@ namespace ren {
 
 
       case Kind::Array: {
-        // ren::println("Array!");
-        auto elementCount = tl->getElementCount();
+        size_t elementCount = tl->getElementCount();
+        // SLANG_UNBOUNDED_SIZE means `T foo[]`; SLANG_UNKNOWN_SIZE means the
+        // count depends on unresolved generics. Either way the elements cannot
+        // be enumerated.
+        const bool unbounded = elementCount >= SLANG_UNKNOWN_SIZE;
         auto evl = tl->getElementVarLayout();
         auto etl = tl->getElementTypeLayout();
 
@@ -705,21 +853,23 @@ namespace ren {
               elementType = Type::Struct;
               break;
             }
-            case Kind::Resource: {
-              nodeType = Type::ResourceArray;
-              auto type = etl->getType();
-              auto shape = type->getResourceShape();
-              auto access = type->getResourceAccess();
-              elementType = mapSlangType(shape, access);
-              break;
-            }
-            case Kind::SamplerState: {
-              elementType = Type::Sampler;
+            case Kind::Scalar:
+            case Kind::Vector:
+            case Kind::Matrix: {
+              nodeType = Type::Array;
+              elementType = Type::Scalar;
               break;
             }
             default: {
-              ren::warnln("Array element kind not being handled correctly yet! elementKind={}", static_cast<int>(elementKind));
-              elementType = Type::Unknown;
+              // Resources, samplers, constant buffers, nested arrays of
+              // resources: the array's own binding ranges report the leaf
+              // descriptor type.
+              elementType = resourceTypeFromTypeLayout(tl);
+              if (elementType != Type::Unknown) {
+                nodeType = Type::ResourceArray;
+              } else {
+                ren::warnln("Array element kind not being handled correctly yet! elementKind={}", static_cast<int>(elementKind));
+              }
               break;
             }
           }
@@ -727,18 +877,19 @@ namespace ren {
 
         BindingType t = elementType == Type::Unknown ? BindingType(nodeType) : BindingType(nodeType, elementType);
         auto* node = newNode(t, name, loc);
+        // Record the element count so binding extraction doesn't have to
+        // infer it from enumerated children (0 means unbounded).
+        node->meta["elementCount"] = unbounded ? 0 : static_cast<u64>(elementCount);
 
+        if (unbounded) {
+          node->meta["unbounded"] = true;
+          return node;
+        }
 
-        // go over element?
-
-
-        u32 stride = tl->getElementStride(SLANG_PARAMETER_CATEGORY_UNIFORM);
-        // ren::println(
-        //     "Array detected: name='{}', elementCount={}, elementType={}, evtl:{},{}, stride={}",
-        //     name, elementCount, static_cast<int>(elementType), (void*)evl, (void*)etl, stride);
-
-
-
+        size_t stride = tl->getElementStride(SLANG_PARAMETER_CATEGORY_UNIFORM);
+        if (stride >= SLANG_UNKNOWN_SIZE) {
+          stride = 0;
+        }
 
         for (u32 i = 0; i < elementCount; ++i) {
           auto l = loc.child();
@@ -747,8 +898,10 @@ namespace ren {
             applyOffset(l.byteOffset, i * stride);
           }
           auto n = extractVariableLayout(evl, etl, l);
+          if (!n) {
+            continue;
+          }
           n->name = fmt::format("{}", i);
-          // ren::println("Array element {} extracted: {}", i, (void*)n);
           node->members.push_back(n);
         }
 
@@ -758,15 +911,19 @@ namespace ren {
       case Kind::Matrix:
       case Kind::Vector:
       case Kind::Scalar: {
-        auto sizeInBytes = tl->getSize();
-        loc.byteSize = sizeInBytes;
+        size_t sizeInBytes = tl->getSize();
+        if (sizeInBytes < SLANG_UNKNOWN_SIZE) {
+          loc.byteSize = static_cast<u32>(sizeInBytes);
+        }
         auto* fieldNode = newNode(Scalar, name, loc);
         return fieldNode;
       }
 
       case Kind::Pointer: {
-        auto sizeInBytes = tl->getSize();
-        loc.byteSize = sizeInBytes;
+        size_t sizeInBytes = tl->getSize();
+        if (sizeInBytes < SLANG_UNKNOWN_SIZE) {
+          loc.byteSize = static_cast<u32>(sizeInBytes);
+        }
         auto* fieldNode = newNode(Pointer, name, loc);
         return fieldNode;
       }
@@ -795,43 +952,9 @@ namespace ren {
       }
 
       case Kind::Resource: {
-        auto type = tl->getType();
-        auto shape = type->getResourceShape();
-        auto access = type->getResourceAccess();
-
-        // TODO: unify this analysis!
-        Type resourceType = mapSlangType(shape, access);
-
-        auto rangeCount = tl->getBindingRangeCount();
-        for (u32 i = 0; i < rangeCount; ++i) {
-          auto range = tl->getBindingRangeType(i);
-
-
-          switch (range) {
-#define MAP(slangType, renType)         \
-  case slang::BindingType::slangType: { \
-    resourceType = Type::renType;       \
-    break;                              \
-  }
-            MAP(Sampler, Sampler);
-            MAP(Texture, Image);  // Not 100% sure about this.
-            MAP(ConstantBuffer, UniformBuffer);
-            MAP(ParameterBlock, ParameterBlock);
-            MAP(TypedBuffer, StorageBuffer);  // ? Maybe uniform?
-            MAP(RawBuffer, StorageBuffer);
-            MAP(CombinedTextureSampler, Texture);
-
-            MAP(MutableTexture, StorageImage);
-            MAP(MutableTypedBuffer, StorageBuffer);
-            MAP(MutableRawBuffer, StorageBuffer);
-
-#undef MAP
-            default: {
-              ren::errln("resource {} has unhandled binding type {}", name, static_cast<int>(range));
-              // abort();
-              break;
-            }
-          }
+        Type resourceType = resourceTypeFromTypeLayout(tl);
+        if (resourceType == Type::Unknown) {
+          ren::errln("resource {} has unhandled binding/shape", name);
         }
 
         auto* resourceNode = newNode(resourceType, name, loc);
@@ -858,26 +981,20 @@ namespace ren {
     return nullptr;
   }
 
-  void ShaderReflection::parseFromSlang(ProgramLayout* programLayout) {
+  void ShaderReflection::parseFromSlang(ProgramLayout* programLayout, bool dumpDebugInfo) {
     if (!programLayout) {
       std::cerr << "Invalid ProgramLayout pointer" << std::endl;
       return;
     }
-    {
+    if (dumpDebugInfo) {
       Slang::ComPtr<slang::IBlob> jsonBlob;
       programLayout->toJson(jsonBlob.writeRef());
 
       json j = json::parse(std::string_view((const char*)jsonBlob->getBufferPointer(), jsonBlob->getBufferSize()));
       ren::println("{}", j.dump(2));
-      // FILE* f = fopen("slang_program_layout.json", "w");
-      // auto formatted = j.dump(2);
-      // fwrite(formatted.data(), 1, formatted.size(), f);
-      // fclose(f);
+      ren::ReflectingPrinting printer;
+      printer.printProgramLayout(programLayout, SlangCompileTarget::SLANG_SPIRV);
     }
-
-    // Optional: Print debug info (uncomment to see detailed reflection)
-    ren::ReflectingPrinting printer;
-    printer.printProgramLayout(programLayout, SlangCompileTarget::SLANG_SPIRV);
 
     // Create root node
     auto root = newNode(Type::LogicalGroup, "Root", {/* empty on purpose */});
@@ -887,30 +1004,45 @@ namespace ren {
     if (globalParams) {
       auto globalTypeLayout = globalParams->getTypeLayout();
       if (globalTypeLayout) {
-        if (globalTypeLayout->getKind() != slang::TypeReflection::Kind::Struct) {
-          // throw std::runtime_error(
-          //     "Slang globals must be explicit, and without automatically inserted constant structs or parameter blocks. This is a temporary
-          //     limitation.");
-        }
-        // Traverse global scope (usually a struct containing all globals)
-        u32 fieldCount = globalTypeLayout->getFieldCount();
-        for (u32 i = 0; i < fieldCount; ++i) {
-          auto fieldVarLayout = globalTypeLayout->getFieldByIndex(i);
-          if (fieldVarLayout) {
-            auto fieldTypeLayout = fieldVarLayout->getTypeLayout();
-            if (fieldTypeLayout) {
-              // Create a fresh location.
-              ShaderReflection::Location loc;
-              auto* node = extractVariableLayout(fieldVarLayout, fieldTypeLayout, loc);
-              if (node) {
-                // There's a little check we have to do here - we only want to
-                // support *some* types at the top level, to simplify the shader resource management
-                // system down the line.
-                if (!BindingType::allowedInTopLevel(node->type.type)) {
-                  ren::warnln("Unsupported top-level global variable '{}', type={}", node->name, node->type.toString());
-                }
+        auto globalKind = globalTypeLayout->getKind();
+        if (globalKind == slang::TypeReflection::Kind::ConstantBuffer || globalKind == slang::TypeReflection::Kind::ParameterBlock) {
+          // Bare global uniforms make slang wrap the entire global scope in an
+          // implicit constant buffer ($Globals). Extract it as an explicit
+          // node so its binding and the parameters inside it are not lost.
+          ShaderReflection::Location loc;
+          auto* node = extractVariableLayout(globalParams, globalTypeLayout, loc);
+          if (node) {
+            if (node->name.empty()) {
+              node->name = "$Globals";
+            }
+            if (!BindingType::allowedInTopLevel(node->type.type) &&
+                node->type.type != Type::UniformBuffer) {
+              ren::warnln("Unsupported top-level global variable '{}', type={}", node->name, node->type.toString());
+            }
+            root->members.push_back(node);
+          }
+        } else {
+          // Traverse global scope (usually a struct containing all globals)
+          u32 fieldCount = globalTypeLayout->getFieldCount();
+          for (u32 i = 0; i < fieldCount; ++i) {
+            auto fieldVarLayout = globalTypeLayout->getFieldByIndex(i);
+            if (fieldVarLayout) {
+              auto fieldTypeLayout = fieldVarLayout->getTypeLayout();
+              if (fieldTypeLayout) {
+                // Create a fresh location.
+                ShaderReflection::Location loc;
+                auto* node = extractVariableLayout(fieldVarLayout, fieldTypeLayout, loc);
+                if (node) {
+                  // There's a little check we have to do here - we only want to
+                  // support *some* types at the top level, to simplify the shader resource management
+                  // system down the line.
+                  if (!BindingType::allowedInTopLevel(node->type.type) &&
+                      node->type.type != Type::UniformBuffer) {
+                    ren::warnln("Unsupported top-level global variable '{}', type={}", node->name, node->type.toString());
+                  }
 
-                root->members.push_back(node);
+                  root->members.push_back(node);
+                }
               }
             }
           }
@@ -972,8 +1104,6 @@ namespace ren {
       for (int bindingIdx = 0; bindingIdx < static_cast<int>(setInfo.bindings.size()); ++bindingIdx) {
         auto& binding = setInfo.bindings[bindingIdx];
 
-        ren::dbgln("Set {} Binding {}: type={} count={} stages=0x{:X}", setInfo.set, binding.binding, static_cast<int>(binding.type), binding.count,
-                   binding.stageFlags);
       }
     }
     extractBindings();
@@ -994,7 +1124,7 @@ namespace ren {
 #include "./ShaderReflectionTypes.def"
 #undef TYPE
       default:
-        return Type::Unknown;
+        return false;
     }
   }
 
@@ -1026,10 +1156,22 @@ namespace ren {
 
       if (node->location.bindingSet && node->location.bindingIndex && hasRealBinding(node)) {
         auto& binding = ensureBinding(*node->location.bindingSet, *node->location.bindingIndex);
-        binding.type = node->type;
-        binding.path = currentPath;
         if (node->location.arrayIndex) {
+          // Array elements share their array's binding: refine the count but
+          // don't clobber the entry the array node itself claimed.
           binding.count = std::max(binding.count, *node->location.arrayIndex + 1);
+          if (binding.path.empty()) {
+            binding.type = node->type;
+            binding.path = currentPath;
+          }
+        } else {
+          binding.type = node->type;
+          binding.path = currentPath;
+          if (node->meta.contains("elementCount")) {
+            // Resource arrays know their descriptor count up front; 0 means
+            // an unbounded array.
+            binding.count = node->meta["elementCount"].get<u32>();
+          }
         }
       }
 
@@ -1058,10 +1200,6 @@ namespace ren {
     });
 
 
-    ren::dbgln("Extracted {} bindings:", bindings.size());
-    for (auto& binding : bindings) {
-      ren::dbgln("- {}.{} [{}] = {} ({})", binding.set, binding.index, binding.count, binding.path, binding.type.toString());
-    }
   }
 
   // Helper function to check if two Location objects are compatible
@@ -1077,6 +1215,7 @@ namespace ren {
     node->type = type;
     node->name = name;
     node->location = location;
+    allNodes.emplace_back(node);
     return node;
   }
 
@@ -1132,142 +1271,6 @@ namespace ren {
     return nodeA;
   }
 
-
-  static ImGuiTreeNodeFlags tree_node_flags_base =
-      ImGuiTreeNodeFlags_SpanAllColumns | ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_DrawLinesFull;
-
-  static void inspectNodeRecursive(const ShaderReflection::Node* node, int depth) {
-    if (!node) {
-      return;
-    }
-
-    ImGui::TableNextRow();
-    ImGui::TableSetColumnIndex(0);
-
-    const bool isLeaf = node->members.empty();
-
-    ImGuiTreeNodeFlags node_flags = tree_node_flags_base;
-    if (isLeaf) {
-      node_flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
-    }
-
-
-    char name_buf[256];
-
-    if (node->name.length() == 0) {
-      if (node->location.arrayIndex) {
-        if (node->location.arrayIndex > 0) {
-          node_flags &= ~ImGuiTreeNodeFlags_DefaultOpen;
-        }
-        snprintf(name_buf, sizeof(name_buf), "[#%d]", *node->location.arrayIndex);
-      } else {
-        snprintf(name_buf, sizeof(name_buf), "<unnamed>");
-      }
-    } else {
-      snprintf(name_buf, sizeof(name_buf), "%s", node->name.c_str());
-    }
-
-    bool open = ImGui::TreeNodeEx((void*)node, node_flags, "%s", name_buf);
-
-    // Type column
-    ImGui::TableNextColumn();
-    ImGui::Text("%s", node->type.toString().c_str());
-
-
-    ImGui::TableNextColumn();
-    ImGui::Text("%s", node->location.pushConstant ? "Yes" : "");
-
-#define SHOW_LOC(FIELD)                       \
-  ImGui::TableNextColumn();                   \
-  if (node->location.FIELD) {                 \
-    ImGui::Text("%d", *node->location.FIELD); \
-  }
-
-    // Set column
-    SHOW_LOC(bindingSet);
-    SHOW_LOC(bindingIndex);
-    SHOW_LOC(byteOffset);
-    SHOW_LOC(byteSize);
-    SHOW_LOC(arrayIndex);
-    SHOW_LOC(varyingIn);
-    SHOW_LOC(varyingOut);
-
-
-
-    // Recurse into members
-    if (open && !isLeaf) {
-      for (const auto* member : node->members) {
-        inspectNodeRecursive(member, depth + 1);
-      }
-      ImGui::TreePop();
-    }
-  }
-
-  void ShaderReflection::inspect() {
-    if (!root) {
-      ImGui::Text("No reflection data available");
-      return;
-    }
-
-    const float TEXT_BASE_WIDTH = ImGui::CalcTextSize("A").x;
-
-    static ImGuiTableFlags flags = ImGuiTableFlags_BordersV | ImGuiTableFlags_BordersOuterH | ImGuiTableFlags_RowBg;
-
-    float locWidth = TEXT_BASE_WIDTH * 3.5f;
-    ImGuiTableColumnFlags locFlags = ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoHide | ImGuiTableColumnFlags_NoResize;
-
-    if (ImGui::BeginTable("##ShaderReflection", 10, flags)) {
-      ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_NoHide | ImGuiTableColumnFlags_WidthStretch);
-      ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthFixed, TEXT_BASE_WIDTH * 25.0f);
-
-      ImGui::TableSetupColumn("PC?", locFlags, locWidth);
-      ImGui::TableSetupColumn("SET", locFlags, locWidth);
-      ImGui::TableSetupColumn("IND", locFlags, locWidth);
-      ImGui::TableSetupColumn("OFF", locFlags, locWidth);
-      ImGui::TableSetupColumn("SIZ", locFlags, locWidth);
-      ImGui::TableSetupColumn("AID", locFlags, locWidth);
-      ImGui::TableSetupColumn("VIN", locFlags, locWidth);
-      ImGui::TableSetupColumn("VOUT", locFlags, locWidth);
-
-      ImGui::TableHeadersRow();
-
-
-      // Draw root members
-      for (const auto* member : root->members) {
-        inspectNodeRecursive(member, 0);
-      }
-
-      ImGui::EndTable();
-    }
-
-
-#if 0
-    ImGui::Separator();
-    ImGui::Text("Reflected Bindings (not instantiated):");
-
-    if (ImGui::BeginTable("##ShaderBindings", 3, flags)) {
-      ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
-      ImGui::TableSetupColumn("Descriptor Set");
-      ImGui::TableSetupColumn("Index");
-      ImGui::TableHeadersRow();
-
-      for (const auto& binding : bindings) {
-        ImGui::TableNextRow();
-
-        ImGui::TableSetColumnIndex(0);
-        ImGui::Text("%s", binding.path.c_str());
-
-        ImGui::TableNextColumn();
-        ImGui::Text("%d", binding.set);
-
-        ImGui::TableNextColumn();
-        ImGui::Text("%d", binding.index);
-      }
-
-      ImGui::EndTable();
-    }
-#endif
-  }
 
   json ShaderReflection::toJson() const {
     json j;

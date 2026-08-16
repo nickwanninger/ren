@@ -7,7 +7,7 @@
 #include <ren/renderer/RenderPass.h>
 #include <ren/renderer/RenderTarget.h>
 #include <ren/assets/Vertex.h>
-#include <ren/renderer/shader/ParameterBinding.h>
+#include <ren/renderer/shader/ShaderCursor.h>
 #include <ren/renderer/pipelines/PipelineStateObject.h>
 #include <functional>
 
@@ -21,17 +21,19 @@ namespace ren {
    * 1. You call beginFrame() on the renderer to start a new frame, which returns a CommandEncoder.
    * 2. You use the CommandEncoder to record rendering commands.
    *   - You can create RenderPassEncoders to record render passes.
-   *   - with a RenderPassEncoder, you use a PipelineStateObject to bind a pipeline which returns a
-   *     ShaderObject.
-   *   - A ShaderObject represents an instance of the shader program with its own descriptor sets
-   *     and resource usages. You use a shader object to bind resources (textures, buffers) to the
-   *     pipeline.
-   *   - Optionally, you can provide your own ShaderObject.
+   *   - with a RenderPassEncoder, you use a PipelineStateObject to bind a
+   *     pipeline, which returns a BoundGraphicsEncoder.
+   *   - Bound shader encoders expose reflected ShaderCursors and record
+   *     type-specific draw or dispatch commands. Global descriptor sets are
+   *     always bound by the encoder.
    * 4. You call endFrame() on the renderer to submit the recorded commands for execution.
    */
 
   class RenderPassEncoder;
   class ComputePassEncoder;
+  class BoundShaderEncoder;
+  class BoundComputeEncoder;
+  class BoundGraphicsEncoder;
 
 
   // This class abstracts a command buffer for recording rendering commands.
@@ -59,12 +61,10 @@ namespace ren {
     // TODO:
     // ComputePassEncoder *beginComputePass();
 
-    void dispatchCompute(ShaderObject &resources, glm::uvec3 groupCount);
+    BoundComputeEncoder bindCompute(ref<ShaderProgram> program);
 
-    void copyBuffer(ren::Buffer &src, ren::Buffer &dst, VkDeviceSize size, VkDeviceSize srcOffset = 0, VkDeviceSize dstOffset = 0);
+    void copyBuffer(ren::BufferMemory &src, ren::BufferMemory &dst, VkDeviceSize size, VkDeviceSize srcOffset = 0, VkDeviceSize dstOffset = 0);
 
-
-    inline ShaderObject &createShaderObject(ref<ShaderProgram> program) { return submissionUnit.createShaderObject(program); }
 
     // TODO:
     // - copyTexture
@@ -84,7 +84,6 @@ namespace ren {
     // Reset the command encoder for reuse.
     void reset(void);
 
-
     // Call beginTimestampQuery before some section of GPU work, then call
     // endTimestampQuery after it.  The timestamps can be resolved after GPU
     // execution. Eventually, this information is collected and reported back to
@@ -94,8 +93,31 @@ namespace ren {
     void endTimestampQuery(QueryTicket ticket);
 
    private:
+    friend class ShaderCursor;
+    friend class BoundShaderEncoder;
+    friend class RenderPassEncoder;
+    void writePushConstant(
+        const ShaderCursor& cursor,
+        u32 byteOffset,
+        const void* data,
+        size_t size);
+    ShaderCursor activateGraphics(
+        ref<ShaderProgram> program, VkPipelineLayout pipelineLayout);
+    void bindDescriptorHeaps(
+        VkPipelineBindPoint bindPoint, VkPipelineLayout pipelineLayout);
+    void validate(
+        const ShaderCursor& cursor, VkPipelineBindPoint expectedBindPoint) const;
+
+    struct BoundShader {
+      ref<ShaderProgram> program;
+      VkPipelineLayout layout = VK_NULL_HANDLE;
+      u64 generation = 0;
+    };
+
     VkCommandBuffer cmd;
     SubmissionUnit &submissionUnit;
+    BoundShader graphics;
+    BoundShader compute;
   };
 
 
@@ -126,6 +148,46 @@ namespace ren {
     u32 firstIndex = 0;
   };
 
+  // A command-scoped view of a bound shader. This owns the root cursor used
+  // both for reflected parameter lookup and as the binding-generation token.
+  class BoundShaderEncoder : public SubEncoder {
+   public:
+    ShaderCursor pushConstant(std::string_view name) const {
+      return shader.pushConstant(name);
+    }
+
+   protected:
+    BoundShaderEncoder(CommandEncoder &cmd, ShaderCursor shader)
+        : SubEncoder(cmd)
+        , shader(std::move(shader)) {}
+
+    void validate(VkPipelineBindPoint expectedBindPoint) const;
+
+   private:
+    ShaderCursor shader;
+  };
+
+  class BoundComputeEncoder final : public BoundShaderEncoder {
+   public:
+    void dispatch(glm::uvec3 groupCount);
+
+   private:
+    friend class CommandEncoder;
+    BoundComputeEncoder(CommandEncoder &cmd, ShaderCursor shader)
+        : BoundShaderEncoder(cmd, std::move(shader)) {}
+  };
+
+  class BoundGraphicsEncoder final : public BoundShaderEncoder {
+   public:
+    void drawIndexed(const DrawArguments &args);
+    void drawFullscreenTriangle();
+
+   private:
+    friend class RenderPassEncoder;
+    BoundGraphicsEncoder(CommandEncoder &cmd, ShaderCursor shader)
+        : BoundShaderEncoder(cmd, std::move(shader)) {}
+  };
+
   class RenderPassEncoder : public SubEncoder {
    public:
     RenderPassEncoder(CommandEncoder &cmd, RenderPass &pass, RenderTarget &target)
@@ -135,20 +197,12 @@ namespace ren {
     ~RenderPassEncoder() = default;
 
 
-    // TODO: this should really return a ShaderEncoder of some kind.
-    ref<ShaderObject> bindPipeline(ren::PipelineStateObject &pso);
-    void bindPipeline(ren::PipelineStateObject &pso, ShaderObject &object);
+    BoundGraphicsEncoder bindGraphics(ren::PipelineStateObject &pso);
 
     void bindImmediateMesh(std::span<ren::Vertex> vertices, std::span<u32> indices);
 
     void setScissor(glm::uvec2 pos, glm::uvec2 size);
     void setViewport(glm::uvec2 pos, glm::uvec2 size);
-
-
-    void drawIndexed(const DrawArguments &args);
-    // Issue a full screen triangle draw call (for blit and post-processes)
-    void drawFullscreenQuad(void);
-
 
     // End the render pass.
     void end();

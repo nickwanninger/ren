@@ -3,87 +3,134 @@
 #include <ren/types.h>
 #include <ren/core/Instrumentation.h>
 #include <vulkan/vulkan_core.h>
-#include <ren/renderer/Swapchain.h>  // To get the current frame index.
 #include <vector>
 #include <ren/core/Builder.h>
+#include <string>
+#include "glm/gtc/constants.hpp"
+#include "ren/renderer/vulkan/Vulkan.h"
 
 namespace ren {
   class VulkanInstance;
+  u32 getFrameIndex(void);
 
 
 
-  // Represents a buffer in Vulkan memory.
-  class Buffer {
+
+  // Nicer names than the vulkan ones...
+  enum class MemoryUsage : VkBufferUsageFlags {
+    Uniform = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+    Storage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+    Vertex = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+    Index = VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+    Indirect = VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT,
+
+    Transfer = VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+  };
+  REN_FLAG_ENUM(MemoryUsage, VkBufferUsageFlags)
+
+  enum class MemoryProperty : u32 {
+    DeviceLocal = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+    HostVisible = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+    HostCoherent = VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+    HostCached = VK_MEMORY_PROPERTY_HOST_CACHED_BIT,
+    LazilyAllocated = VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT,
+  };
+  REN_FLAG_ENUM(MemoryProperty, u32)
+
+  enum class BufferDomain {
+    Device,
+    Upload,
+    Readback,
+  };
+  REN_FLAG_ENUM(BufferDomain, u32)
+
+
+  // This is the owning class for a Vulkan buffer. It manages the VMA
+  // allocation, the VkBuffer handle, and the device address. It also provides a
+  // host pointer for copying into it.  It is rare that you will need to use
+  // this class directly. Instead, use the wrappers/subclasses after it.
+  class BufferMemory : public RefCounted<BufferMemory> {
    public:
-    Buffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties);
+    // Higher level constructor
+    BufferMemory(size_t byteCount, BufferDomain domain = BufferDomain::Device, VkBufferUsageFlags usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+    // low level constructor
+    BufferMemory(size_t byteCount, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VmaAllocationCreateFlags vmaFlags = 0);
 
-    virtual ~Buffer();
+    // Destructor - unmaps (if mapped) and destroys VMA allocation
+    ~BufferMemory();
 
-    // Non-copyable, movable
-    Buffer(const Buffer &) = delete;
-    Buffer &operator=(const Buffer &) = delete;
-    Buffer(Buffer &&other) noexcept;
-    Buffer &operator=(Buffer &&other) noexcept;
+    // Non-copyable (owns GPU resource)
+    BufferMemory(const BufferMemory &) = delete;
+    BufferMemory &operator=(const BufferMemory &) = delete;
 
+    // Movable (transfers ownership)
+    BufferMemory(BufferMemory &&other) noexcept;
+    BufferMemory &operator=(BufferMemory &&other) noexcept;
 
-    void *map(void);
-    void unmap(void);
-
-    void copyFrom(const Buffer &src, VkDeviceSize size, VkDeviceSize srcOffset = 0, VkDeviceSize dstOffset = 0);
-    void copyFromHost(const void *data, VkDeviceSize size, VkDeviceSize offset = 0);
-
-
-    // Getters
+    // Public interface
     VkBuffer getHandle() const { return buffer; }
-    // Size of the buffer in bytes.
-    VkDeviceSize getSize() const { return size; }
-    bool isMapped() const { return mapped != nullptr; }
-    const std::string &getName() const { return name; }
-    void setName(const std::string &new_name);
+    uintptr_t getGPUAddress() const { return gpuAddress; }
+    void *getHostAddress() const { return hostAddress; }
+    size_t getByteCount() const { return byteCount; }
+    bool isMapped() const { return hostAddress != nullptr; }
+    bool isValid() const { return buffer != VK_NULL_HANDLE; }
 
-    // Resize the buffer to a certain byte count.
-    void resizeBytes(size_t new_bytes);
+    template <typename T>
+    T *hostData() const {
+      return static_cast<T *>(hostAddress);
+    }
 
+    template <typename T>
+    VkDeviceAddress devicePointer(size_t elementOffset = 0) const {
+      static_assert(std::is_trivially_copyable_v<T>);
+      return static_cast<VkDeviceAddress>(gpuAddress + elementOffset * sizeof(T));
+    }
 
-   protected:
-    std::string name = "UnnamedBuffer";
+    void copyFromHost(const void *data, size_t size, size_t offset = 0);
 
+    // Reallocate while preserving the first min(oldSize, newByteCount) bytes; zero releases the allocation.
+    void resizeBytes(size_t newByteCount);
+
+   private:
+    // Constructor parameters
+    size_t byteCount = 0;
+    VkBufferUsageFlags usage = 0;
+    VkMemoryPropertyFlags properties = 0;
+    VmaAllocationCreateFlags vmaFlags = 0;
+
+    // Runtime state
+    uintptr_t gpuAddress = 0;
+    void *hostAddress = nullptr;
     VmaAllocation allocation = VK_NULL_HANDLE;
     VkBuffer buffer = VK_NULL_HANDLE;
-    VkDeviceSize size = 0;
-
-    VkBufferUsageFlags usage;
-    VkMemoryPropertyFlags properties;
-
-    void *mapped = nullptr;
   };
 
-
   template <typename T>
-  class TypedBuffer : public Buffer {
+  class TypedBuffer : public BufferMemory {
    public:
     using EntryType = T;
+    TypedBuffer(size_t count, BufferDomain domain, VkBufferUsageFlags usage)
+        : BufferMemory(count * sizeof(T), domain, usage) {}
     TypedBuffer(size_t count, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties)
-        : Buffer(count * sizeof(T), usage, properties) {}
+        : BufferMemory(count * sizeof(T), usage, properties) {}
+
     virtual ~TypedBuffer() = default;
 
-
-    // Wrap the map function in something typed
-    T *map(void) { return (T *)Buffer::map(); }
+    // Wrap the map function into the typed version.
+    T *hostData(void) { return BufferMemory::hostData<T>(); }
 
     void copyFromHost(const T *data, VkDeviceSize size, VkDeviceSize offset = 0) {
-      return Buffer::copyFromHost((const void *)data, size * sizeof(T), offset * sizeof(T));
+      return BufferMemory::copyFromHost((const void *)data, size * sizeof(T), offset * sizeof(T));
     }
 
     void copyFromHost(const std::vector<T> &data, VkDeviceSize offset = 0) {
-      return Buffer::copyFromHost((const void *)data.data(), data.size() * sizeof(T), offset);
+      return BufferMemory::copyFromHost((const void *)data.data(), data.size() * sizeof(T), offset * sizeof(T));
     }
 
     // Length of the buffer in elements (T)
-    size_t count(void) const { return this->getSize() / sizeof(T); }
+    size_t count(void) const { return this->getByteCount() / sizeof(T); }
 
-    // Resize the buffer to a certain element count.
-    void resizeCount(size_t new_count) { this->resizeBytes(new_count * sizeof(T)); }
+    void resizeCount(size_t newCount) { this->resizeBytes(newCount * sizeof(T)); }
   };
 
 
@@ -150,24 +197,22 @@ namespace ren {
 
     void setArrayLength(size_t newLength) { expectedArrayLength = newLength; }
 
-
-    // Avoid using these methods!
-    T *map(void) { return getCurrentBuffer()->map(); }
-    void unmap(void) { getCurrentBuffer()->unmap(); }
+    // Avoid using these methods! BufferMemory stays persistently mapped.
+    T *map(void) { return getCurrentBuffer()->hostData(); }
+    void unmap(void) {}
 
     // Copy data from host memory to the current buffer.
     void update(const T *data, VkDeviceSize count, VkDeviceSize offset = 0) { getCurrentBuffer()->copyFromHost(data, count, offset); }
 
     void update(const T &data) { update(&data, 1, 0); }
     VkBuffer getHandle() const { return getCurrentBuffer()->getHandle(); }
-    const Buffer &currentAsBuffer() const { return *getCurrentBuffer(); }
+    const UniformBuffer<T> &currentAsBuffer() const { return *getCurrentBuffer(); }
 
     inline auto &getCurrentBuffer() const {
       auto index = ren::getFrameIndex();
       auto &buffer = buffers[index];
-      if (buffer->getSize() != expectedArrayLength * sizeof(T)) {
-        // resize the buffer!
-        ren::dbgln("Frame {} of UBS isn't the right size. resizing from {} to {}", index, buffer->getSize(), expectedArrayLength * sizeof(T));
+      if (buffer->getByteCount() != expectedArrayLength * sizeof(T)) {
+        ren::dbgln("Frame {} of UBS isn't the right size. resizing from {} to {}", index, buffer->getByteCount(), expectedArrayLength * sizeof(T));
         buffer->resizeCount(expectedArrayLength);
       }
       return buffer;

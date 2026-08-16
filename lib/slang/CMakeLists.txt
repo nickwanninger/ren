@@ -36,7 +36,7 @@ set(SLANG_LIB_DIR "${SLANG_ROOT_DIR}/lib")
 set(SLANG_CMAKE_DIR "${SLANG_LIB_DIR}/cmake/slang")
 
 
-set(SLANG_VERSION "2025.22.1")
+set(SLANG_VERSION "2026.8.1")
 
 # Download Slang binaries if not present
 if(NOT EXISTS "${SLANG_ROOT_DIR}")
@@ -88,4 +88,5 @@ message(STATUS "Slang include dir: ${SLANG_INCLUDE_DIR}")
 
 # Export variables and target for use in parent project
 set(slang_INCLUDE_DIRS "${SLANG_INCLUDE_DIR}" PARENT_SCOPE)
+set(slang_LIBRARY_DIR "${SLANG_LIB_DIR}" PARENT_SCOPE)
 set(slang_FOUND TRUE PARENT_SCOPE)

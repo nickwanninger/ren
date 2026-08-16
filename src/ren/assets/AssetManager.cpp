@@ -125,16 +125,8 @@ namespace ren {
         break;
       }
       case AssetType::Shader: {
-        // Load the shader from the file
-        auto stage = ShaderModule::getStageFromFilename(path);
-        auto shader = make<ShaderModule>(path, stage);
-        if (shader) {
-          // Register the shader asset
-          shader->setAssetID(info.id);
-          loadedAssets[info.id] = shader;  // Cache the loaded shader
-          return shader;  // Return the loaded shader
-        }
-        asset = shader;
+        throw std::runtime_error(
+            "Standalone GLSL/SPIR-V shader assets were removed; load a Slang ShaderProgram");
       }
       case AssetType::Material: {
         fmt::print("IMPORTING MATERIAL FROM {} IS NOT IMPLEMENTED\n", path);

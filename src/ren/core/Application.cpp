@@ -168,19 +168,22 @@ namespace ren {
       func();
     }
 
+    VkDescriptorPool imguiPool = VK_NULL_HANDLE;
     {
       REN_PROFILE_SCOPE("ImGuiLayer::shutdown");
 
       auto &vulkan = ren::getVulkan();
       auto &state = ren::resource<ren::Application::ImGuiState>();
+      imguiPool = state.imguiPool;
 
-      vkDestroyDescriptorPool(vulkan.device, state.imguiPool, nullptr);
-      state.imguiPool = VK_NULL_HANDLE;
-
+      // ECS-owned textures unregister their ImGui descriptors during teardown,
+      // so destroy them before shutting down ImGui or its pool.
+      world.reset();
       ImGui_ImplVulkan_Shutdown();
       ImGui_ImplSDL3_Shutdown();
       ImNodes::DestroyContext();
       ImGui::DestroyContext();
+      vkDestroyDescriptorPool(vulkan.device, imguiPool, nullptr);
     }
 
     // Nuke the renderer.
@@ -210,29 +213,54 @@ namespace ren {
     ren::GraphHandle ssao;
     ren::GraphHandle gbufferAlbedo, gbufferNormal, gbufferMaterial, gbufferDepth;
     auto &gbp = ren::addGBuffer(G, gbufferAlbedo, gbufferNormal, gbufferMaterial, gbufferDepth);
-    ren::addSSAO(G, gbufferDepth, gbufferNormal, ssao);
+    // ren::addSSAO(G, gbufferDepth, gbufferNormal, ssao);
 
 
 
-    G.pass("gizmo").execute([&](ren::GraphRunContext &ctx) {});
+    // G.pass("gizmo").execute([&](ren::GraphRunContext &ctx) {});
 
 
-    GraphHandle buzz;
-    G.pass("Fizbuzz").createColorAttachment("buzz", {.absoluteSize = glm::uvec2(512, 512)}, buzz).render([&](ren::GraphRenderPassContext &ctx) {});
+    // GraphHandle buzz;
+    // G.pass("Fizbuzz").createColorAttachment("buzz", {.absoluteSize = glm::uvec2(512, 512)}, buzz).render([&](ren::GraphRenderPassContext &ctx) {});
     // for (int i = 0; i < 128; i++) {
     //   G.pass("gadget").execute([&](ren::GraphRunContext &ctx) { printf("Gadget pass %d\n", i); });
     // }
 
-    ren::PipelineStateObject trianglePSO;
-    trianglePSO.debugName = "Test Triangle PSO";
-    trianglePSO.program = make<ShaderProgram>("./test");
-    trianglePSO.cullMode = ren::CullMode::None;
-    trianglePSO.hasVertexBinding = true;
-    trianglePSO.fillMode = ren::FillMode::Solid;
+    ren::PipelineStateObject squareAPSO;
+    squareAPSO.debugName = "Bindless Square A";
+    squareAPSO.program = make<ShaderProgram>("demo/square_a");
+    squareAPSO.cullMode = ren::CullMode::None;
+    squareAPSO.depthTest = false;
+    squareAPSO.depthWrite = false;
 
+    ren::PipelineStateObject squareBPSO = squareAPSO;
+    squareBPSO.debugName = "Bindless Square B";
+    squareBPSO.program = make<ShaderProgram>("demo/square_b");
 
+    auto makeSquare = [] {
+      ren::MeshBuilder builder;
+      auto face = builder.beginFace();
+      face.vertex(glm::vec3(-1.0f, -1.0f, 0.0f), glm::vec3(0.0f), glm::vec2(0.0f, 0.0f));
+      face.vertex(glm::vec3(1.0f, -1.0f, 0.0f), glm::vec3(0.0f), glm::vec2(1.0f, 0.0f));
+      face.vertex(glm::vec3(1.0f, 1.0f, 0.0f), glm::vec3(0.0f), glm::vec2(1.0f, 1.0f));
+      face.vertex(glm::vec3(-1.0f, 1.0f, 0.0f), glm::vec3(0.0f), glm::vec2(0.0f, 1.0f));
+      face.end();
+      return builder.stampOut();
+    };
+    auto squareAMesh = makeSquare();
+    auto squareBMesh = makeSquare();
 
-    auto computeProgram = ren::make<ren::ShaderProgram>("test/compute");
+    std::array<u8, 16> warmPixels{
+        255, 80, 32, 255, 255, 190, 32, 255,
+        255, 190, 32, 255, 255, 80, 32, 255};
+    std::array<u8, 16> coolPixels{
+        32, 120, 255, 255, 32, 255, 190, 255,
+        32, 255, 190, 255, 32, 120, 255, 255};
+    auto warmTexture =
+        Texture::create("bindless-warm", 2, 2, warmPixels.data());
+
+    auto coolTexture =
+        Texture::create("bindless-cool", 2, 2, coolPixels.data());
 
 
     float renderScaleTemp = 1.0f;
@@ -242,6 +270,9 @@ namespace ren {
     static bool swapchainNeedsRebuild = false;
     static bool isResizing = false;
 
+
+
+        G.pass("gizmo").execute([&](ren::GraphRunContext &ctx) {});
 
     SDL_RaiseWindow(this->window);
 
@@ -325,6 +356,15 @@ namespace ren {
 
       renderer->beginFrame();
       auto &frame = ren::getFrameUnit();
+      const glm::vec2 frameSize{
+          frame.deviceImage->getWidth(), frame.deviceImage->getHeight()};
+      frame.setFrameGlobals({
+          .time = time,
+          .deltaTime = deltaTime,
+          .frameNumber = static_cast<u32>(vulkan.frame_number),
+          .renderSize = frameSize,
+          .inverseRenderSize = 1.0f / frameSize,
+      });
 
       ren::Camera::get().update(deltaTime);
 
@@ -361,32 +401,27 @@ namespace ren {
         }
 
 
+        // Simply print the framerate in the menu bar.
         char buf[64];
         snprintf(buf, sizeof(buf), "%4d FPS", (int)framerateCounter.getAverageFramerate());
-        if (ImGui::MenuItem(buf)) {
-          //
-        }
+        ImGui::MenuItem(buf);
 
         ImGui::EndMainMenuBar();
       }
 
-      ImGui::Begin("Compute");
-      ImGui::Button("My Button");
-
-      if (ImGui::IsItemHovered()) {
-        ImGui::BeginTooltip();
-        computeProgram->inspect();
-        // // Customize the tooltip content here
-        // ImGui::Text("This is a custom tooltip!");
-        // ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "It can have color.");
-        // ImGui::TextWrapped("You can also add longer descriptions that wrap around a specified width.");
-        ImGui::EndTooltip();
-      }
-      ImGui::End();
-
+      /**
+       * Show the console log inspection.
+       * see: https://nickw.io/post/logging-user-interfaces
+       */
       ren::inspectLog();
 
-      if (1) {
+      /**
+       * Tick the world and run lua update functions. This is where all the
+       * game logic happens, in effect. This currently runs on the main thread,
+       * but needs to be moved to a worker thread in the future to avoid
+       * blocking the main render thread with game logic.
+       */
+       {
         REN_PROFILE_SCOPE("WorldProgress");
         world.progress(deltaTime);
 
@@ -408,41 +443,11 @@ namespace ren {
       }
 
 
-      // G.pass("GBuffer")
-      //     .writes(gbufferAlbedo, GraphAccess::RenderTarget)
-      //     .writes(gbufferNormal, GraphAccess::RenderTarget)
-      //     .writes(gbufferMaterial, GraphAccess::RenderTarget)
-      //     .writes(gbufferDepth, GraphAccess::DepthTarget)
-      //     .render([&](ren::GraphRenderPassContext &ctx) { gbp.execute(ctx); });
-
-#if 0
-      ren::RenderGraph G;
-      ren::GraphHandle hdr;
-
-      // G.pass makes a builder.
-      // You can chain reads/writes before calling render or compute to finalize it.
-      G.pass("lighting").reads(gbufferAlbedo, gbufferNormal, gbufferDepth, ssao).targets(hdr).render([&](ren::GraphRenderPassContext &ctx) {
-        REN_PROFILE_SCOPE("TestRenderPass");
-        auto &penc = ctx.encoder;
-        penc.bindPipeline(trianglePSO);
-
-        DrawArguments args;
-        args.vertexCount = 3;
-        args.instanceCount = 1;
-        penc.draw(args);
-      });
-
-      auto computeProgram = ...;
-      G.pass("SsaoUpscale").reads(ssaoHalf).writes(ssaoFull).compute([&](ren::GraphComputeContext &ctx) {
-        // bind!
-        enc.dispatch(computeProgram, 64, 64, 64);
-      });
-#endif
-
-
+      /**
+       * Calculate the size of the render target based on the current window size.
+       */
       float width = (float)windowWidth;
       float height = (float)windowHeight;
-      // targetHeight = height;
       float targetHeight = height * renderScaleTemp;
       float scale = targetHeight / height;
       scale *= renderScaleTemp;
@@ -453,11 +458,10 @@ namespace ren {
 
       try {
         G.run(*renderer);
+        G.inspect();
       } catch (const std::exception &e) {
         ren::println("✗ RenderPassTask execution failed: {}", e.what());
       }
-
-      G.inspect();
 
 
 
@@ -467,60 +471,52 @@ namespace ren {
         REN_PROFILE_SCOPE("FullScreenPass");
         if (1) {
           REN_PROFILE_SCOPE("RenderBackgroundTriangle");
-          auto start = std::chrono::high_resolution_clock::now();
-          ren::MeshBuilder b;
+          penc.bindImmediateMesh(squareAMesh->vertices, squareAMesh->indices);
+          auto squareA = penc.bindGraphics(squareAPSO);
+          auto squareAConstants =
+              squareA.pushConstant("pushConstants");
+          squareAConstants
+              .set("offset", glm::vec2(-0.5f, 0.0f))
+              .set("scale", 0.32f)
+              .set("pulseAmount", 0.08f)
+              .set("image", warmTexture);
 
-          auto fb = b.beginFace();
+          squareA.drawIndexed(
+              {.vertexCount = static_cast<u32>(squareAMesh->indices.size())});
 
-          // Add triangles to make a full screen quad
-          fb.vertex(glm::vec3(-1.0f, -1.0f, 0.0f), glm::vec3(0.0f), glm::vec2(0.0f, 0.0f));
-          fb.vertex(glm::vec3(1.0f, -1.0f, 0.0f), glm::vec3(0.0f), glm::vec2(1.0f, 0.0f));
-          fb.vertex(glm::vec3(1.0f, 1.0f, 0.0f), glm::vec3(0.0f), glm::vec2(1.0f, 1.0f));
-          fb.vertex(glm::vec3(-1.0f, 1.0f, 0.0f), glm::vec3(0.0f), glm::vec2(0.0f, 1.0f));
-
-          fb.end();
-
-          auto meshData = b.stampOut();
-
-
-          static struct {
-            float brightness = 1.0f;
-            float time = 0.0f;
-            float stride = 0.001f;
-            int index = 1;
-            int numDraws = 1;
-          } pc;
-
-          penc.bindImmediateMesh(meshData->vertices, meshData->indices);
-          penc.bindPipeline(trianglePSO);
-          pc.numDraws = 0;
-          pc.time = time;
-          DrawArguments args;
-          args.vertexCount = static_cast<u32>(meshData->indices.size());
-          args.instanceCount = 1;
-
-          pc.index = 0;
-          vkCmdPushConstants(penc.buf(), trianglePSO.program->getPipelineLayout(), VK_SHADER_STAGE_ALL, 0, sizeof(pc), &pc);
-          penc.drawIndexed(args);
-
-          auto end = std::chrono::high_resolution_clock::now();
-
-          float allocTime = std::chrono::duration<float, std::chrono::nanoseconds::period>(end - start).count();
+          penc.bindImmediateMesh(squareBMesh->vertices, squareBMesh->indices);
+          auto squareB = penc.bindGraphics(squareBPSO);
+          auto squareBConstants =
+              squareB.pushConstant("pushConstants");
+          auto squareBTransform = squareBConstants.get("transform");
+          squareBTransform
+              .set("center", glm::vec2(0.5f, 0.0f))
+              .set("extent", 0.32f)
+              .set("rotationSpeed", 0.35f);
+          squareBConstants
+              .set("tint", glm::vec4(1.0f))
+              .set("pattern", coolTexture);
+          squareB.drawIndexed(
+              {.vertexCount = static_cast<u32>(squareBMesh->indices.size())});
         }
 
-
+        /**
+         * Finally, render the ImGui draw data that has been accumulated over
+         * the course of the frame. This needs to be rendered at the end of the
+         * frame to ensure that it appears on top of all other rendered content.
+         */
         {
           REN_PROFILE_SCOPE("RenderImGui");
           ImGui::Render();
           ImGui::UpdatePlatformWindows();
           ImGui::RenderPlatformWindowsDefault();
-          ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), penc.buf());  // Gross leakage.
+          auto commandBuffer = penc.buf(); // Gross Leakage...
+          ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer);
         }
       }
 
       penc.end();
 
-      // world.defer_end();
       renderer->endFrame();
     }
     renderer->waitForIdle();
