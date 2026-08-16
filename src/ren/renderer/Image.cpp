@@ -53,7 +53,7 @@ namespace ren {
 
 
     VkDeviceSize imageSize = getWidth() * getHeight() * 4;
-    ren::Buffer stagingBuffer(imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+    ren::BufferMemory stagingBuffer(imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                               VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
     if (pixels != nullptr) {
@@ -236,7 +236,7 @@ namespace ren {
       VkDeviceSize bufferSize = mipWidth * mipHeight * 4;
 
       // Create staging buffer
-      Buffer stagingBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+      BufferMemory stagingBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
       // Transition mip level to TRANSFER_SRC_OPTIMAL
       {
@@ -296,7 +296,7 @@ namespace ren {
       vulkan.endSingleTimeCommands(cmd);
 
       // Now read the data from the staging buffer
-      const u8 *pixels = reinterpret_cast<const u8 *>(stagingBuffer.map());
+      const u8 *pixels = stagingBuffer.hostData<u8>();
 
       // Build filename
       std::string filename = (std::filesystem::path(outputDir) / (name + "_mip" + std::to_string(mipLevel) + ".png")).string();
@@ -310,9 +310,6 @@ namespace ren {
       }
 
       ren::println("Saved mipmap level {} to {}", mipLevel, filename);
-
-      // Unmap memory
-      stagingBuffer.unmap();
 
       // Prepare for next iteration (create new command buffer)
       if (mipLevel < imageCreateInfo.mipLevels - 1) {

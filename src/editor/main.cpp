@@ -66,9 +66,9 @@ void testSaxpy(void) {
   };
 
   float a = 2.5f;
-  auto x = allocateBuffer<float>(length, BufferDomain::Upload);
-  auto y = allocateBuffer<float>(length, BufferDomain::Upload);
-  auto out = allocateBuffer<float>(length, BufferDomain::Readback);
+  auto x = TypedBuffer<float>(length, BufferDomain::Upload, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+  auto y = TypedBuffer<float>(length, BufferDomain::Upload, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+  auto out = TypedBuffer<float>(length, BufferDomain::Readback, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
   randomize(x, length);
   randomize(y, length);
 
@@ -85,9 +85,9 @@ void testSaxpy(void) {
   unit.submitTo(*getVulkan().graphicsQueue)->awaitCompletion();
 
   // Validate the result on the CPU
-  auto* mappedX = x.hostData<float>();
-  auto* mappedY = y.hostData<float>();
-  auto* mappedOut = out.hostData<float>();
+  auto* mappedX = x.hostData();
+  auto* mappedY = y.hostData();
+  auto* mappedOut = out.hostData();
   for (u32 i = 0; i < length; i++) {
     float expected = a * mappedX[i] + mappedY[i];
     REN_ASSERT(fabs(mappedOut[i] - expected) < 0.001f);
@@ -114,7 +114,7 @@ void imageHeapSampleTest() {
 
 
 
-  auto outBuffer = allocateBuffer<glm::vec4>(1, BufferDomain::Readback);
+  auto outBuffer = TypedBuffer<glm::vec4>(1, BufferDomain::Readback, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
 
   SubmissionUnit unit;
 
@@ -141,7 +141,7 @@ void imageHeapSampleTest() {
 
 
   // Validate the result
-  const glm::vec4 result = *outBuffer.hostData<glm::vec4>();
+  const glm::vec4 result = *outBuffer.hostData();
   ren::println("Image heap sample passed: [{}, {}, {}, {}]", result.x, result.y, result.z, result.w);
 }
 
@@ -157,16 +157,20 @@ int main(int argc, char* argv[]) {
   ren::Application app("Editor", res);
 
 
-
-  if (runSaxpyArg.get()) {
-    testSaxpy();
-    return 0;
+  if (loadArg.get() != "") {
+    loadMeshIntoScene(loadArg.get().c_str(), scaleArg.get());
   }
 
-  if (runImageHeapArg.get()) {
-    imageHeapSampleTest();
-    return 0;
-  }
+
+  // if (runSaxpyArg.get()) {
+  //   testSaxpy();
+  //   return 0;
+  // }
+
+  // if (runImageHeapArg.get()) {
+  //   imageHeapSampleTest();
+  //   return 0;
+  // }
 
   app.run();
   REN_PROFILE_END_SESSION();

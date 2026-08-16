@@ -53,7 +53,7 @@ ren::Texture::Texture(const std::string_view &name, u32 width, u32 height, u8 *p
   auto &vulkan = ren::getVulkan();
 
   VkDeviceSize imageSize = getWidth() * getHeight() * 4;
-  ren::Buffer stagingBuffer(
+  ren::BufferMemory stagingBuffer(
       imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 

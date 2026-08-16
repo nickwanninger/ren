@@ -21,9 +21,10 @@ namespace ren {
 
 
   void GBufferTask::run(ren::GraphRenderPassContext &ctx) {
-#if 0
     auto &cam = ren::Camera::get();
     auto viewMatrix = cam.view_matrix();
+
+    return;
 
     // Grab an image for width/height.
     auto image = ctx.graph.getImage(out.depth);
@@ -70,6 +71,7 @@ namespace ren {
       auto &mat = r.material;
 
 
+      /*
       if (!mat->bind(ctx.renderer)) {
         continue;  // Skip this renderable if the material is not ready.
       }
@@ -89,8 +91,8 @@ namespace ren {
       int instanceCount = 1;
       vkCmdDrawIndexed(ctx.cmd, meshEntry.indexCount, instanceCount, meshEntry.indexOffset,
                        meshEntry.vertexOffset, 0);
+                       */
     }
-#endif
   }
 
 

@@ -18,7 +18,7 @@ namespace ren {
     return encoder;
   }
 
-  void CommandEncoder::copyBuffer(ren::Buffer &src, ren::Buffer &dst, VkDeviceSize size, VkDeviceSize srcOffset, VkDeviceSize dstOffset) {
+  void CommandEncoder::copyBuffer(ren::BufferMemory &src, ren::BufferMemory &dst, VkDeviceSize size, VkDeviceSize srcOffset, VkDeviceSize dstOffset) {
     VkBufferCopy copyRegion{};
     copyRegion.srcOffset = srcOffset;
     copyRegion.dstOffset = dstOffset;
@@ -217,15 +217,11 @@ namespace ren {
   void RenderPassEncoder::bindImmediateMesh(std::span<ren::Vertex> vertices, std::span<u32> indices) {
     // Create vertex buffer
     auto vbuf = getEncoder().getArena().push<ren::VertexBuffer<ren::Vertex>>(sizeof(ren::Vertex) * static_cast<VkDeviceSize>(vertices.size()));
-    vbuf->map();
-    std::memcpy(vbuf->map(), vertices.data(), sizeof(ren::Vertex) * vertices.size());
-    vbuf->unmap();
+    vbuf->copyFromHost(vertices.data(), vertices.size());
 
     // Create index buffer
     auto ibuf = getEncoder().getArena().push<ren::IndexBuffer>(sizeof(u32) * static_cast<VkDeviceSize>(indices.size()));
-    ibuf->map();
-    std::memcpy(ibuf->map(), indices.data(), sizeof(u32) * indices.size());
-    ibuf->unmap();
+    ibuf->copyFromHost(indices.data(), indices.size());
 
     VkDeviceSize offsets[] = {0};
     VkBuffer vbufHandle = vbuf->getHandle();

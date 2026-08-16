@@ -37,11 +37,23 @@ namespace ren {
   };
   REN_FLAG_ENUM(MemoryProperty, u32)
 
-  // this is the base class for buffer memory. Logically, this is the
-  // "allocation" of buffer memory, and the below Buffer types are more "views"
-  // over this.
-  class BufferMemory {
+  enum class BufferDomain {
+    Device,
+    Upload,
+    Readback,
+  };
+  REN_FLAG_ENUM(BufferDomain, u32)
+
+
+  // This is the owning class for a Vulkan buffer. It manages the VMA
+  // allocation, the VkBuffer handle, and the device address. It also provides a
+  // host pointer for copying into it.  It is rare that you will need to use
+  // this class directly. Instead, use the wrappers/subclasses after it.
+  class BufferMemory : public RefCounted<BufferMemory> {
    public:
+    // Higher level constructor
+    BufferMemory(size_t byteCount, BufferDomain domain = BufferDomain::Device, VkBufferUsageFlags usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+    // low level constructor
     BufferMemory(size_t byteCount, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VmaAllocationCreateFlags vmaFlags = 0);
 
     // Destructor - unmaps (if mapped) and destroys VMA allocation
@@ -76,6 +88,9 @@ namespace ren {
 
     void copyFromHost(const void *data, size_t size, size_t offset = 0);
 
+    // Reallocate while preserving the first min(oldSize, newByteCount) bytes; zero releases the allocation.
+    void resizeBytes(size_t newByteCount);
+
    private:
     // Constructor parameters
     size_t byteCount = 0;
@@ -90,98 +105,32 @@ namespace ren {
     VkBuffer buffer = VK_NULL_HANDLE;
   };
 
-  enum class BufferDomain {
-    Device,
-    Upload,
-    Readback,
-  };
-
-  BufferMemory allocateBuffer(
-      size_t byteCount,
-      BufferDomain domain = BufferDomain::Device,
-      VkBufferUsageFlags usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-
   template <typename T>
-  BufferMemory allocateBuffer(
-      size_t count,
-      BufferDomain domain = BufferDomain::Device,
-      VkBufferUsageFlags usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT) {
-    static_assert(std::is_trivially_copyable_v<T>);
-    return allocateBuffer(count * sizeof(T), domain, usage);
-  }
-
-  // Represents a buffer in Vulkan memory.
-  class Buffer {
-   public:
-    Buffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties);
-
-    virtual ~Buffer();
-
-    // Non-copyable, movable
-    Buffer(const Buffer &) = delete;
-    Buffer &operator=(const Buffer &) = delete;
-    Buffer(Buffer &&other) noexcept;
-    Buffer &operator=(Buffer &&other) noexcept;
-
-
-    void *map(void);
-    void unmap(void);
-
-    void copyFrom(const Buffer &src, VkDeviceSize size, VkDeviceSize srcOffset = 0, VkDeviceSize dstOffset = 0);
-    void copyFromHost(const void *data, VkDeviceSize size, VkDeviceSize offset = 0);
-
-
-    // Getters
-    VkBuffer getHandle() const { return buffer; }
-    // Size of the buffer in bytes.
-    VkDeviceSize getSize() const { return size; }
-    bool isMapped() const { return mapped != nullptr; }
-    const std::string &getName() const { return name; }
-    void setName(const std::string &new_name);
-
-    // Resize the buffer to a certain byte count.
-    void resizeBytes(size_t new_bytes);
-
-
-   protected:
-    std::string name = "UnnamedBuffer";
-
-    VmaAllocation allocation = VK_NULL_HANDLE;
-    VkBuffer buffer = VK_NULL_HANDLE;
-    VkDeviceSize size = 0;
-
-    VkBufferUsageFlags usage;
-    VkMemoryPropertyFlags properties;
-
-    void *mapped = nullptr;
-  };
-
-
-  template <typename T>
-  class TypedBuffer : public Buffer {
+  class TypedBuffer : public BufferMemory {
    public:
     using EntryType = T;
+    TypedBuffer(size_t count, BufferDomain domain, VkBufferUsageFlags usage)
+        : BufferMemory(count * sizeof(T), domain, usage) {}
     TypedBuffer(size_t count, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties)
-        : Buffer(count * sizeof(T), usage, properties) {}
+        : BufferMemory(count * sizeof(T), usage, properties) {}
+
     virtual ~TypedBuffer() = default;
 
-
-    // Wrap the map function in something typed
-    T *map(void) { return (T *)Buffer::map(); }
+    // Wrap the map function into the typed version.
+    T *hostData(void) { return BufferMemory::hostData<T>(); }
 
     void copyFromHost(const T *data, VkDeviceSize size, VkDeviceSize offset = 0) {
-      return Buffer::copyFromHost((const void *)data, size * sizeof(T), offset * sizeof(T));
+      return BufferMemory::copyFromHost((const void *)data, size * sizeof(T), offset * sizeof(T));
     }
 
     void copyFromHost(const std::vector<T> &data, VkDeviceSize offset = 0) {
-      return Buffer::copyFromHost((const void *)data.data(), data.size() * sizeof(T), offset);
+      return BufferMemory::copyFromHost((const void *)data.data(), data.size() * sizeof(T), offset * sizeof(T));
     }
 
     // Length of the buffer in elements (T)
-    size_t count(void) const { return this->getSize() / sizeof(T); }
+    size_t count(void) const { return this->getByteCount() / sizeof(T); }
 
-    // Resize the buffer to a certain element count.
-    void resizeCount(size_t new_count) { this->resizeBytes(new_count * sizeof(T)); }
+    void resizeCount(size_t newCount) { this->resizeBytes(newCount * sizeof(T)); }
   };
 
 
@@ -248,24 +197,22 @@ namespace ren {
 
     void setArrayLength(size_t newLength) { expectedArrayLength = newLength; }
 
-
-    // Avoid using these methods!
-    T *map(void) { return getCurrentBuffer()->map(); }
-    void unmap(void) { getCurrentBuffer()->unmap(); }
+    // Avoid using these methods! BufferMemory stays persistently mapped.
+    T *map(void) { return getCurrentBuffer()->hostData(); }
+    void unmap(void) {}
 
     // Copy data from host memory to the current buffer.
     void update(const T *data, VkDeviceSize count, VkDeviceSize offset = 0) { getCurrentBuffer()->copyFromHost(data, count, offset); }
 
     void update(const T &data) { update(&data, 1, 0); }
     VkBuffer getHandle() const { return getCurrentBuffer()->getHandle(); }
-    const Buffer &currentAsBuffer() const { return *getCurrentBuffer(); }
+    const UniformBuffer<T> &currentAsBuffer() const { return *getCurrentBuffer(); }
 
     inline auto &getCurrentBuffer() const {
       auto index = ren::getFrameIndex();
       auto &buffer = buffers[index];
-      if (buffer->getSize() != expectedArrayLength * sizeof(T)) {
-        // resize the buffer!
-        ren::dbgln("Frame {} of UBS isn't the right size. resizing from {} to {}", index, buffer->getSize(), expectedArrayLength * sizeof(T));
+      if (buffer->getByteCount() != expectedArrayLength * sizeof(T)) {
+        ren::dbgln("Frame {} of UBS isn't the right size. resizing from {} to {}", index, buffer->getByteCount(), expectedArrayLength * sizeof(T));
         buffer->resizeCount(expectedArrayLength);
       }
       return buffer;

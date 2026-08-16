@@ -63,7 +63,7 @@ namespace ren {
 
     BoundComputeEncoder bindCompute(ref<ShaderProgram> program);
 
-    void copyBuffer(ren::Buffer &src, ren::Buffer &dst, VkDeviceSize size, VkDeviceSize srcOffset = 0, VkDeviceSize dstOffset = 0);
+    void copyBuffer(ren::BufferMemory &src, ren::BufferMemory &dst, VkDeviceSize size, VkDeviceSize srcOffset = 0, VkDeviceSize dstOffset = 0);
 
 
     // TODO:

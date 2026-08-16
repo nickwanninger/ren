@@ -209,10 +209,10 @@ namespace ren {
 
 
     ren::RenderGraph G;
-    // ren::GraphHandle nullHandleOut;
-    // ren::GraphHandle ssao;
-    // ren::GraphHandle gbufferAlbedo, gbufferNormal, gbufferMaterial, gbufferDepth;
-    // auto &gbp = ren::addGBuffer(G, gbufferAlbedo, gbufferNormal, gbufferMaterial, gbufferDepth);
+    ren::GraphHandle nullHandleOut;
+    ren::GraphHandle ssao;
+    ren::GraphHandle gbufferAlbedo, gbufferNormal, gbufferMaterial, gbufferDepth;
+    auto &gbp = ren::addGBuffer(G, gbufferAlbedo, gbufferNormal, gbufferMaterial, gbufferDepth);
     // ren::addSSAO(G, gbufferDepth, gbufferNormal, ssao);
 
 
@@ -270,6 +270,9 @@ namespace ren {
     static bool swapchainNeedsRebuild = false;
     static bool isResizing = false;
 
+
+
+        G.pass("gizmo").execute([&](ren::GraphRunContext &ctx) {});
 
     SDL_RaiseWindow(this->window);
 
@@ -451,15 +454,16 @@ namespace ren {
       width *= scale;
       height *= scale;
       auto renderSize = glm::uvec2(width, height);
-      // G.startFrame(renderSize);
+      G.startFrame(renderSize);
 
       try {
-        // G.run(*renderer);
+        G.run(*renderer);
+        G.inspect();
       } catch (const std::exception &e) {
         ren::println("✗ RenderPassTask execution failed: {}", e.what());
       }
 
-      // G.inspect();
+
 
       auto enc = frame.getMainCommandEncoder();
       auto penc = enc->beginRenderPass(*renderer->getDisplayPass(), *frame.renderTarget);

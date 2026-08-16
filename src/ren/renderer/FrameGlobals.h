@@ -103,7 +103,7 @@ namespace ren {
         throw std::runtime_error("Failed to allocate FrameGlobals descriptor set");
       }
 
-      auto buffer = allocateBuffer<FrameGlobals>(
+      auto buffer = TypedBuffer<FrameGlobals>(
           1, BufferDomain::Upload, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
       VkDescriptorBufferInfo bufferInfo{
           .buffer = buffer.getHandle(),
