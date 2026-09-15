@@ -96,17 +96,10 @@ namespace ren {
     friend class ShaderCursor;
     friend class BoundShaderEncoder;
     friend class RenderPassEncoder;
-    void writePushConstant(
-        const ShaderCursor& cursor,
-        u32 byteOffset,
-        const void* data,
-        size_t size);
-    ShaderCursor activateGraphics(
-        ref<ShaderProgram> program, VkPipelineLayout pipelineLayout);
-    void bindDescriptorHeaps(
-        VkPipelineBindPoint bindPoint, VkPipelineLayout pipelineLayout);
-    void validate(
-        const ShaderCursor& cursor, VkPipelineBindPoint expectedBindPoint) const;
+    void writePushConstant(const ShaderCursor &cursor, u32 byteOffset, const void *data, size_t size);
+    ShaderCursor activateGraphics(ref<ShaderProgram> program, VkPipelineLayout pipelineLayout);
+    void bindDescriptorHeaps(VkPipelineBindPoint bindPoint, VkPipelineLayout pipelineLayout);
+    void validate(const ShaderCursor &cursor, VkPipelineBindPoint expectedBindPoint) const;
 
     struct BoundShader {
       ref<ShaderProgram> program;
@@ -152,9 +145,13 @@ namespace ren {
   // both for reflected parameter lookup and as the binding-generation token.
   class BoundShaderEncoder : public SubEncoder {
    public:
-    ShaderCursor pushConstant(std::string_view name) const {
-      return shader.pushConstant(name);
-    }
+    ShaderCursor root(std::string_view name) const { return shader.root(name); }
+    inline void setRoot(ren::ByteSpan data) { cmd.writePushConstant(shader, 0, data.data, data.size); }
+
+    // A simple all-stage memory read-after-write barrier. This is useful for ensuring that a previous
+    // compute dispatch has completed before starting a new one that may read from the same resources.
+    void writeBarrier();
+
 
    protected:
     BoundShaderEncoder(CommandEncoder &cmd, ShaderCursor shader)
@@ -180,6 +177,10 @@ namespace ren {
   class BoundGraphicsEncoder final : public BoundShaderEncoder {
    public:
     void drawIndexed(const DrawArguments &args);
+    // Issue `drawCount` draws from a buffer of VkDrawIndexedIndirectCommand.
+    // The shader distinguishes them via SV_DrawIndex, so a whole batch sharing
+    // one PSO costs a single push constant and a single command.
+    void drawIndexedIndirect(const BufferMemory &commands, u32 drawCount, VkDeviceSize offset = 0);
     void drawFullscreenTriangle();
 
    private:

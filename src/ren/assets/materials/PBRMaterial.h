@@ -24,7 +24,7 @@ namespace ren {
     ~PBRMaterial() override = default;
 
     // Bind the material to the renderer.
-    bool bind(Renderer &R) override;
+    BoundGraphicsEncoder bind(RenderPassEncoder &R); // TODO.
 
     // Render the material to the imgui-based inspector.
     void inspect(void) override;

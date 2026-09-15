@@ -13,11 +13,13 @@ namespace ren {
     // Set the name of the material.
     this->setName("opaque-pbr-static");
 
-    if (defaultTexture == nullptr)
+    if (defaultTexture == nullptr) {
       defaultTexture = Texture::createSinglePixel("default-white", 255, 255, 255, 255);
+    }
 
-    if (defaultNormalTexture == nullptr)
+    if (defaultNormalTexture == nullptr) {
       defaultNormalTexture = Texture::createSinglePixel("default-normal", 127, 127, 255, 255);
+    }
 
 
     this->baseColorTexture = defaultTexture;
@@ -27,12 +29,25 @@ namespace ren {
 
     // PBR restoration is intentionally deferred until its resources are
     // expressed as bindless handles and buffer addresses.
+    this->pso.debugName = "PBR Material PSO";
+    this->pso.program = make<ShaderProgram>("pbr");
+    this->pso.cullMode = ren::CullMode::None;
+    this->pso.depthTest = false;
+    this->pso.depthWrite = false;
   }
 
   ren::PipelineStateObject &PBRMaterial::getPSO() { return PBRMaterial::pso; }
 
-  bool PBRMaterial::bind(Renderer &R) {
-    return false;
+  BoundGraphicsEncoder PBRMaterial::bind(RenderPassEncoder &enc) {
+
+
+    auto genc = enc.bindGraphics(PBRMaterial::pso);
+
+
+    // TODO:
+    // genc.
+
+    return genc;
   }
 
   void PBRMaterial::inspect(void) {

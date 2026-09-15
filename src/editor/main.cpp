@@ -17,7 +17,7 @@
 
 using namespace ren;
 
-ren::Flag<std::string> loadArg("load", "assets/test/meshes/simple_scene.glb", "Path to a mesh to load at startup");
+ren::Flag<std::string> loadArg("load", "", "Path to a mesh to load at startup");
 ren::Flag<float> scaleArg("load-scale", 1.0f, "Uniform scale to apply to the loaded mesh");
 ren::Flag<bool> runSaxpyArg("run-saxpy", false, "Run the synchronous Slang/BDA SAXPY smoke test before opening the editor");
 ren::Flag<bool> runImageHeapArg("run-imageheap", false, "Run the bindless image heap smoke test before opening the editor");
@@ -75,14 +75,18 @@ void testSaxpy(void) {
   auto program = ren::make<ren::ShaderProgram>("test/saxpy");
   auto cmd = unit.begin();
   auto compute = cmd->bindCompute(program);
-  auto pushConstants = compute.pushConstant("pushConstants");
+  auto pushConstants = compute.root("pushConstants");
   pushConstants.set("a", a)
       .set("length", length)
       .set("x", x.devicePointer<float>())
       .set("y", y.devicePointer<float>())
       .set("output", out.devicePointer<float>());
   compute.dispatch({(length + 255) / 256, 1, 1});
+  compute.writeBarrier();
+  compute.dispatch({(length + 255) / 256, 1, 1});
+  compute.writeBarrier();
   unit.submitTo(*getVulkan().graphicsQueue)->awaitCompletion();
+
 
   // Validate the result on the CPU
   auto* mappedX = x.hostData();
@@ -123,7 +127,7 @@ void imageHeapSampleTest() {
     auto cmd = unit.begin();
 
     auto compute = cmd->bindCompute(program);
-    auto args = compute.pushConstant("pc");
+    auto args = compute.root("pc");
 
     auto& renderer = Renderer::get();
     auto sampler = renderer.getSamplerCache().get(SamplerDesc{});
@@ -156,16 +160,22 @@ int main(int argc, char* argv[]) {
 
   ren::Application app("Editor", res);
 
+  // auto program = ren::make<ren::ShaderProgram>("test/drawparams_temp_test");
+  // if (const auto& material = program->getReflection()->getMaterialSchema(); material.isSome()) {
+  //   ren::println("Material schema:\n{}", material.unwrap().toJson().dump(2));
+  // }
+  // return 0;
+
 
   if (loadArg.get() != "") {
     loadMeshIntoScene(loadArg.get().c_str(), scaleArg.get());
   }
 
 
-  // if (runSaxpyArg.get()) {
-  //   testSaxpy();
-  //   return 0;
-  // }
+  if (runSaxpyArg.get()) {
+    testSaxpy();
+    return 0;
+  }
 
   // if (runImageHeapArg.get()) {
   //   imageHeapSampleTest();

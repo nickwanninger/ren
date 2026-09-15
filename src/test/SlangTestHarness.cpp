@@ -59,17 +59,11 @@ namespace ren::test {
       throw std::runtime_error("Failed to create Slang global session");
     }
 
-    std::array<slang::CompilerOptionEntry, 4> compilerOptions{};
+    std::array<slang::CompilerOptionEntry, 3> compilerOptions{};
     SlangInt compilerOptionCount = 0;
     if (options.vulkanEmitReflection) {
       auto& option = compilerOptions[compilerOptionCount++];
       option.name = slang::CompilerOptionName::VulkanEmitReflection;
-      option.value.kind = slang::CompilerOptionValueKind::Int;
-      option.value.intValue0 = 1;
-    }
-    {
-      auto& option = compilerOptions[compilerOptionCount++];
-      option.name = slang::CompilerOptionName::MatrixLayoutColumn;
       option.value.kind = slang::CompilerOptionValueKind::Int;
       option.value.intValue0 = 1;
     }
@@ -95,6 +89,7 @@ namespace ren::test {
     slang::SessionDesc sessionDesc = {};
     sessionDesc.targets = &target;
     sessionDesc.targetCount = 1;
+    sessionDesc.defaultMatrixLayoutMode = SLANG_MATRIX_LAYOUT_COLUMN_MAJOR;
     if (SLANG_FAILED(result.globalSession->createSession(
             sessionDesc, result.session.writeRef()))) {
       throw std::runtime_error("Failed to create Slang test session");

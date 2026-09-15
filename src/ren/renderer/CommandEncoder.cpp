@@ -139,6 +139,26 @@ namespace ren {
   ren::Arena &CommandEncoder::getArena(void) { return submissionUnit.getArena(); }
 
 
+  void BoundShaderEncoder::writeBarrier() {
+    const VkMemoryBarrier2 barrier{
+        .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
+        .srcStageMask  = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+        .srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT,
+        .dstStageMask  = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+        .dstAccessMask =
+            VK_ACCESS_2_MEMORY_READ_BIT |
+            VK_ACCESS_2_MEMORY_WRITE_BIT,
+    };
+
+    const VkDependencyInfo dependency{
+        .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+        .memoryBarrierCount = 1,
+        .pMemoryBarriers = &barrier,
+    };
+
+    vkCmdPipelineBarrier2(this->buf(), &dependency);
+  }
+
   void RenderPassEncoder::setScissor(glm::uvec2 pos, glm::uvec2 size) {
     VkRect2D scissor = {};
     scissor.offset = {static_cast<int32_t>(pos.x), static_cast<int32_t>(pos.y)};
@@ -216,11 +236,11 @@ namespace ren {
 
   void RenderPassEncoder::bindImmediateMesh(std::span<ren::Vertex> vertices, std::span<u32> indices) {
     // Create vertex buffer
-    auto vbuf = getEncoder().getArena().push<ren::VertexBuffer<ren::Vertex>>(sizeof(ren::Vertex) * static_cast<VkDeviceSize>(vertices.size()));
+    auto vbuf = getEncoder().getArena().push<ren::VertexBuffer<ren::Vertex>>(vertices.size());
     vbuf->copyFromHost(vertices.data(), vertices.size());
 
     // Create index buffer
-    auto ibuf = getEncoder().getArena().push<ren::IndexBuffer>(sizeof(u32) * static_cast<VkDeviceSize>(indices.size()));
+    auto ibuf = getEncoder().getArena().push<ren::IndexBuffer>(indices.size());
     ibuf->copyFromHost(indices.data(), indices.size());
 
     VkDeviceSize offsets[] = {0};
@@ -233,6 +253,11 @@ namespace ren {
   void BoundGraphicsEncoder::drawIndexed(const DrawArguments &args) {
     validate(VK_PIPELINE_BIND_POINT_GRAPHICS);
     vkCmdDrawIndexed(buf(), args.vertexCount, args.instanceCount, args.firstIndex, args.firstVertex, args.firstInstance);
+  }
+
+  void BoundGraphicsEncoder::drawIndexedIndirect(const BufferMemory &commands, u32 drawCount, VkDeviceSize offset) {
+    validate(VK_PIPELINE_BIND_POINT_GRAPHICS);
+    vkCmdDrawIndexedIndirect(buf(), commands.getHandle(), offset, drawCount, sizeof(VkDrawIndexedIndirectCommand));
   }
 
   void BoundGraphicsEncoder::drawFullscreenTriangle() {

@@ -299,6 +299,142 @@ namespace ren::test {
     EXPECT_EQ(materialIndex->name, "materialIndex");
     EXPECT_EQ(*materialIndex->location.byteOffset, 16);
     EXPECT_EQ(*materialIndex->location.byteSize, 4);
+    EXPECT_TRUE(reflected.slangReflection->getMaterialSchema().isNone());
+  }
+
+  TEST_F(ShaderReflectionTest, DrawParamsReflectsPointedToMaterialSchema) {
+    constexpr std::string_view source = R"slang(
+      [__AttributeUsage(_AttributeTargets.Var)]
+      struct ColorAttribute {};
+
+      [__AttributeUsage(_AttributeTargets.Var)]
+      struct DefaultAttribute { float value; };
+
+      [__AttributeUsage(_AttributeTargets.Var)]
+      struct SourceAttribute { string path; };
+
+      [__AttributeUsage(_AttributeTargets.Var)]
+      struct OrderAttribute { int value; };
+
+      struct ObjectData
+      {
+        float4x4 modelMatrix;
+        float4x4 normalMatrix;
+        uint objectId;
+        uint _padding[3];
+      }
+
+      namespace ren
+      {
+        [__AttributeUsage(_AttributeTargets.Struct)]
+        struct MaterialDrawParamsAttribute {};
+
+        struct InstanceRecord
+        {
+          uint objectIndex;
+          uint materialIndex;
+        }
+
+        [MaterialDrawParams]
+        struct DrawParams<MaterialT>
+        {
+          InstanceRecord* instances;
+          ObjectData* objects;
+          MaterialT* materials;
+        }
+      }
+
+      struct TextureHandle
+      {
+        uint packed;
+      }
+
+      struct Material
+      {
+        [Source("default-white.png")]
+        [Order(2)]
+        TextureHandle textureIndex;
+        [Color]
+        [Default(0.5)]
+        float4 color;
+      }
+
+      [[vk::push_constant]]
+      ren.DrawParams<Material> arbitraryName;
+
+      [shader("compute")]
+      [numthreads(1, 1, 1)]
+      void main() {}
+    )slang";
+
+    ReflectedSlangCase reflected;
+    ASSERT_NO_THROW(reflected = reflectSource(
+        source, {.vulkanEmitReflection = false}, "draw_params_material"));
+
+    const auto& schemaOption = reflected.slangReflection->getMaterialSchema();
+    ASSERT_TRUE(schemaOption.isSome());
+    const auto& schema = schemaOption.unwrap();
+    EXPECT_EQ(schema.pushConstantName, "arbitraryName");
+    EXPECT_EQ(schema.pushConstantByteSize, 24);
+    EXPECT_EQ(schema.instancePointerOffset, 0);
+    EXPECT_EQ(schema.objectPointerOffset, 8);
+    EXPECT_EQ(schema.materialPointerOffset, 16);
+
+    auto* root = reflected.slangReflection->getRoot();
+    ASSERT_NE(root, nullptr);
+    auto* draw = static_cast<ShaderReflection::Node*>(nullptr);
+    for (auto* member : root->members) {
+      if (member != nullptr && member->name == "arbitraryName") {
+        draw = member;
+        break;
+      }
+    }
+    ASSERT_NE(draw, nullptr);
+    ASSERT_EQ(draw->members.size(), 3);
+    EXPECT_EQ(draw->members[0]->name, "instances");
+    EXPECT_EQ(*draw->members[0]->location.byteOffset, 0);
+    EXPECT_EQ(draw->members[1]->name, "objects");
+    EXPECT_EQ(*draw->members[1]->location.byteOffset, 8);
+    EXPECT_EQ(draw->members[2]->name, "materials");
+    EXPECT_EQ(*draw->members[2]->location.byteOffset, 16);
+
+    EXPECT_EQ(schema.typeName, "Material");
+    EXPECT_EQ(schema.byteSize, 20);
+    EXPECT_EQ(schema.alignment, 4);
+    ASSERT_EQ(schema.fields.size(), 2);
+
+    const auto& texture = schema.fields[0];
+    EXPECT_EQ(texture.name, "textureIndex");
+    EXPECT_EQ(texture.typeName, "TextureHandle");
+    EXPECT_EQ(texture.kind, ShaderReflection::ValueKind::Struct);
+    EXPECT_EQ(texture.byteOffset, 0);
+    EXPECT_EQ(texture.byteSize, 4);
+    EXPECT_EQ(texture.alignment, 4);
+    ASSERT_EQ(texture.fields.size(), 1);
+    EXPECT_EQ(texture.fields[0].name, "packed");
+    EXPECT_EQ(texture.fields[0].scalarKind, ShaderReflection::ScalarKind::UInt32);
+    ASSERT_EQ(texture.attributes.size(), 2);
+    EXPECT_EQ(texture.attributes[0].name, "Source");
+    ASSERT_EQ(texture.attributes[0].arguments.size(), 1);
+    EXPECT_EQ(texture.attributes[0].arguments[0], "default-white.png");
+    EXPECT_EQ(texture.attributes[1].name, "Order");
+    ASSERT_EQ(texture.attributes[1].arguments.size(), 1);
+    EXPECT_EQ(texture.attributes[1].arguments[0], 2);
+
+    const auto& color = schema.fields[1];
+    EXPECT_EQ(color.name, "color");
+    EXPECT_EQ(color.kind, ShaderReflection::ValueKind::Vector);
+    EXPECT_EQ(color.scalarKind, ShaderReflection::ScalarKind::Float32);
+    EXPECT_EQ(color.byteOffset, 4);
+    EXPECT_EQ(color.byteSize, 16);
+    EXPECT_EQ(color.alignment, 4);
+    EXPECT_EQ(color.rowCount * color.columnCount, 4);
+    ASSERT_EQ(color.attributes.size(), 2);
+    EXPECT_EQ(color.attributes[0].name, "Color");
+    EXPECT_TRUE(color.attributes[0].arguments.empty());
+    EXPECT_EQ(color.attributes[1].name, "Default");
+    ASSERT_EQ(color.attributes[1].arguments.size(), 1);
+    EXPECT_EQ(color.attributes[1].arguments[0], 0.5f);
   }
 
 }  // namespace ren::test

@@ -26,7 +26,7 @@ namespace ren {
 
     static constexpr TextureHandle pack(
         SampledImageIndex image, SamplerIndex sampler) {
-      return {(image.value << samplerBits) | sampler.value};
+      return {(image.value << samplerBits) | (sampler.value & samplerMask)};
     }
     constexpr SampledImageIndex image() const { return {value >> samplerBits}; }
     constexpr SamplerIndex sampler() const { return {value & samplerMask}; }

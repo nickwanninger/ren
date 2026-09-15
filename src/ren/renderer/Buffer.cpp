@@ -35,6 +35,21 @@ namespace ren {
     throw std::runtime_error("Unknown buffer memory domain");
   }
 
+  static VmaAllocationCreateFlags vmaAllocationFlagsForProperties(
+      VkMemoryPropertyFlags properties, VmaAllocationCreateFlags flags) {
+    constexpr auto hostAccessFlags =
+        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+        VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT;
+    if (!(properties & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) ||
+        (flags & hostAccessFlags)) {
+      return flags;
+    }
+
+    return flags | ((properties & VK_MEMORY_PROPERTY_HOST_CACHED_BIT)
+                        ? VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT
+                        : VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT);
+  }
+
 
 
 
@@ -45,7 +60,7 @@ namespace ren {
   BufferMemory::BufferMemory(size_t byteCount, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VmaAllocationCreateFlags vmaFlags)
       : usage(usage | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT)
       , properties(properties)
-      , vmaFlags(vmaFlags) {
+      , vmaFlags(vmaAllocationFlagsForProperties(properties, vmaFlags)) {
     resizeBytes(byteCount);
   }
 

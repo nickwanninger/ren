@@ -17,7 +17,9 @@ namespace ren {
    public:
     ShaderCursor get(std::string_view name) const;
     ShaderCursor element(size_t index) const;
-    ShaderCursor pushConstant(std::string_view name) const;
+    // Grab a cursor to the root (push constant) given a name.
+    // Really, there should only be one of these, but we support multiple technically.
+    ShaderCursor root(std::string_view name) const;
 
     ShaderCursor operator[](std::string_view name) const { return get(name); }
 

@@ -22,8 +22,12 @@ namespace ren {
     u32 _padding = 0;
     glm::vec2 renderSize{0.0f};
     glm::vec2 inverseRenderSize{0.0f};
+    glm::mat4 viewMatrix{0.0f};
+    glm::mat4 projMatrix{0.0f};
   };
-  static_assert(sizeof(FrameGlobals) == 32);
+  static_assert(sizeof(FrameGlobals) == 160);
+  static_assert(offsetof(FrameGlobals, viewMatrix) == 32);
+  static_assert(offsetof(FrameGlobals, projMatrix) == 96);
 
   class FrameGlobalsBinding {
    public:

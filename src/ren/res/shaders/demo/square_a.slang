@@ -1,18 +1,5 @@
 import ren.core;
 
-struct Vertex {
-  [[vk::location(0)]]
-  float3 position;
-  [[vk::location(1)]]
-  float3 normal;
-  [[vk::location(2)]]
-  float2 texCoord;
-  [[vk::location(3)]]
-  float3 tangent;
-  [[vk::location(4)]]
-  float3 bitangent;
-};
-
 struct Varying {
   float4 position : SV_Position;
   float2 uv : TEXCOORD0;
@@ -26,17 +13,17 @@ struct SquareAConstants {
 };
 
 [[vk::push_constant]]
-ConstantBuffer<SquareAConstants> pushConstants;
+ConstantBuffer<SquareAConstants> root;
 
 [shader("vertex")]
 Varying vertexMain(Vertex input) {
   Varying output;
-  float pulse = 1.0f + sin(frameGlobals.time) * pushConstants.pulseAmount;
+  float pulse = 1.0f + sin(frameGlobals.time) * root.pulseAmount;
   output.position =
-      float4(input.position.xy * pushConstants.scale * pulse + pushConstants.offset, input.position.z, 1.0f);
+      float4(input.position.xy * root.scale * pulse + root.offset, input.position.z, 1.0f);
   output.uv = input.texCoord;
   return output;
 }
 
 [shader("fragment")]
-float4 fragmentMain(Varying input) : SV_Target { return pushConstants.image.Sample(input.uv); }
+float4 fragmentMain(Varying input) : SV_Target { return root.image.Sample(input.uv); }

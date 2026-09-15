@@ -179,7 +179,17 @@ void ren::VulkanInstance::init_instance(void) {
   requiredFeatures.samplerAnisotropy = true;  // Enable anisotropic filtering
   // requiredFeatures.fillModeNonSolid = VK_TRUE;
 
+  requiredFeatures.multiDrawIndirect = true;  // Batched vkCmdDrawIndexedIndirect
+
   selector.set_required_features(requiredFeatures);
+
+  // SV_DrawIndex (gl_DrawID) in the vertex stage, used by the batched material
+  // root to index into the instance/object/material arrays.
+  VkPhysicalDeviceVulkan11Features vk11Features{
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
+      .shaderDrawParameters = true,
+  };
+  selector.set_required_features_11(vk11Features);
 
   // Request the specific features you need
   VkPhysicalDeviceVulkan12Features vk12Features{

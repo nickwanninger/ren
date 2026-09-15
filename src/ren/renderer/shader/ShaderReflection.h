@@ -3,6 +3,7 @@
 #include <slang.h>
 #include <ren/types.h>
 #include <spirv_reflect/spirv_reflect.h>
+#include <ren/core/Option.h>
 #include <ren/core/OptionalInt.h>
 
 // This file implements an abstraction over various shader resource binding
@@ -28,6 +29,74 @@ namespace ren {
 
   class ShaderReflection {
    public:
+    enum class ValueKind : u8 {
+      Unknown,
+      Scalar,
+      Vector,
+      Matrix,
+      Struct,
+      Array,
+      Pointer,
+      Enum,
+    };
+
+    enum class ScalarKind : u8 {
+      None,
+      Bool,
+      Int8,
+      UInt8,
+      Int16,
+      UInt16,
+      Int32,
+      UInt32,
+      Int64,
+      UInt64,
+      Float16,
+      Float32,
+      Float64,
+    };
+
+    struct MaterialAttribute {
+      std::string name;
+      std::vector<json> arguments;
+
+      json toJson() const;
+    };
+
+    struct MaterialField {
+      std::string name;
+      std::string typeName;
+      ValueKind kind = ValueKind::Unknown;
+      ScalarKind scalarKind = ScalarKind::None;
+      // Relative to the enclosing material/struct/array element.
+      u32 byteOffset = 0;
+      u32 byteSize = 0;
+      u32 alignment = 0;
+      u32 rowCount = 0;
+      u32 columnCount = 0;
+      u32 elementCount = 0;
+      u32 elementStride = 0;
+      std::vector<MaterialAttribute> attributes;
+      std::vector<MaterialField> fields;
+
+      json toJson() const;
+    };
+
+    struct MaterialSchema {
+      std::string pushConstantName;
+      u32 pushConstantByteSize = 0;
+      u32 instancePointerOffset = 0;
+      u32 objectPointerOffset = 0;
+      u32 materialPointerOffset = 0;
+      std::string typeName;
+      u32 byteSize = 0;
+      u32 alignment = 0;
+      std::vector<MaterialField> fields;
+
+      json toJson() const;
+      void inspect() const;
+    };
+
     // These are the types of bindings we can have in a shader.
     enum Type : u8 {
 #define TYPE(a, ...) a,
@@ -106,6 +175,9 @@ namespace ren {
 
 
     Node* getRoot() const { return root; }
+    // Populated for a push constant whose element type carries REN's
+    // MaterialDrawParams attribute. The parameter can have any name.
+    const Option<MaterialSchema>& getMaterialSchema() const { return materialSchema; }
     void parseFromSpirv(const u8* spirvData, size_t spirvSize);
     void parseFromSlang(slang::ProgramLayout* programLayout, bool dumpDebugInfo = false);
     void inspect();
@@ -126,5 +198,6 @@ namespace ren {
     // The nodes of the reflection tree are owned by this object.
     // We use raw pointers in the tree itself for simplicity.
     std::vector<Box<Node>> allNodes;
+    Option<MaterialSchema> materialSchema = None;
   };
 }  // namespace ren

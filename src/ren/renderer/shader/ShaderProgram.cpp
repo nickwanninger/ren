@@ -139,17 +139,12 @@ namespace ren {
       std::vector<slang::CompilerOptionEntry> compilerOptions;
       compilerOptions.push_back(optimizationOption);
 
-      slang::CompilerOptionEntry matrixLayoutOption = {};
-      matrixLayoutOption.name = slang::CompilerOptionName::MatrixLayoutColumn;
-      matrixLayoutOption.value.kind = slang::CompilerOptionValueKind::Int;
-      matrixLayoutOption.value.intValue0 = 1;
-      compilerOptions.push_back(matrixLayoutOption);
-
       targetDesc.compilerOptionEntries = compilerOptions.data();
       targetDesc.compilerOptionEntryCount = static_cast<SlangInt>(compilerOptions.size());
 
       sessionDesc.targets = &targetDesc;
       sessionDesc.targetCount = 1;
+      sessionDesc.defaultMatrixLayoutMode = SLANG_MATRIX_LAYOUT_COLUMN_MAJOR;
 
       static SlangFileSystem fileSystem;
       sessionDesc.fileSystem = &fileSystem;

@@ -165,6 +165,8 @@ namespace ren {
   using UniformBuffer = FixedUsageTypedBuffer<T, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT>;
   template <typename T>
   using StorageBuffer = FixedUsageTypedBuffer<T, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT>;
+  template <typename T>
+  using IndirectBuffer = FixedUsageTypedBuffer<T, VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT>;
 
 
   template <typename T>

@@ -63,11 +63,11 @@ namespace ren {
     return ShaderCursor(*this, *m_node->members[index]);
   }
 
-  ShaderCursor ShaderCursor::pushConstant(std::string_view name) const {
+  ShaderCursor ShaderCursor::root(std::string_view name) const {
     const auto* root = m_program->getReflection()->getRoot();
     if (m_node != root) {
       throw std::runtime_error(
-          "ShaderCursor::pushConstant() must be called on the root cursor");
+          "ShaderCursor::root() must be called on the root cursor");
     }
     auto cursor = get(name);
     if (cursor.m_node->type.type != ShaderReflection::Type::PushConstant) {
