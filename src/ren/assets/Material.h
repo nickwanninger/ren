@@ -4,6 +4,7 @@
 #include <string>
 #include <ren/renderer/Renderer.h>
 #include <ren/assets/Asset.h>
+#include <ren/renderer/CommandEncoder.h>
 
 namespace ren {
 
@@ -24,10 +25,13 @@ namespace ren {
     Material &operator=(Material &&) = delete;
 
 
-
-
     void setName(const std::string_view &name) { this->name = name; }
     const std::string &getName() const { return this->name; }
+
+
+    // These methods configure the material's properties based on the T from the
+    // shader's MaterialInput<T> push constant.
+    void setColor(const std::string_view &name, const glm::vec4 &color);
 
 
     // Bind the material to the renderer.
@@ -36,7 +40,7 @@ namespace ren {
     // Return true if the material was successfully bound, false otherwise.
     //    False implies the material was not ready to be used (potentially
     //    missing textures, streaming in data, etc.)
-    virtual bool bind(Renderer &R) = 0;
+    // virtual BoundGraphicsEncoder bind(RenderPassEncoder &R) = 0;
 
     // Render the material to the imgui-based inspector.
     // This is used to inspect a material in the editor.
@@ -52,5 +56,9 @@ namespace ren {
 
    private:
     std::string name = "Unknown Material";
+
+
+    // This is a CPU-side buffer which mirrors the reflected MaterialT in the shader.
+    std::vector<u8> cpuMaterialData;
   };
 }  // namespace ren

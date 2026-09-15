@@ -12,7 +12,7 @@
 
 #include <ren/core/Logging.h>
 #include <ren/core/Instrumentation.h>
-#include <vulkan/vulkan.h> // TODO: BAD IN THIS FILE!
+#include <vulkan/vulkan.h>  // TODO: BAD IN THIS FILE!
 
 #include <fmt/core.h>
 #include <ren/core/Result.h>
@@ -64,6 +64,22 @@ using f64 = double;
     }                                                             \
   } while (0)
 
+// Generate bitwise operators for a scoped enum used as flags.
+// Usage:  REN_FLAG_ENUM(MyFlags, u32)
+// Gives you | & ~ |= &= on MyFlags values.
+#define REN_FLAG_ENUM(T, Underlying)                                                                               \
+  inline T operator|(T a, T b) { return static_cast<T>(static_cast<Underlying>(a) | static_cast<Underlying>(b)); } \
+  inline T operator&(T a, T b) { return static_cast<T>(static_cast<Underlying>(a) & static_cast<Underlying>(b)); } \
+  inline T operator~(T a) { return static_cast<T>(~static_cast<Underlying>(a)); }                                  \
+  inline T& operator|=(T& a, T b) {                                                                                \
+    a = a | b;                                                                                                     \
+    return a;                                                                                                      \
+  }                                                                                                                \
+  inline T& operator&=(T& a, T b) {                                                                                \
+    a = a & b;                                                                                                     \
+    return a;                                                                                                      \
+  }
+
 
 
 namespace ren {
@@ -82,6 +98,8 @@ namespace ren {
   inline float randomFloat(float min = 0.0f, float max = 1.0f) {
     return min + static_cast<float>(rand()) / (static_cast<float>(FLOAT_RAND_MAX / (max - min)));
   }
+
+  inline i32 randomInt(i32 min = 0, i32 max = 100) { return min + static_cast<i32>(rand()) % (max - min + 1); }
 
   inline glm::vec3 randomDirection() {
     float x = static_cast<float>(rand()) / static_cast<float>(FLOAT_RAND_MAX) * 2.0f - 1.0f;
@@ -133,5 +151,24 @@ namespace ren {
   Box<T> makeBox(Args&&... args) {
     return std::make_unique<T>(std::forward<Args>(args)...);
   }
+
+  struct ByteSpan {
+    const u8* data = nullptr;
+    size_t size = 0;
+
+    constexpr ByteSpan() noexcept = default;
+
+    ByteSpan(const void* bytes, size_t byte_size) noexcept
+        : data(static_cast<const u8*>(bytes))
+        , size(byte_size) {}
+
+    // A span converted from a value remains valid only while that value is
+    // alive. Functions must not retain the span.
+    template <typename T>
+      requires(!std::is_volatile_v<T> && __is_trivially_copyable(T) && (sizeof(T) & 3u) == 0)
+    ByteSpan(const T& value) noexcept
+        : data(reinterpret_cast<const u8*>(__builtin_addressof(value)))
+        , size(sizeof(T)) {}
+  };
 
 }  // namespace ren

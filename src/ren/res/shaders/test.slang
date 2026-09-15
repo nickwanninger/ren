@@ -89,7 +89,7 @@ float2 W(float2 p) {
   }
 
   // A bit of jitter to counter the high frequency sections.
-  p += fract(sin(p + float2(13, 7)) * 5e5) * .03 - .015;
+  // p += fract(sin(p + float2(13, 7)) * 5e5) * .03 - .015;
 
   return fmod(p, 2.) - 1.; // Range: [float2(-1), float2(1)]
 }

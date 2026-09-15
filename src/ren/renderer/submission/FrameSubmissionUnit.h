@@ -14,7 +14,7 @@ namespace ren {
   // Extends SubmissionUnit with swapchain-specific resources and presentation logic
   class FrameSubmissionUnit : public SubmissionUnit {
    public:
-    FrameSubmissionUnit(u32 frameIndex, Swapchain &swapchain, VkImage swapchainImage,
+    FrameSubmissionUnit(u32 slotIndex, Swapchain &swapchain, VkImage swapchainImage,
                         VkImageView swapchainImageView);
     ~FrameSubmissionUnit();
 
@@ -29,7 +29,8 @@ namespace ren {
     void submitAndPresent(SubmissionQueue &queue, VkSwapchainKHR swapchain);
 
     // Frame-specific resources
-    u32 frameIndex;
+    const u32 slotIndex;
+    u32 swapchainImageIndex;
     RenderTargetRef renderTarget = nullptr;
     ImageRef deviceImage = nullptr;
     ImageRef depthImage = nullptr;

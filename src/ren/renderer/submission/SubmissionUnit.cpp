@@ -1,13 +1,16 @@
 #include <ren/renderer/submission/SubmissionUnit.h>
 #include <ren/renderer/CommandEncoder.h>
 #include <ren/renderer/submission/SubmissionQueue.h>
+#include <ren/renderer/Renderer.h>
 #include "ren/core/Instrumentation.h"
 
 namespace ren {
 
 #define NUM_QUERY_POOL_ENTRIES 1024
 
-  SubmissionUnit::SubmissionUnit() {
+  SubmissionUnit::SubmissionUnit()
+      : m_frameGlobals(
+            Renderer::get().getFrameGlobalsAllocator().allocate()) {
     auto &vulkan = ren::getVulkan();
     // ---- Allocate the command buffer for this frame ---- //
     VkCommandBufferAllocateInfo allocInfo{};
@@ -35,6 +38,20 @@ namespace ren {
     VkPhysicalDeviceProperties props;
     vkGetPhysicalDeviceProperties(getVulkan().physical_device, &props);
     this->timestampPeriod = props.limits.timestampPeriod;
+
+  }
+
+  SubmissionUnit::~SubmissionUnit() {
+    auto& vulkan = getVulkan();
+    m_cmd.reset();
+    if (m_timestampQueryPool != VK_NULL_HANDLE) {
+      vkDestroyQueryPool(vulkan.device, m_timestampQueryPool, nullptr);
+      m_timestampQueryPool = VK_NULL_HANDLE;
+    }
+    if (m_vkCmd != VK_NULL_HANDLE) {
+      vkFreeCommandBuffers(vulkan.device, vulkan.commandPool, 1, &m_vkCmd);
+      m_vkCmd = VK_NULL_HANDLE;
+    }
   }
 
 
@@ -87,15 +104,6 @@ namespace ren {
 
     return m_cmd;
   }
-
-
-
-  ShaderObject &SubmissionUnit::createShaderObject(ref<ShaderProgram> &program) {
-    // Allocate a new ShaderObject from this submission unit's arena.
-    auto *mem = m_arena.push<ShaderObject>(program, *this);
-    return *mem;
-  }
-
 
   ref<Fence> SubmissionUnit::submitTo(SubmissionQueue &queue, SubmissionInfo info) {
     VK_CHECK(vkEndCommandBuffer(m_vkCmd));

@@ -41,7 +41,7 @@ namespace ren {
     GraphImageSpec spec;
     ren::ImageRef image;
 
-    ren::Sampler sampler;
+    ref<ren::Sampler> sampler;
 
     mutable VkDescriptorSet imguiTextureID = VK_NULL_HANDLE;
   };

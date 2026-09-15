@@ -55,7 +55,7 @@ namespace ren::editor {
   }
 
   static void inspectorPlugin(ren::Application &app) {
-    if (0)
+    if (1)
       ren::system::onUpdate("ren::editor::EditorInspector").run([&](flecs::iter &it) {
         ImGui::Begin("Inspector");
 

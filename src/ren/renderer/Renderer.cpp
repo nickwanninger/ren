@@ -23,6 +23,10 @@ namespace ren {
 
     // Create the Vulkan instance
     this->vulkan = make<VulkanInstance>(this->window);
+    this->imageHeap = make<ImageDescriptorHeap>();
+    this->samplerHeap = make<SamplerDescriptorHeap>();
+    this->samplerCache = make<SamplerCache>(this->samplerHeap);
+    this->frameGlobalsAllocator = makeBox<FrameGlobalsAllocator>();
 
 
     rebuildSwapchain();
@@ -34,9 +38,17 @@ namespace ren {
 
     // For various reasons, we want to explicitly clear the render pass cache
     // before destroying the vulkan instance or anything else.
+    this->currentPipeline.reset();
+    this->currentPass.reset();
+    this->displayPass.reset();
     this->renderPassCache.clearCache();
 
+    this->pipelineCache.reset();
     this->swapchain.reset();
+    this->samplerCache.reset();
+    this->imageHeap.reset();
+    this->samplerHeap.reset();
+    this->frameGlobalsAllocator.reset();
     this->vulkan.reset();
   }
 
@@ -137,22 +149,13 @@ namespace ren {
     // printf("Binding PSO: %s (%p)\n", pso.debugName.c_str(), currentPipeline->getHandle());
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, currentPipeline->getHandle());
+    std::array sets{
+        frame.getFrameGlobalsSet(), imageHeap->getSet(), samplerHeap->getSet()};
+    vkCmdBindDescriptorSets(
+        cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, currentPipeline->getLayout(),
+        ShaderABI::frameSet, static_cast<u32>(sets.size()),
+        sets.data(), 0, nullptr);
   }
-
-
-
-  ShaderBinder Renderer::startBinding(u32 set) {
-
-    // Start binding the shader program.
-    if (this->currentPipeline == nullptr) {
-      throw std::runtime_error(
-          "Cannot start binding without a current pipeline set. Call bind() first.");
-    }
-
-    // Create a shader binder for the current program.
-    return ShaderBinder(*getCurrentProgram(), set);
-  }
-
 
   void Renderer::bind(ref<ShaderProgram> program) {
     // Bind the shader program.
@@ -197,7 +200,6 @@ namespace ren {
 
     vulkan->frame_number += 1;
 
-    // Begin the frame (waits for fence and starts command buffer)
     frame->beginFrame();
   }
 

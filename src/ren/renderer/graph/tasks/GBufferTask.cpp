@@ -21,9 +21,10 @@ namespace ren {
 
 
   void GBufferTask::run(ren::GraphRenderPassContext &ctx) {
-#if 0
     auto &cam = ren::Camera::get();
     auto viewMatrix = cam.view_matrix();
+
+    // return;
 
     // Grab an image for width/height.
     auto image = ctx.graph.getImage(out.depth);
@@ -32,7 +33,7 @@ namespace ren {
 
     auto &megaMesh = ren::world().get_mut<ren::MegaMeshBuffer>();
     // Bind the MegaMesh buffer for rendering geometry.
-    megaMesh.bind(ctx.cmd);
+    megaMesh.bind(ctx.encoder.getEncoder());
 
     // TODO: BATCH RENDERING
 
@@ -40,16 +41,6 @@ namespace ren {
 
     ren::RenderWorld rw(cam);
     rw.extractFromECS(ren::world());
-
-    // for (auto &pl : rw.pointLights) {
-    //   ren::println("Point Light at {},{},{} with radius {}", pl.position.x, pl.position.y,
-    //                pl.position.z, pl.radius);
-    //   DebugScribe s;
-    //   s.drawSphere(pl.position, pl.radius, pl.color, 0.1f);
-    //   s.drawSphere(pl.position, 0.1f, pl.color, 1.0f);
-    //   // ren::debugLine(glm::vec3(0, 0, 0), pl.position, pl.color, 2.0f);
-    // }
-
 
     pc.view = viewMatrix;
     pc.proj = projection;
@@ -65,15 +56,28 @@ namespace ren {
     engineUBO.time = ren::Application::get().timeSeconds;
     this->engineUBOBuffer.update(engineUBO);
 
+    float radius = 0.01f;
     for (auto &r : rw.renderables) {
       auto &mesh = r.mesh;
       auto &mat = r.material;
 
 
-      if (!mat->bind(ctx.renderer)) {
-        continue;  // Skip this renderable if the material is not ready.
-      }
+      // auto x = ctx.encoder.bindGraphics(mat->getPSO());
 
+      //  auto cur = ctx.encoder.bindGraphics(mat->getPSO());
+
+
+      DebugScribe s;
+      auto position = r.transform * glm::vec4(0, 0, 0, 1);
+      s.drawSphere(glm::vec3(position), radius, glm::vec4(1.0f, 0.0f, 0.0f, 1.0f), 1.0f);
+      radius += 0.05f;
+
+
+      // if (!mat->bind(ctx.renderer)) {
+      //   continue;  // Skip this renderable if the material is not ready.
+      // }
+
+      /*
 
       auto engineBinder = ctx.renderer.startBinding(0);
       engineBinder.bind("engine", this->engineUBOBuffer);
@@ -89,8 +93,8 @@ namespace ren {
       int instanceCount = 1;
       vkCmdDrawIndexed(ctx.cmd, meshEntry.indexCount, instanceCount, meshEntry.indexOffset,
                        meshEntry.vertexOffset, 0);
+                       */
     }
-#endif
   }
 
 

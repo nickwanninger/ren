@@ -3,6 +3,7 @@ cmake_minimum_required(VERSION 3.20)
 project(ren CXX C)
 
 include(FetchContent)
+include(CTest)
 
 
 message(STATUS "C Compiler: ${CMAKE_C_COMPILER}")
@@ -37,7 +38,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Vulkan as a Graphics API
 message(STATUS "Vulkan SDK Set to: ${VULKAN_SDK}")
-find_package(Vulkan REQUIRED COMPONENTS shaderc_combined)
+find_package(Vulkan REQUIRED)
 message(STATUS "Vulkan include dirs: ${Vulkan_INCLUDE_DIRS}")
 include_directories(${Vulkan_INCLUDE_DIRS})
 

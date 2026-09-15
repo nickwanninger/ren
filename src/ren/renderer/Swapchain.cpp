@@ -25,7 +25,7 @@ namespace ren {
   Swapchain::Swapchain(SwapchainCreateInfo &info)
       : window(info.window) {
     REN_PROFILE_SCOPE("Build Swapchain");
-    this->frameIndex = 0;
+    this->frameSlotIndex = 0;
     auto &vulkan = ren::getVulkan();
     vulkan.frame_number = 0;
 
@@ -38,9 +38,6 @@ namespace ren {
 
     // ---- Allocate the Swapchain for device target rendering ---- //
     vkb::SwapchainBuilder swapchain_builder(vulkan.physical_device, vulkan.device, vulkan.surface);
-
-    fmt::print("Creating ren::Swapchain for window size: {}x{}, vsync={}\n", width, height,
-               info.enableVSync);
 
 
     auto presentMode = VK_PRESENT_MODE_IMMEDIATE_KHR;
@@ -68,9 +65,6 @@ namespace ren {
     this->imageFormat = vkb_swapchain.image_format;
     this->depthFormat = vulkan.findDepthFormat();
 
-    fmt::print("Vulkan swapchain created with {} images, extent: {}x{}. format={}\n", images.size(),
-               deviceExtent.width, deviceExtent.height, (u32)imageFormat);
-
     for (size_t i = 0; i < images.size(); i++) {
       frames.push_back(makeBox<ren::FrameSubmissionUnit>((u32)i, *this, images[i], imageViews[i]));
     }
@@ -81,7 +75,6 @@ namespace ren {
     auto &vulkan = ren::getVulkan();
     // wait for idle.
     vkDeviceWaitIdle(vulkan.device);
-    fmt::print("Destroying Swapchain with {} frames\n", frames.size());
     // Clear the swapchain data.
     // TODO: make sure nobody is using any of these!
     frames.clear();
@@ -96,10 +89,10 @@ namespace ren {
       fmt::print("No frames available in swapchain\n");
       return nullptr;
     }
-    frameIndex = vulkan.frame_number % frames.size();
+    frameSlotIndex = vulkan.frame_number % frames.size();
 
     // Get the current frame unit
-    auto frameUnit = frames[frameIndex].get();
+    auto frameUnit = frames[frameSlotIndex].get();
     g_frameUnit = frameUnit;
 
     // Wait for previous frame's work BEFORE using the semaphore
@@ -109,7 +102,7 @@ namespace ren {
     REN_PROFILE_SCOPE("vkAcquireNextImageKHR");
     auto result = vkAcquireNextImageKHR(vulkan.device, this->swapchain, UINT64_MAX,
                                         frameUnit->imageAvailableSemaphore, VK_NULL_HANDLE,
-                                        &frameUnit->frameIndex);
+                                        &frameUnit->swapchainImageIndex);
 
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
       ren::dbgln("Swapchain image out of date. Rebuilding...");

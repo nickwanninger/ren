@@ -48,6 +48,9 @@
 #include <ren/scripting/imgui_lua_inspector.hpp>
 #include <ren/core/Math.h>
 
+#include <chrono>
+#include <thread>
+
 extern "C" {
 #include <luajit.h>
 #include <lua.h>
@@ -105,16 +108,12 @@ namespace ren {
 
     world.set_threads(6);
 
-    if (kMaxFPS.get() > 0) {
-      world.set_target_fps(kMaxFPS.get());
-    }
-
     this->globalEventEntity = world.entity("ren::events");
 
     // Enable the flecs world rest api
     ren::world().set<flecs::Rest>({});
-    ren::world().import <flecs::stats>();
-    ren::world().import <flecs::timer>();
+    ren::world().import<flecs::stats>();
+    ren::world().import<flecs::timer>();
 
 
     ren::initPhases(ren::world());
@@ -168,19 +167,22 @@ namespace ren {
       func();
     }
 
+    VkDescriptorPool imguiPool = VK_NULL_HANDLE;
     {
       REN_PROFILE_SCOPE("ImGuiLayer::shutdown");
 
       auto &vulkan = ren::getVulkan();
       auto &state = ren::resource<ren::Application::ImGuiState>();
+      imguiPool = state.imguiPool;
 
-      vkDestroyDescriptorPool(vulkan.device, state.imguiPool, nullptr);
-      state.imguiPool = VK_NULL_HANDLE;
-
+      // ECS-owned textures unregister their ImGui descriptors during teardown,
+      // so destroy them before shutting down ImGui or its pool.
+      world.reset();
       ImGui_ImplVulkan_Shutdown();
       ImGui_ImplSDL3_Shutdown();
       ImNodes::DestroyContext();
       ImGui::DestroyContext();
+      vkDestroyDescriptorPool(vulkan.device, imguiPool, nullptr);
     }
 
     // Nuke the renderer.
@@ -210,29 +212,140 @@ namespace ren {
     ren::GraphHandle ssao;
     ren::GraphHandle gbufferAlbedo, gbufferNormal, gbufferMaterial, gbufferDepth;
     auto &gbp = ren::addGBuffer(G, gbufferAlbedo, gbufferNormal, gbufferMaterial, gbufferDepth);
-    ren::addSSAO(G, gbufferDepth, gbufferNormal, ssao);
+    // ren::addSSAO(G, gbufferDepth, gbufferNormal, ssao);
 
 
 
-    G.pass("gizmo").execute([&](ren::GraphRunContext &ctx) {});
+    // G.pass("gizmo").execute([&](ren::GraphRunContext &ctx) {});
 
 
-    GraphHandle buzz;
-    G.pass("Fizbuzz").createColorAttachment("buzz", {.absoluteSize = glm::uvec2(512, 512)}, buzz).render([&](ren::GraphRenderPassContext &ctx) {});
+    // GraphHandle buzz;
+    // G.pass("Fizbuzz").createColorAttachment("buzz", {.absoluteSize = glm::uvec2(512, 512)}, buzz).render([&](ren::GraphRenderPassContext &ctx) {});
     // for (int i = 0; i < 128; i++) {
     //   G.pass("gadget").execute([&](ren::GraphRunContext &ctx) { printf("Gadget pass %d\n", i); });
     // }
 
-    ren::PipelineStateObject trianglePSO;
-    trianglePSO.debugName = "Test Triangle PSO";
-    trianglePSO.program = make<ShaderProgram>("./test");
-    trianglePSO.cullMode = ren::CullMode::None;
-    trianglePSO.hasVertexBinding = true;
-    trianglePSO.fillMode = ren::FillMode::Solid;
+
+    // auto program = ren::make<ren::ShaderProgram>("test/drawparams_temp_test");
+    // auto material = program->getReflection()->getMaterialSchema();
+    // if (material.isNone()) {
+    //   abort();
+    // }
+
+
+    ren::PipelineStateObject squareAPSO;
+    squareAPSO.debugName = "Bindless Square A";
+    squareAPSO.program = make<ShaderProgram>("demo/square_a");
+    squareAPSO.cullMode = ren::CullMode::None;
+    squareAPSO.depthTest = false;
+    squareAPSO.depthWrite = false;
+
+    ren::PipelineStateObject squareBPSO = squareAPSO;
+    squareBPSO.debugName = "Bindless Square B";
+    squareBPSO.program = make<ShaderProgram>("demo/square_b");
+
+    auto makeSquare = [] {
+      ren::MeshBuilder builder;
+      auto face = builder.beginFace();
+      face.vertex(glm::vec3(-1.0f, -1.0f, 0.0f), glm::vec3(0.0f), glm::vec2(0.0f, 0.0f));
+      face.vertex(glm::vec3(1.0f, -1.0f, 0.0f), glm::vec3(0.0f), glm::vec2(1.0f, 0.0f));
+      face.vertex(glm::vec3(1.0f, 1.0f, 0.0f), glm::vec3(0.0f), glm::vec2(1.0f, 1.0f));
+      face.vertex(glm::vec3(-1.0f, 1.0f, 0.0f), glm::vec3(0.0f), glm::vec2(0.0f, 1.0f));
+      face.end();
+      return builder.stampOut();
+    };
+
+
+    // Generate a unit-cube mesh for testing purposes.
+    auto makeCube = [] {
+      ren::MeshBuilder builder;
+
+      auto addFace = [&builder](glm::vec3 bottomLeft, glm::vec3 bottomRight, glm::vec3 topRight, glm::vec3 topLeft, glm::vec3 normal) {
+        auto firstTriangle = builder.beginFace();
+        firstTriangle.vertex(bottomLeft, normal, glm::vec2(0.0f, 0.0f));
+        firstTriangle.vertex(bottomRight, normal, glm::vec2(1.0f, 0.0f));
+        firstTriangle.vertex(topRight, normal, glm::vec2(1.0f, 1.0f));
+        firstTriangle.end();
+
+        auto secondTriangle = builder.beginFace();
+        secondTriangle.vertex(bottomLeft, normal, glm::vec2(0.0f, 0.0f));
+        secondTriangle.vertex(topRight, normal, glm::vec2(1.0f, 1.0f));
+        secondTriangle.vertex(topLeft, normal, glm::vec2(0.0f, 1.0f));
+        secondTriangle.end();
+      };
+
+      constexpr float h = 0.5f;
+
+      addFace({-h, -h, h}, {h, -h, h}, {h, h, h}, {-h, h, h}, {0.0f, 0.0f, 1.0f});
+      addFace({h, -h, -h}, {-h, -h, -h}, {-h, h, -h}, {h, h, -h}, {0.0f, 0.0f, -1.0f});
+      addFace({h, -h, h}, {h, -h, -h}, {h, h, -h}, {h, h, h}, {1.0f, 0.0f, 0.0f});
+      addFace({-h, -h, -h}, {-h, -h, h}, {-h, h, h}, {-h, h, -h}, {-1.0f, 0.0f, 0.0f});
+      addFace({-h, h, h}, {h, h, h}, {h, h, -h}, {-h, h, -h}, {0.0f, 1.0f, 0.0f});
+      addFace({-h, -h, -h}, {h, -h, -h}, {h, -h, h}, {-h, -h, h}, {0.0f, -1.0f, 0.0f});
+
+      return builder.stampOut();
+    };
+
+    auto squareAMesh = makeSquare();
+    auto squareBMesh = makeSquare();
+
+    std::array<u8, 16> warmPixels{255, 80, 32, 255, 255, 190, 32, 255, 255, 190, 32, 255, 255, 80, 32, 255};
+    std::array<u8, 16> coolPixels{32, 120, 255, 255, 32, 255, 190, 255, 32, 255, 190, 255, 32, 120, 255, 255};
+    auto warmTexture = Texture::create("bindless-warm", 2, 2, warmPixels.data());
+    auto coolTexture = Texture::create("bindless-cool", 2, 2, coolPixels.data());
 
 
 
-    auto computeProgram = ren::make<ren::ShaderProgram>("test/compute");
+    ren::PipelineStateObject cubePSO;
+    cubePSO.debugName = "Cube";
+    cubePSO.program = make<ShaderProgram>("demo/cube");
+    cubePSO.cullMode = ren::CullMode::None;
+    cubePSO.depthTest = true;
+    cubePSO.depthWrite = true;
+    cubePSO.fillMode = ren::FillMode::Solid;
+    auto cubeMesh = makeCube();
+
+
+    // A small shared palette rather than a unique color per cube, so that the
+    // material array is genuinely deduplicated (100 draws, 8 materials).
+    static constexpr std::array<glm::vec3, 8> kCubePalette{
+        glm::vec3(0.90f, 0.30f, 0.24f), glm::vec3(0.95f, 0.61f, 0.07f), glm::vec3(0.95f, 0.85f, 0.24f), glm::vec3(0.18f, 0.80f, 0.44f),
+        glm::vec3(0.10f, 0.74f, 0.61f), glm::vec3(0.20f, 0.60f, 0.86f), glm::vec3(0.61f, 0.35f, 0.71f), glm::vec3(0.93f, 0.94f, 0.95f),
+    };
+
+    struct Cube {
+      glm::vec3 position;
+      glm::vec3 rotation;  // Radians
+      glm::vec3 scale = glm::vec3(1.0f);
+      u32 paletteIndex = 0;
+      glm::vec3 velocity = glm::vec3(0.0f);
+
+      glm::mat4 modelMatrix() const {
+        glm::mat4 m(1.0f);
+        m = glm::translate(m, position);
+        m = glm::rotate(m, rotation.x, glm::vec3(1.0f, 0.0f, 0.0f));
+        m = glm::rotate(m, rotation.y, glm::vec3(0.0f, 1.0f, 0.0f));
+        m = glm::rotate(m, rotation.z, glm::vec3(0.0f, 0.0f, 1.0f));
+        m = glm::scale(m, scale);
+        return m;
+      }
+    };
+
+    const u32 numCubes = 100;
+    std::vector<Cube> cubes;
+    for (u32 i = 0; i < numCubes; i++) {
+      Cube c;
+      const float x = static_cast<float>(i % 10) - 4.5f;
+      const float y = static_cast<float>((i / 10) % 5) - 2.0f;
+      const float z = -5.0f - static_cast<float>(i / 50.0f) * 5.0f;
+      c.position = glm::vec3(x * 2.0f, y * 2.0f, z);
+      c.rotation = glm::vec3(ren::randomFloat(0.0f, glm::two_pi<float>()), ren::randomFloat(0.0f, glm::two_pi<float>()),
+                             ren::randomFloat(0.0f, glm::two_pi<float>()));
+      c.paletteIndex = i % static_cast<u32>(kCubePalette.size());
+      // random velocity
+      c.velocity = ren::randomDirection();
+      cubes.push_back(c);
+    }
 
 
     float renderScaleTemp = 1.0f;
@@ -243,9 +356,13 @@ namespace ren {
     static bool isResizing = false;
 
 
+
+    G.pass("gizmo").execute([&](ren::GraphRunContext &ctx) {});
+
     SDL_RaiseWindow(this->window);
 
     while (this->running) {
+      const auto frameStart = std::chrono::steady_clock::now();
       int eventsHandled = 0;
 
       {
@@ -283,8 +400,11 @@ namespace ren {
 
 
 
-          if (ImGui_ImplSDL3_ProcessEvent(&e)) {
-            continue;
+          {
+            REN_PROFILE_SCOPE("ImGui_ImplSDL3_ProcessEvent");
+            if (ImGui_ImplSDL3_ProcessEvent(&e)) {
+              continue;
+            }
           }
         }
 
@@ -322,11 +442,23 @@ namespace ren {
         break;
       }
 
+      auto &cam = ren::Camera::get();
+      cam.update(deltaTime);
 
       renderer->beginFrame();
       auto &frame = ren::getFrameUnit();
-
-      ren::Camera::get().update(deltaTime);
+      const glm::vec2 frameSize{frame.deviceImage->getWidth(), frame.deviceImage->getHeight()};
+      auto viewMatrix = cam.view_matrix();
+      auto projMatrix = ren::Camera::projectionMatrix(frameSize.x, frameSize.y);
+      frame.setFrameGlobals({
+          .time = time,
+          .deltaTime = deltaTime,
+          .frameNumber = static_cast<u32>(vulkan.frame_number),
+          .renderSize = frameSize,
+          .inverseRenderSize = 1.0f / frameSize,
+          .viewMatrix = viewMatrix,
+          .projMatrix = projMatrix,
+      });
 
       framerateCounter.addFrame(deltaTime);
 
@@ -361,32 +493,27 @@ namespace ren {
         }
 
 
+        // Simply print the framerate in the menu bar.
         char buf[64];
         snprintf(buf, sizeof(buf), "%4d FPS", (int)framerateCounter.getAverageFramerate());
-        if (ImGui::MenuItem(buf)) {
-          //
-        }
+        ImGui::MenuItem(buf);
 
         ImGui::EndMainMenuBar();
       }
 
-      ImGui::Begin("Compute");
-      ImGui::Button("My Button");
-
-      if (ImGui::IsItemHovered()) {
-        ImGui::BeginTooltip();
-        computeProgram->inspect();
-        // // Customize the tooltip content here
-        // ImGui::Text("This is a custom tooltip!");
-        // ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "It can have color.");
-        // ImGui::TextWrapped("You can also add longer descriptions that wrap around a specified width.");
-        ImGui::EndTooltip();
-      }
-      ImGui::End();
-
+      /**
+       * Show the console log inspection.
+       * see: https://nickw.io/post/logging-user-interfaces
+       */
       ren::inspectLog();
 
-      if (1) {
+      /**
+       * Tick the world and run lua update functions. This is where all the
+       * game logic happens, in effect. This currently runs on the main thread,
+       * but needs to be moved to a worker thread in the future to avoid
+       * blocking the main render thread with game logic.
+       */
+      {
         REN_PROFILE_SCOPE("WorldProgress");
         world.progress(deltaTime);
 
@@ -408,41 +535,11 @@ namespace ren {
       }
 
 
-      // G.pass("GBuffer")
-      //     .writes(gbufferAlbedo, GraphAccess::RenderTarget)
-      //     .writes(gbufferNormal, GraphAccess::RenderTarget)
-      //     .writes(gbufferMaterial, GraphAccess::RenderTarget)
-      //     .writes(gbufferDepth, GraphAccess::DepthTarget)
-      //     .render([&](ren::GraphRenderPassContext &ctx) { gbp.execute(ctx); });
-
-#if 0
-      ren::RenderGraph G;
-      ren::GraphHandle hdr;
-
-      // G.pass makes a builder.
-      // You can chain reads/writes before calling render or compute to finalize it.
-      G.pass("lighting").reads(gbufferAlbedo, gbufferNormal, gbufferDepth, ssao).targets(hdr).render([&](ren::GraphRenderPassContext &ctx) {
-        REN_PROFILE_SCOPE("TestRenderPass");
-        auto &penc = ctx.encoder;
-        penc.bindPipeline(trianglePSO);
-
-        DrawArguments args;
-        args.vertexCount = 3;
-        args.instanceCount = 1;
-        penc.draw(args);
-      });
-
-      auto computeProgram = ...;
-      G.pass("SsaoUpscale").reads(ssaoHalf).writes(ssaoFull).compute([&](ren::GraphComputeContext &ctx) {
-        // bind!
-        enc.dispatch(computeProgram, 64, 64, 64);
-      });
-#endif
-
-
+      /**
+       * Calculate the size of the render target based on the current window size.
+       */
       float width = (float)windowWidth;
       float height = (float)windowHeight;
-      // targetHeight = height;
       float targetHeight = height * renderScaleTemp;
       float scale = targetHeight / height;
       scale *= renderScaleTemp;
@@ -450,14 +547,17 @@ namespace ren {
       height *= scale;
       auto renderSize = glm::uvec2(width, height);
       G.startFrame(renderSize);
-
       try {
         G.run(*renderer);
+        // G.inspect();
       } catch (const std::exception &e) {
         ren::println("✗ RenderPassTask execution failed: {}", e.what());
       }
 
-      G.inspect();
+
+      // ImGui::Begin("Material");
+      // material.unwrap().inspect();
+      // ImGui::End();
 
 
 
@@ -465,63 +565,173 @@ namespace ren {
       auto penc = enc->beginRenderPass(*renderer->getDisplayPass(), *frame.renderTarget);
       {
         REN_PROFILE_SCOPE("FullScreenPass");
-        if (1) {
+        if (0) {
           REN_PROFILE_SCOPE("RenderBackgroundTriangle");
-          auto start = std::chrono::high_resolution_clock::now();
-          ren::MeshBuilder b;
+          penc.bindImmediateMesh(squareAMesh->vertices, squareAMesh->indices);
+          auto squareA = penc.bindGraphics(squareAPSO);
+          auto squareAConstants = squareA.root("root");
+          squareAConstants.set("offset", glm::vec2(-0.5f, 0.0f)).set("scale", 0.32f).set("pulseAmount", 0.08f).set("image", warmTexture);
 
-          auto fb = b.beginFace();
+          squareA.drawIndexed({.vertexCount = static_cast<u32>(squareAMesh->indices.size())});
 
-          // Add triangles to make a full screen quad
-          fb.vertex(glm::vec3(-1.0f, -1.0f, 0.0f), glm::vec3(0.0f), glm::vec2(0.0f, 0.0f));
-          fb.vertex(glm::vec3(1.0f, -1.0f, 0.0f), glm::vec3(0.0f), glm::vec2(1.0f, 0.0f));
-          fb.vertex(glm::vec3(1.0f, 1.0f, 0.0f), glm::vec3(0.0f), glm::vec2(1.0f, 1.0f));
-          fb.vertex(glm::vec3(-1.0f, 1.0f, 0.0f), glm::vec3(0.0f), glm::vec2(0.0f, 1.0f));
-
-          fb.end();
-
-          auto meshData = b.stampOut();
-
-
-          static struct {
-            float brightness = 1.0f;
-            float time = 0.0f;
-            float stride = 0.001f;
-            int index = 1;
-            int numDraws = 1;
-          } pc;
-
-          penc.bindImmediateMesh(meshData->vertices, meshData->indices);
-          penc.bindPipeline(trianglePSO);
-          pc.numDraws = 0;
-          pc.time = time;
-          DrawArguments args;
-          args.vertexCount = static_cast<u32>(meshData->indices.size());
-          args.instanceCount = 1;
-
-          pc.index = 0;
-          vkCmdPushConstants(penc.buf(), trianglePSO.program->getPipelineLayout(), VK_SHADER_STAGE_ALL, 0, sizeof(pc), &pc);
-          penc.drawIndexed(args);
-
-          auto end = std::chrono::high_resolution_clock::now();
-
-          float allocTime = std::chrono::duration<float, std::chrono::nanoseconds::period>(end - start).count();
+          penc.bindImmediateMesh(squareBMesh->vertices, squareBMesh->indices);
+          auto squareB = penc.bindGraphics(squareBPSO);
+          auto squareBConstants = squareB.root("root");
+          auto squareBTransform = squareBConstants.get("transform");
+          squareBTransform.set("center", glm::vec2(0.5f, 0.0f)).set("extent", 0.32f).set("rotationSpeed", 0.35f);
+          squareBConstants.set("tint", glm::vec4(1.0f)).set("pattern", coolTexture);
+          squareB.drawIndexed({.vertexCount = static_cast<u32>(squareBMesh->indices.size())});
         }
 
 
+        if (1) {
+          REN_PROFILE_SCOPE("Cubes");
+
+
+          auto start = std::chrono::high_resolution_clock::now();
+
+          // Run an n-body simulation on the cubes, applying gravity between them.
+          for (auto &c1 : cubes) {
+            for (auto &c2 : cubes) {
+              if (&c1 != &c2) {
+                glm::vec3 toOther = c2.position - c1.position;
+                float distance = glm::length(toOther);
+                if (distance > 0.0f) {
+                  // if they are closer than 1, bounce off.
+                  if (distance < 1.0f) {
+                    glm::vec3 normal = glm::normalize(toOther);
+                    c1.velocity -= normal * 2.0f * glm::dot(c1.velocity, normal);
+                  } else {
+                    glm::vec3 gravityDir = glm::normalize(toOther);
+                    float gravityStrength = 9.0f / (distance * distance);
+                    c1.velocity += gravityDir * gravityStrength * deltaTime;
+                  }
+                }
+              }
+            }
+          }
+
+
+
+          penc.bindImmediateMesh(cubeMesh->vertices, cubeMesh->indices);
+          auto cube = penc.bindGraphics(cubePSO);
+          auto root = cube.root("root");
+
+          struct alignas(16) ObjectData {
+            glm::mat4 modelMatrix;
+            glm::mat4 normalMatrix;
+            u32 objectId;
+            u32 _padding[3];
+          };
+
+          struct alignas(16) MaterialData {
+            glm::vec4 color;
+          };
+
+          struct InstanceRecord {
+            u32 objectIndex;
+            u32 materialIndex;
+          };
+          static_assert(sizeof(ObjectData) == 144);
+          static_assert(offsetof(ObjectData, normalMatrix) == 64);
+          static_assert(offsetof(ObjectData, objectId) == 128);
+          static_assert(sizeof(MaterialData) == 16);
+          static_assert(sizeof(InstanceRecord) == 8);
+
+          // The three arrays the batched root points at. Note the differing
+          // cardinalities: materials are keyed by *material identity*, so the
+          // palette is uploaded once no matter how many cubes reference it.
+          auto objectData = penc.getArena().push<StorageBuffer<ObjectData>>(cubes.size());
+          auto materialData = penc.getArena().push<StorageBuffer<MaterialData>>(kCubePalette.size());
+          auto instanceData = penc.getArena().push<StorageBuffer<InstanceRecord>>(cubes.size());
+          auto drawCommands = penc.getArena().push<IndirectBuffer<VkDrawIndexedIndirectCommand>>(cubes.size());
+
+          {
+            REN_PROFILE_SCOPE("Cubes - Update");
+            for (size_t i = 0; i < kCubePalette.size(); i++) {
+              materialData->hostData()[i] = MaterialData{.color = glm::vec4(kCubePalette[i], 1.0f)};
+            }
+
+            const u32 cubeIndexCount = static_cast<u32>(cubeMesh->indices.size());
+            for (size_t i = 0; i < cubes.size(); i++) {
+              auto &c = cubes[i];
+
+              c.position += c.velocity * deltaTime;
+
+              ObjectData data{};
+              const glm::mat4 modelMatrix = c.modelMatrix();
+              data.modelMatrix = modelMatrix;
+              data.normalMatrix = glm::transpose(glm::inverse(modelMatrix));
+              data.objectId = static_cast<u32>(i);
+              objectData->hostData()[i] = data;
+
+              instanceData->hostData()[i] = InstanceRecord{
+                  .objectIndex = static_cast<u32>(i),
+                  .materialIndex = c.paletteIndex,
+              };
+
+              // One command per draw. Every cube shares the immediate mesh for
+              // now, so the index/vertex offsets are identical; these are what
+              // vary once draws come out of the MegaMeshBuffer.
+              drawCommands->hostData()[i] = VkDrawIndexedIndirectCommand{
+                  .indexCount = cubeIndexCount,
+                  .instanceCount = 1,
+                  .firstIndex = 0,
+                  .vertexOffset = 0,
+                  .firstInstance = 0,
+              };
+            }
+          }
+
+          {
+            REN_PROFILE_SCOPE("Cubes - DRAW");
+            // One push constant, one draw, for the whole batch.
+            root.set("instances", instanceData->devicePointer<InstanceRecord>());
+            root.set("objects", objectData->devicePointer<ObjectData>());
+            root.set("materials", materialData->devicePointer<MaterialData>());
+            cube.drawIndexedIndirect(*drawCommands, static_cast<u32>(cubes.size()));
+          }
+
+
+          auto duration = std::chrono::high_resolution_clock::now() - start;
+          auto durationMs = std::chrono::duration_cast<std::chrono::nanoseconds>(duration).count();
+
+          ImGui::Begin("Cubes");
+          ImGui::Text("Cube count: %zu", cubes.size());
+          ImGui::Text("Material buffer size: %zu bytes", materialData->getByteCount());
+          ImGui::Text("Object buffer size: %zu bytes", objectData->getByteCount());
+          ImGui::Text("Instance buffer size: %zu bytes", instanceData->getByteCount());
+          ImGui::Text("Draw commands buffer size: %zu bytes", drawCommands->getByteCount());
+          ImGui::Text("Setup time: %lld us", durationMs);
+
+          ImGui::End();
+        }
+
+        /**
+         * Finally, render the ImGui draw data that has been accumulated over
+         * the course of the frame. This needs to be rendered at the end of the
+         * frame to ensure that it appears on top of all other rendered content.
+         */
         {
           REN_PROFILE_SCOPE("RenderImGui");
+
+          ren::renderDebugLines(viewMatrix, projMatrix);
           ImGui::Render();
           ImGui::UpdatePlatformWindows();
           ImGui::RenderPlatformWindowsDefault();
-          ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), penc.buf());  // Gross leakage.
+          auto commandBuffer = penc.buf();  // Gross Leakage...
+          ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer);
         }
       }
 
       penc.end();
 
-      // world.defer_end();
       renderer->endFrame();
+
+      if (kMaxFPS.get() > 0) {
+        const auto frameDuration = std::chrono::duration<double>(1.0 / kMaxFPS.get());
+        std::this_thread::sleep_until(frameStart + frameDuration);
+      }
     }
     renderer->waitForIdle();
   }

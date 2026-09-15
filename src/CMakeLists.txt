@@ -105,3 +105,17 @@ endif()
 add_subdirectory(ren)
 add_subdirectory(editor)
 add_subdirectory(bundler)
+
+# Keep the test suite optional for developer builds. We intentionally do not
+# download GoogleTest here: packagers and developers can provide it through
+# CMAKE_PREFIX_PATH or GTest_DIR.
+add_custom_target(ren-tests)
+if(BUILD_TESTING)
+  find_package(GTest QUIET)
+  if(GTest_FOUND)
+    message(STATUS "GoogleTest found; enabling REN tests")
+    add_subdirectory(test)
+  else()
+    message(STATUS "GoogleTest not found; REN tests are disabled")
+  endif()
+endif()

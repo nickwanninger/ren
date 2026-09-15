@@ -71,12 +71,12 @@ public:
         char const* path,
         ISlangBlob** outBlob) override {
 
-        ren::println("SlangFileSystem::loadFile({})", path);
         
         std::vector<u8> content;
         // Try loading through asset manager
         if (ren::loadAssetBytes(path, content)) {
             *outBlob = new SlangBlob(std::move(content));
+            ren::println("SlangFileSystem::loadFile({})", path);
             return SLANG_OK;
         }
         

@@ -2,6 +2,7 @@
 #include <ren/renderer/Texture.h>
 #include <ren/renderer/Buffer.h>
 #include <ren/renderer/vulkan/Vulkan.h>
+#include <ren/renderer/Renderer.h>
 #include <ren/core/Instrumentation.h>
 
 #include <stb/stb_image.h>
@@ -10,8 +11,9 @@
 #include <ren/core/Flag.h>
 
 
-static ren::Flag<bool> enableMipmaps("texture-mipmaps",
-                                     "Enable mipmap generation for loaded textures");
+static ren::Flag<bool> enableMipmaps(
+    "texture-mipmaps", false,
+    "Enable mipmap generation for loaded textures");
 
 
 static std::vector<ren::Texture *> g_all_textures;
@@ -19,10 +21,13 @@ static std::vector<ren::Texture *> g_all_textures;
 
 const std::vector<ren::Texture *> ren::Texture::allTextures(void) { return g_all_textures; }
 
+ren::SamplerIndex ren::Texture::samplerIndex() const {
+  return sampler->index();
+}
+
 ren::Texture::Texture(const std::string_view &name, u32 width, u32 height, u8 *pixels)
     : name(name) {
   REN_PROFILE_FUNCTION();
-  g_all_textures.push_back(this);
   ren::ImageBuilder ib(this->name);
 
   ib.setWidth(width).setHeight(height);
@@ -48,7 +53,7 @@ ren::Texture::Texture(const std::string_view &name, u32 width, u32 height, u8 *p
   auto &vulkan = ren::getVulkan();
 
   VkDeviceSize imageSize = getWidth() * getHeight() * 4;
-  ren::Buffer stagingBuffer(
+  ren::BufferMemory stagingBuffer(
       imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
@@ -62,85 +67,59 @@ ren::Texture::Texture(const std::string_view &name, u32 width, u32 height, u8 *p
 
 
   // Generate mipmaps
-  if (mipLevels > 1) { image->generateMipmaps(); }
-
-
-  vulkan.transitionImageLayout(image->getImage(), format, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                               VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-
-  // Texture Sampler
-  VkSamplerCreateInfo samplerInfo{};
-  samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-  samplerInfo.magFilter = samplerInfo.minFilter = VK_FILTER_NEAREST;
-  // samplerInfo.magFilter = samplerInfo.minFilter = VK_FILTER_LINEAR;
-
-  samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-  samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-  samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-
-  samplerInfo.anisotropyEnable = VK_TRUE;
-  samplerInfo.maxAnisotropy = 1.0f;
-
-  samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
-  samplerInfo.unnormalizedCoordinates = VK_FALSE;
-  samplerInfo.compareEnable = VK_FALSE;
-  samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
-
-  samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-  samplerInfo.mipLodBias = 0.0f;
-  samplerInfo.minLod = 0.0f;
-  samplerInfo.maxLod = static_cast<float>(mipLevels - 1);
-
-  if (vkCreateSampler(vulkan.device, &samplerInfo, nullptr, &sampler) != VK_SUCCESS) {
-    throw std::runtime_error("failed to create texture sampler!");
+  if (mipLevels > 1) {
+    image->generateMipmaps();
+  } else {
+    vulkan.transitionImageLayout(
+        image->getImage(), format, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
   }
+
+  SamplerDesc samplerDesc{
+      .magFilter = VK_FILTER_NEAREST,
+      .minFilter = VK_FILTER_NEAREST,
+      .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
+      .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+      .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+      .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+      .maxAnisotropy = 1.0f,
+      .minLod = 0.0f,
+      .maxLod = static_cast<float>(mipLevels - 1),
+  };
+  sampler = Renderer::get().getSamplerCache().get(samplerDesc);
+  g_all_textures.push_back(this);
 }
 
 
 VkDescriptorSet ren::Texture::getImGui(void) {
   if (imguiTextureID == VK_NULL_HANDLE) {
     // create the imgui texture ID so we can display it in imgui
-    imguiTextureID = ImGui_ImplVulkan_AddTexture(sampler, image->getImageView(),
-                                                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    imguiTextureID = ImGui_ImplVulkan_AddTexture(
+        sampler->getHandle(), image->getImageView(),
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
   }
   return imguiTextureID;
 }
 
 
 ren::Texture::Texture(ren::ImageRef image) {
-  g_all_textures.push_back(this);
   REN_PROFILE_FUNCTION();
-  auto &vulkan = ren::getVulkan();
   this->image = image;
   this->name = image->getName();
 
-
-  // Texture Sampler
-  VkSamplerCreateInfo samplerInfo{};
-  samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-  samplerInfo.magFilter = samplerInfo.minFilter = VK_FILTER_NEAREST;
-
-  samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-  samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-  samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-
-  samplerInfo.anisotropyEnable = VK_TRUE;
-  samplerInfo.maxAnisotropy = 1.0f;
-
-  samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
-  samplerInfo.unnormalizedCoordinates = VK_FALSE;
-  samplerInfo.compareEnable = VK_FALSE;
-  samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
-
-  samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-  samplerInfo.mipLodBias = 0.0f;
-  samplerInfo.minLod = 0.0f;
-  samplerInfo.maxLod = 0.0f;
-
-
-  if (vkCreateSampler(vulkan.device, &samplerInfo, nullptr, &sampler) != VK_SUCCESS) {
-    throw std::runtime_error("failed to create texture sampler!");
-  }
+  SamplerDesc samplerDesc{
+      .magFilter = VK_FILTER_NEAREST,
+      .minFilter = VK_FILTER_NEAREST,
+      .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
+      .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+      .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+      .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+      .maxAnisotropy = 1.0f,
+      .minLod = 0.0f,
+      .maxLod = 0.0f,
+  };
+  sampler = Renderer::get().getSamplerCache().get(samplerDesc);
+  g_all_textures.push_back(this);
 
   // create the imgui texture ID so we can display it in imgui
   imguiTextureID = ImGui_ImplVulkan_AddTexture(this->getSampler(), this->getImageView(),
@@ -152,14 +131,19 @@ ren::Texture::Texture(ren::ImageRef image) {
 ren::Texture::~Texture(void) {
   g_all_textures.erase(std::remove(g_all_textures.begin(), g_all_textures.end(), this),
                        g_all_textures.end());
-  auto &vulkan = ren::getVulkan();
-  // Remove the imgui texture ID first,
   if (imguiTextureID != VK_NULL_HANDLE) { ImGui_ImplVulkan_RemoveTexture(imguiTextureID); }
 
-  // then destroy the sampler.
-  vkDestroySampler(vulkan.device, sampler, nullptr);
-  // And release our image reference.
+  // Release our image reference.
   this->image.reset();
+}
+
+ren::Texture::Texture(ref<Image> image, ref<Sampler> sampler)
+    : name(image ? image->getName() : ""),
+      image(std::move(image)), sampler(std::move(sampler)) {
+  if (!this->image || !this->sampler) {
+    throw std::runtime_error("Texture requires an Image and a Sampler");
+  }
+  g_all_textures.push_back(this);
 }
 
 

@@ -13,11 +13,13 @@ namespace ren {
     // Set the name of the material.
     this->setName("opaque-pbr-static");
 
-    if (defaultTexture == nullptr)
+    if (defaultTexture == nullptr) {
       defaultTexture = Texture::createSinglePixel("default-white", 255, 255, 255, 255);
+    }
 
-    if (defaultNormalTexture == nullptr)
+    if (defaultNormalTexture == nullptr) {
       defaultNormalTexture = Texture::createSinglePixel("default-normal", 127, 127, 255, 255);
+    }
 
 
     this->baseColorTexture = defaultTexture;
@@ -25,44 +27,27 @@ namespace ren {
     this->emissiveTexture = defaultTexture;
     this->normalTexture = defaultNormalTexture;
 
-    if (PBRMaterial::pso.program == nullptr) {
-      // If the PSO is not initialized, create it.
-      PBRMaterial::pso.program = make<ShaderProgram>("shaders/pbr.frag", "shaders/pbr.vert");
-      // ren::logInspection<ShaderProgram>("Programs > PBRMaterial PSO Program", PBRMaterial::pso.program);
-
-      PBRMaterial::pso.blendMode = ren::BlendMode::Alpha;
-      // PBRMaterial::pso.fillMode = ren::FillMode::Wireframe;
-
-      PBRMaterial::pso.cullMode = ren::CullMode::Back;
-    }
+    // PBR restoration is intentionally deferred until its resources are
+    // expressed as bindless handles and buffer addresses.
+    this->pso.debugName = "PBR Material PSO";
+    this->pso.program = make<ShaderProgram>("pbr");
+    this->pso.cullMode = ren::CullMode::None;
+    this->pso.depthTest = false;
+    this->pso.depthWrite = false;
   }
 
   ren::PipelineStateObject &PBRMaterial::getPSO() { return PBRMaterial::pso; }
 
-  bool PBRMaterial::bind(Renderer &R) {
-    // Bind the PBR Material's pipeline state object
-    R.bind(PBRMaterial::pso);
+  BoundGraphicsEncoder PBRMaterial::bind(RenderPassEncoder &enc) {
 
 
-    // we should also bind the textures to the right spot according to shaders/pbr
-    this->materialPropsBuffer.update(this->props);
-
-    // set 1 is the PBR material set for the fragment shader.
-    auto binder = R.startBinding(1);
-
-    binder.bind("material", this->materialPropsBuffer);
-    binder.bind("baseColorTexture", *this->baseColorTexture);
-    binder.bind("metallicRoughnessTexture", *this->metallicRoughnessTexture);
-    binder.bind("emissiveTexture", *this->emissiveTexture);
-    binder.bind("normalTexture", *this->normalTexture);
+    auto genc = enc.bindGraphics(PBRMaterial::pso);
 
 
-    // std::vector<ref<Texture>> textures = {this->baseColorTexture, this->metallicRoughnessTexture,
-    //                                       this->emissiveTexture, this->normalTexture};
-    // binder.bind("textures", std::span{textures});
-    binder.apply();
+    // TODO:
+    // genc.
 
-    return true;
+    return genc;
   }
 
   void PBRMaterial::inspect(void) {

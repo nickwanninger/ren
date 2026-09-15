@@ -18,8 +18,7 @@ namespace ren {
    *
    * - ShaderProgram: represents a set of shaders which are all bound together to form a pipeline
    * - ShaderModule: represents a single Vulkan shader module (VkShaderModule) loaded from SPIR-V
-   * - ShaderObject: represents a single instance of a shader (in particular, its descriptor sets
-   *                 and any per-instance state.)
+   * - ShaderCursor: represents reflected push-constant state for one command binding.
    */
 
 
@@ -43,13 +42,10 @@ namespace ren {
     // Load from slang
     ShaderProgram(const std::string& shader);
 
-    // DEPRECATED!!!
-    ShaderProgram(const std::string& glslVertexShader, const std::string& glslFragmentShader);
     ~ShaderProgram();
 
-
-    static inline ref<ShaderProgram> makeFullScreenProgram(const std::string& fragmentShaderPath) {
-      return make<ShaderProgram>("shaders/display.vert", fragmentShaderPath);
+    static inline ref<ShaderProgram> makeFullScreenProgram(const std::string& slangShaderPath) {
+      return make<ShaderProgram>(slangShaderPath);
     }
 
     // -- Non-copyable, movable -- //
@@ -75,19 +71,14 @@ namespace ren {
     // Inspect the shader program in imgui.
     void inspect(void);
 
-    // Serialization is currently simple. We need to be smarter about reading this back out, though.
-    JSON_SERIALIZE(ShaderProgram, vertexShaderPath, fragmentShaderPath);
+    // Runtime compilation is the source of truth. Serialization records only
+    // the Slang module path; compiled-module caching is intentionally deferred.
+    JSON_SERIALIZE(ShaderProgram, shaderPath);
 
     void temporarySerialize(const std::string_view &outDir);
 
    private:
-    std::string vertexShaderPath;    // TODO(NUKE)
-    std::string fragmentShaderPath;  // TODO(NUKE)
-    void reflectShaders();
-    void reflectShader(const std::vector<u32>& spirv, VkShaderStageFlagBits stage);
-
-
-    void mergeDescriptorBindings();
+    std::string shaderPath;
     void bakeLayouts();
 
     // Create a shader program from a slang file path, compiling the shader modules as needed.

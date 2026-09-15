@@ -52,10 +52,8 @@ namespace ren {
 
     // make a staging buffer.
     VkDeviceSize bufferSize = noiseData.size() * sizeof(glm::vec4);
-    ren::Buffer stagingBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_ONLY);
-    stagingBuffer.map();
+    ren::BufferMemory stagingBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_ONLY);
     stagingBuffer.copyFromHost(noiseData.data(), bufferSize, 0);
-    stagingBuffer.unmap();
 
 
     ren::ImageBuilder b("ssao_noise_texture");
@@ -143,7 +141,6 @@ namespace ren {
     // }
 
 
-    // auto &obj = ctx.encoder.createShaderObject(this->pso.program);
     // if (!obj.block("params").setEntireBuffer(ssao)) {
     //   throw std::runtime_error("Failed to set SSAO uniform buffer");
     // }
