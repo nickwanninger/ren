@@ -7,7 +7,7 @@
 #include <ren/core/Flag.h>
 #include <ren/assets/MeshScene.hpp>
 #include "ren/renderer/Buffer.h"
-#include "ren/renderer/shader/ShaderProgram.h"
+#include "ren/renderer/shader/ShaderCache.h"
 
 #include <ren/core/Systems.h>
 #include <ren/core/Components.h>
@@ -72,7 +72,7 @@ void testSaxpy(void) {
   randomize(x, length);
   randomize(y, length);
 
-  auto program = ren::make<ren::ShaderProgram>("test/saxpy");
+  auto program = ren::getShader("test/saxpy");
   auto cmd = unit.begin();
   auto compute = cmd->bindCompute(program);
   auto pushConstants = compute.root("pushConstants");
@@ -114,7 +114,7 @@ void imageHeapSampleTest() {
     pixels[pixel * 4 + 3] = 255;
   }
   img->uploadPixels(pixels.data());
-  auto program = ren::make<ren::ShaderProgram>("test/imageheap");
+  auto program = ren::getShader("test/imageheap");
 
 
 
@@ -160,7 +160,7 @@ int main(int argc, char* argv[]) {
 
   ren::Application app("Editor", res);
 
-  // auto program = ren::make<ren::ShaderProgram>("test/drawparams_temp_test");
+  // auto program = ren::getShader("test/drawparams_temp_test");
   // if (const auto& material = program->getReflection()->getMaterialSchema(); material.isSome()) {
   //   ren::println("Material schema:\n{}", material.unwrap().toJson().dump(2));
   // }
@@ -174,7 +174,7 @@ int main(int argc, char* argv[]) {
 
   if (runSaxpyArg.get()) {
     testSaxpy();
-    return 0;
+    // return 0;
   }
 
   // if (runImageHeapArg.get()) {

@@ -11,6 +11,7 @@
 #include <ren/renderer/RenderPassCache.h>
 #include <ren/renderer/pipelines/PipelineCache.h>
 #include <ren/renderer/pipelines/PipelineStateObject.h>
+#include <ren/renderer/shader/ShaderCache.h>
 #include <ren/renderer/SamplerCache.h>
 #include <ren/renderer/FrameGlobals.h>
 #include <SDL3/SDL.h>
@@ -85,6 +86,13 @@ namespace ren {
       return *pipelineCache;
     }
 
+    // Every shader in the engine is compiled and owned here. Prefer the free
+    // function `ren::getShader("demo/cube")` over touching this directly.
+    inline auto &getShaderCache() {
+      if (shaderCache == nullptr) { shaderCache = make<ShaderCache>(); }
+      return *shaderCache;
+    }
+
     inline auto getDisplayPass() {
       if (displayPass == nullptr) {
         // If the display pass is not initialized, create it.
@@ -125,6 +133,7 @@ namespace ren {
 
    private:
     ref<PipelineCache> pipelineCache;
+    ref<ShaderCache> shaderCache;
     ref<RenderPass> currentPass = nullptr;
     ref<CachedPipeline> currentPipeline = nullptr;
 

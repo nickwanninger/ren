@@ -1,8 +1,6 @@
 #include <ren/renderer/shader/ShaderProgram.h>
 #include <ren/renderer/shader/ShaderReflection.h>
 #include <ren/renderer/Swapchain.h>
-#include <slang-com-ptr.h>
-#include <slang.h>
 #include <unistd.h>
 #include <algorithm>
 #include <ren/renderer/Renderer.h>
@@ -13,8 +11,6 @@
 #include <imgui/imgui.h>
 #include <ren/core/ui/EditorUI.h>
 #include <ren/core/Bundle.h>
-#include <ren/core/Flag.h>
-#include <ren/renderer/shader/SlangFileSystem.h>
 
 
 namespace ren {
@@ -33,226 +29,10 @@ namespace ren {
     }
   }  // namespace
 
-  ShaderProgram::ShaderProgram(const std::string& slangPath)
-      : shaderPath(slangPath) {
-    this->compileFromSlangPath(slangPath);
-
-    // Slang reflection intentionally omits its synthesized descriptor heaps.
-    // Validate the emitted modules too, so the actual Vulkan ABI is enforced.
-    ShaderReflection physicalReflection;
-    for (auto& shader : shaders) {
-      physicalReflection.parseFromSpirv(
-          reinterpret_cast<const u8*>(shader->getCode().data()),
-          shader->getCode().size() * sizeof(u32));
-    }
-    for (const auto& binding : physicalReflection.bindings) {
-      if (!isGlobalABIBinding(
-              binding.set, binding.index,
-              binding.type.toVkDescriptorType())) {
-        throw std::runtime_error(fmt::format(
-            "Shader '{}' emitted descriptor set {} binding {} outside REN's global ABI",
-            slangPath, binding.set, binding.index));
-      }
-    }
-  }
-
-  ShaderProgram::~ShaderProgram() {
-    auto& vulkan = getVulkan();
-
-
-
-    // Delete the pipeline layout.
-    if (pipelineLayout != VK_NULL_HANDLE) {
-      vkDestroyPipelineLayout(vulkan.device, pipelineLayout, nullptr);
-      pipelineLayout = VK_NULL_HANDLE;
-    }
-
-    // Descriptor set layouts are owned by Renderer.
-  }
-
-
-
-  static Slang::ComPtr<slang::IGlobalSession> globalSession;
-
-  static ren::Flag<int> kSlangOptLevel("slang-opt-level", 2, "Optimization level for Slang compiler (0=None, 1=Default, 2=Maximum)");
-
-  // Helper to check diagnostics
-  static void checkSlangDiagnostics(slang::IBlob* diagnosticsBlob) {
-    if (diagnosticsBlob && diagnosticsBlob->getBufferSize() > 0) {
-      const char* msg = (const char*)diagnosticsBlob->getBufferPointer();
-      throw std::runtime_error(std::string("Slang compilation error: ") + msg);
-    }
-  }
-
-  // Helper to convert Slang stage to Vulkan stage
-  static VkShaderStageFlagBits slangStageToVulkan(SlangStage stage) {
-    switch (stage) {
-      case SLANG_STAGE_VERTEX:
-        return VK_SHADER_STAGE_VERTEX_BIT;
-      case SLANG_STAGE_FRAGMENT:
-        return VK_SHADER_STAGE_FRAGMENT_BIT;
-      case SLANG_STAGE_COMPUTE:
-        return VK_SHADER_STAGE_COMPUTE_BIT;
-      case SLANG_STAGE_GEOMETRY:
-        return VK_SHADER_STAGE_GEOMETRY_BIT;
-      case SLANG_STAGE_HULL:
-        return VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
-      case SLANG_STAGE_DOMAIN:
-        return VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
-      default:
-        throw std::runtime_error("Unsupported shader stage");
-    }
-  }
-
-  void ShaderProgram::compileFromSlangPath(const std::string& slangFilePath) {
-    Slang::ComPtr<slang::IBlob> diagnosticsBlob;
-    Slang::ComPtr<slang::IModule> module;
-
-    // First, we need to make sure the global session exists.
-    if (globalSession.get() == nullptr) {
-      REN_PROFILE_SCOPE("CreateGlobalSession");
-      if (SLANG_FAILED(slang::createGlobalSession(globalSession.writeRef()))) {
-        throw std::runtime_error("Failed to create Slang global session");
-      }
-    }
-
-
-
-    // now, create our local session.
-    {
-      REN_PROFILE_SCOPE("CreateLocalSession");
-
-
-      slang::SessionDesc sessionDesc = {};
-      slang::TargetDesc targetDesc = {};
-      targetDesc.format = SLANG_SPIRV;
-      targetDesc.profile = globalSession->findProfile("spirv_1_5");
-
-      // Enable optimization
-      slang::CompilerOptionEntry optimizationOption = {};
-      optimizationOption.name = slang::CompilerOptionName::Optimization;
-      optimizationOption.value.kind = slang::CompilerOptionValueKind::Int;
-      optimizationOption.value.intValue0 = kSlangOptLevel;  // 0=None, 1=Default, 2=Maximum
-
-
-
-      std::vector<slang::CompilerOptionEntry> compilerOptions;
-      compilerOptions.push_back(optimizationOption);
-
-      targetDesc.compilerOptionEntries = compilerOptions.data();
-      targetDesc.compilerOptionEntryCount = static_cast<SlangInt>(compilerOptions.size());
-
-      sessionDesc.targets = &targetDesc;
-      sessionDesc.targetCount = 1;
-      sessionDesc.defaultMatrixLayoutMode = SLANG_MATRIX_LAYOUT_COLUMN_MAJOR;
-
-      static SlangFileSystem fileSystem;
-      sessionDesc.fileSystem = &fileSystem;
-
-      const char* searchPaths[] = {"shaders"};
-      sessionDesc.searchPaths = searchPaths;
-      sessionDesc.searchPathCount = 1;
-
-      if (SLANG_FAILED(globalSession->createSession(sessionDesc, this->session.writeRef()))) {
-        throw std::runtime_error("Failed to create Slang session");
-      }
-    }
-
-
-    // Load the module from the filepath.
-    {
-      REN_PROFILE_SCOPE("LoadSlangModule");
-      module = this->session->loadModule(slangFilePath.c_str(), diagnosticsBlob.writeRef());
-      if (!module) {
-        checkSlangDiagnostics(diagnosticsBlob);
-        throw std::runtime_error("Failed to load Slang module");
-      }
-    }
-
-
-
-
-    // Get the entry point count.
-    SlangInt32 entryPointCount = module->getDefinedEntryPointCount();
-    if (entryPointCount == 0) {
-      throw std::runtime_error("No entry points found in shader source");
-    }
-
-
-    std::vector<slang::IComponentType*> allComponents;
-    allComponents.push_back(module);
-
-    for (SlangInt32 i = 0; i < entryPointCount; ++i) {
-      REN_PROFILE_SCOPE("CompileSlangEntryPoint");
-      Slang::ComPtr<slang::IEntryPoint> entryPoint;
-
-      {
-        REN_PROFILE_SCOPE("GetDefinedEntryPoint");
-        if (SLANG_FAILED(module->getDefinedEntryPoint(i, entryPoint.writeRef()))) {
-          throw std::runtime_error("Failed to get entry point");
-        }
-      }
-
-      // 6. Compose the program (module + entry point)
-      // std::array<slang::IComponentType*, 2> componentTypes = {module, entryPoint};
-      allComponents.push_back(entryPoint);
-    }
-
-
-
-    // Link the modules.
-    {
-      Slang::ComPtr<slang::IComponentType> unlinkedProgram;
-      if (SLANG_FAILED(this->session->createCompositeComponentType(allComponents.data(), allComponents.size(), unlinkedProgram.writeRef()))) {
-        checkSlangDiagnostics(diagnosticsBlob);
-        throw std::runtime_error("Failed to create composite program");
-      }
-
-
-      if (SLANG_FAILED(unlinkedProgram->link(this->program.writeRef(), diagnosticsBlob.writeRef()))) {
-        checkSlangDiagnostics(diagnosticsBlob);
-        throw std::runtime_error("Failed to link program");
-      }
-    }
-
-
-    for (SlangInt32 i = 0; i < entryPointCount; ++i) {
-      // 8. Get compiled SPIR-V code
-      Slang::ComPtr<slang::IBlob> spirvCode;
-
-      {
-        REN_PROFILE_SCOPE("GetEntryPointCode");
-        if (SLANG_FAILED(this->program->getEntryPointCode(i,  // entry point index (we only have one in this composed program)
-                                                          0,  // target index
-                                                          spirvCode.writeRef(), diagnosticsBlob.writeRef()))) {
-          checkSlangDiagnostics(diagnosticsBlob);
-          throw std::runtime_error("Failed to get entry point code");
-        }
-
-
-        const u8* spirvBytes = (const u8*)spirvCode->getBufferPointer();
-        size_t spirvSize = spirvCode->getBufferSize();
-        std::vector<u8> spirv;
-        spirv.assign(spirvBytes, spirvBytes + spirvSize);
-
-
-        auto* ep = this->program->getLayout()->getEntryPointByIndex(i);
-        SlangStage slangStage = ep->getStage();
-        VkShaderStageFlagBits vulkanStage = slangStageToVulkan(slangStage);
-
-        const char* name = "unknown";
-        if (auto epName = ep->getName()) {
-          name = epName;
-        }
-
-        auto mod = make<ShaderModule>(name, spirv, vulkanStage);
-        shaders.push_back(mod);
-      }
-    }
-
-    this->reflection = make<ren::ShaderReflection>();
-    this->reflection->parseFromSlang(this->program->getLayout());
-
+  ShaderProgram::ShaderProgram(CompiledProgram&& compiled)
+      : shaderPath(std::move(compiled.path))
+      , reflection(std::move(compiled.reflection)) {
+    createModules(compiled.entryPoints);
 
     for (auto& r : this->reflection->bindings) {
       ShaderBinding b = {
@@ -266,16 +46,58 @@ namespace ren {
       this->bindings.push_back(b);
     }
 
+    validateAgainstABI();
+    bakeLayouts();
+  }
+
+  ShaderProgram::~ShaderProgram() {
+    auto& vulkan = getVulkan();
+
+    // Delete the pipeline layout.
+    if (pipelineLayout != VK_NULL_HANDLE) {
+      vkDestroyPipelineLayout(vulkan.device, pipelineLayout, nullptr);
+      pipelineLayout = VK_NULL_HANDLE;
+    }
+
+    // Descriptor set layouts are owned by Renderer.
+  }
+
+
+  void ShaderProgram::createModules(const std::vector<CompiledEntryPoint>& entryPoints) {
+    shaders.reserve(entryPoints.size());
+    for (const auto& ep : entryPoints) {
+      shaders.push_back(make<ShaderModule>(ep.name, ep.spirv, ep.stage));
+    }
+  }
+
+
+  void ShaderProgram::validateAgainstABI(void) const {
     for (const auto& binding : bindings) {
       if (!isGlobalABIBinding(binding.set, binding.binding, binding.type)) {
         throw std::runtime_error(fmt::format(
             "Shader '{}' declares descriptor set {} binding {} outside REN's global ABI; "
             "pass per-shader data through push constants, descriptor handles, or buffer addresses",
-            slangFilePath, binding.set, binding.binding));
+            shaderPath, binding.set, binding.binding));
       }
     }
 
-    this->bakeLayouts();
+    // Slang reflection intentionally omits its synthesized descriptor heaps.
+    // Validate the emitted modules too, so the actual Vulkan ABI is enforced.
+    ShaderReflection physicalReflection;
+    for (const auto& shader : shaders) {
+      physicalReflection.parseFromSpirv(
+          reinterpret_cast<const u8*>(shader->getCode().data()),
+          shader->getCode().size() * sizeof(u32));
+    }
+    for (const auto& binding : physicalReflection.bindings) {
+      if (!isGlobalABIBinding(
+              binding.set, binding.index,
+              binding.type.toVkDescriptorType())) {
+        throw std::runtime_error(fmt::format(
+            "Shader '{}' emitted descriptor set {} binding {} outside REN's global ABI",
+            shaderPath, binding.set, binding.index));
+      }
+    }
   }
 
 

@@ -1,4 +1,5 @@
 #include <ren/assets/materials/PBRMaterial.h>
+#include <ren/renderer/shader/ShaderCache.h>
 #include <imgui/imgui.h>
 
 namespace ren {
@@ -30,7 +31,7 @@ namespace ren {
     // PBR restoration is intentionally deferred until its resources are
     // expressed as bindless handles and buffer addresses.
     this->pso.debugName = "PBR Material PSO";
-    this->pso.program = make<ShaderProgram>("pbr");
+    this->pso.program = ren::getShader("pbr");
     this->pso.cullMode = ren::CullMode::None;
     this->pso.depthTest = false;
     this->pso.depthWrite = false;

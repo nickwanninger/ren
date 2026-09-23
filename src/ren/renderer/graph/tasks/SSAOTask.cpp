@@ -1,6 +1,6 @@
 #include "SSAOTask.h"
 #include <ren/core/Application.h>
-#include <ren/renderer/shader/ShaderProgram.h>
+#include <ren/renderer/shader/ShaderCache.h>
 #include <ren/renderer/graph/RenderGraph.h>
 
 #include <ren/Camera.h>
@@ -96,7 +96,7 @@ namespace ren {
     this->read(in.normal, ren::GraphAccess::ShaderRead);
 
     // pso.program = ren::ShaderProgram::makeFullScreenProgram("shaders/ssao.frag");
-    pso.program = ren::make<ren::ShaderProgram>("ren/core/ssao");
+    pso.program = ren::getShader("ren/core/ssao");
     pso.cullMode = ren::CullMode::None;
     pso.depthTest = false;
     pso.depthWrite = false;
@@ -191,7 +191,7 @@ namespace ren {
 
     this->read(in.ssao, ren::GraphAccess::ShaderRead);
 
-    pso.program = ren::ShaderProgram::makeFullScreenProgram("shaders/ssao_blur.frag");
+    pso.program = ren::getShader("shaders/ssao_blur.frag");
     pso.cullMode = ren::CullMode::None;
     pso.depthTest = false;
     pso.depthWrite = false;

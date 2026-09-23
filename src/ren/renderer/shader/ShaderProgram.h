@@ -4,7 +4,6 @@
 #include <ren/renderer/shader/ShaderModule.h>
 #include <ren/renderer/vulkan/Vulkan.h>
 #include <ren/renderer/Descriptors.h>
-#include <slang-com-ptr.h>
 #include <spirv_reflect/spirv_reflect.h>
 #include <ren/misc/json_serialize.h>
 #include <ren/core/File.h>
@@ -14,13 +13,15 @@
 namespace ren {
 
   /**
-   * The shader system in REN has three main parts.
+   * The shader system in REN has four main parts.
    *
+   * - ShaderCache:   compiles shaders on demand and owns every ShaderProgram.
    * - ShaderProgram: represents a set of shaders which are all bound together to form a pipeline
-   * - ShaderModule: represents a single Vulkan shader module (VkShaderModule) loaded from SPIR-V
-   * - ShaderCursor: represents reflected push-constant state for one command binding.
+   * - ShaderModule:  represents a single Vulkan shader module (VkShaderModule) loaded from SPIR-V
+   * - ShaderCursor:  represents reflected push-constant state for one command binding.
    */
 
+  class ShaderCache;
 
 
   // A binding is a shader resource with a set and binding index, a type, and a name.
@@ -32,21 +33,35 @@ namespace ren {
   };
 
 
+  // One compiled entry point, as produced by the shader compiler front end.
+  struct CompiledEntryPoint {
+    std::string name;
+    VkShaderStageFlagBits stage;
+    std::vector<u8> spirv;
+  };
+
+  // The complete output of compiling one shader file. This is the hand-off
+  // between ShaderCache (which knows about Slang) and ShaderProgram (which
+  // knows about Vulkan) and is the only thing a ShaderProgram is built from.
+  struct CompiledProgram {
+    std::string path;  // canonical cache key the program was compiled from
+    std::vector<CompiledEntryPoint> entryPoints;
+    ref<ren::ShaderReflection> reflection;
+    std::vector<std::string> dependencies;  // source files the compile touched
+  };
+
+
   // A shader program represents a set of shaders that are linked together
   // to form a pipeline.  It is responsible for reflecting the shader resources
   // and creating the pipeline layout.
+  //
+  // Programs are not constructed directly: ask the cache for one with
+  // `ren::getShader("demo/cube")`.
   class ShaderProgram : public ren::VulkanResource,
                         public ren::HasUUID,
                         public std::enable_shared_from_this<ShaderProgram> {
    public:
-    // Load from slang
-    ShaderProgram(const std::string& shader);
-
     ~ShaderProgram();
-
-    static inline ref<ShaderProgram> makeFullScreenProgram(const std::string& slangShaderPath) {
-      return make<ShaderProgram>(slangShaderPath);
-    }
 
     // -- Non-copyable, movable -- //
     ShaderProgram(const ShaderProgram&) = delete;
@@ -57,6 +72,7 @@ namespace ren {
 
 
     // -- Getters -- //
+    const std::string& getPath() const { return shaderPath; }
     VkPipelineLayout getPipelineLayout() const { return pipelineLayout; }
     const std::vector<ref<ShaderModule>>& getShaders() const { return shaders; }
     const std::vector<ShaderBinding>& getBindings() const { return bindings; }
@@ -78,15 +94,18 @@ namespace ren {
     void temporarySerialize(const std::string_view &outDir);
 
    private:
+    // Only the cache builds programs, so that every shader in the engine is
+    // compiled exactly once and shared.
+    friend class ShaderCache;
+    explicit ShaderProgram(CompiledProgram&& compiled);
+
     std::string shaderPath;
     void bakeLayouts();
 
-    // Create a shader program from a slang file path, compiling the shader modules as needed.
-    void compileFromSlangPath(const std::string& slangFilePath);
-
-
-    Slang::ComPtr<slang::ISession> session;
-    Slang::ComPtr<slang::IComponentType> program;
+    // Turn compiled SPIR-V into VkShaderModules and validate the emitted
+    // descriptor bindings against REN's global ABI.
+    void createModules(const std::vector<CompiledEntryPoint>& entryPoints);
+    void validateAgainstABI(void) const;
 
     std::vector<ShaderBinding> bindings;
     ref<ren::ShaderReflection> reflection;

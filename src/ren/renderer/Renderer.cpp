@@ -44,6 +44,7 @@ namespace ren {
     this->renderPassCache.clearCache();
 
     this->pipelineCache.reset();
+    this->shaderCache.reset();
     this->swapchain.reset();
     this->samplerCache.reset();
     this->imageHeap.reset();
