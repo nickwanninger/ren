@@ -51,9 +51,7 @@ namespace ren {
     auto &vulkan = ren::getVulkan();
 
     // Wait for any pending work before cleanup
-    if (m_inFlightFence) {
-      m_inFlightFence->awaitCompletion(true);
-    }
+    waitForFence();
 
     // Destroy semaphores
     vkDestroySemaphore(vulkan.device, this->imageAvailableSemaphore, nullptr);
@@ -73,6 +71,11 @@ namespace ren {
     REN_PROFILE_FUNCTION();
     if (m_inFlightFence) {
       m_inFlightFence->awaitCompletion(true);
+      // The fence has been waited on and reset, so it no longer represents
+      // pending work. Drop it so a later wait (e.g. from the destructor during
+      // a swapchain rebuild) doesn't block forever on a fence nothing will
+      // signal.
+      m_inFlightFence.reset();
     }
   }
 
@@ -112,7 +115,12 @@ namespace ren {
       u32 imageIndex = swapchainImageIndex;
       presentInfo.pImageIndices = &imageIndex;
 
-      VK_CHECK(vkQueuePresentKHR(queue.getHandle(), &presentInfo));
+      auto result = vkQueuePresentKHR(queue.getHandle(), &presentInfo);
+      // A resize (or going fullscreen) makes the swapchain out of date. That's
+      // not an error: the next acquire will report it and rebuild.
+      if (result != VK_ERROR_OUT_OF_DATE_KHR && result != VK_SUBOPTIMAL_KHR) {
+        VK_CHECK(result);
+      }
     }
   }
 

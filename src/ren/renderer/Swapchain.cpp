@@ -42,7 +42,7 @@ namespace ren {
 
     auto presentMode = VK_PRESENT_MODE_IMMEDIATE_KHR;
     if (info.enableVSync) {
-      presentMode = VK_PRESENT_MODE_FIFO_KHR;
+      presentMode = VK_PRESENT_MODE_FIFO_RELAXED_KHR;
     }
 
     vkb::Swapchain vkb_swapchain =
@@ -60,6 +60,11 @@ namespace ren {
 
     auto images = vkb_swapchain.get_images().value();
     auto imageViews = vkb_swapchain.get_image_views().value();
+
+    // The driver may clamp our desired extent (surface capabilities can be stale
+    // mid-resize, e.g. entering fullscreen), so the images we actually got are
+    // the only source of truth for everything sized off the swapchain.
+    this->deviceExtent = vkb_swapchain.extent;
 
     this->swapchain = vkb_swapchain.swapchain;
     this->imageFormat = vkb_swapchain.image_format;
@@ -104,10 +109,14 @@ namespace ren {
                                         frameUnit->imageAvailableSemaphore, VK_NULL_HANDLE,
                                         &frameUnit->swapchainImageIndex);
 
-    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
+    if (result == VK_ERROR_OUT_OF_DATE_KHR) {
       ren::dbgln("Swapchain image out of date. Rebuilding...");
       return nullptr;
     } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+      // NOTE: VK_SUBOPTIMAL_KHR means the acquire succeeded and the semaphore
+      // has a pending signal, so the frame *must* be submitted. Bailing out here
+      // would orphan that signal and leave the semaphore in a state we then
+      // destroy during a rebuild.
       ren::errln("Failed to acquire swapchain image {}", (int)result);
       return nullptr;
     }
