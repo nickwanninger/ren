@@ -54,6 +54,7 @@ namespace ren {
 
 
   void CommandEncoder::reset(void) {
+    frameGlobalsOverride = VK_NULL_HANDLE;
     graphics.program.reset();
     graphics.layout = VK_NULL_HANDLE;
     ++graphics.generation;
@@ -66,7 +67,8 @@ namespace ren {
       VkPipelineBindPoint bindPoint, VkPipelineLayout pipelineLayout) {
     auto& renderer = Renderer::get();
     std::array sets{
-        submissionUnit.getFrameGlobalsSet(),
+        frameGlobalsOverride != VK_NULL_HANDLE ? frameGlobalsOverride
+                                               : submissionUnit.getFrameGlobalsSet(),
         renderer.getImageDescriptorHeap().getSet(),
         renderer.getSamplerDescriptorHeap().getSet(),
     };

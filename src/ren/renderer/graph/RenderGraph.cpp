@@ -236,7 +236,7 @@ namespace ren {
   }
 
   RenderSchedule RenderGraph::compile() {
-    REN_PROFILE_SCOPE("CompileRenderGraph");
+    REN_PROFILE_SCOPE("RenderGraph::compile");
 
     // Step 1: Compute dependencies from operand/result relationships
     computeDependencies();
@@ -424,7 +424,7 @@ namespace ren {
   }
 
   void RenderGraph::run(class Renderer &renderer) {
-    REN_PROFILE_SCOPE("RunRenderGraph");
+    REN_PROFILE_SCOPE("RenderGraph::run");
 
     auto scheduleStart = std::chrono::high_resolution_clock::now();
     auto schedule = compile();

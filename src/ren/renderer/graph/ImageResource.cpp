@@ -183,6 +183,20 @@ namespace ren {
 
     if (this->imguiTextureID != VK_NULL_HANDLE) {
       // If we had an ImGui texture ID, we need to remove it, as the image is changing.
+      //
+      // HACK: the descriptor set being freed here was very likely recorded into
+      // a command buffer that is still in flight -- an ImGui::Image() from an
+      // earlier frame referencing this same image. Freeing it now is a
+      // use-after-free that the validation layer catches as
+      // VUID-vkFreeDescriptorSets-pDescriptorSets-00309.
+      //
+      // Stalling the whole device is a blunt way to make that safe, and it
+      // makes a viewport resize drag synchronous. RenderGraph::startFrame()
+      // already stalls right after this for the same underlying reason. The
+      // real fix is a deletion queue that defers frees until every frame slot
+      // referencing the resource has retired; until that exists, this keeps
+      // the resize path correct rather than merely quiet.
+      getVulkan().waitForIdle();
       ImGui_ImplVulkan_RemoveTexture(this->imguiTextureID);
       this->imguiTextureID = VK_NULL_HANDLE;
     }

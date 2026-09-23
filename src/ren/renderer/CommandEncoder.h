@@ -75,6 +75,13 @@ namespace ren {
     // - clearBuffer
 
 
+    // Override the FrameGlobals descriptor set bound at ShaderABI::frameSet.
+    // A Viewport uses this to render with its own camera without disturbing
+    // the shader ABI: the encoder still binds one set at slot 0, it just binds
+    // a different one. Pass VK_NULL_HANDLE to fall back to the submission
+    // unit's own per-frame globals.
+    void setFrameGlobals(VkDescriptorSet set) { frameGlobalsOverride = set; }
+
     // TODO: Abstraction leakage!
     VkCommandBuffer buf() const { return cmd; }
 
@@ -111,6 +118,9 @@ namespace ren {
     SubmissionUnit &submissionUnit;
     BoundShader graphics;
     BoundShader compute;
+    // When set, used at ShaderABI::frameSet in place of the submission unit's
+    // frame globals. Cleared by reset() so it never leaks across frames.
+    VkDescriptorSet frameGlobalsOverride = VK_NULL_HANDLE;
   };
 
 
