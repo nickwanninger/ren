@@ -154,8 +154,8 @@ namespace ren {
         pushConstantName.empty() ? "<unnamed>" : pushConstantName.c_str(),
         pushConstantByteSize);
     ImGui::Text(
-        "Pointers: instances @ %u, objects @ %u, materials @ %u",
-        instancePointerOffset,
+        "Pointers: draws @ %u, objects @ %u, materials @ %u",
+        drawPointerOffset,
         objectPointerOffset,
         materialPointerOffset);
 

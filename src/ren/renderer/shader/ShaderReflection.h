@@ -85,7 +85,7 @@ namespace ren {
     struct MaterialSchema {
       std::string pushConstantName;
       u32 pushConstantByteSize = 0;
-      u32 instancePointerOffset = 0;
+      u32 drawPointerOffset = 0;
       u32 objectPointerOffset = 0;
       u32 materialPointerOffset = 0;
       std::string typeName;

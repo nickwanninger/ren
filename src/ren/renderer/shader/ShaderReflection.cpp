@@ -101,7 +101,7 @@ namespace ren {
         {"pushConstant", {
             {"name", pushConstantName},
             {"size", pushConstantByteSize},
-            {"instancePointerOffset", instancePointerOffset},
+            {"drawPointerOffset", drawPointerOffset},
             {"objectPointerOffset", objectPointerOffset},
             {"materialPointerOffset", materialPointerOffset},
         }},
@@ -744,18 +744,18 @@ namespace ren {
       }
 
       // The batched root holds three array base pointers. A draw selects its
-      // object and material through instances[SV_DrawIndex], which is what
+      // object and material through draws[SV_DrawIndex], which is what
       // lets one push constant serve a whole indirect batch.
-      auto* instances = findField(drawParamsLayout, "instances");
+      auto* draws = findField(drawParamsLayout, "draws");
       auto* objects = findField(drawParamsLayout, "objects");
       auto* materials = findField(drawParamsLayout, "materials");
       auto isPointerField = [](slang::VariableLayoutReflection* field) {
         auto* layout = field != nullptr ? field->getTypeLayout() : nullptr;
         return layout != nullptr && layout->getKind() == slang::TypeReflection::Kind::Pointer;
       };
-      if (!isPointerField(instances) || !isPointerField(objects) || !isPointerField(materials)) {
+      if (!isPointerField(draws) || !isPointerField(objects) || !isPointerField(materials)) {
         throw std::runtime_error(
-            "A MaterialDrawParams push constant must contain pointer fields named 'instances', 'objects' and 'materials'");
+            "A MaterialDrawParams push constant must contain pointer fields named 'draws', 'objects' and 'materials'");
       }
 
       auto* materialPointerLayout = materials->getTypeLayout();
@@ -770,8 +770,8 @@ namespace ren {
       schema.pushConstantName = parameter->getName() != nullptr ? parameter->getName() : "";
       schema.pushConstantByteSize = knownU32(
           drawParamsLayout->getSize(slang::ParameterCategory::Uniform));
-      schema.instancePointerOffset = knownU32(
-          instances->getOffset(slang::ParameterCategory::Uniform));
+      schema.drawPointerOffset = knownU32(
+          draws->getOffset(slang::ParameterCategory::Uniform));
       schema.objectPointerOffset = knownU32(
           objects->getOffset(slang::ParameterCategory::Uniform));
       schema.materialPointerOffset = knownU32(

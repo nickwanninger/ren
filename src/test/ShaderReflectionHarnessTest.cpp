@@ -329,7 +329,7 @@ namespace ren::test {
         [__AttributeUsage(_AttributeTargets.Struct)]
         struct MaterialDrawParamsAttribute {};
 
-        struct InstanceRecord
+        struct DrawRecord
         {
           uint objectIndex;
           uint materialIndex;
@@ -338,7 +338,7 @@ namespace ren::test {
         [MaterialDrawParams]
         struct DrawParams<MaterialT>
         {
-          InstanceRecord* instances;
+          DrawRecord* draws;
           ObjectData* objects;
           MaterialT* materials;
         }
@@ -376,7 +376,7 @@ namespace ren::test {
     const auto& schema = schemaOption.unwrap();
     EXPECT_EQ(schema.pushConstantName, "arbitraryName");
     EXPECT_EQ(schema.pushConstantByteSize, 24);
-    EXPECT_EQ(schema.instancePointerOffset, 0);
+    EXPECT_EQ(schema.drawPointerOffset, 0);
     EXPECT_EQ(schema.objectPointerOffset, 8);
     EXPECT_EQ(schema.materialPointerOffset, 16);
 
@@ -391,7 +391,7 @@ namespace ren::test {
     }
     ASSERT_NE(draw, nullptr);
     ASSERT_EQ(draw->members.size(), 3);
-    EXPECT_EQ(draw->members[0]->name, "instances");
+    EXPECT_EQ(draw->members[0]->name, "draws");
     EXPECT_EQ(*draw->members[0]->location.byteOffset, 0);
     EXPECT_EQ(draw->members[1]->name, "objects");
     EXPECT_EQ(*draw->members[1]->location.byteOffset, 8);

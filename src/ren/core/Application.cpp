@@ -1,5 +1,8 @@
 
 #include <ren/core/Application.h>
+
+#include <algorithm>
+#include <cmath>
 #include <ren/core/AutoPlugin.h>
 
 #include <ren/renderer/pipelines/PipelineStateObject.h>
@@ -21,13 +24,14 @@
 #include <ren/renderer/Buffer.h>
 #include <ren/renderer/Descriptors.h>
 #include <ren/renderer/graph/RenderGraph.h>
+#include <ren/renderer/Viewport.h>
 #include <ren/renderer/graph/RenderPassTask.h>
 #include <ren/renderer/graph/tasks/DepthPrepassTask.h>
 #include <ren/renderer/graph/tasks/SSAOTask.h>
 #include <ren/renderer/graph/tasks/ShadowMapTask.h>
 #include <ren/renderer/graph/tasks/GBufferTask.h>
 #include <ren/renderer/Sampler.h>
-#include <ren/renderer/shader/ShaderProgram.h>
+#include <ren/renderer/shader/ShaderCache.h>
 
 #include <ren/core/ui/EditorUI.h>
 #include <ren/core/Watcher.h>
@@ -60,7 +64,8 @@ extern "C" {
 #include <ren/core/NodeEditorTest.h>
 
 static ren::Flag<int> kMaxFPS("max-fps", 0, "Maximum framerate for the application, 0 = vsync or uncapped.");
-
+static ren::Flag<int> kIdleFPS("idle-fps", 15, "Maximum framerate when the application is idle, 0 = vsync or uncapped.");
+static ren::Flag<bool> kFullscreen("fullscreen", false, "Start the application in fullscreen mode.");
 static ren::Flag<bool> kHighDPI("high-dpi", true, "Enable high DPI support.");
 
 static ren::Application *g_application = nullptr;
@@ -91,6 +96,9 @@ namespace ren {
       auto flags = SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE;
       if (kHighDPI.get()) {
         flags |= SDL_WINDOW_HIGH_PIXEL_DENSITY;
+      }
+      if (kFullscreen.get()) {
+        flags |= SDL_WINDOW_FULLSCREEN;
       }
 
       auto windowName = fmt::format("{} - Ren {}", app_name, REN_VERSION);
@@ -196,6 +204,9 @@ namespace ren {
 
 
 
+  // This function is the main loop of the application. It will run until the
+  // application is closed, and will handle all events, updating the ECS world,
+  // and rendering the scene (along with other fullscreen passes like ImGui.)
   void Application::run() {
     auto startTime = std::chrono::high_resolution_clock::now();
     auto lastTime = startTime;
@@ -208,52 +219,28 @@ namespace ren {
 
 
     ren::RenderGraph G;
+
+    // Two viewports, constructed as plain locals for now. Ownership (a
+    // registry, or viewports-as-ECS-components) is a policy question that the
+    // Viewport abstraction itself deliberately does not answer.
+    ren::EditorViewport viewportA;
+    ren::EditorViewport viewportB;
+    // Offset so the two cameras are genuinely different -- the placeholder
+    // pass colors by camera position, so identical cameras would render
+    // identical images and prove nothing.
+    viewportA.position = {0.0f, 0.0f, 3.0f};
+    viewportB.position = {6.0f, 2.0f, -4.0f};
+    viewportB.angles = {-0.2f, 2.2f, 0.0f};
+    // The input readout the old inline viewport had. On both, so that it is
+    // obvious at a glance which viewport is currently claiming the mouse.
+    viewportA.showInputOverlay = true;
+    viewportB.showInputOverlay = true;
+
     ren::GraphHandle nullHandleOut;
     ren::GraphHandle ssao;
     ren::GraphHandle gbufferAlbedo, gbufferNormal, gbufferMaterial, gbufferDepth;
     auto &gbp = ren::addGBuffer(G, gbufferAlbedo, gbufferNormal, gbufferMaterial, gbufferDepth);
     // ren::addSSAO(G, gbufferDepth, gbufferNormal, ssao);
-
-
-
-    // G.pass("gizmo").execute([&](ren::GraphRunContext &ctx) {});
-
-
-    // GraphHandle buzz;
-    // G.pass("Fizbuzz").createColorAttachment("buzz", {.absoluteSize = glm::uvec2(512, 512)}, buzz).render([&](ren::GraphRenderPassContext &ctx) {});
-    // for (int i = 0; i < 128; i++) {
-    //   G.pass("gadget").execute([&](ren::GraphRunContext &ctx) { printf("Gadget pass %d\n", i); });
-    // }
-
-
-    // auto program = ren::make<ren::ShaderProgram>("test/drawparams_temp_test");
-    // auto material = program->getReflection()->getMaterialSchema();
-    // if (material.isNone()) {
-    //   abort();
-    // }
-
-
-    ren::PipelineStateObject squareAPSO;
-    squareAPSO.debugName = "Bindless Square A";
-    squareAPSO.program = make<ShaderProgram>("demo/square_a");
-    squareAPSO.cullMode = ren::CullMode::None;
-    squareAPSO.depthTest = false;
-    squareAPSO.depthWrite = false;
-
-    ren::PipelineStateObject squareBPSO = squareAPSO;
-    squareBPSO.debugName = "Bindless Square B";
-    squareBPSO.program = make<ShaderProgram>("demo/square_b");
-
-    auto makeSquare = [] {
-      ren::MeshBuilder builder;
-      auto face = builder.beginFace();
-      face.vertex(glm::vec3(-1.0f, -1.0f, 0.0f), glm::vec3(0.0f), glm::vec2(0.0f, 0.0f));
-      face.vertex(glm::vec3(1.0f, -1.0f, 0.0f), glm::vec3(0.0f), glm::vec2(1.0f, 0.0f));
-      face.vertex(glm::vec3(1.0f, 1.0f, 0.0f), glm::vec3(0.0f), glm::vec2(1.0f, 1.0f));
-      face.vertex(glm::vec3(-1.0f, 1.0f, 0.0f), glm::vec3(0.0f), glm::vec2(0.0f, 1.0f));
-      face.end();
-      return builder.stampOut();
-    };
 
 
     // Generate a unit-cube mesh for testing purposes.
@@ -286,19 +273,18 @@ namespace ren {
       return builder.stampOut();
     };
 
-    auto squareAMesh = makeSquare();
-    auto squareBMesh = makeSquare();
-
     std::array<u8, 16> warmPixels{255, 80, 32, 255, 255, 190, 32, 255, 255, 190, 32, 255, 255, 80, 32, 255};
     std::array<u8, 16> coolPixels{32, 120, 255, 255, 32, 255, 190, 255, 32, 255, 190, 255, 32, 120, 255, 255};
     auto warmTexture = Texture::create("bindless-warm", 2, 2, warmPixels.data());
     auto coolTexture = Texture::create("bindless-cool", 2, 2, coolPixels.data());
+    auto stoneTexture = ren::getAsset<ren::Texture>("assets/test/stone.png");
+
 
 
 
     ren::PipelineStateObject cubePSO;
     cubePSO.debugName = "Cube";
-    cubePSO.program = make<ShaderProgram>("demo/cube");
+    cubePSO.program = ren::getShader("demo/cube");
     cubePSO.cullMode = ren::CullMode::None;
     cubePSO.depthTest = true;
     cubePSO.depthWrite = true;
@@ -315,34 +301,27 @@ namespace ren {
 
     struct Cube {
       glm::vec3 position;
-      glm::vec3 rotation;  // Radians
+      // A quaternion rather than Euler angles: collisions feed in an angular
+      // velocity, and there is no sane way to integrate one into a fixed-order
+      // XYZ triple without fighting gimbal lock.
+      glm::quat rotation = {1.0f, 0.0f, 0.0f, 0.0f};
       glm::vec3 scale = glm::vec3(1.0f);
       u32 paletteIndex = 0;
       glm::vec3 velocity = glm::vec3(0.0f);
+      glm::vec3 angularVelocity = glm::vec3(0.0f);  // Radians/sec, world space.
 
       glm::mat4 modelMatrix() const {
-        glm::mat4 m(1.0f);
-        m = glm::translate(m, position);
-        m = glm::rotate(m, rotation.x, glm::vec3(1.0f, 0.0f, 0.0f));
-        m = glm::rotate(m, rotation.y, glm::vec3(0.0f, 1.0f, 0.0f));
-        m = glm::rotate(m, rotation.z, glm::vec3(0.0f, 0.0f, 1.0f));
-        m = glm::scale(m, scale);
-        return m;
+        return glm::translate(glm::mat4(1.0f), position) * glm::mat4_cast(glm::normalize(rotation)) * glm::scale(glm::mat4(1.0f), scale);
       }
     };
 
-    const u32 numCubes = 100;
+    const u32 numCubes = 1000;
+    i32 range = 20;
     std::vector<Cube> cubes;
     for (u32 i = 0; i < numCubes; i++) {
       Cube c;
-      const float x = static_cast<float>(i % 10) - 4.5f;
-      const float y = static_cast<float>((i / 10) % 5) - 2.0f;
-      const float z = -5.0f - static_cast<float>(i / 50.0f) * 5.0f;
-      c.position = glm::vec3(x * 2.0f, y * 2.0f, z);
-      c.rotation = glm::vec3(ren::randomFloat(0.0f, glm::two_pi<float>()), ren::randomFloat(0.0f, glm::two_pi<float>()),
-                             ren::randomFloat(0.0f, glm::two_pi<float>()));
+      c.position = glm::vec3(ren::randomInt(-range, range), ren::randomInt(-range, range), ren::randomInt(-range, range));
       c.paletteIndex = i % static_cast<u32>(kCubePalette.size());
-      // random velocity
       c.velocity = ren::randomDirection();
       cubes.push_back(c);
     }
@@ -357,21 +336,25 @@ namespace ren {
 
 
 
-    G.pass("gizmo").execute([&](ren::GraphRunContext &ctx) {});
+    // G.pass("gizmo").execute([&](ren::GraphRunContext &ctx) {});
 
     SDL_RaiseWindow(this->window);
 
     while (this->running) {
-      const auto frameStart = std::chrono::steady_clock::now();
-      int eventsHandled = 0;
+      REN_PROFILE_SCOPE("Frame");
+
+      // As soon as possible, grab the current time and compute the delta time since the last frame.
+      const auto frameStart = std::chrono::high_resolution_clock::now();
+      float time = std::chrono::duration<float, std::chrono::seconds::period>(frameStart - startTime).count();
+      auto deltaTime = std::chrono::duration<float, std::chrono::seconds::period>(frameStart - lastTime).count();
+      this->timeSeconds = time;
+      lastTime = frameStart;
 
       {
-        // REN_PROFILE_SCOPE("SDL Poll");
+        REN_PROFILE_SCOPE("SDL Poll");
         // Handle events on queue
         while (SDL_PollEvent(&e) != 0) {
           REN_PROFILE_SCOPE("SDL Dispatch");
-          eventsHandled++;
-
 
           switch (e.type) {
             case SDL_EVENT_WINDOW_RESIZED:
@@ -407,12 +390,8 @@ namespace ren {
             }
           }
         }
-
-        REN_PROFILE_COUNTER("SDL Events", eventsHandled);
       }
 
-
-      REN_PROFILE_SCOPE("Frame");
 
       // Handle swapchain rebuild if needed, and the state machine allows.
       if (swapchainNeedsRebuild && !isResizing) {
@@ -431,17 +410,14 @@ namespace ren {
         continue;
       }
 
-
-      auto currentTime = std::chrono::high_resolution_clock::now();
-      float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
-      auto deltaTime = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - lastTime).count();
-      this->timeSeconds = time;
-      lastTime = currentTime;
-
       if (!running) {
+        // TODO: cleanup!
         break;
       }
 
+      // TOOD: Move this to some kind of camera system.  The problem is that we
+      // need the frame globals to be set before we can render, and the camera
+      // is part of the frame globals.
       auto &cam = ren::Camera::get();
       cam.update(deltaTime);
 
@@ -472,12 +448,7 @@ namespace ren {
         ImGui::NewFrame();
         ImGuizmo::BeginFrame();
         ImGuizmo::SetDrawlist(ImGui::GetBackgroundDrawList(ImGui::GetMainViewport()));
-
-        int windowWidth, windowHeight;
-        SDL_GetWindowSize(ren::Application::get().getWindow(), &windowWidth, &windowHeight);
         ImGuizmo::SetRect(0.0f, 0.0f, windowWidth, windowHeight);
-
-
         // Before rendering, lets create a dockspace
         ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport(), ImGuiDockNodeFlags_PassthruCentralNode);
       }
@@ -495,7 +466,7 @@ namespace ren {
 
         // Simply print the framerate in the menu bar.
         char buf[64];
-        snprintf(buf, sizeof(buf), "%4d FPS", (int)framerateCounter.getAverageFramerate());
+        snprintf(buf, sizeof(buf), "%4d FPS DT=%.3f", (int)framerateCounter.getAverageFramerate(), deltaTime);
         ImGui::MenuItem(buf);
 
         ImGui::EndMainMenuBar();
@@ -507,6 +478,11 @@ namespace ren {
        */
       ren::inspectLog();
 
+
+      ImGui::Begin("ShaderCache");
+      renderer->getShaderCache().inspect();
+      ImGui::End();
+
       /**
        * Tick the world and run lua update functions. This is where all the
        * game logic happens, in effect. This currently runs on the main thread,
@@ -514,10 +490,9 @@ namespace ren {
        * blocking the main render thread with game logic.
        */
       {
-        REN_PROFILE_SCOPE("WorldProgress");
+        REN_PROFILE_SCOPE("Tick");
+        // Tick the ECS
         world.progress(deltaTime);
-
-        REN_PROFILE_SCOPE("LuaProgress");
         // Update lua globals
         lua.globals()["time"] = time;
         lua.globals()["delta_time"] = deltaTime;
@@ -535,76 +510,145 @@ namespace ren {
       }
 
 
-      /**
-       * Calculate the size of the render target based on the current window size.
-       */
-      float width = (float)windowWidth;
-      float height = (float)windowHeight;
-      float targetHeight = height * renderScaleTemp;
-      float scale = targetHeight / height;
-      scale *= renderScaleTemp;
-      width *= scale;
-      height *= scale;
-      auto renderSize = glm::uvec2(width, height);
-      G.startFrame(renderSize);
-      try {
-        G.run(*renderer);
-        // G.inspect();
-      } catch (const std::exception &e) {
-        ren::println("✗ RenderPassTask execution failed: {}", e.what());
-      }
 
+      viewportA.drawWindow("Viewport A", deltaTime);
+      viewportB.drawWindow("Viewport B", deltaTime);
 
-      // ImGui::Begin("Material");
-      // material.unwrap().inspect();
-      // ImGui::End();
-
-
+      viewportA.render(*renderer);
+      viewportB.render(*renderer);
 
       auto enc = frame.getMainCommandEncoder();
       auto penc = enc->beginRenderPass(*renderer->getDisplayPass(), *frame.renderTarget);
       {
         REN_PROFILE_SCOPE("FullScreenPass");
+
         if (0) {
-          REN_PROFILE_SCOPE("RenderBackgroundTriangle");
-          penc.bindImmediateMesh(squareAMesh->vertices, squareAMesh->indices);
-          auto squareA = penc.bindGraphics(squareAPSO);
-          auto squareAConstants = squareA.root("root");
-          squareAConstants.set("offset", glm::vec2(-0.5f, 0.0f)).set("scale", 0.32f).set("pulseAmount", 0.08f).set("image", warmTexture);
-
-          squareA.drawIndexed({.vertexCount = static_cast<u32>(squareAMesh->indices.size())});
-
-          penc.bindImmediateMesh(squareBMesh->vertices, squareBMesh->indices);
-          auto squareB = penc.bindGraphics(squareBPSO);
-          auto squareBConstants = squareB.root("root");
-          auto squareBTransform = squareBConstants.get("transform");
-          squareBTransform.set("center", glm::vec2(0.5f, 0.0f)).set("extent", 0.32f).set("rotationSpeed", 0.35f);
-          squareBConstants.set("tint", glm::vec4(1.0f)).set("pattern", coolTexture);
-          squareB.drawIndexed({.vertexCount = static_cast<u32>(squareBMesh->indices.size())});
-        }
-
-
-        if (1) {
           REN_PROFILE_SCOPE("Cubes");
 
+          // Run an n-body simulation on the cubes: pairwise gravity plus an
+          // impulse-based collision response. Each unordered pair is visited
+          // exactly once so both the force and the impulse stay symmetric and
+          // momentum is conserved.
+          {
+            REN_PROFILE_SCOPE("Cubes - Simulate");
 
-          auto start = std::chrono::high_resolution_clock::now();
+            constexpr float kRadius = 0.5f;                     // Half-extent of a unit cube.
+            constexpr float kContactDistance = 2.0f * kRadius;  // Touching when centers are this close.
+            constexpr float kRestitution = 0.96f;               // 1.0 would be perfectly elastic.
+            constexpr float kGravity = 9.0f;
+            constexpr float kSoftening = 0.25f;  // Keeps 1/r^2 finite as bodies approach.
+            constexpr float kFriction = 0.35f;   // Tangential impulse as a fraction of the normal one.
+            constexpr float kMaxSpin = 12.0f;    // Radians/sec, purely to keep the sim watchable.
 
-          // Run an n-body simulation on the cubes, applying gravity between them.
-          for (auto &c1 : cubes) {
-            for (auto &c2 : cubes) {
-              if (&c1 != &c2) {
-                glm::vec3 toOther = c2.position - c1.position;
-                float distance = glm::length(toOther);
-                if (distance > 0.0f) {
-                  // if they are closer than 1, bounce off.
-                  if (distance < 1.0f) {
-                    glm::vec3 normal = glm::normalize(toOther);
-                    c1.velocity -= normal * 2.0f * glm::dot(c1.velocity, normal);
-                  } else {
-                    glm::vec3 gravityDir = glm::normalize(toOther);
-                    float gravityStrength = 9.0f / (distance * distance);
-                    c1.velocity += gravityDir * gravityStrength * deltaTime;
+            // Unit mass, and the analytic inertia of a uniform cube of side s
+            // about its center: I = m*s^2/6, which is isotropic, so the tensor
+            // never has to be rotated into world space.
+            constexpr float kInvMass = 1.0f;
+            constexpr float kInvInertia = 6.0f / (kContactDistance * kContactDistance);
+
+            // A single step across a long frame lets bodies tunnel through each
+            // other and makes the 1/r^2 term explode, so the frame is split into
+            // micro steps of at most kMaxStep. The step count is capped so a
+            // hitch (or a breakpoint) cannot drag the sim into a death spiral -
+            // past that point the simulation just runs slower than wall clock.
+            constexpr float kMaxStep = 1.0f / 240.0f;
+            constexpr int kMaxSubsteps = 16;
+
+            const int substeps = glm::clamp(static_cast<int>(std::ceil(deltaTime / kMaxStep)), 1, kMaxSubsteps);
+            const float dt = std::min(deltaTime, kMaxStep * static_cast<float>(kMaxSubsteps)) / static_cast<float>(substeps);
+            if (0) {
+              for (int step = 0; step < substeps; step++) {
+                for (size_t i = 0; i < cubes.size(); i++) {
+                  for (size_t j = i + 1; j < cubes.size(); j++) {
+                    auto &a = cubes[i];
+                    auto &b = cubes[j];
+
+                    const glm::vec3 delta = b.position - a.position;
+                    const float distanceSq = glm::dot(delta, delta);
+                    if (distanceSq < 1e-6f) {
+                      continue;
+                    }
+
+                    const float distance = std::sqrt(distanceSq);
+                    const glm::vec3 normal = delta / distance;
+
+                    // Gravity applies at every separation, contact included. Cutting
+                    // it out while overlapping made pairs pop apart rather than settle.
+                    const float accel = kGravity / (distanceSq + kSoftening);
+                    a.velocity += normal * accel * dt;
+                    b.velocity -= normal * accel * dt;
+
+                    if (distance >= kContactDistance) {
+                      continue;
+                    }
+
+                    // The contact point is faked: bodies are treated as spheres, so
+                    // it is simply the surface point along the normal. A real
+                    // cube-cube manifold would need SAT plus clipping. The lever arm
+                    // is therefore parallel to the normal, which means the *normal*
+                    // impulse produces no torque - all of the spin comes from the
+                    // tangential (friction) impulse below.
+                    const glm::vec3 contactA = normal * kRadius;
+                    const glm::vec3 contactB = -normal * kRadius;
+
+                    // Surface velocity, not center velocity: a spinning body drags
+                    // its contact point along, which is what makes cubes that are
+                    // already tumbling scrub against each other.
+                    const glm::vec3 relative =
+                        (b.velocity + glm::cross(b.angularVelocity, contactB)) - (a.velocity + glm::cross(a.angularVelocity, contactA));
+                    const float approach = glm::dot(relative, normal);
+
+                    // Only respond when the pair is actually closing. Reflecting
+                    // unconditionally traps touching bodies, flipping their velocity
+                    // every frame instead of letting them separate.
+                    if (approach < 0.0f) {
+                      // Equal masses, so the impulse splits evenly between the two.
+                      const float normalImpulse = -(1.0f + kRestitution) * approach / (2.0f * kInvMass);
+                      a.velocity -= normal * normalImpulse * kInvMass;
+                      b.velocity += normal * normalImpulse * kInvMass;
+
+                      // Coulomb friction along the sliding direction. Because the
+                      // lever arms are parallel to the normal and the tangent is
+                      // perpendicular to it, cross(cross(r, t), r) collapses to
+                      // t*kRadius^2 and the denominator is a constant.
+                      const glm::vec3 tangentVelocity = relative - normal * approach;
+                      const float slidingSpeed = glm::length(tangentVelocity);
+                      if (slidingSpeed > 1e-4f) {
+                        const glm::vec3 tangent = tangentVelocity / slidingSpeed;
+                        const float denom = 2.0f * kInvMass + 2.0f * kInvInertia * kRadius * kRadius;
+                        // Clamped so friction can stop the sliding but never reverse it.
+                        const float frictionImpulse = std::min(slidingSpeed / denom, kFriction * normalImpulse);
+                        const glm::vec3 impulse = tangent * frictionImpulse;
+
+                        a.velocity += impulse * kInvMass;
+                        b.velocity -= impulse * kInvMass;
+                        a.angularVelocity += kInvInertia * glm::cross(contactA, impulse);
+                        b.angularVelocity += kInvInertia * glm::cross(contactB, -impulse);
+                      }
+                    }
+
+                    // Separate whatever overlap the previous step left behind;
+                    // otherwise the pair keeps re-colliding from inside each other.
+                    const glm::vec3 correction = normal * ((kContactDistance - distance) * 0.5f);
+                    a.position -= correction;
+                    b.position += correction;
+                  }
+                }
+
+                // Integrate inside the substep loop; advancing positions once per
+                // frame would defeat the point of subdividing the step.
+                for (auto &c : cubes) {
+                  c.position += c.velocity * dt;
+
+                  const float spin = glm::length(c.angularVelocity);
+                  if (spin > kMaxSpin) {
+                    c.angularVelocity *= kMaxSpin / spin;
+                  }
+                  if (spin > 1e-5f) {
+                    // dq/dt = 0.5 * omega * q, renormalized to shed the drift that
+                    // first-order integration introduces.
+                    const glm::quat omega(0.0f, c.angularVelocity.x, c.angularVelocity.y, c.angularVelocity.z);
+                    c.rotation = glm::normalize(c.rotation + 0.5f * dt * omega * c.rotation);
                   }
                 }
               }
@@ -624,39 +668,39 @@ namespace ren {
             u32 _padding[3];
           };
 
-          struct alignas(16) MaterialData {
+          struct alignas(4) MaterialData {
             glm::vec4 color;
+            TextureHandle texture;
           };
 
-          struct InstanceRecord {
+          struct DrawRecord {
             u32 objectIndex;
             u32 materialIndex;
           };
           static_assert(sizeof(ObjectData) == 144);
           static_assert(offsetof(ObjectData, normalMatrix) == 64);
           static_assert(offsetof(ObjectData, objectId) == 128);
-          static_assert(sizeof(MaterialData) == 16);
-          static_assert(sizeof(InstanceRecord) == 8);
+          static_assert(offsetof(MaterialData, texture) == 16);
+          // static_assert(sizeof(MaterialData) == 32);
+          static_assert(sizeof(DrawRecord) == 8);
 
           // The three arrays the batched root points at. Note the differing
           // cardinalities: materials are keyed by *material identity*, so the
           // palette is uploaded once no matter how many cubes reference it.
           auto objectData = penc.getArena().push<StorageBuffer<ObjectData>>(cubes.size());
           auto materialData = penc.getArena().push<StorageBuffer<MaterialData>>(kCubePalette.size());
-          auto instanceData = penc.getArena().push<StorageBuffer<InstanceRecord>>(cubes.size());
+          auto drawRecords = penc.getArena().push<StorageBuffer<DrawRecord>>(cubes.size());
           auto drawCommands = penc.getArena().push<IndirectBuffer<VkDrawIndexedIndirectCommand>>(cubes.size());
 
           {
             REN_PROFILE_SCOPE("Cubes - Update");
             for (size_t i = 0; i < kCubePalette.size(); i++) {
-              materialData->hostData()[i] = MaterialData{.color = glm::vec4(kCubePalette[i], 1.0f)};
+              materialData->hostData()[i] = MaterialData{.color = glm::vec4(kCubePalette[i], 1.0f), .texture = stoneTexture->handle()};
             }
 
             const u32 cubeIndexCount = static_cast<u32>(cubeMesh->indices.size());
             for (size_t i = 0; i < cubes.size(); i++) {
               auto &c = cubes[i];
-
-              c.position += c.velocity * deltaTime;
 
               ObjectData data{};
               const glm::mat4 modelMatrix = c.modelMatrix();
@@ -665,7 +709,7 @@ namespace ren {
               data.objectId = static_cast<u32>(i);
               objectData->hostData()[i] = data;
 
-              instanceData->hostData()[i] = InstanceRecord{
+              drawRecords->hostData()[i] = DrawRecord{
                   .objectIndex = static_cast<u32>(i),
                   .materialIndex = c.paletteIndex,
               };
@@ -686,25 +730,11 @@ namespace ren {
           {
             REN_PROFILE_SCOPE("Cubes - DRAW");
             // One push constant, one draw, for the whole batch.
-            root.set("instances", instanceData->devicePointer<InstanceRecord>());
+            root.set("draws", drawRecords->devicePointer<DrawRecord>());
             root.set("objects", objectData->devicePointer<ObjectData>());
             root.set("materials", materialData->devicePointer<MaterialData>());
             cube.drawIndexedIndirect(*drawCommands, static_cast<u32>(cubes.size()));
           }
-
-
-          auto duration = std::chrono::high_resolution_clock::now() - start;
-          auto durationMs = std::chrono::duration_cast<std::chrono::nanoseconds>(duration).count();
-
-          ImGui::Begin("Cubes");
-          ImGui::Text("Cube count: %zu", cubes.size());
-          ImGui::Text("Material buffer size: %zu bytes", materialData->getByteCount());
-          ImGui::Text("Object buffer size: %zu bytes", objectData->getByteCount());
-          ImGui::Text("Instance buffer size: %zu bytes", instanceData->getByteCount());
-          ImGui::Text("Draw commands buffer size: %zu bytes", drawCommands->getByteCount());
-          ImGui::Text("Setup time: %lld us", durationMs);
-
-          ImGui::End();
         }
 
         /**
@@ -719,18 +749,27 @@ namespace ren {
           ImGui::Render();
           ImGui::UpdatePlatformWindows();
           ImGui::RenderPlatformWindowsDefault();
-          auto commandBuffer = penc.buf();  // Gross Leakage...
+          auto commandBuffer = penc.buf();  // Gross Leakage... But it is needed.
           ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer);
         }
       }
 
+      // End the full screen render pass, and submit the command buffer to the GPU for execution.
       penc.end();
-
       renderer->endFrame();
 
-      if (kMaxFPS.get() > 0) {
-        const auto frameDuration = std::chrono::duration<double>(1.0 / kMaxFPS.get());
-        std::this_thread::sleep_until(frameStart + frameDuration);
+      {
+        REN_PROFILE_SCOPE("Frame Pacing");
+
+        // FPS limiting at the end of frame (after submission) to reduce input latency.
+        // If the window is not focused, limit to 30 FPS to reduce CPU/GPU usage.
+        bool isFocused = SDL_GetWindowFlags(getWindow()) & SDL_WINDOW_INPUT_FOCUS;
+        int maxFps = isFocused ? kMaxFPS.get() : kIdleFPS.get();
+
+        if (maxFps > 0) {
+          const auto frameDuration = std::chrono::duration<double>(1.0 / maxFps);
+          std::this_thread::sleep_until(frameStart + frameDuration);
+        }
       }
     }
     renderer->waitForIdle();

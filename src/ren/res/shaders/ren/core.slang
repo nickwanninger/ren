@@ -97,7 +97,7 @@ public struct ObjectData {
   public float3 transformNormal(float3 normal) { return mul(float3x3(normalMatrix), normal); }
 }
 
-public struct InstanceRecord {
+public struct DrawRecord {
   public uint objectIndex;
   public uint materialIndex;
 }
@@ -114,14 +114,14 @@ struct MaterialDrawParamsAttribute {}
 [MaterialDrawParams]
 public struct MaterialRoot<MaterialT> {
 
-  InstanceRecord *instances;
+  DrawRecord *draws;
   ObjectData *objects;
   MaterialT *materials;
 
   // Pointer arithmetic rather than &array[i]: the latter lowers to a value
   // load (and then fails to convert back to a pointer) in Slang's Metal path.
-  [ForceInline] public ObjectData *getObject(uint drawIndex) { return objects + instances[drawIndex].objectIndex; }
-  [ForceInline] public MaterialT *getMaterial(uint drawIndex) { return materials + instances[drawIndex].materialIndex; }
+  [ForceInline] public ObjectData *getObject(uint drawIndex) { return objects + draws[drawIndex].objectIndex; }
+  [ForceInline] public MaterialT *getMaterial(uint drawIndex) { return materials + draws[drawIndex].materialIndex; }
 }
 
 [__AttributeUsage(_AttributeTargets.Var)]
