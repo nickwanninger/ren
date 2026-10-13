@@ -13,6 +13,8 @@ namespace ren {
 
   struct SwapchainCreateInfo {
     SDL_Window *window;
+    // The caller owns the surface. It must outlive the swapchain.
+    VkSurfaceKHR surface = VK_NULL_HANDLE;
     bool enableVSync = true;
   };
 

@@ -10,7 +10,6 @@
 #include <imgui/imgui.h>
 #include "vkb/VkBootstrap.h"
 #include "vulkan/vulkan_core.h"
-#include <SDL3/SDL_vulkan.h>
 #include <fmt/core.h>
 #include <stb/stb_image.h>
 
@@ -97,6 +96,9 @@ ren::VulkanInstance& ren::getVulkan(void) {
   if (g_vulkan_instance == nullptr) {
     throw std::runtime_error("Vulkan instance not initialized");
   }
+  if (!g_vulkan_instance->hasDevice()) {
+    throw std::runtime_error("Vulkan device not selected. Call VulkanInstance::selectDevice() first.");
+  }
   return *g_vulkan_instance;
 }
 
@@ -107,17 +109,32 @@ ren::ref<ren::VulkanInstance> ren::getVulkanRef(void) {
   return g_vulkan_instance->shared_from_this();
 }
 
-ren::VulkanInstance::VulkanInstance(SDL_Window* window) {
-  this->window = window;
+ren::VulkanInstance::VulkanInstance(void) {
   if (g_vulkan_instance != nullptr) {
     throw std::runtime_error("Vulkan instance already initialized");
   }
   g_vulkan_instance = this;
 
-
   init_instance();
+}
 
-  // ASAP, create a command pool.
+
+void ren::VulkanInstance::selectDevice(VkSurfaceKHR surface) {
+  REN_PROFILE_FUNCTION();
+  if (hasDevice()) {
+    throw std::runtime_error("Vulkan device already selected");
+  }
+  if (surface == VK_NULL_HANDLE) {
+    throw std::runtime_error("selectDevice() needs a valid surface");
+  }
+
+  init_device(surface);
+  select_present_format(surface);
+  init_command_pool();
+}
+
+
+void ren::VulkanInstance::init_command_pool(void) {
   VkCommandPoolCreateInfo poolInfo{};
   poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
   poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
@@ -129,6 +146,29 @@ ren::VulkanInstance::VulkanInstance(SDL_Window* window) {
 }
 
 
+
+
+void ren::VulkanInstance::select_present_format(VkSurfaceKHR surface) {
+  u32 count = 0;
+  VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, surface, &count, nullptr));
+  std::vector<VkSurfaceFormatKHR> formats(count);
+  VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, surface, &count, formats.data()));
+
+  // In order of preference. The engine writes linear color and relies on an
+  // sRGB swapchain to encode it.
+  constexpr VkFormat candidates[] = {VK_FORMAT_B8G8R8A8_SRGB, VK_FORMAT_R8G8B8A8_SRGB};
+  for (VkFormat candidate : candidates) {
+    for (const auto& f : formats) {
+      if (f.format == candidate && f.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
+        this->presentFormat = f.format;
+        this->presentColorSpace = f.colorSpace;
+        return;
+      }
+    }
+  }
+
+  throw std::runtime_error("The surface supports no sRGB 8-bit swapchain format");
+}
 
 
 void ren::VulkanInstance::init_instance(void) {
@@ -167,13 +207,18 @@ void ren::VulkanInstance::init_instance(void) {
 
   // Store the debug messenger handle for proper cleanup (only present when validation enabled)
   this->debug_messenger = vkb_inst.debug_messenger;
+  this->vkbInstance = makeBox<vkb::Instance>(vkb_inst);
+}
 
-  // Create the vulkan surface from SDL
-  SDL_Vulkan_CreateSurface(window, instance, NULL, &surface);
 
-  // And select the GPU to use (I think we'd need to figure out how to pick the
+void ren::VulkanInstance::init_device(VkSurfaceKHR surface) {
+  REN_PROFILE_FUNCTION();
+  int required_major = 1;
+  int required_minor = 3;
+
+  // Select the GPU to use (I think we'd need to figure out how to pick the
   // best one if you have multiple GPUs, but I don't so this is fine for now)
-  vkb::PhysicalDeviceSelector selector{vkb_inst};
+  vkb::PhysicalDeviceSelector selector{*vkbInstance};
   VkPhysicalDeviceFeatures requiredFeatures = {};
   // requiredFeatures.geometryShader = VK_FALSE;    // Enable geometry shaders
   requiredFeatures.samplerAnisotropy = true;  // Enable anisotropic filtering
@@ -294,6 +339,18 @@ void ren::VulkanInstance::init_instance(void) {
 
   // This must be guaranteed.
   this->graphicsQueue = tryToMakeQueue(vkb::QueueType::graphics, nullptr);
+  if (this->graphicsQueue == nullptr) {
+    throw std::runtime_error("Selected device has no graphics queue");
+  }
+
+  // All swapchains present on the graphics queue, so that one submit and one
+  // present cover every window. vk-bootstrap only makes sure that *some*
+  // queue family can present to the surface, so verify the graphics family.
+  VkBool32 graphicsCanPresent = VK_FALSE;
+  VK_CHECK(vkGetPhysicalDeviceSurfaceSupportKHR(physical_device, this->graphicsQueue->family(), surface, &graphicsCanPresent));
+  if (!graphicsCanPresent) {
+    throw std::runtime_error("The graphics queue cannot present to the surface");
+  }
   // These other queues must be created as well, but can fall back to graphics
   // if not available. Having multiple queues helps performance by allowing
   // parallelism, but them being unique is not strictly needed.
@@ -337,10 +394,6 @@ void ren::VulkanInstance::init_instance(void) {
   fmt::print("\n");
 
 
-  this->swapchainFormat =
-      findSupportedFormat({VK_FORMAT_B8G8R8A8_SRGB, VK_FORMAT_R8G8B8A8_UNORM}, VK_IMAGE_TILING_OPTIMAL, VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT);
-
-
   // Check out the memory properties
   VkPhysicalDeviceMemoryProperties memProperties;
   vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
@@ -381,22 +434,20 @@ void ren::VulkanInstance::init_instance(void) {
 ren::VulkanInstance::~VulkanInstance() {
   // ImGui_ImplVulkan_Shutdown();
 
-  // Queue wrappers call vkQueueWaitIdle in their destructors and therefore
-  // must die before the VkDevice.
-  transferQueue.reset();
-  computeQueue.reset();
-  graphicsQueue.reset();
+  if (hasDevice()) {
+    // Queue wrappers call vkQueueWaitIdle in their destructors and therefore
+    // must die before the VkDevice.
+    transferQueue.reset();
+    computeQueue.reset();
+    graphicsQueue.reset();
 
-  // Command Pool
-  vkDestroyCommandPool(device, commandPool, nullptr);
+    // Command Pool
+    vkDestroyCommandPool(device, commandPool, nullptr);
 
+    vmaDestroyAllocator(allocator);
 
-  vkDestroySurfaceKHR(instance, surface, nullptr);
-
-  vmaDestroyAllocator(allocator);
-
-
-  vkDestroyDevice(device, nullptr);
+    vkDestroyDevice(device, nullptr);
+  }
 
   // Destroy debug messenger if validation layers were enabled
   if (debug_messenger != VK_NULL_HANDLE) {
@@ -610,7 +661,7 @@ u32 ren::VulkanInstance::find_memory_type(u32 typeFilter, VkMemoryPropertyFlags 
   throw std::runtime_error("failed to find suitable memory type!");
 }
 
-void ren::VulkanInstance::cleanup_swapchain(void) { abort(); }
+
 
 
 

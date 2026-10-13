@@ -6,8 +6,6 @@
 
 #include <ren/types.h>
 #include <ren/core/Instrumentation.h>
-#include <SDL3/SDL.h>         // for SDL_Window
-#include <SDL3/SDL_vulkan.h>  // for SDL_Vulkan functions
 #include <ren/misc/DeprecationLogger.h>
 #include "./vk_mem_alloc.h"  // for VMA (Vulkan Memory Allocator)
 
@@ -20,6 +18,10 @@
     }                                                                    \
   } while (0)
 
+
+namespace vkb {
+  struct Instance;
+}
 
 namespace ren {
 
@@ -36,11 +38,25 @@ namespace ren {
 
 
   // Every vulkan application needs at least one Vulkan instance.
-  // This class also contains the physical device, device, and surface.
+  // This class also contains the physical device and the device.
+  //
+  // Initialization has two phases, because a surface needs a VkInstance and
+  // device selection needs a surface:
+  //   1. The constructor creates the VkInstance only.
+  //   2. The caller creates a surface (for example, from the main window) and
+  //      calls selectDevice() with it.
+  // getVulkan() is legal only after phase 2. The caller owns the surface.
   class VulkanInstance : public RefCounted<VulkanInstance> {
    public:
-    VulkanInstance(SDL_Window *window);
+    VulkanInstance(void);
     ~VulkanInstance();
+
+    // Select the physical device and create the device, queues, allocator and
+    // command pool. The graphics queue must be able to present to `surface`.
+    // This also selects presentFormat from the formats of `surface`. Call one
+    // time only.
+    void selectDevice(VkSurfaceKHR surface);
+    bool hasDevice(void) const { return device != VK_NULL_HANDLE; }
 
     // No copy, no move
     VulkanInstance(const VulkanInstance &) = delete;
@@ -55,11 +71,6 @@ namespace ren {
     VkPhysicalDevice physical_device = VK_NULL_HANDLE;
     VkDevice device = VK_NULL_HANDLE;
 
-    // The surface is the window that we render to (we link against SDL)
-    VkSurfaceKHR surface = VK_NULL_HANDLE;
-    SDL_Window *window = nullptr;
-
-
     // -- Submission Queues -- //
     ref<SubmissionQueue> graphicsQueue;
     ref<SubmissionQueue> computeQueue;
@@ -71,11 +82,13 @@ namespace ren {
     // Debug messenger for validation layer output (only used when validation enabled)
     VkDebugUtilsMessengerEXT debug_messenger = VK_NULL_HANDLE;
 
-    // ---- Swapchain ---- //
-    VkFormat swapchainFormat;  // chosen in init_instance()
+    // ---- Presentation ---- //
+    // All swapchains use this format. selectDevice() chooses it.
+    VkFormat presentFormat = VK_FORMAT_UNDEFINED;
+    VkColorSpaceKHR presentColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
 
     // ---- Command Pool ---- //
-    VkCommandPool commandPool;
+    VkCommandPool commandPool = VK_NULL_HANDLE;
     u64 frame_number = 0;
 
 
@@ -126,10 +139,12 @@ namespace ren {
 
    private:
     void init_instance(void);
+    void init_device(VkSurfaceKHR surface);
     void init_command_pool(void);
+    void select_present_format(VkSurfaceKHR surface);
 
-
-    void cleanup_swapchain(void);
+    // Kept from init_instance() for device selection in selectDevice().
+    Box<vkb::Instance> vkbInstance;
 
 
     u32 find_memory_type(u32 typeFilter, VkMemoryPropertyFlags properties);

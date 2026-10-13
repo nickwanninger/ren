@@ -99,7 +99,7 @@ namespace ren {
         auto &vk = ren::getVulkan();
         RenderPass::Description displayPassDesc;
         displayPassDesc.name = "Backbuffer Pass";
-        displayPassDesc.addColorAttachment("backbuffer", vk.swapchainFormat, VK_SAMPLE_COUNT_1_BIT);
+        displayPassDesc.addColorAttachment("backbuffer", vk.presentFormat, VK_SAMPLE_COUNT_1_BIT);
         displayPassDesc.addDepthAttachment("backbuffer_depth", VK_SAMPLE_COUNT_1_BIT);
         displayPass = renderPassCache.get(displayPassDesc);
       }
@@ -144,6 +144,8 @@ namespace ren {
 
     VkCommandBuffer getCommandBuffer();
     SDL_Window *window;
+    // TODO: move to ren::Window, which will own its SDL_Window and surface.
+    VkSurfaceKHR surface = VK_NULL_HANDLE;
     ren::RenderPassCache renderPassCache;
     ref<VulkanInstance> vulkan = nullptr;
     Box<FrameGlobalsAllocator> frameGlobalsAllocator;

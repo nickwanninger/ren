@@ -3,6 +3,7 @@
 #include <ren/renderer/CommandEncoder.h>
 #include <ren/renderer/submission/SubmissionQueue.h>
 #include <ren/core/Flag.h>
+#include <SDL3/SDL_vulkan.h>
 
 namespace ren {
 
@@ -21,8 +22,13 @@ namespace ren {
 
     g_renderer = this;
 
-    // Create the Vulkan instance
-    this->vulkan = make<VulkanInstance>(this->window);
+    // Create the Vulkan instance, then make a surface for the window and use
+    // it to select the device.
+    this->vulkan = make<VulkanInstance>();
+    if (!SDL_Vulkan_CreateSurface(this->window, this->vulkan->instance, nullptr, &this->surface)) {
+      throw std::runtime_error(fmt::format("SDL_Vulkan_CreateSurface failed: {}", SDL_GetError()));
+    }
+    this->vulkan->selectDevice(this->surface);
     this->imageHeap = make<ImageDescriptorHeap>();
     this->samplerHeap = make<SamplerDescriptorHeap>();
     this->samplerCache = make<SamplerCache>(this->samplerHeap);
@@ -46,6 +52,8 @@ namespace ren {
     this->pipelineCache.reset();
     this->shaderCache.reset();
     this->swapchain.reset();
+    vkDestroySurfaceKHR(this->vulkan->instance, this->surface, nullptr);
+    this->surface = VK_NULL_HANDLE;
     this->samplerCache.reset();
     this->imageHeap.reset();
     this->samplerHeap.reset();
@@ -222,6 +230,7 @@ namespace ren {
 
     auto info = ren::SwapchainCreateInfo{
         .window = this->window,
+        .surface = this->surface,
         .enableVSync = vsyncFlag.get(),
     };
 

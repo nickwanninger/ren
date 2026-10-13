@@ -37,7 +37,7 @@ namespace ren {
 
 
     // ---- Allocate the Swapchain for device target rendering ---- //
-    vkb::SwapchainBuilder swapchain_builder(vulkan.physical_device, vulkan.device, vulkan.surface);
+    vkb::SwapchainBuilder swapchain_builder(vulkan.physical_device, vulkan.device, info.surface);
 
 
     auto presentMode = VK_PRESENT_MODE_IMMEDIATE_KHR;
@@ -51,7 +51,7 @@ namespace ren {
             .set_image_usage_flags(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
                                    VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT)
             .set_desired_format(
-                {vulkan.swapchainFormat, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR})  // SRGB format
+                {vulkan.presentFormat, vulkan.presentColorSpace})  // shared by all swapchains
             .set_desired_extent(deviceExtent.width, deviceExtent.height)      // Window size
             .set_desired_min_image_count(3)                                   // Triple buffering
             .build()
