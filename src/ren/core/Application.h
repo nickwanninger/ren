@@ -29,9 +29,9 @@ namespace ren {
 
 
   class Application {
-    // The first important thing in an application is the windows and the
-    // Vulkan instance. windows[0] is the main window.
-    std::vector<Box<Window>> windows;
+    // The first important thing in an application is the window and the
+    // Vulkan instance.
+    Box<Window> window;
     ref<Renderer> renderer;
 
 
@@ -67,10 +67,7 @@ namespace ren {
 
     auto &getLuaState(void) { return this->lua; }
 
-    SDL_Window *getWindow(void) const { return getMainWindow().getHandle(); }
-    Window &getMainWindow(void) const { return *this->windows[0]; }
-    // The Window that owns `handle`, or nullptr.
-    Window *findWindow(SDL_Window *handle) const;
+    SDL_Window *getWindow(void) const { return this->window->getHandle(); }
 
 
     void atExit(std::function<void(void)> func) { exitCallbacks.push_back(func); }

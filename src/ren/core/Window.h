@@ -18,9 +18,9 @@ namespace ren {
   // One OS window that we render to. A Window owns its SDL window, its Vulkan
   // surface and its swapchain, and destroys them in reverse order.
   //
-  // A Window can exist before VulkanInstance::selectDevice(), because the
-  // first window's surface is used to select the device. The swapchain is
-  // created later, by the first call to rebuildSwapchain().
+  // A Window can exist before VulkanInstance::selectDevice(), because its
+  // surface is used to select the device. The swapchain is created later, by
+  // the first call to rebuildSwapchain().
   class Window {
    public:
     Window(ref<VulkanInstance> vulkan, const WindowDesc &desc);
@@ -39,7 +39,8 @@ namespace ren {
     bool hasSwapchain(void) const { return m_swapchain != nullptr; }
     Swapchain &getSwapchain(void) { return *m_swapchain; }
 
-    // Update the resize state from an SDL event that targets this window.
+    // Update the resize state from an SDL event. Events for other SDL windows
+    // (for example ImGui viewports) are ignored.
     void handleEvent(const SDL_Event &event);
 
     // True when a resize finished and the swapchain does not match the window.
@@ -49,10 +50,6 @@ namespace ren {
     void rebuildSwapchain(void);
 
    private:
-    // Make sure that this surface can use the device's graphics queue and
-    // present format. Only possible after selectDevice().
-    void checkPresentSupport(void) const;
-
     ref<VulkanInstance> m_vulkan;
     SDL_Window *m_window = nullptr;
     VkSurfaceKHR m_surface = VK_NULL_HANDLE;

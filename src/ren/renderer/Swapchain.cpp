@@ -44,7 +44,7 @@ namespace ren {
             .set_image_usage_flags(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
                                    VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT)
             .set_desired_format(
-                {vulkan.presentFormat, vulkan.presentColorSpace})  // shared by all swapchains
+                {vulkan.presentFormat, vulkan.presentColorSpace})  // chosen by selectDevice()
             .set_desired_extent(deviceExtent.width, deviceExtent.height)      // Window size
             .set_desired_min_image_count(3)                                   // Triple buffering
             .build()

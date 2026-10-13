@@ -43,7 +43,7 @@ namespace ren {
   // Initialization has two phases, because a surface needs a VkInstance and
   // device selection needs a surface:
   //   1. The constructor creates the VkInstance only.
-  //   2. The caller creates a surface (for example, from the main window) and
+  //   2. The caller creates a surface (for example, from the window) and
   //      calls selectDevice() with it.
   // getVulkan() is legal only after phase 2. The caller owns the surface.
   class VulkanInstance : public RefCounted<VulkanInstance> {
@@ -83,7 +83,7 @@ namespace ren {
     VkDebugUtilsMessengerEXT debug_messenger = VK_NULL_HANDLE;
 
     // ---- Presentation ---- //
-    // All swapchains use this format. selectDevice() chooses it.
+    // The swapchain format. selectDevice() chooses it.
     VkFormat presentFormat = VK_FORMAT_UNDEFINED;
     VkColorSpaceKHR presentColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
 

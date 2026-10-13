@@ -12,8 +12,8 @@ namespace ren {
   // frame's last submission.
   //
   // The Renderer owns MAX_FRAMES_IN_FLIGHT of these and uses them in turn. A
-  // FrameContext does not know about swapchains: all windows record into the
-  // same FrameContext in a frame.
+  // FrameContext does not know about swapchains, so a frame does not need a
+  // window.
   class FrameContext : public SubmissionUnit {
    public:
     explicit FrameContext(u32 slotIndex);

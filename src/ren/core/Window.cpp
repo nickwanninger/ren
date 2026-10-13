@@ -1,7 +1,6 @@
 #include <ren/core/Window.h>
 #include <ren/core/Flag.h>
 #include <ren/core/Instrumentation.h>
-#include <ren/renderer/submission/SubmissionQueue.h>
 #include <SDL3/SDL_vulkan.h>
 #include <fmt/core.h>
 
@@ -27,17 +26,6 @@ namespace ren {
       SDL_DestroyWindow(m_window);
       throw std::runtime_error(fmt::format("SDL_Vulkan_CreateSurface failed: {}", SDL_GetError()));
     }
-
-    // The first window comes before selectDevice(), which verifies it.
-    if (m_vulkan->hasDevice()) {
-      try {
-        checkPresentSupport();
-      } catch (...) {
-        vkDestroySurfaceKHR(m_vulkan->instance, m_surface, nullptr);
-        SDL_DestroyWindow(m_window);
-        throw;
-      }
-    }
   }
 
 
@@ -50,6 +38,11 @@ namespace ren {
 
 
   void Window::handleEvent(const SDL_Event &event) {
+    // Other SDL windows (for example ImGui viewports) send window events too.
+    if (event.type >= SDL_EVENT_WINDOW_FIRST && event.type <= SDL_EVENT_WINDOW_LAST && event.window.windowID != getID()) {
+      return;
+    }
+
     switch (event.type) {
       case SDL_EVENT_WINDOW_RESIZED:
       case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
@@ -81,26 +74,5 @@ namespace ren {
     m_needsRebuild = false;
   }
 
-
-  void Window::checkPresentSupport(void) const {
-    auto &vk = *m_vulkan;
-
-    VkBool32 canPresent = VK_FALSE;
-    VK_CHECK(vkGetPhysicalDeviceSurfaceSupportKHR(vk.physical_device, vk.graphicsQueue->family(), m_surface, &canPresent));
-    if (!canPresent) {
-      throw std::runtime_error("The graphics queue cannot present to this window's surface");
-    }
-
-    u32 count = 0;
-    VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(vk.physical_device, m_surface, &count, nullptr));
-    std::vector<VkSurfaceFormatKHR> formats(count);
-    VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(vk.physical_device, m_surface, &count, formats.data()));
-    for (const auto &f : formats) {
-      if (f.format == vk.presentFormat && f.colorSpace == vk.presentColorSpace) {
-        return;
-      }
-    }
-    throw std::runtime_error("This window's surface does not support the shared present format");
-  }
 
 }  // namespace ren

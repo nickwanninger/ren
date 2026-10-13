@@ -105,16 +105,16 @@ namespace ren {
       if (kFullscreen.get()) {
         desc.flags |= SDL_WINDOW_FULLSCREEN;
       }
-      this->windows.push_back(makeBox<Window>(vulkan, desc));
+      this->window = makeBox<Window>(vulkan, desc);
     }
 
-    vulkan->selectDevice(getMainWindow().getSurface());
+    vulkan->selectDevice(this->window->getSurface());
 
     // TODO: make this a resource instead of a value on Application.
     this->renderer = make<Renderer>(vulkan);
 
     // The swapchain allocates frame resources from the renderer, so it comes last.
-    getMainWindow().rebuildSwapchain();
+    this->window->rebuildSwapchain();
 
     world.set_threads(6);
 
@@ -195,20 +195,12 @@ namespace ren {
       vkDestroyDescriptorPool(vulkan.device, imguiPool, nullptr);
     }
 
-    // Close the windows (swapchain, surface, SDL window), then nuke the renderer.
-    this->windows.clear();
+    // Close the window (swapchain, surface, SDL window), then nuke the renderer.
+    this->window.reset();
     this->renderer.reset();
   }
 
 
-  Window *Application::findWindow(SDL_Window *handle) const {
-    for (const auto &window : this->windows) {
-      if (window->getHandle() == handle) {
-        return window.get();
-      }
-    }
-    return nullptr;
-  }
 
 
 
@@ -262,11 +254,7 @@ namespace ren {
         while (SDL_PollEvent(&e) != 0) {
           REN_PROFILE_SCOPE("SDL Dispatch");
 
-          if (SDL_Window *target = SDL_GetWindowFromEvent(&e)) {
-            if (Window *window = findWindow(target)) {
-              window->handleEvent(e);
-            }
-          }
+          window->handleEvent(e);
 
           switch (e.type) {
             case SDL_EVENT_QUIT: {
@@ -291,10 +279,9 @@ namespace ren {
 
 
       // Handle swapchain rebuild if needed, and the state machine allows.
-      auto &mainWindow = getMainWindow();
-      if (mainWindow.needsRebuild()) {
+      if (window->needsRebuild()) {
         REN_PROFILE_SCOPE("Rebuild Swapchain");
-        mainWindow.rebuildSwapchain();
+        window->rebuildSwapchain();
         continue;
       }
 
@@ -318,9 +305,9 @@ namespace ren {
       auto &cam = ren::Camera::get();
       cam.update(deltaTime);
 
-      renderer->beginFrame(mainWindow);
+      renderer->beginFrame(*window);
       auto &frame = ren::getFrameUnit();
-      const auto &backbuffer = mainWindow.getSwapchain().currentImage();
+      const auto &backbuffer = window->getSwapchain().currentImage();
       const glm::vec2 frameSize{backbuffer->getWidth(), backbuffer->getHeight()};
       auto viewMatrix = cam.view_matrix();
       auto projMatrix = ren::Camera::projectionMatrix(frameSize.x, frameSize.y);
@@ -415,7 +402,7 @@ namespace ren {
       viewportA.render(*renderer);
 
       auto enc = frame.getMainCommandEncoder();
-      auto penc = enc->beginRenderPass(*renderer->getDisplayPass(), mainWindow.getSwapchain().currentTarget());
+      auto penc = enc->beginRenderPass(*renderer->getDisplayPass(), window->getSwapchain().currentTarget());
       {
         REN_PROFILE_SCOPE("FullScreenPass");
 
@@ -438,7 +425,7 @@ namespace ren {
 
       // End the full screen render pass, and submit the command buffer to the GPU for execution.
       penc.end();
-      renderer->endFrame(mainWindow);
+      renderer->endFrame(*window);
 
 
 

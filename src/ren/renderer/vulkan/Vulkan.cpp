@@ -343,9 +343,9 @@ void ren::VulkanInstance::init_device(VkSurfaceKHR surface) {
     throw std::runtime_error("Selected device has no graphics queue");
   }
 
-  // All swapchains present on the graphics queue, so that one submit and one
-  // present cover every window. vk-bootstrap only makes sure that *some*
-  // queue family can present to the surface, so verify the graphics family.
+  // We present on the graphics queue. vk-bootstrap only makes sure that
+  // *some* queue family can present to the surface, so verify the graphics
+  // family.
   VkBool32 graphicsCanPresent = VK_FALSE;
   VK_CHECK(vkGetPhysicalDeviceSurfaceSupportKHR(physical_device, this->graphicsQueue->family(), surface, &graphicsCanPresent));
   if (!graphicsCanPresent) {
