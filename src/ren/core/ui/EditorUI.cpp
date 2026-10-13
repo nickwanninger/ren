@@ -22,10 +22,10 @@ namespace ren::eui {
     }
 
 
-    ImVec4 bgColor = buttonStyle.bg.value_or(COLOR_FRAMEBG);
+    ImVec4 bgColor = buttonStyle.bg.value_or(ImGui::GetStyleColorVec4(ImGuiCol_Button));
     bgColor.w = 1.0f;  // ensure opaque background
 
-    ImVec4 fgColor = buttonStyle.fg.value_or(COLOR_FRAMEFG);
+    ImVec4 fgColor = buttonStyle.fg.value_or(ImGui::GetStyleColorVec4(ImGuiCol_Text));
     fgColor.w = 1.0f;  // ensure opaque foreground
 
     ImGuiWindow *window = ImGui::GetCurrentWindow();
@@ -73,10 +73,9 @@ namespace ren::eui {
     bool hovered, held;
     bool pressed = ImGui::ButtonBehavior(bb, id, &hovered, &held);
 
-    if (held) {
-      bgColor = bgColor + ImVec4(0.1f, 0.1f, 0.1f, 0.0f);
-    }
-    if (hovered) {
+    if (!buttonStyle.bg) {
+      bgColor = ImGui::GetStyleColorVec4(held ? ImGuiCol_ButtonActive : hovered ? ImGuiCol_ButtonHovered : ImGuiCol_Button);
+    } else if (held || hovered) {
       bgColor = bgColor + ImVec4(0.1f, 0.1f, 0.1f, 0.0f);
     }
 
@@ -234,6 +233,7 @@ namespace ren::eui {
 
     // Window and Child backgrounds.
     colors[ImGuiCol_WindowBg] = windowBackground;
+    colors[ImGuiCol_ChildBg] = windowBackground;
     colors[ImGuiCol_PopupBg] = windowBackground;
     colors[ImGuiCol_ChildBg] = windowBackground;
     colors[ImGuiCol_Border] = lighten(windowBackground, 0.05f);
@@ -262,14 +262,14 @@ namespace ren::eui {
 
     style.TabRounding = 0.0f;
     style.WindowMenuButtonPosition = ImGuiDir_None;
-    style.FontSizeBase = 14.0f;
+    style.FontSizeBase = 13.0f;
     style.DockingSeparatorSize = 4.0f;
-    style.FrameRounding = 4.0f;
+    style.FrameRounding = 2.0f;
     // style.FramePadding = ImVec2(8.0f, 2.0f);
     // style.FrameBorderSize = 2.0f;
     // style.WindowRounding = 5.0f;
 
-    style.WindowPadding = ImVec2(10.0f, 2.0f);
+    style.WindowPadding = ImVec2(8.0f, 2.0f);
 
 
     // imnodes style.

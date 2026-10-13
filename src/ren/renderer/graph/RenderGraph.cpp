@@ -458,7 +458,6 @@ namespace ren {
 
   void RenderGraph::inspect() {
     ImGui::SetNextWindowSize(ImVec2(1200, 700), ImGuiCond_FirstUseEver);
-    ImGui::Begin("Render Graph Inspector");
 
     // Static state for selected task and resource
     static RenderTask *selectedTask = nullptr;
@@ -804,7 +803,6 @@ namespace ren {
 
       ImGui::EndTabBar();
     }
-    ImGui::End();
   }
 
 

@@ -149,7 +149,43 @@ void imageHeapSampleTest() {
   ren::println("Image heap sample passed: [{}, {}, {}, {}]", result.x, result.y, result.z, result.w);
 }
 
+
+#include <ren/renderer/RenderSceneProxy.h>
+
+static void worldTest() {
+  using namespace ren;
+
+  RenderSceneProxy scene;
+  flecs::world world;
+
+
+  constexpr int count = 10000;
+  uint64_t totalTime = 0;
+
+  auto e = world.entity();
+
+  // Measure average time to create a stage and destroy it.
+  for (int i = 0; i < count; i++) {
+    auto start = std::chrono::high_resolution_clock::now();
+    auto stage = world.async_stage();
+    e.set<float>(3.14f);
+    e.set<int>(42);
+
+    // stage.merge();
+    // ren::println("Created entity {} in stage", e.id());
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+    totalTime += duration;
+  }
+
+  e.destruct();
+
+  ren::println("Average time to create a stage: {} microseconds", totalTime / (double)count);
+}
+
 int main(int argc, char* argv[]) {
+  worldTest();
+  // return 0;
   ren::parseFlags(argc, argv);
 
   REN_PROFILE_BEGIN_SESSION("profile", "profile.json");

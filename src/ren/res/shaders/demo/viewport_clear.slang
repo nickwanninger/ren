@@ -1,10 +1,4 @@
-// A trivial fullscreen pass used to prove out the Viewport abstraction.
-//
-// It draws no geometry. Every pixel is derived from `frameGlobals` alone,
-// which is the point: each Viewport binds its *own* FrameGlobals buffer before
-// running its graph, so two viewports with different cameras must produce
-// visibly different images. If both viewports render the same picture, the
-// per-viewport binding is not taking effect.
+// Fullscreen sky and world-space grid.
 
 import ren.core;
 
@@ -12,6 +6,11 @@ struct Varying {
   float4 position : SV_Position;
   float2 uv : TEXCOORD0;
 };
+
+[[vk::push_constant]]
+cbuffer pc {
+  TextureHandle skyboxHdri;
+}
 
 // The standard vertexless fullscreen triangle: three vertices covering the
 // whole viewport, with UVs derived from the vertex index rather than a buffer.
@@ -21,6 +20,29 @@ Varying vertexMain(uint vertexIndex: SV_VertexID) {
   output.uv = float2((vertexIndex << 1) & 2, vertexIndex & 2);
   output.position = float4(output.uv * 2.0f - 1.0f, 0.0f, 1.0f);
   return output;
+}
+
+// Unity-style procedural sky. Pass a normalized world-space direction.
+// Adjust these colors and the sun direction to change the appearance.
+float3 unityEditorSky(float3 rayDir) {
+  const float3 zenithColor = float3(0.16f, 0.35f, 0.65f);
+  const float3 horizonColor = float3(0.72f, 0.78f, 0.82f);
+  const float3 groundColor = float3(0.18f, 0.17f, 0.15f);
+  const float3 sunColor = float3(1.0f, 0.92f, 0.75f);
+  float3 sunDirection = normalize(float3(-0.4f, 0.6f, -0.7f));
+
+  // Keep the horizon pale, then blend into blue above and ground below.
+  float skyBlend = pow(saturate(rayDir.y), 0.45f);
+  float groundBlend = smoothstep(0.0f, 0.25f, -rayDir.y);
+  float3 color = lerp(horizonColor, zenithColor, skyBlend);
+  color = lerp(color, groundColor, groundBlend);
+
+  // A small sun disc and a broad halo, visible only above the horizon.
+  float sunAlignment = saturate(dot(rayDir, sunDirection));
+  float sunDisc = smoothstep(0.9998f, 0.99995f, sunAlignment);
+  float sunHalo = pow(sunAlignment, 64.0f) * 0.25f;
+  color += sunColor * (sunDisc + sunHalo) * smoothstep(0.0f, 0.02f, rayDir.y);
+  return color;
 }
 
 [shader("fragment")]
@@ -56,53 +78,48 @@ float4 fragmentMain(Varying input) : SV_Target {
   float3x3 viewRotation = (float3x3)frameGlobals.viewMatrix;
   float3 rayDir = normalize(mul(transpose(viewRotation), viewRay));
 
-  // The camera's world position, recovered by inverting the view transform.
-  float3 cameraPos = -mul(transpose(viewRotation), frameGlobals.viewMatrix[3].xyz);
+  // The view translation is column 3 (matrix indices here select rows).
+  float3 viewTranslation = float3(frameGlobals.viewMatrix[0][3],
+                                  frameGlobals.viewMatrix[1][3],
+                                  frameGlobals.viewMatrix[2][3]);
+  float3 cameraPos = -mul(transpose(viewRotation), viewTranslation);
 
-  // A procedural sky, so the picture is anchored to world space: the horizon
-  // stays level and the sun stays put as the camera turns, which is exactly
-  // what proves the rotation is reaching the shader.
-  const float3 skyColor = float3(0.35f, 0.55f, 0.85f);
-  const float3 groundColor = float3(0.22f, 0.20f, 0.18f);
-  const float3 horizonColor = float3(0.75f, 0.78f, 0.80f);
+  // Map world direction to the equirectangular texture. The image center
+  // faces -Z, its top faces +Y, and its bottom faces -Y.
+  const float invPi = 0.318309886f;
+  float2 skyUV = float2(0.5f + atan2(rayDir.x, -rayDir.z) * (0.5f * invPi),
+                        acos(clamp(rayDir.y, -1.0f, 1.0f)) * invPi);
+  float3 color = skyboxHdri.Sample(skyUV).rgb;
+  // Uncomment to use the procedural sky instead of the HDRI.
+  // color = unityEditorSky(rayDir);
 
-  // Blend across the horizon over a few degrees rather than a hard cut, so
-  // the seam does not alias into a stair-stepped line.
-  float horizon = smoothstep(-0.03f, 0.03f, rayDir.y);
-  float3 color = lerp(groundColor, skyColor, horizon);
-  color = lerp(horizonColor, color, smoothstep(0.0f, 0.25f, abs(rayDir.y)));
-
-  // A fixed world-space sun. Because it is defined by direction alone it sits
-  // at infinity, so it moves when the camera rotates but not when it dollies.
-  const float3 sunDir = normalize(float3(0.4f, 0.35f, -0.85f));
-  float sun = max(dot(rayDir, sunDir), 0.0f);
-  color += float3(1.0f, 0.95f, 0.8f) * pow(sun, 256.0f);
-  color += float3(0.6f, 0.55f, 0.4f) * pow(sun, 8.0f) * 0.25f;
-
-  // A world-space grid on the ground plane, which gives the translation
-  // something to slide against -- rotation alone would leave a sky that looks
-  // identical from every position.
-  if (rayDir.y < -0.001f) {
-    // Distance along the ray to y == 0, from the camera's height.
+  // Unit grid on the y = 0 plane, with thicker lines every ten cells.
+  // Fade it out by 60 units and suppress lines smaller than one pixel.
+  if (abs(rayDir.y) > 0.001f) {
     float t = -cameraPos.y / rayDir.y;
     if (t > 0.0f) {
-      float3 hit = cameraPos + rayDir * t;
-      float2 cell = abs(frac(hit.xz) - 0.5f);
-      float line = 1.0f - smoothstep(0.0f, 0.03f, min(cell.x, cell.y));
-      // Fade the grid out with distance so the far field does not turn into
-      // moire where the lines are closer together than the pixels.
+      float2 hit = (cameraPos + rayDir * t).xz;
+      float2 width = max(fwidth(hit), float2(0.0001f));
+      float2 minorDistance = abs(frac(hit + 0.5f) - 0.5f);
+      float2 majorDistance = abs(frac(hit / 10.0f + 0.5f) - 0.5f) * 10.0f;
+      float2 minorLines = 1.0f - smoothstep(float2(0.0f), width, minorDistance);
+      float2 majorLines = 1.0f - smoothstep(float2(0.0f), 2.0f * width, majorDistance);
+      float pixelFootprint = max(width.x, width.y);
+      float minor = max(minorLines.x, minorLines.y) * saturate(1.0f - pixelFootprint);
+      float major = max(majorLines.x, majorLines.y) * saturate(1.0f - pixelFootprint / 10.0f);
       float fade = saturate(1.0f - t / 60.0f);
-      color = lerp(color, float3(0.85f), line * fade * 0.6f);
+      color = lerp(color, float3(0.85f), max(minor, major) * fade * 0.6f);
+
+      // X is red and Z is blue. Both axes use the major line width.
+      float axisVisibility = saturate(1.0f - pixelFootprint / 10.0f);
+      float xAxis = (1.0f - smoothstep(0.0f, 2.0f * width.y, abs(hit.y))) * axisVisibility;
+      float zAxis = (1.0f - smoothstep(0.0f, 2.0f * width.x, abs(hit.x))) * axisVisibility;
+      float3 axisColor = (float3(1.0f, 0.1f, 0.1f) * xAxis +
+                          float3(0.1f, 0.35f, 1.0f) * zAxis) / max(xAxis + zAxis, 0.0001f);
+      color = lerp(color, axisColor, max(xAxis, zAxis) * fade * 1.6f);
     }
   }
 
-  // // A crosshair marking the view center, so the aim direction is readable
-  // // even when pointed at featureless sky.
-  // float2 fromCenter = abs(input.uv - 0.5f) * frameGlobals.renderSize;
-  // if ((fromCenter.x < 1.0f && fromCenter.y < 12.0f) ||
-  //     (fromCenter.y < 1.0f && fromCenter.x < 12.0f)) {
-  //   color = float3(1.0f, 1.0f, 1.0f);
-  // }
 
   return float4(color, 1.0f);
 }

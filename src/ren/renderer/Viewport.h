@@ -5,6 +5,8 @@
 #include <ren/renderer/graph/RenderGraph.h>
 #include <ren/renderer/pipelines/PipelineStateObject.h>
 
+#include <functional>
+
 namespace ren {
 
   class Renderer;
@@ -98,6 +100,11 @@ namespace ren {
     RenderGraph graph;
     /// The handle the graph's final image lives at. Set by buildGraph().
     GraphHandle finalImage = nullGraphHandle;
+    // TEMP:
+    int raysPerPixel = 4;
+    float focusDistance = 5.0f;
+    float lensRadius = 0.06f;
+    float renderScale = 1.0f;
 
    private:
     glm::uvec2 renderSize{1, 1};
@@ -160,7 +167,7 @@ namespace ren {
     float farPlane = Camera::FAR_PLANE;
 
     /// Units per second at full tilt. ren::Camera::cameraSpeed.
-    float moveSpeed = 32.0f;
+    float moveSpeed = 64.0f;
     /// Radians of rotation per pixel of mouse movement. ren::Camera uses the
     /// same 0.002 against SDL's relative motion, which is also pixels.
     float lookSensitivity = 0.002f;
@@ -188,6 +195,9 @@ namespace ren {
     /// Draw the debug overlay showing captured input state.
     bool showInputOverlay = false;
 
+    /// Draw extra ImGui widgets inside the viewport overlay.
+    std::function<void()> overlayContent;
+
    protected:
     void onUpdate(float dt) override;
 
@@ -196,6 +206,7 @@ namespace ren {
     /// True while a right-drag look is in progress. Tracked per viewport so a
     /// drag started in one viewport does not rotate another.
     bool looking = false;
+    bool showGraphInspector = false;
   };
 
 }  // namespace ren

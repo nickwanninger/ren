@@ -67,6 +67,7 @@ static ren::Flag<int> kMaxFPS("max-fps", 0, "Maximum framerate for the applicati
 static ren::Flag<int> kIdleFPS("idle-fps", 15, "Maximum framerate when the application is idle, 0 = vsync or uncapped.");
 static ren::Flag<bool> kFullscreen("fullscreen", false, "Start the application in fullscreen mode.");
 static ren::Flag<bool> kHighDPI("high-dpi", true, "Enable high DPI support.");
+static ren::Flag<bool> kImGuiViewports("imgui-viewports", false, "Enable ImGui viewports. (experimental)");
 
 static ren::Application *g_application = nullptr;
 namespace ren {
@@ -218,28 +219,20 @@ namespace ren {
 
 
 
-    ren::RenderGraph G;
+    // ren::RenderGraph G;
 
-    // Two viewports, constructed as plain locals for now. Ownership (a
-    // registry, or viewports-as-ECS-components) is a policy question that the
-    // Viewport abstraction itself deliberately does not answer.
     ren::EditorViewport viewportA;
-    ren::EditorViewport viewportB;
-    // Offset so the two cameras are genuinely different -- the placeholder
-    // pass colors by camera position, so identical cameras would render
-    // identical images and prove nothing.
-    viewportA.position = {0.0f, 0.0f, 3.0f};
-    viewportB.position = {6.0f, 2.0f, -4.0f};
-    viewportB.angles = {-0.2f, 2.2f, 0.0f};
-    // The input readout the old inline viewport had. On both, so that it is
-    // obvious at a glance which viewport is currently claiming the mouse.
+    viewportA.position = {0.0f, 1.5f, 4.5f};
+    viewportA.angles = {-0.08f, 0.0f, 0.0f};
     viewportA.showInputOverlay = true;
-    viewportB.showInputOverlay = true;
 
-    ren::GraphHandle nullHandleOut;
-    ren::GraphHandle ssao;
-    ren::GraphHandle gbufferAlbedo, gbufferNormal, gbufferMaterial, gbufferDepth;
-    auto &gbp = ren::addGBuffer(G, gbufferAlbedo, gbufferNormal, gbufferMaterial, gbufferDepth);
+
+    ren::Material exampleMaterial("demo/cube");
+
+    // ren::GraphHandle nullHandleOut;
+    // ren::GraphHandle ssao;
+    // ren::GraphHandle gbufferAlbedo, gbufferNormal, gbufferMaterial, gbufferDepth;
+    // auto &gbp = ren::addGBuffer(G, gbufferAlbedo, gbufferNormal, gbufferMaterial, gbufferDepth);
     // ren::addSSAO(G, gbufferDepth, gbufferNormal, ssao);
 
 
@@ -483,6 +476,10 @@ namespace ren {
       renderer->getShaderCache().inspect();
       ImGui::End();
 
+
+      ImGui::Begin("Material Inspector");
+      exampleMaterial.inspect();
+      ImGui::End();
       /**
        * Tick the world and run lua update functions. This is where all the
        * game logic happens, in effect. This currently runs on the main thread,
@@ -491,20 +488,22 @@ namespace ren {
        */
       {
         REN_PROFILE_SCOPE("Tick");
-        // Tick the ECS
         world.progress(deltaTime);
-        // Update lua globals
-        lua.globals()["time"] = time;
-        lua.globals()["delta_time"] = deltaTime;
-        lua.globals()["fps"] = framerateCounter.getAverageFramerate();
-        lua.globals()["frame"] = vulkan.frame_number;
-        // Call the lua update function if it exists
-        sol::protected_function lua_update = lua["update"];
-        if (lua_update.valid()) {
-          sol::protected_function_result result = lua_update(deltaTime);
-          if (!result.valid()) {
-            sol::error err = result;
-            ren::println("Error running lua update: {}", err.what());
+        // Tick the ECS
+        if (0) {
+          // Update lua globals
+          lua.globals()["time"] = time;
+          lua.globals()["delta_time"] = deltaTime;
+          lua.globals()["fps"] = framerateCounter.getAverageFramerate();
+          lua.globals()["frame"] = vulkan.frame_number;
+          // Call the lua update function if it exists
+          sol::protected_function lua_update = lua["update"];
+          if (lua_update.valid()) {
+            sol::protected_function_result result = lua_update(deltaTime);
+            if (!result.valid()) {
+              sol::error err = result;
+              ren::println("Error running lua update: {}", err.what());
+            }
           }
         }
       }
@@ -512,10 +511,7 @@ namespace ren {
 
 
       viewportA.drawWindow("Viewport A", deltaTime);
-      viewportB.drawWindow("Viewport B", deltaTime);
-
       viewportA.render(*renderer);
-      viewportB.render(*renderer);
 
       auto enc = frame.getMainCommandEncoder();
       auto penc = enc->beginRenderPass(*renderer->getDisplayPass(), *frame.renderTarget);
@@ -758,12 +754,23 @@ namespace ren {
       penc.end();
       renderer->endFrame();
 
+
+      // 3. --- VULKAN MULTI-VIEWPORT PROCESSING ---
+      if (ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
+        // Computes positioning and updates platform windows
+        ImGui::UpdatePlatformWindows();
+
+        // Renders and presents secondary windows automatically via the Vulkan backend
+        ImGui::RenderPlatformWindowsDefault();
+      }
+
       {
         REN_PROFILE_SCOPE("Frame Pacing");
 
         // FPS limiting at the end of frame (after submission) to reduce input latency.
         // If the window is not focused, limit to 30 FPS to reduce CPU/GPU usage.
         bool isFocused = SDL_GetWindowFlags(getWindow()) & SDL_WINDOW_INPUT_FOCUS;
+        isFocused = true;
         int maxFps = isFocused ? kMaxFPS.get() : kIdleFPS.get();
 
         if (maxFps > 0) {
@@ -810,7 +817,12 @@ namespace ren {
     ImNodes::CreateContext();
 
     auto &io = ImGui::GetIO();
-    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;  //  | ImGuiConfigFlags_ViewportsEnable;
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+    if (kImGuiViewports.get()) {
+      io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
+      // FORCE OS WINDOW DECORATIONS ON DETACHED VIEWPORTS
+      io.ConfigViewportsNoDecoration = false;
+    }
 
     ImGui::StyleColorsDark();
 

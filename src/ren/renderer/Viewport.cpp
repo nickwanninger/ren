@@ -10,6 +10,10 @@
 #include <imgui/imgui.h>
 #include <imgui/backends/imgui_impl_vulkan.h>
 #include <SDL3/SDL_keyboard.h>
+#include <ren/renderer/graph/tasks/GBufferTask.h>
+#include <ren/core/Flag.h>
+
+static ren::Flag<std::string> skyBoxPath("skybox", "assets/hdri/sky.jpg", "Path to the skybox texture to use in the viewport.");
 
 namespace ren {
 
@@ -22,6 +26,14 @@ namespace ren {
 
 
   void Viewport::buildGraph() {
+    ren::GraphHandle nullHandleOut;
+    ren::GraphHandle ssao;
+    ren::GraphHandle gbufferAlbedo, gbufferNormal, gbufferMaterial, gbufferDepth;
+    auto &gbp = ren::addGBuffer(graph, gbufferAlbedo, gbufferNormal, gbufferMaterial, gbufferDepth);
+
+
+
+
     forwardPSO.debugName = "ViewportForward";
     forwardPSO.program = ren::getShader("demo/viewport_clear");
     // The fullscreen triangle is generated from SV_VertexID, so there is no
@@ -31,39 +43,33 @@ namespace ren {
     forwardPSO.depthTest = false;
     forwardPSO.depthWrite = false;
 
-    // A placeholder for the real scene pass. It draws nothing but a gradient
-    // derived from FrameGlobals, which is exactly enough to prove that each
-    // viewport renders with its own camera.
-    //
-    // UNORM rather than the SRGB default: the shader writes values it has
-    // already tone-mapped, and an SRGB target would encode them twice.
+    auto skybox = ren::Texture::load(skyBoxPath.get());
+    ren::println("Viewport: skybox texture {}", skybox->getName());
+
+    // The sky texture is an LDR JPEG. The shader samples its values into a
+    // UNORM target and uses FrameGlobals to orient the sky and grid.
     graph.pass("forward")
-        .createColorAttachment("viewportColor",
-                               {.relativeScale = glm::vec2(1.0f), .format = VK_FORMAT_R8G8B8A8_UNORM},
-                               finalImage)
-        .render([this](GraphRenderPassContext &ctx) {
-          // No parameters are bound here on purpose: everything this pass draws
-          // comes from the FrameGlobals buffer that render() bound before
-          // running the graph.
+        .createColorAttachment("viewportColor", {.relativeScale = glm::vec2(1.0f), .format = VK_FORMAT_R8G8B8A8_UNORM}, finalImage)
+        .render([this, skybox](GraphRenderPassContext &ctx) {
           auto shader = ctx.encoder.bindGraphics(forwardPSO);
+          auto root = shader.root("pc");
+          root.set("skyboxHdri", skybox);
+          // root.set("raysPerPixel", raysPerPixel);
+          // root.set("focusDistance", focusDistance);
+          // root.set("lensRadius", lensRadius);
           shader.drawFullscreenTriangle();
         });
   }
 
 
   void Viewport::update(float dt, glm::uvec2 size) {
-    // A zero-sized viewport (a collapsed or freshly-docked ImGui window) would
-    // ask the graph for a zero-extent image, which Vulkan rejects.
+    // Clamp render size
     renderSize = glm::max(size, glm::uvec2(1, 1));
 
-    // Control logic runs after the size is known, so a controller can use the
-    // aspect ratio, but before the graph is prepared.
+    // call out to subclass for controls and per-frame logic.
     onUpdate(dt);
 
-    // This is what reallocates the graph's images when the size changes. It
-    // must happen here, in phase 1, rather than in render(): the editor records
-    // an ImGui::Image() referencing the final image's descriptor set right
-    // after calling update(), and a reallocation frees that descriptor set.
+    // Prepare the graph for the frame.
     graph.startFrame(renderSize);
     prepared = true;
   }
@@ -91,9 +97,8 @@ namespace ren {
     // frees it: buildImage() drops the descriptor set whenever it reallocates,
     // so this re-creates it against the new image view on the next frame.
     if (resource->imguiTextureID == VK_NULL_HANDLE) {
-      resource->imguiTextureID = ImGui_ImplVulkan_AddTexture(
-          resource->sampler->getHandle(), resource->image->getImageView(),
-          VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+      resource->imguiTextureID =
+          ImGui_ImplVulkan_AddTexture(resource->sampler->getHandle(), resource->image->getImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     }
     return resource->imguiTextureID;
   }
@@ -107,18 +112,7 @@ namespace ren {
     auto &frame = ren::getFrameUnit();
     auto encoder = frame.getMainCommandEncoder();
 
-    // ---- Per-viewport frame globals ---- //
-    //
-    // The shader ABI binds exactly one FrameGlobals buffer at set 0, and the
-    // command encoder rebinds it on every shader activation. Rather than
-    // touching that ABI, each viewport allocates its own buffer and descriptor
-    // set from the frame's arena and descriptor pool -- both of which are reset
-    // in SubmissionUnit::begin(), so there is nothing to free and no
-    // frame-in-flight hazard -- and points the encoder at it for the duration
-    // of the graph run.
-    //
-    // Distinct buffers, rather than overwriting one, so that two viewports'
-    // passes do not have to be serialized against each other on the GPU.
+    // Allocate and initialize the frame globals buffer.
     auto *globalsBuffer = frame.getArena().push<UniformBuffer<FrameGlobals>>(1);
 
     const glm::vec2 sizeF(renderSize);
@@ -133,8 +127,7 @@ namespace ren {
     };
 
     VkDescriptorSet globalsSet = VK_NULL_HANDLE;
-    if (!frame.getDescriptorAllocator().allocate(
-            &globalsSet, renderer.getFrameGlobalsAllocator().getLayout())) {
+    if (!frame.getDescriptorAllocator().allocate(&globalsSet, renderer.getFrameGlobalsAllocator().getLayout())) {
       throw std::runtime_error("Viewport: failed to allocate frame globals descriptor set");
     }
 
@@ -164,10 +157,6 @@ namespace ren {
     // Hand set 0 back to the frame's own globals, so anything drawn outside a
     // viewport (the display pass, ImGui, debug lines) is unaffected by this.
     encoder->setFrameGlobals(VK_NULL_HANDLE);
-
-    // No layout transition is needed here: RenderGraph::compile() already
-    // ends every schedule by barriering all of its resources into ShaderRead,
-    // which is what ImGui samples the final image as.
   }
 
 
@@ -178,7 +167,7 @@ namespace ren {
 
   bool EditorViewport::drawWindow(const char *title, float dt, bool *open) {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-    const bool visible = ImGui::Begin(title, open);
+    const bool visible = ImGui::Begin(title, open, ImGuiWindowFlags_MenuBar);
     ImGui::PopStyleVar();  // Popped right after Begin so nested widgets are unaffected.
 
     if (!visible) {
@@ -187,6 +176,15 @@ namespace ren {
       // whatever size it last had and skip the update entirely.
       ImGui::End();
       return open ? *open : true;
+    }
+
+    if (ImGui::BeginMenuBar()) {
+      if (ImGui::BeginMenu("View")) {
+        ImGui::MenuItem("Show Input Overlay", nullptr, &showInputOverlay);
+        ImGui::MenuItem("Show Graph Inspector", nullptr, &showGraphInspector);
+        ImGui::EndMenu();
+      }
+      ImGui::EndMenuBar();
     }
 
     const ImVec2 origin = ImGui::GetCursorScreenPos();
@@ -199,8 +197,7 @@ namespace ren {
     // that sibling viewports never both claim the same drag.
     ImGui::SetCursorScreenPos(origin);
     ImGui::InvisibleButton("##viewportInput", extent,
-                           ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight |
-                               ImGuiButtonFlags_MouseButtonMiddle);
+                           ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight | ImGuiButtonFlags_MouseButtonMiddle);
 
     auto &io = ImGui::GetIO();
     const ImVec2 mouse = io.MousePos;
@@ -216,8 +213,7 @@ namespace ren {
     input.rightDown = hasInput && ImGui::IsMouseDown(ImGuiMouseButton_Right);
     input.middleDown = hasInput && ImGui::IsMouseDown(ImGuiMouseButton_Middle);
     input.mousePixels = glm::vec2(local.x, local.y);
-    input.mouseNormalized = glm::vec2(extent.x > 0 ? local.x / extent.x : 0.0f,
-                                      extent.y > 0 ? local.y / extent.y : 0.0f);
+    input.mouseNormalized = glm::vec2(extent.x > 0 ? local.x / extent.x : 0.0f, extent.y > 0 ? local.y / extent.y : 0.0f);
     input.mouseDelta = hasInput ? glm::vec2(io.MouseDelta.x, io.MouseDelta.y) : glm::vec2(0.0f);
     input.wheel = input.hovered ? io.MouseWheel : 0.0f;
 
@@ -229,10 +225,8 @@ namespace ren {
       looking = false;
     }
 
-    // Phase 1 proper: size, controls, and graph preparation. This must happen
-    // before the ImGui::Image below, because it is what (re)allocates the
-    // image that the Image call is about to reference.
-    update(dt, glm::uvec2(extent.x, extent.y));
+    // Update the viewport's graph
+    update(dt, glm::uvec2(extent.x * renderScale, extent.y * renderScale));
 
     // Rewind to the top-left and draw the rendered image over the button. The
     // image is filled in later this frame, during the render phase.
@@ -241,31 +235,55 @@ namespace ren {
       ImGui::Image((ImTextureID)texture, extent);
     }
 
-    if (showInputOverlay) {
-      ImDrawList *dl = ImGui::GetWindowDrawList();
-      auto text = std::format(
-          "hovered: {}  active: {}  looking: {}\n"
-          "L:{} R:{} M:{}\n"
-          "px: {:.0f}, {:.0f}\n"
-          "norm: {:.3f}, {:.3f}\n"
-          "delta: {:.1f}, {:.1f}  wheel: {:.2f}\n"
-          "size: {} x {}\n"
-          "pos: {:.2f}, {:.2f}, {:.2f}",
-          input.hovered, input.active, looking, input.leftDown, input.rightDown, input.middleDown,
-          input.mousePixels.x, input.mousePixels.y, input.mouseNormalized.x,
-          input.mouseNormalized.y, input.mouseDelta.x, input.mouseDelta.y, input.wheel,
-          getRenderSize().x, getRenderSize().y, position.x, position.y, position.z);
+    if ((showInputOverlay || overlayContent) && extent.x > 16.0f && extent.y > 16.0f) {
+      constexpr float margin = 8.0f;
+      const float width = std::min(360.0f, extent.x - 2.0f * margin);
+      const float height = std::min(320.0f, extent.y - 2.0f * margin);
 
-      const ImVec2 pad(8, 6);
-      const ImVec2 textPos(origin.x + 8, origin.y + 8);
-      const ImVec2 textSize = ImGui::CalcTextSize(text.c_str());
-      dl->AddRectFilled(ImVec2(textPos.x - pad.x, textPos.y - pad.y),
-                        ImVec2(textPos.x + textSize.x + pad.x, textPos.y + textSize.y + pad.y),
-                        IM_COL32(0, 0, 0, 160), 4.0f);
-      dl->AddText(textPos, IM_COL32(255, 255, 255, 255), text.c_str());
+      ImGui::SetCursorScreenPos(ImVec2(origin.x + margin, origin.y + margin));
+      ImGui::SetNextWindowSizeConstraints(ImVec2(width, 0.0f), ImVec2(width, height));
+      // ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+      ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+      if (ImGui::BeginChild("##viewportOverlay", ImVec2(width, 0.0f), ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_AlwaysUseWindowPadding)) {
+        if (ImGui::CollapsingHeader("Viewport Overlay", ImGuiTreeNodeFlags_DefaultOpen)) {
+          if (showInputOverlay) {
+            const auto text = std::format(
+                "hovered: {}  active: {}  looking: {}\n"
+                "L:{} R:{} M:{}\n"
+                "px: {:.0f}, {:.0f}\n"
+                "norm: {:.3f}, {:.3f}\n"
+                "delta: {:.1f}, {:.1f}  wheel: {:.2f}\n"
+                "size: {} x {}\n"
+                "pos: {:.2f}, {:.2f}, {:.2f}",
+                input.hovered, input.active, looking, input.leftDown, input.rightDown, input.middleDown, input.mousePixels.x, input.mousePixels.y,
+                input.mouseNormalized.x, input.mouseNormalized.y, input.mouseDelta.x, input.mouseDelta.y, input.wheel, getRenderSize().x,
+                getRenderSize().y, position.x, position.y, position.z);
+            ImGui::TextWrapped("%s", text.c_str());
+          }
+          if (overlayContent) {
+            overlayContent();
+          }
+
+          ImGui::DragInt("raysPerPixel", &raysPerPixel, 1.0f, 1, 64);
+          ImGui::DragFloat("focusDistance", &focusDistance, 0.1f, 0.1f, 100.0f);
+          ImGui::DragFloat("lensRadius", &lensRadius, 0.01f, 0.0f, 1.0f);
+          ImGui::DragFloat("renderScale", &renderScale, 0.01f, 0.1f, 1.0f);
+        }
+      }
+      ImGui::EndChild();
+      ImGui::PopStyleVar();
+      // ImGui::PopStyleColor();
     }
 
     ImGui::End();
+
+
+    if (showGraphInspector) {
+      ImGui::Begin("Graph Inspector", &showGraphInspector);
+      this->graph.inspect();
+      ImGui::End();
+    }
+
     return open ? *open : true;
   }
 
@@ -293,12 +311,24 @@ namespace ren {
       glm::vec3 impulse(0.0f);
       const float speed = moveSpeed * dt;
 
-      if (keys[SDL_SCANCODE_W]) impulse += forwardFlat * speed;
-      if (keys[SDL_SCANCODE_S]) impulse -= forwardFlat * speed;
-      if (keys[SDL_SCANCODE_A]) impulse -= right * speed;
-      if (keys[SDL_SCANCODE_D]) impulse += right * speed;
-      if (keys[SDL_SCANCODE_SPACE]) impulse.y += speed;
-      if (keys[SDL_SCANCODE_LSHIFT]) impulse.y -= speed;
+      if (keys[SDL_SCANCODE_W]) {
+        impulse += forwardFlat * speed;
+      }
+      if (keys[SDL_SCANCODE_S]) {
+        impulse -= forwardFlat * speed;
+      }
+      if (keys[SDL_SCANCODE_A]) {
+        impulse -= right * speed;
+      }
+      if (keys[SDL_SCANCODE_D]) {
+        impulse += right * speed;
+      }
+      if (keys[SDL_SCANCODE_SPACE]) {
+        impulse.y += speed;
+      }
+      if (keys[SDL_SCANCODE_LSHIFT]) {
+        impulse.y -= speed;
+      }
 
       velocity += impulse;
     }

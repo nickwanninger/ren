@@ -1,6 +1,7 @@
 #pragma once
 
 #include <ren/assets/Material.h>
+#include <ren/renderer/CommandEncoder.h>
 #include <ren/renderer/pipelines/PipelineStateObject.h>
 #include <ren/renderer/Texture.h>
 #include <ren/renderer/Buffer.h>

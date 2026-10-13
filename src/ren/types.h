@@ -153,22 +153,27 @@ namespace ren {
   }
 
   struct ByteSpan {
-    const u8* data = nullptr;
-    size_t size = 0;
+    u8* data = nullptr;
+    const size_t size = 0;
 
     constexpr ByteSpan() noexcept = default;
 
-    ByteSpan(const void* bytes, size_t byte_size) noexcept
-        : data(static_cast<const u8*>(bytes))
+    ByteSpan(void* bytes, size_t byte_size) noexcept
+        : data(static_cast<u8*>(bytes))
         , size(byte_size) {}
 
     // A span converted from a value remains valid only while that value is
     // alive. Functions must not retain the span.
     template <typename T>
       requires(!std::is_volatile_v<T> && __is_trivially_copyable(T) && (sizeof(T) & 3u) == 0)
-    ByteSpan(const T& value) noexcept
-        : data(reinterpret_cast<const u8*>(__builtin_addressof(value)))
+    ByteSpan(T& value) noexcept
+        : data(reinterpret_cast<u8*>(const_cast<std::remove_const_t<T>*>(__builtin_addressof(value))))
         , size(sizeof(T)) {}
+
+    template <typename T>
+    ByteSpan(std::vector<T>& vec) noexcept
+        : data(reinterpret_cast<u8*>(vec.data()))
+        , size(vec.size() * sizeof(T)) {}
   };
 
 }  // namespace ren

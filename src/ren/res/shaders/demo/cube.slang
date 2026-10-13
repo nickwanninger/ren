@@ -3,6 +3,17 @@
 import ren.core;
 
 struct Material {
+
+  float A;
+  float2 B;
+  float3 C;
+  float4 D;
+  float3x3 E;
+  float4x4 F;
+
+  uint G;
+  uint2 H;
+
   float4 color;
   TextureHandle tex;
 };

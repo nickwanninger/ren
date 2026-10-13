@@ -3,12 +3,17 @@
 #include <ren/renderer/RenderWorld.h>
 #include <ren/core/Application.h>
 #include <ren/core/DebugLines.hpp>
+#include <ren/assets/materials/PBRMaterial.h>
+#include <ren/renderer/shader/ShaderCache.h>
 #include "ren/renderer/graph/RunContext.h"
+#include <unordered_map>
 
 namespace ren {
 
   GBufferTask::GBufferTask(ren::RenderGraph &G)
       : ren::RenderPassTask(G) {
+    pso.debugName = "GBuffer";
+    pso.program = ren::getShader("demo/plain");
     auto scale = glm::vec2(1.0f);
     // Location 0
     this->out.albedo = addColorAttachment("gbufferAlbedo", {.relativeScale = scale, .format = VK_FORMAT_R16G16B16A16_SFLOAT});
@@ -24,8 +29,6 @@ namespace ren {
     auto &cam = ren::Camera::get();
     auto viewMatrix = cam.view_matrix();
 
-    // return;
-
     // Grab an image for width/height.
     auto image = ctx.graph.getImage(out.depth);
     auto projection = ren::Camera::projectionMatrix(image->getWidth(), image->getHeight());
@@ -35,66 +38,101 @@ namespace ren {
     // Bind the MegaMesh buffer for rendering geometry.
     megaMesh.bind(ctx.encoder.getEncoder());
 
-    // TODO: BATCH RENDERING
 
-    ren::MeshPushConstants pc;
+    // Extract the renderables.
+    ren::RenderWorld world;
+    world.extractFromECS(ren::world());
 
-    ren::RenderWorld rw(cam);
-    rw.extractFromECS(ren::world());
+    ImGui::Begin("Renderables", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
+    // Display a table for the renderables.
+    if (ImGui::BeginTable("Renderables", 3)) {
+      ImGui::TableSetupColumn("Position");
+      ImGui::TableSetupColumn("Mesh");
+      ImGui::TableSetupColumn("Material");
+      ImGui::TableHeadersRow();
 
-    pc.view = viewMatrix;
-    pc.proj = projection;
+      for (const auto &r : world.renderables) {
+        ImGui::TableNextRow();
+        ImGui::TableSetColumnIndex(0);
+        ImGui::Text("%f, %f, %f", r.transform[3][0], r.transform[3][1], r.transform[3][2]);
+        ImGui::TableSetColumnIndex(1);
 
+        // Mesh's location in the mega mesh buffer.
+        auto ent = megaMesh.getEntry(r.mesh->megaHandle);
+        ImGui::Text("%u, %u, %u, %u, %u", ent.meshID, ent.vertexOffset, ent.indexOffset, ent.vertexCount, ent.indexCount);
+        ImGui::TableSetColumnIndex(2);
+        ImGui::Text("AHH");
+      }
 
-    ren::emit<ren::DebugDrawEvent>({pc.view, pc.proj});  // TODO: REMOVE
-
-    engineUBO.view = pc.view;
-    engineUBO.proj = pc.proj;
-    engineUBO.invViewProj = glm::inverse(pc.proj * pc.view);
-    engineUBO.cameraWorldPosition = glm::vec4(cam.position, 1.0);
-
-    engineUBO.time = ren::Application::get().timeSeconds;
-    this->engineUBOBuffer.update(engineUBO);
-
-    float radius = 0.01f;
-    for (auto &r : rw.renderables) {
-      auto &mesh = r.mesh;
-      auto &mat = r.material;
-
-
-      // auto x = ctx.encoder.bindGraphics(mat->getPSO());
-
-      //  auto cur = ctx.encoder.bindGraphics(mat->getPSO());
-
-
-      DebugScribe s;
-      auto position = r.transform * glm::vec4(0, 0, 0, 1);
-      s.drawSphere(glm::vec3(position), radius, glm::vec4(1.0f, 0.0f, 0.0f, 1.0f), 1.0f);
-      radius += 0.05f;
-
-
-      // if (!mat->bind(ctx.renderer)) {
-      //   continue;  // Skip this renderable if the material is not ready.
-      // }
-
-      /*
-
-      auto engineBinder = ctx.renderer.startBinding(0);
-      engineBinder.bind("engine", this->engineUBOBuffer);
-      engineBinder.apply();
-
-
-      auto &meshEntry = megaMesh.getEntry(r.mesh->megaHandle);
-      pc.model = r.transform;
-      pc.normalMatrix = glm::transpose(glm::inverse(pc.model));
-
-      ctx.renderer.setPushConstants(pc);
-
-      int instanceCount = 1;
-      vkCmdDrawIndexed(ctx.cmd, meshEntry.indexCount, instanceCount, meshEntry.indexOffset,
-                       meshEntry.vertexOffset, 0);
-                       */
+      ImGui::EndTable();
     }
+
+    ImGui::End();
+
+    const auto drawCount = world.renderables.size();
+    if (drawCount == 0) return;
+
+    struct alignas(16) ObjectData {
+      glm::mat4 modelMatrix;
+      glm::mat4 normalMatrix;
+      u32 objectId;
+      u32 padding[3];
+    };
+    struct MaterialData {
+      glm::vec4 color;
+      float metallic;
+      float roughness;
+      float padding[2];
+    };
+    struct DrawRecord {
+      u32 objectIndex;
+      u32 materialIndex;
+    };
+
+    auto &arena = ctx.encoder.getArena();
+    auto *objects = arena.push<StorageBuffer<ObjectData>>(drawCount);
+    auto *materials = arena.push<StorageBuffer<MaterialData>>(drawCount);
+    auto *draws = arena.push<StorageBuffer<DrawRecord>>(drawCount);
+    auto *commands = arena.push<IndirectBuffer<VkDrawIndexedIndirectCommand>>(drawCount);
+    std::unordered_map<const ren::Material *, u32> materialIndices;
+    materialIndices.reserve(drawCount);
+    u32 materialCount = 0;
+
+    for (u32 i = 0; i < drawCount; ++i) {
+      const auto &r = world.renderables[i];
+      const auto &entry = megaMesh.getEntry(r.mesh->megaHandle);
+      objects->hostData()[i] = ObjectData{
+          .modelMatrix = r.transform,
+          .normalMatrix = glm::transpose(glm::inverse(r.transform)),
+          .objectId = i,
+      };
+
+      auto [it, inserted] = materialIndices.try_emplace(r.material.get(), materialCount);
+      if (inserted) {
+        MaterialData data{.color = glm::vec4(1.0f), .metallic = 0.0f, .roughness = 1.0f};
+        if (auto *pbr = dynamic_cast<const ren::PBRMaterial *>(r.material.get())) {
+          data.color = pbr->props.baseColorFactor;
+          data.metallic = pbr->props.metallicFactor;
+          data.roughness = pbr->props.roughnessFactor;
+        }
+        materials->hostData()[materialCount++] = data;
+      }
+      draws->hostData()[i] = DrawRecord{i, it->second};
+      commands->hostData()[i] = VkDrawIndexedIndirectCommand{
+          .indexCount = entry.indexCount,
+          .instanceCount = 1,
+          .firstIndex = entry.indexOffset,
+          .vertexOffset = static_cast<i32>(entry.vertexOffset),
+          .firstInstance = 0,
+      };
+    }
+
+    auto shader = ctx.encoder.bindGraphics(pso);
+    auto root = shader.root("root");
+    root.set("draws", draws->devicePointer<DrawRecord>());
+    root.set("objects", objects->devicePointer<ObjectData>());
+    root.set("materials", materials->devicePointer<MaterialData>());
+    shader.drawIndexedIndirect(*commands, static_cast<u32>(drawCount));
   }
 
 
