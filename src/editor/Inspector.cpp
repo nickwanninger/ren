@@ -6,8 +6,6 @@
 
 #include <imgui/imgui.h>
 
-#include "Agent.h"
-
 
 
 
@@ -59,19 +57,6 @@ namespace ren::editor {
   }
 
   static void inspectorPlugin(ren::Application &app) {
-    // static Agent agent;
-    // agent.start();
-    // static AgentChatView chatview(agent);
-
-    // ren::system::onUpdate("ren::editor::Agent").run([&](flecs::iter &it) {
-    //   ImGui::Begin("Agent");
-    //   agent.tick();
-
-    //   chatview.draw();
-    //   ImGui::End();
-    // });
-
-
 
     if (1) {
       ren::system::onUpdate("ren::editor::EditorInspector").run([&](flecs::iter &it) {
