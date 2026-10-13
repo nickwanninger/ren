@@ -2,12 +2,9 @@
 #include <ren/misc/DeprecationLogger.h>
 #include <ren/renderer/CommandEncoder.h>
 #include <ren/renderer/submission/SubmissionQueue.h>
-#include <ren/core/Flag.h>
-#include <SDL3/SDL_vulkan.h>
+#include <ren/core/Window.h>
 
 namespace ren {
-
-  static ren::Flag<bool> vsyncFlag("vsync", true, "Enable VSync for the swapchain");
 
   static Renderer *g_renderer = nullptr;
   Renderer &Renderer::get(void) {
@@ -16,26 +13,19 @@ namespace ren {
   }
 
 
-  Renderer::Renderer(SDL_Window *window)
-      : window(window) {
+  Renderer::Renderer(ref<VulkanInstance> vulkan)
+      : vulkan(std::move(vulkan)) {
     REN_PROFILE_FUNCTION();
 
     g_renderer = this;
 
-    // Create the Vulkan instance, then make a surface for the window and use
-    // it to select the device.
-    this->vulkan = make<VulkanInstance>();
-    if (!SDL_Vulkan_CreateSurface(this->window, this->vulkan->instance, nullptr, &this->surface)) {
-      throw std::runtime_error(fmt::format("SDL_Vulkan_CreateSurface failed: {}", SDL_GetError()));
+    if (!this->vulkan->hasDevice()) {
+      throw std::runtime_error("Renderer needs a Vulkan device. Call VulkanInstance::selectDevice() first.");
     }
-    this->vulkan->selectDevice(this->surface);
     this->imageHeap = make<ImageDescriptorHeap>();
     this->samplerHeap = make<SamplerDescriptorHeap>();
     this->samplerCache = make<SamplerCache>(this->samplerHeap);
     this->frameGlobalsAllocator = makeBox<FrameGlobalsAllocator>();
-
-
-    rebuildSwapchain();
   }
 
   Renderer::~Renderer(void) {
@@ -51,9 +41,6 @@ namespace ren {
 
     this->pipelineCache.reset();
     this->shaderCache.reset();
-    this->swapchain.reset();
-    vkDestroySurfaceKHR(this->vulkan->instance, this->surface, nullptr);
-    this->surface = VK_NULL_HANDLE;
     this->samplerCache.reset();
     this->imageHeap.reset();
     this->samplerHeap.reset();
@@ -178,7 +165,7 @@ namespace ren {
 
   VkCommandBuffer Renderer::getCommandBuffer() { return getFrameUnit().getMainCommandEncoder()->buf(); }
 
-  void Renderer::beginFrame(void) {
+  void Renderer::beginFrame(Window &window) {
     REN_PROFILE_FUNCTION();
 
     this->currentPass = nullptr;
@@ -187,18 +174,14 @@ namespace ren {
     ren::FrameSubmissionUnit *frame = nullptr;
 
 
-    // check if the SDL window is a different size than the swapchain.
-    int width, height;
-    SDL_GetWindowSizeInPixels(this->window, &width, &height);
-
     for (int i = 0; i < 10 && frame == nullptr; i++) {
       REN_PROFILE_SCOPE("Acquire Next Frame");
-      frame = this->swapchain->acquireNextFrame();
+      frame = window.getSwapchain().acquireNextFrame();
 
       if (frame == nullptr) {
         REN_PROFILE_SCOPE("Acquire Next Frame");
         // Swapchain is out of date, rebuild it.
-        rebuildSwapchain();
+        window.rebuildSwapchain();
       }
     }
 
@@ -212,31 +195,14 @@ namespace ren {
     frame->beginFrame();
   }
 
-  void Renderer::endFrame(void) {
+  void Renderer::endFrame(Window &window) {
     REN_PROFILE_FUNCTION();
 
     auto &frame = ren::getFrameUnit();
 
     // Submit and present using the frame unit's method
-    frame.submitAndPresent(*vulkan->graphicsQueue, swapchain->swapchain);
+    frame.submitAndPresent(*vulkan->graphicsQueue, window.getSwapchain().swapchain);
   }
-
-
-  void Renderer::rebuildSwapchain() {
-    REN_PROFILE_FUNCTION();
-    // wait for the GPU to be idle.
-    this->vulkan->waitForIdle();
-    this->swapchain.reset();
-
-    auto info = ren::SwapchainCreateInfo{
-        .window = this->window,
-        .surface = this->surface,
-        .enableVSync = vsyncFlag.get(),
-    };
-
-    this->swapchain = makeBox<ren::Swapchain>(info);
-  }
-
 
 
 }  // namespace ren

@@ -4,6 +4,7 @@
 #include <SDL3/SDL.h>
 #include <ren/renderer/RenderPass.h>
 #include <ren/renderer/Renderer.h>
+#include <ren/core/Window.h>
 #include <ren/core/Scene.h>
 #include <ren/core/Entity.h>
 #include <ren/assets/AssetManager.h>
@@ -28,8 +29,9 @@ namespace ren {
 
 
   class Application {
-    // The first important thing in an application is the SDL Window and the Vulkan instance.
-    SDL_Window *window = nullptr;
+    // The first important thing in an application is the windows and the
+    // Vulkan instance. windows[0] is the main window.
+    std::vector<Box<Window>> windows;
     ref<Renderer> renderer;
 
 
@@ -65,7 +67,10 @@ namespace ren {
 
     auto &getLuaState(void) { return this->lua; }
 
-    SDL_Window *getWindow(void) const { return this->window; }
+    SDL_Window *getWindow(void) const { return getMainWindow().getHandle(); }
+    Window &getMainWindow(void) const { return *this->windows[0]; }
+    // The Window that owns `handle`, or nullptr.
+    Window *findWindow(SDL_Window *handle) const;
 
 
     void atExit(std::function<void(void)> func) { exitCallbacks.push_back(func); }

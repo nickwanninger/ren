@@ -14,10 +14,11 @@
 #include <ren/renderer/shader/ShaderCache.h>
 #include <ren/renderer/SamplerCache.h>
 #include <ren/renderer/FrameGlobals.h>
-#include <SDL3/SDL.h>
 #include <ren/renderer/DescriptorHeap.h>
 
 namespace ren {
+
+  class Window;
 
   // This class attempts to provide a generic interface for rendering triangles in a 3D Scene.
   // We render to a renderTarget, which is a ren::Texture, and then have a separate pass which
@@ -26,7 +27,7 @@ namespace ren {
    public:
     // This is the public interface for the renderer
 
-    Renderer(SDL_Window *window);
+    Renderer(ref<VulkanInstance> vulkan);
     ~Renderer(void);
     // Non-copyable, non-movable
     Renderer(const Renderer &) = delete;
@@ -36,15 +37,12 @@ namespace ren {
 
 
 
-    // TODO: move all this to a swapchain wrapper class.
-    void rebuildSwapchain(void);
-
-    // Begin a new frame. This will drive the swapchain and prepare the frame data for drawing.
-    void beginFrame(void);
+    // Begin a new frame. This will drive the window's swapchain and prepare the
+    // frame data for drawing.
+    void beginFrame(Window &window);
     // End the current frame. This will submit the command buffer to the GPU and
-    // present the swapchain image to the screen.
-
-    void endFrame(void);
+    // present the swapchain image to the window.
+    void endFrame(Window &window);
 
     // Wait for the GPU to finish all commands before proceeding.
     // Avoid using this as much as you can!
@@ -113,7 +111,6 @@ namespace ren {
     }
 
 
-    const Swapchain &getSwapchain(void) const { return *swapchain; }
     ImageDescriptorHeap &getImageDescriptorHeap() { return *imageHeap; }
     SamplerDescriptorHeap &getSamplerDescriptorHeap() { return *samplerHeap; }
     FrameGlobalsAllocator &getFrameGlobalsAllocator() {
@@ -143,14 +140,10 @@ namespace ren {
     ref<SamplerDescriptorHeap> samplerHeap;
 
     VkCommandBuffer getCommandBuffer();
-    SDL_Window *window;
-    // TODO: move to ren::Window, which will own its SDL_Window and surface.
-    VkSurfaceKHR surface = VK_NULL_HANDLE;
     ren::RenderPassCache renderPassCache;
     ref<VulkanInstance> vulkan = nullptr;
     Box<FrameGlobalsAllocator> frameGlobalsAllocator;
     ref<SamplerCache> samplerCache;
-    ref<Swapchain> swapchain = nullptr;
     ref<RenderPass> displayPass = nullptr;
 
   };

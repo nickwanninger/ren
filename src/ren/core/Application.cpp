@@ -91,29 +91,31 @@ namespace ren {
     }
 
 
-    {
-      REN_PROFILE_SCOPE("SDL_CreateWindow");
+    // The Vulkan instance comes first, because a window needs it to make its
+    // surface. The main window's surface then selects the device.
+    auto vulkan = make<VulkanInstance>();
 
-      auto flags = SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE;
+    {
+      WindowDesc desc;
+      desc.title = fmt::format("{} - Ren {}", app_name, REN_VERSION);
+      desc.size = window_size;
+      desc.flags = SDL_WINDOW_RESIZABLE;
       if (kHighDPI.get()) {
-        flags |= SDL_WINDOW_HIGH_PIXEL_DENSITY;
+        desc.flags |= SDL_WINDOW_HIGH_PIXEL_DENSITY;
       }
       if (kFullscreen.get()) {
-        flags |= SDL_WINDOW_FULLSCREEN;
+        desc.flags |= SDL_WINDOW_FULLSCREEN;
       }
-
-      auto windowName = fmt::format("{} - Ren {}", app_name, REN_VERSION);
-      this->window = SDL_CreateWindow(windowName.c_str(), window_size.x, window_size.y, flags);
-      if (!this->window) {
-        ren::println("SDL_CreateWindow Error: {}", SDL_GetError());
-        throw std::runtime_error("Failed to create SDL window");
-      }
+      this->windows.push_back(makeBox<Window>(vulkan, desc));
     }
 
+    vulkan->selectDevice(getMainWindow().getSurface());
 
-    // This initializes the Vulkan instance and all the necessary Vulkan objects.
     // TODO: make this a resource instead of a value on Application.
-    this->renderer = make<Renderer>(this->window);
+    this->renderer = make<Renderer>(vulkan);
+
+    // The swapchain allocates frame resources from the renderer, so it comes last.
+    getMainWindow().rebuildSwapchain();
 
     world.set_threads(6);
 
@@ -194,12 +196,19 @@ namespace ren {
       vkDestroyDescriptorPool(vulkan.device, imguiPool, nullptr);
     }
 
-    // Nuke the renderer.
+    // Close the windows (swapchain, surface, SDL window), then nuke the renderer.
+    this->windows.clear();
     this->renderer.reset();
+  }
 
-    // And finally, close the SDL window
-    SDL_DestroyWindow(this->window);
-    this->window = nullptr;
+
+  Window *Application::findWindow(SDL_Window *handle) const {
+    for (const auto &window : this->windows) {
+      if (window->getHandle() == handle) {
+        return window.get();
+      }
+    }
+    return nullptr;
   }
 
 
@@ -322,16 +331,12 @@ namespace ren {
 
     float renderScaleTemp = 1.0f;
 
-    // TODO: Move me to a logical class, not here as static variables.
-    //       Maybe these should live in a WSI abstraction class?
-    static bool swapchainNeedsRebuild = false;
-    static bool isResizing = false;
 
 
 
     // G.pass("gizmo").execute([&](ren::GraphRunContext &ctx) {});
 
-    SDL_RaiseWindow(this->window);
+    SDL_RaiseWindow(getWindow());
 
     while (this->running) {
       REN_PROFILE_SCOPE("Frame");
@@ -349,22 +354,13 @@ namespace ren {
         while (SDL_PollEvent(&e) != 0) {
           REN_PROFILE_SCOPE("SDL Dispatch");
 
+          if (SDL_Window *target = SDL_GetWindowFromEvent(&e)) {
+            if (Window *window = findWindow(target)) {
+              window->handleEvent(e);
+            }
+          }
+
           switch (e.type) {
-            case SDL_EVENT_WINDOW_RESIZED:
-            case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED: {
-              int width = e.window.data1;
-              int height = e.window.data2;
-              swapchainNeedsRebuild = true;
-              isResizing = true;
-              break;
-            }
-
-            case SDL_EVENT_WINDOW_EXPOSED: {
-              isResizing = false;
-              break;
-            }
-
-
             case SDL_EVENT_QUIT: {
               this->running = false;
               break;
@@ -387,10 +383,10 @@ namespace ren {
 
 
       // Handle swapchain rebuild if needed, and the state machine allows.
-      if (swapchainNeedsRebuild && !isResizing) {
+      auto &mainWindow = getMainWindow();
+      if (mainWindow.needsRebuild()) {
         REN_PROFILE_SCOPE("Rebuild Swapchain");
-        renderer->rebuildSwapchain();
-        swapchainNeedsRebuild = false;
+        mainWindow.rebuildSwapchain();
         continue;
       }
 
@@ -414,7 +410,7 @@ namespace ren {
       auto &cam = ren::Camera::get();
       cam.update(deltaTime);
 
-      renderer->beginFrame();
+      renderer->beginFrame(mainWindow);
       auto &frame = ren::getFrameUnit();
       const glm::vec2 frameSize{frame.deviceImage->getWidth(), frame.deviceImage->getHeight()};
       auto viewMatrix = cam.view_matrix();
@@ -752,7 +748,7 @@ namespace ren {
 
       // End the full screen render pass, and submit the command buffer to the GPU for execution.
       penc.end();
-      renderer->endFrame();
+      renderer->endFrame(mainWindow);
 
 
       // 3. --- VULKAN MULTI-VIEWPORT PROCESSING ---
