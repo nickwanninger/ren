@@ -1,33 +1,26 @@
 #include <ren/renderer/Swapchain.h>
 #include <ren/renderer/vulkan/Vulkan.h>
-#include <SDL3/SDL_vulkan.h>
 #include <fmt/core.h>
 #include <vkb/VkBootstrap.h>
 #include <ren/core/Instrumentation.h>
-#include <ren/core/Application.h>
-#include <ren/core/Flag.h>
-
-
-
-static ren::FrameSubmissionUnit *g_frameUnit = nullptr;
 
 
 
 namespace ren {
-  FrameSubmissionUnit &getFrameUnit(void) {
-    if (!g_frameUnit) {
-      throw std::runtime_error("Frame unit not initialized. Call Swapchain::init() first.");
-    }
-    return *g_frameUnit;
+
+  static VkSemaphore createSemaphore(VkDevice device) {
+    VkSemaphoreCreateInfo semaphoreInfo{};
+    semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+    VkSemaphore semaphore = VK_NULL_HANDLE;
+    VK_CHECK(vkCreateSemaphore(device, &semaphoreInfo, nullptr, &semaphore));
+    return semaphore;
   }
 
 
   Swapchain::Swapchain(SwapchainCreateInfo &info)
       : window(info.window) {
     REN_PROFILE_SCOPE("Build Swapchain");
-    this->frameSlotIndex = 0;
     auto &vulkan = ren::getVulkan();
-    vulkan.frame_number = 0;
 
     int width, height;
     SDL_GetWindowSizeInPixels(window, &width, &height);
@@ -70,58 +63,86 @@ namespace ren {
     this->imageFormat = vkb_swapchain.image_format;
     this->depthFormat = vulkan.findDepthFormat();
 
+    VkImageCreateInfo imageCreateInfo = {};
+    imageCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageCreateInfo.imageType = VK_IMAGE_TYPE_2D;
+    imageCreateInfo.format = imageFormat;
+    imageCreateInfo.extent.width = deviceExtent.width;
+    imageCreateInfo.extent.height = deviceExtent.height;
+    imageCreateInfo.extent.depth = 1;
+
+    m_images.resize(images.size());
     for (size_t i = 0; i < images.size(); i++) {
-      frames.push_back(makeBox<ren::FrameSubmissionUnit>((u32)i, *this, images[i], imageViews[i]));
+      auto &slot = m_images[i];
+
+      // Wrap the swapchain image. The swapchain owns the VkImage; we own the view.
+      slot.image = ren::Image::create(fmt::format("device #{}", i), images[i], imageViews[i], VK_NULL_HANDLE, imageCreateInfo);
+
+      slot.depthImage = ren::ImageBuilder(fmt::format("depth #{}", i))
+                            .setWidth(deviceExtent.width)
+                            .setHeight(deviceExtent.height)
+                            .setFormat(depthFormat)
+                            .setUsage(VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)
+                            .setViewAspectMask(VK_IMAGE_ASPECT_DEPTH_BIT)
+                            .build();
+
+      RenderTargetDescription renderTargetDesc;
+      renderTargetDesc.setupColorAndDepth(slot.image, imageFormat, slot.depthImage, depthFormat);
+      slot.renderTarget = ren::make<RenderTarget>(renderTargetDesc);
+
+      slot.renderDone = createSemaphore(vulkan.device);
+    }
+
+    for (auto &semaphore : m_imageAvailable) {
+      semaphore = createSemaphore(vulkan.device);
     }
   }
 
 
   Swapchain::~Swapchain() {
     auto &vulkan = ren::getVulkan();
-    // wait for idle.
+    // Present gives no fence, so this is the only portable way to know that
+    // present no longer holds the semaphores and images.
     vkDeviceWaitIdle(vulkan.device);
-    // Clear the swapchain data.
-    // TODO: make sure nobody is using any of these!
-    frames.clear();
+
+    for (auto semaphore : m_imageAvailable) {
+      vkDestroySemaphore(vulkan.device, semaphore, nullptr);
+    }
+    for (auto &slot : m_images) {
+      vkDestroySemaphore(vulkan.device, slot.renderDone, nullptr);
+      // The framebuffer uses the view, so release it first.
+      slot.renderTarget.reset();
+      // The view is ours, not the swapchain's.
+      vkDestroyImageView(vulkan.device, slot.image->getImageView(), nullptr);
+    }
+    m_images.clear();
     vkDestroySwapchainKHR(vulkan.device, swapchain, nullptr);
   }
 
 
-  ren::FrameSubmissionUnit *Swapchain::acquireNextFrame(void) {
+  bool Swapchain::acquire(u32 frameSlot) {
     REN_PROFILE_FUNCTION();
     auto &vulkan = ren::getVulkan();
-    if (frames.empty()) {
-      fmt::print("No frames available in swapchain\n");
-      return nullptr;
-    }
-    frameSlotIndex = vulkan.frame_number % frames.size();
+    assert(frameSlot < m_imageAvailable.size());
+    m_frameSlot = frameSlot;
 
-    // Get the current frame unit
-    auto frameUnit = frames[frameSlotIndex].get();
-    g_frameUnit = frameUnit;
-
-    // Wait for previous frame's work BEFORE using the semaphore
-    // This ensures imageAvailableSemaphore is not in use
-    frameUnit->waitForFence();
-
-    REN_PROFILE_SCOPE("vkAcquireNextImageKHR");
     auto result = vkAcquireNextImageKHR(vulkan.device, this->swapchain, UINT64_MAX,
-                                        frameUnit->imageAvailableSemaphore, VK_NULL_HANDLE,
-                                        &frameUnit->swapchainImageIndex);
+                                        m_imageAvailable[frameSlot], VK_NULL_HANDLE,
+                                        &m_imageIndex);
 
     if (result == VK_ERROR_OUT_OF_DATE_KHR) {
       ren::dbgln("Swapchain image out of date. Rebuilding...");
-      return nullptr;
+      return false;
     } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
       // NOTE: VK_SUBOPTIMAL_KHR means the acquire succeeded and the semaphore
       // has a pending signal, so the frame *must* be submitted. Bailing out here
       // would orphan that signal and leave the semaphore in a state we then
       // destroy during a rebuild.
       ren::errln("Failed to acquire swapchain image {}", (int)result);
-      return nullptr;
+      return false;
     }
 
-    return frameUnit;
+    return true;
   }
 
 }  // namespace ren

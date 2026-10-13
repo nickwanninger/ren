@@ -36,8 +36,8 @@
 using json = nlohmann::json;
 
 
-// How many frames we want to render in flight at once.
-// currently, anything other than 3 crashes.
+// How many frames we want to render in flight at once. The Renderer has one
+// FrameContext per frame in flight, and getFrameIndex() is in [0, this).
 const int MAX_FRAMES_IN_FLIGHT = 3;
 
 using u8 = uint8_t;

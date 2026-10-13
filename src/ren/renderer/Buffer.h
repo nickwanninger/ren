@@ -186,7 +186,7 @@ namespace ren {
 
   template <typename T>
   class UniformBufferSet {
-    static constexpr size_t buffercount = 3;  // This is an engine constant.
+    static constexpr size_t buffercount = MAX_FRAMES_IN_FLIGHT;  // indexed by getFrameIndex()
    public:
     UniformBufferSet(size_t arrayLength = 1)
         : expectedArrayLength(arrayLength)

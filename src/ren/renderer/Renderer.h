@@ -144,6 +144,8 @@ namespace ren {
     ref<VulkanInstance> vulkan = nullptr;
     Box<FrameGlobalsAllocator> frameGlobalsAllocator;
     ref<SamplerCache> samplerCache;
+    // One per frame in flight, used in turn.
+    std::vector<Box<FrameContext>> frames;
     ref<RenderPass> displayPass = nullptr;
 
   };

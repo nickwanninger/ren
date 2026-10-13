@@ -7,6 +7,15 @@
 namespace ren {
 
   static Renderer *g_renderer = nullptr;
+  static FrameContext *g_frameUnit = nullptr;
+
+  FrameContext &getFrameUnit(void) {
+    if (!g_frameUnit) {
+      throw std::runtime_error("No current frame. Call Renderer::beginFrame() first.");
+    }
+    return *g_frameUnit;
+  }
+
   Renderer &Renderer::get(void) {
     if (g_renderer == nullptr) { throw std::runtime_error("Renderer not initialized"); }
     return *g_renderer;
@@ -26,11 +35,19 @@ namespace ren {
     this->samplerHeap = make<SamplerDescriptorHeap>();
     this->samplerCache = make<SamplerCache>(this->samplerHeap);
     this->frameGlobalsAllocator = makeBox<FrameGlobalsAllocator>();
+
+    // Frame contexts allocate their frame globals from the allocator above.
+    for (u32 i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+      this->frames.push_back(makeBox<FrameContext>(i));
+    }
   }
 
   Renderer::~Renderer(void) {
     REN_PROFILE_FUNCTION();
     waitForIdle();
+
+    g_frameUnit = nullptr;
+    this->frames.clear();
 
     // For various reasons, we want to explicitly clear the render pass cache
     // before destroying the vulkan instance or anything else.
@@ -171,37 +188,71 @@ namespace ren {
     this->currentPass = nullptr;
     this->currentPipeline = nullptr;
 
-    ren::FrameSubmissionUnit *frame = nullptr;
+    const u32 slot = vulkan->frame_number % frames.size();
+    auto &frame = *frames[slot];
 
+    // Wait for this slot's previous work before we reuse its resources. This
+    // also frees the acquire semaphore of this slot in every swapchain.
+    frame.waitForFence();
 
-    for (int i = 0; i < 10 && frame == nullptr; i++) {
+    bool acquired = false;
+    for (int i = 0; i < 10 && !acquired; i++) {
       REN_PROFILE_SCOPE("Acquire Next Frame");
-      frame = window.getSwapchain().acquireNextFrame();
+      acquired = window.getSwapchain().acquire(slot);
 
-      if (frame == nullptr) {
-        REN_PROFILE_SCOPE("Acquire Next Frame");
+      if (!acquired) {
         // Swapchain is out of date, rebuild it.
         window.rebuildSwapchain();
       }
     }
 
-    if (frame == nullptr) {
+    if (!acquired) {
       throw std::runtime_error("Failed to acquire next frame from swapchain.");
     }
 
-
+    g_frameUnit = &frame;
     vulkan->frame_number += 1;
 
-    frame->beginFrame();
+    frame.beginFrame();
   }
 
   void Renderer::endFrame(Window &window) {
     REN_PROFILE_FUNCTION();
 
     auto &frame = ren::getFrameUnit();
+    auto &swapchain = window.getSwapchain();
 
-    // Submit and present using the frame unit's method
-    frame.submitAndPresent(*vulkan->graphicsQueue, window.getSwapchain().swapchain);
+    VkSemaphore waitSems[] = {swapchain.currentImageAvailable()};
+    VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+    VkSemaphore signalSems[] = {swapchain.currentRenderDone()};
+
+    frame.submitFrame(*vulkan->graphicsQueue, {
+                                                  .waitSemaphores = waitSems,
+                                                  .waitStages = waitStages,
+                                                  .signalSemaphores = signalSems,
+                                              });
+
+    {
+      REN_PROFILE_SCOPE("Presentation");
+
+      VkSwapchainKHR swapchains[] = {swapchain.swapchain};
+      u32 imageIndices[] = {swapchain.currentImageIndex()};
+
+      VkPresentInfoKHR presentInfo{};
+      presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+      presentInfo.waitSemaphoreCount = 1;
+      presentInfo.pWaitSemaphores = signalSems;
+      presentInfo.swapchainCount = 1;
+      presentInfo.pSwapchains = swapchains;
+      presentInfo.pImageIndices = imageIndices;
+
+      auto result = vkQueuePresentKHR(vulkan->graphicsQueue->getHandle(), &presentInfo);
+      // A resize (or going fullscreen) makes the swapchain out of date. That's
+      // not an error: the next acquire will report it and rebuild.
+      if (result != VK_ERROR_OUT_OF_DATE_KHR && result != VK_SUBOPTIMAL_KHR) {
+        VK_CHECK(result);
+      }
+    }
   }
 
 

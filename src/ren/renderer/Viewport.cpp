@@ -4,7 +4,7 @@
 #include <ren/renderer/Swapchain.h>
 #include <ren/renderer/CommandEncoder.h>
 #include <ren/renderer/shader/ShaderCache.h>
-#include <ren/renderer/submission/FrameSubmissionUnit.h>
+#include <ren/renderer/submission/FrameContext.h>
 #include <ren/core/Application.h>
 
 #include <imgui/imgui.h>
