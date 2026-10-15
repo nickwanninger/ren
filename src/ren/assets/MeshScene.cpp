@@ -420,15 +420,28 @@ namespace ren {
       meshScene->textures.push_back(nullptr);
     }
 
+    // Textures that hold data instead of color must not be sRGB decoded.
+    std::vector<bool> isDataTexture(scene->mNumTextures, false);
+    for (unsigned int m = 0; m < scene->mNumMaterials; ++m) {
+      for (aiTextureType type : {aiTextureType_NORMALS, aiTextureType_DIFFUSE_ROUGHNESS}) {
+        aiString path;
+        if (scene->mMaterials[m]->GetTexture(type, 0, &path) == aiReturn_SUCCESS && path.C_Str()[0] == '*') {
+          unsigned int index = (unsigned int)atoi(&path.C_Str()[1]);
+          if (index < isDataTexture.size()) isDataTexture[index] = true;
+        }
+      }
+    }
+
     for (unsigned int i = 0; i < scene->mNumTextures; ++i) {
       REN_PROFILE_SCOPE("Load Assimp Texture");
       const aiTexture *assimpTexture = scene->mTextures[i];
+      const VkFormat format = isDataTexture[i] ? VK_FORMAT_R8G8B8A8_UNORM : VK_FORMAT_R8G8B8A8_SRGB;
       ref<Texture> texture;
       if (assimpTexture->mHeight == 0) {
         std::string embeddedName = fmt::format("embedded_{}_{}", i, assimpTexture->mFilename.C_Str());
-        texture = ren::Texture::load(embeddedName, assimpTexture->pcData, assimpTexture->mWidth);
+        texture = ren::Texture::load(embeddedName, assimpTexture->pcData, assimpTexture->mWidth, format);
       } else {
-        texture = ren::Texture::load(assimpTexture->mFilename.C_Str());
+        texture = ren::Texture::load(assimpTexture->mFilename.C_Str(), format);
       }
       meshScene->textures[i] = texture;
     }

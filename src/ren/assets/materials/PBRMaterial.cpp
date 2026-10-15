@@ -19,7 +19,7 @@ namespace ren {
     }
 
     if (defaultNormalTexture == nullptr) {
-      defaultNormalTexture = Texture::createSinglePixel("default-normal", 127, 127, 255, 255);
+      defaultNormalTexture = Texture::createSinglePixel("default-normal", 127, 127, 255, 255, VK_FORMAT_R8G8B8A8_UNORM);
     }
 
 

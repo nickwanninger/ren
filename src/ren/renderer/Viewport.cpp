@@ -43,13 +43,14 @@ namespace ren {
     forwardPSO.depthTest = false;
     forwardPSO.depthWrite = false;
 
-    auto skybox = ren::Texture::load(skyBoxPath.get());
+    auto skybox = ren::Texture::load(skyBoxPath.get(), VK_FORMAT_R8G8B8A8_SRGB);
     ren::println("Viewport: skybox texture {}", skybox->getName());
 
     // The sky texture is an LDR JPEG. The shader samples its values into a
-    // UNORM target and uses FrameGlobals to orient the sky and grid.
+    // SRGB target and uses FrameGlobals to orient the sky and grid.
     graph.pass("forward")
-        .createColorAttachment("viewportColor", {.relativeScale = glm::vec2(1.0f), .format = VK_FORMAT_R8G8B8A8_UNORM}, finalImage)
+        .createColorAttachment("viewportColor", {.relativeScale = glm::vec2(1.0f), .format = VK_FORMAT_R8G8B8A8_SRGB}, finalImage)
+        .reads(gbufferAlbedo, GraphAccess::ShaderRead)
         .render([this, skybox](GraphRenderPassContext &ctx) {
           auto shader = ctx.encoder.bindGraphics(forwardPSO);
           auto root = shader.root("pc");
