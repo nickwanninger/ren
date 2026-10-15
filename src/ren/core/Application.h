@@ -128,6 +128,7 @@ namespace ren {
 
   template <typename T>
   static inline T &ensureResource(void) {
+    REN_DEPRECATION_WARNING();
     if (hasResource<T>()) return resource<T>();
 
     auto &world = ren::world();
