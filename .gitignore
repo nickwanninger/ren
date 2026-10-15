@@ -17,3 +17,4 @@ engine_run_profile.json
 /.claude
 /.agents
 /profile.json
+*.fxt.gz
