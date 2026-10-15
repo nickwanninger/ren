@@ -25,14 +25,12 @@ ren::SamplerIndex ren::Texture::samplerIndex() const {
   return sampler->index();
 }
 
-ren::Texture::Texture(const std::string_view &name, u32 width, u32 height, u8 *pixels)
+ren::Texture::Texture(const std::string_view &name, u32 width, u32 height, u8 *pixels, VkFormat format)
     : name(name) {
   REN_PROFILE_FUNCTION();
   ren::ImageBuilder ib(this->name);
 
   ib.setWidth(width).setHeight(height);
-
-  VkFormat format = VK_FORMAT_R8G8B8A8_UNORM;
 
   u32 mipLevels = ren::Image::calculateMipLevels(width, height);
 
@@ -147,7 +145,7 @@ ren::Texture::Texture(ref<Image> image, ref<Sampler> sampler)
 }
 
 
-ren::ref<ren::Texture> ren::Texture::load(const std::string_view &filename) {
+ren::ref<ren::Texture> ren::Texture::load(const std::string_view &filename, VkFormat format) {
   REN_PROFILE_FUNCTION();
   int texWidth, texHeight, texChannels;
   stbi_uc *pixels = nullptr;
@@ -157,7 +155,7 @@ ren::ref<ren::Texture> ren::Texture::load(const std::string_view &filename) {
     pixels = stbi_load(filename.data(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
   }
 
-  auto texture = ren::make<ren::Texture>(filename, (u32)texWidth, (u32)texHeight, (u8 *)pixels);
+  auto texture = ren::make<ren::Texture>(filename, (u32)texWidth, (u32)texHeight, (u8 *)pixels, format);
 
   stbi_image_free(pixels);
 
@@ -165,7 +163,7 @@ ren::ref<ren::Texture> ren::Texture::load(const std::string_view &filename) {
 }
 
 
-ren::ref<ren::Texture> ren::Texture::load(const std::string_view &name, void *data, u64 size) {
+ren::ref<ren::Texture> ren::Texture::load(const std::string_view &name, void *data, u64 size, VkFormat format) {
   REN_PROFILE_FUNCTION();
   int texWidth, texHeight, texChannels;
   stbi_uc *pixels = nullptr;
@@ -181,7 +179,7 @@ ren::ref<ren::Texture> ren::Texture::load(const std::string_view &name, void *da
                duration);
   }
 
-  auto texture = ren::make<ren::Texture>(name, (u32)texWidth, (u32)texHeight, (u8 *)pixels);
+  auto texture = ren::make<ren::Texture>(name, (u32)texWidth, (u32)texHeight, (u8 *)pixels, format);
 
   stbi_image_free(pixels);
 
@@ -194,11 +192,11 @@ ren::ref<ren::Texture> ren::Texture::load(const std::string_view &name, void *da
 }
 
 ren::ref<ren::Texture> ren::Texture::createSinglePixel(const std::string_view &name, u8 r, u8 g,
-                                                       u8 b, u8 a) {
+                                                       u8 b, u8 a, VkFormat format) {
   u8 data[4];
   data[0] = r;
   data[1] = g;
   data[2] = b;
   data[3] = a;
-  return make<Texture>(name, 1, 1, data);
+  return make<Texture>(name, 1, 1, data, format);
 }
