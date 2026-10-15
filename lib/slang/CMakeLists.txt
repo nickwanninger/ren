@@ -36,7 +36,7 @@ set(SLANG_LIB_DIR "${SLANG_ROOT_DIR}/lib")
 set(SLANG_CMAKE_DIR "${SLANG_LIB_DIR}/cmake/slang")
 
 
-set(SLANG_VERSION "2026.8.1")
+set(SLANG_VERSION "2026.19")
 
 # Download Slang binaries if not present
 if(NOT EXISTS "${SLANG_ROOT_DIR}")
