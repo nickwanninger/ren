@@ -95,7 +95,6 @@ namespace ren {
 
 
     inline void waitForIdle(void) {
-      REN_DEPRECATION_WARNING();
       REN_PROFILE_SCOPE("Wait For Idle");
       vkDeviceWaitIdle(device);
     }
