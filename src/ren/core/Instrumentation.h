@@ -4,7 +4,7 @@
 
 #include <vulkan/vulkan.h>
 
-// #define REN_PROFILE
+#define REN_PROFILE
 
 #ifdef REN_PROFILE
    // Resolve which function signature macro will be used. Note that this only

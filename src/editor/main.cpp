@@ -163,8 +163,6 @@ int main(int argc, char* argv[]) {
   res.x = 1920;
   res.y = 1080;
 
-
-
   ren::Application app("Editor", res, ren::makeBox<editor::EditorWindow>());
 
 
