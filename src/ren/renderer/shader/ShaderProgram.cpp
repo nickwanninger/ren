@@ -2,7 +2,6 @@
 #include <ren/renderer/shader/ShaderReflection.h>
 #include <ren/renderer/Swapchain.h>
 #include <unistd.h>
-#include <algorithm>
 #include <ren/renderer/Renderer.h>
 #include <ren/renderer/FrameGlobals.h>
 #include <ren/assets/AssetManager.h>
@@ -11,6 +10,7 @@
 #include <imgui/imgui.h>
 #include <ren/core/ui/EditorUI.h>
 #include <ren/core/Bundle.h>
+#include <fstream>
 
 
 namespace ren {

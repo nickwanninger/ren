@@ -29,7 +29,6 @@ namespace ren {
   }
 
   void FrameContext::submitFrame(SubmissionQueue &queue, SubmissionInfo info) {
-    REN_PROFILE_SCOPE("Submit Graphics Queue");
     m_inFlightFence = submitTo(queue, info);
   }
 

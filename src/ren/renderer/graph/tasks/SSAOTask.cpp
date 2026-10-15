@@ -79,8 +79,6 @@ namespace ren {
     return image;
   }
 
-  static float lerp(float a, float b, float f) { return a + f * (b - a); }
-
   SSAOTask::SSAOTask(ren::RenderGraph &G, float fscale, GraphHandle depth, GraphHandle normal)
       : ren::RenderPassTask(G) {
     this->in.depth = depth;

@@ -145,12 +145,50 @@ namespace ren {
     // Configure the lua interpreter to pull from the asset manager.
     am.configureLua(lua);
 
+    {
+      // Backup the old print, since we override it with our own.
+      lua_getglobal(L, "print");
+      lua_setglobal(L, "_old_print");
+
+
+      sol::state_view lua(L);
+      // Define our replacement print function
+      auto inspector_print = [](sol::variadic_args va, sol::this_state ts) {
+        std::ostringstream oss;
+        sol::state_view lua(ts);
+        sol::function tostring = lua["tostring"];
+
+        bool first = true;
+        for (auto v : va) {
+          if (!first) {
+            oss << " ";  // Separate with spaces (unlike lua, which is tabs)
+          }
+          first = false;
+
+          // Convert to string using Lua's tostring
+          sol::object s = tostring(v);
+          oss << s.as<std::string>();
+        }
+
+        std::string line = oss.str();
+        std::size_t beg = 0u;
+        for (std::size_t i = 0u; i < line.size(); ++i) {
+          if (line[i] == '\n') {
+            ren::println("{}", line.substr(beg, i - beg));
+            beg = i + 1u;
+          }
+        }
+        if (beg < line.size()) {
+          ren::println("{}", line.substr(beg, line.size() - beg));
+        }
+      };
+      lua.set_function("print", inspector_print);
+    }
+
     // Ensure we have a megamesh buffer. (TODO: move this somewhere non-global.)
     ren::ensureResource<ren::MegaMeshBuffer>();
 
-    world.emplace<neko::luainspector>(ren::lua());
-
-    initImGui();
+    this->window->initializeUI();
 
 
     ren::AutoPlugin::registerPlugins(*this);

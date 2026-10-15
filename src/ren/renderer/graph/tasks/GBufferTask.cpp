@@ -43,32 +43,6 @@ namespace ren {
     ren::RenderWorld world;
     world.extractFromECS(ren::world());
 
-    ImGui::Begin("Renderables", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
-    // Display a table for the renderables.
-    if (ImGui::BeginTable("Renderables", 3)) {
-      ImGui::TableSetupColumn("Position");
-      ImGui::TableSetupColumn("Mesh");
-      ImGui::TableSetupColumn("Material");
-      ImGui::TableHeadersRow();
-
-      for (const auto &r : world.renderables) {
-        ImGui::TableNextRow();
-        ImGui::TableSetColumnIndex(0);
-        ImGui::Text("%f, %f, %f", r.transform[3][0], r.transform[3][1], r.transform[3][2]);
-        ImGui::TableSetColumnIndex(1);
-
-        // Mesh's location in the mega mesh buffer.
-        auto ent = megaMesh.getEntry(r.mesh->megaHandle);
-        ImGui::Text("%u, %u, %u, %u, %u", ent.meshID, ent.vertexOffset, ent.indexOffset, ent.vertexCount, ent.indexCount);
-        ImGui::TableSetColumnIndex(2);
-        ImGui::Text("AHH");
-      }
-
-      ImGui::EndTable();
-    }
-
-    ImGui::End();
-
     const auto drawCount = world.renderables.size();
     if (drawCount == 0) return;
 
