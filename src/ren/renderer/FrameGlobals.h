@@ -1,6 +1,7 @@
 #pragma once
 
 #include <mutex>
+#include <utility>
 
 #include <ren/renderer/Buffer.h>
 
@@ -29,12 +30,29 @@ namespace ren {
   static_assert(offsetof(FrameGlobals, viewMatrix) == 32);
   static_assert(offsetof(FrameGlobals, projMatrix) == 96);
 
+  class FrameGlobalsAllocator;
+
+  // Owns one descriptor set from a FrameGlobalsAllocator and gives it back on
+  // destruction. Like the command buffer of a SubmissionUnit, the owner must
+  // make sure the GPU no longer uses the set before it is destroyed.
   class FrameGlobalsBinding {
    public:
     FrameGlobalsBinding(const FrameGlobalsBinding&) = delete;
     FrameGlobalsBinding& operator=(const FrameGlobalsBinding&) = delete;
-    FrameGlobalsBinding(FrameGlobalsBinding&&) noexcept = default;
-    FrameGlobalsBinding& operator=(FrameGlobalsBinding&&) noexcept = default;
+    FrameGlobalsBinding(FrameGlobalsBinding&& other) noexcept
+        : allocator(std::exchange(other.allocator, nullptr)),
+          buffer(std::move(other.buffer)),
+          descriptorSet(std::exchange(other.descriptorSet, VK_NULL_HANDLE)) {}
+    FrameGlobalsBinding& operator=(FrameGlobalsBinding&& other) noexcept {
+      if (this != &other) {
+        release();
+        allocator = std::exchange(other.allocator, nullptr);
+        buffer = std::move(other.buffer);
+        descriptorSet = std::exchange(other.descriptorSet, VK_NULL_HANDLE);
+      }
+      return *this;
+    }
+    ~FrameGlobalsBinding() { release(); }
 
     void set(const FrameGlobals& globals) {
       buffer.copyFromHost(&globals, sizeof(globals));
@@ -44,9 +62,13 @@ namespace ren {
 
    private:
     friend class FrameGlobalsAllocator;
-    FrameGlobalsBinding(BufferMemory buffer, VkDescriptorSet descriptorSet)
-        : buffer(std::move(buffer)), descriptorSet(descriptorSet) {}
+    FrameGlobalsBinding(FrameGlobalsAllocator* allocator, BufferMemory buffer,
+                        VkDescriptorSet descriptorSet)
+        : allocator(allocator), buffer(std::move(buffer)), descriptorSet(descriptorSet) {}
 
+    inline void release();
+
+    FrameGlobalsAllocator* allocator = nullptr;
     BufferMemory buffer;
     VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
   };
@@ -75,6 +97,7 @@ namespace ren {
           .descriptorCount = capacity};
       VkDescriptorPoolCreateInfo poolInfo{
           .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+          .flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
           .maxSets = capacity,
           .poolSizeCount = 1,
           .pPoolSizes = &poolSize};
@@ -122,7 +145,7 @@ namespace ren {
           .pBufferInfo = &bufferInfo};
       vkUpdateDescriptorSets(getVulkan().device, 1, &write, 0, nullptr);
 
-      FrameGlobalsBinding result(std::move(buffer), descriptorSet);
+      FrameGlobalsBinding result(this, std::move(buffer), descriptorSet);
       result.set({});
       return result;
     }
@@ -130,8 +153,23 @@ namespace ren {
     VkDescriptorSetLayout getLayout() const { return layout; }
 
    private:
+    friend class FrameGlobalsBinding;
+
+    void free(VkDescriptorSet descriptorSet) {
+      std::lock_guard lock(mutex);
+      vkFreeDescriptorSets(getVulkan().device, pool, 1, &descriptorSet);
+    }
+
     std::mutex mutex;
     VkDescriptorPool pool = VK_NULL_HANDLE;
     VkDescriptorSetLayout layout = VK_NULL_HANDLE;
   };
+
+  inline void FrameGlobalsBinding::release() {
+    if (allocator != nullptr && descriptorSet != VK_NULL_HANDLE) {
+      allocator->free(descriptorSet);
+    }
+    allocator = nullptr;
+    descriptorSet = VK_NULL_HANDLE;
+  }
 }  // namespace ren

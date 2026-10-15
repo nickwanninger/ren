@@ -14,6 +14,8 @@
 #include <ren/renderer/submission/SubmissionUnit.h>
 #include <ren/core/Result.h>
 
+#include "EditorWindow.h"
+
 
 using namespace ren;
 
@@ -161,13 +163,9 @@ int main(int argc, char* argv[]) {
   res.x = 1920;
   res.y = 1080;
 
-  ren::Application app("Editor", res);
 
-  // auto program = ren::getShader("test/drawparams_temp_test");
-  // if (const auto& material = program->getReflection()->getMaterialSchema(); material.isSome()) {
-  //   ren::println("Material schema:\n{}", material.unwrap().toJson().dump(2));
-  // }
-  // return 0;
+
+  ren::Application app("Editor", res, ren::makeBox<editor::EditorWindow>());
 
 
   if (loadArg.get() != "") {
@@ -186,6 +184,8 @@ int main(int argc, char* argv[]) {
   // }
 
   app.run();
+
+
   REN_PROFILE_END_SESSION();
 
   return 0;

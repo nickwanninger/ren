@@ -2,6 +2,7 @@
 
 #include <ren/types.h>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <vulkan/vulkan_core.h>
 #include <unordered_set>

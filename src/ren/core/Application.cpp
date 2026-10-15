@@ -49,7 +49,6 @@
 
 #include <ren/core/Flag.h>
 #include <ren/renderer/shader/ShaderProgram.h>
-#include <ren/scripting/imgui_lua_inspector.hpp>
 #include <ren/core/Math.h>
 
 #include <chrono>
@@ -72,7 +71,8 @@ static ren::Application *g_application = nullptr;
 namespace ren {
 
   Application &Application::get(void) { return *g_application; }
-  Application::Application(const std::string &app_name, glm::uvec2 window_size) {
+  Application::Application(const std::string &app_name, glm::uvec2 window_size, Box<Window> window)
+      : window(window ? std::move(window) : makeBox<Window>()) {
     REN_PROFILE_SCOPE("BringupApplication");
     g_application = this;
     // Initialize the SDL window
@@ -105,7 +105,7 @@ namespace ren {
       if (kFullscreen.get()) {
         desc.flags |= SDL_WINDOW_FULLSCREEN;
       }
-      this->window = makeBox<Window>(vulkan, desc);
+      this->window->initialize(vulkan, desc);
     }
 
     vulkan->selectDevice(this->window->getSurface());
@@ -203,6 +203,9 @@ namespace ren {
     if (result.status() != sol::call_status::ok) {
       throw std::runtime_error(fmt::format("Failed to load init.lua: {}", result.get<std::string>()));
     }
+
+    // Last, so that the window's content sees a fully set up application.
+    this->window->onInitialize();
   }
 
   Application::~Application() {
@@ -215,30 +218,14 @@ namespace ren {
       func();
     }
 
-    VkDescriptorPool imguiPool = VK_NULL_HANDLE;
-    {
-      REN_PROFILE_SCOPE("ImGuiLayer::shutdown");
+    // ECS-owned textures unregister their ImGui descriptors during teardown,
+    // so destroy them before the window shuts down ImGui.
+    world.reset();
 
-      auto &vulkan = ren::getVulkan();
-      auto &state = ren::resource<ren::Application::ImGuiState>();
-      imguiPool = state.imguiPool;
-
-      // ECS-owned textures unregister their ImGui descriptors during teardown,
-      // so destroy them before shutting down ImGui or its pool.
-      world.reset();
-      ImGui_ImplVulkan_Shutdown();
-      ImGui_ImplSDL3_Shutdown();
-      ImNodes::DestroyContext();
-      ImGui::DestroyContext();
-      vkDestroyDescriptorPool(vulkan.device, imguiPool, nullptr);
-    }
-
-    // Close the window (swapchain, surface, SDL window), then nuke the renderer.
+    // Close the window (ImGui, swapchain, surface, SDL window), then nuke the renderer.
     this->window.reset();
     this->renderer.reset();
   }
-
-
 
 
 
@@ -249,36 +236,14 @@ namespace ren {
   void Application::run() {
     auto startTime = std::chrono::high_resolution_clock::now();
     auto lastTime = startTime;
+    // The deadline of the next frame. It moves forward by a fixed period, so
+    // oversleep in one frame does not make the next frame later.
+    auto nextFrame = std::chrono::steady_clock::now();
     SDL_Event e;
 
-
-    auto &vulkan = ren::getVulkan();
-    FramerateCounter framerateCounter;
-
-
-
-    // ren::RenderGraph G;
-
-    ren::EditorViewport viewportA;
-    viewportA.position = {0.0f, 1.5f, 4.5f};
-    viewportA.angles = {-0.08f, 0.0f, 0.0f};
-    viewportA.showInputOverlay = true;
-
-
-
-
-    float renderScaleTemp = 1.0f;
-
-
-
-
-    // G.pass("gizmo").execute([&](ren::GraphRunContext &ctx) {});
-
-    SDL_RaiseWindow(getWindow());
+    SDL_RaiseWindow(window->getHandle());
 
     while (this->running) {
-      REN_PROFILE_SCOPE("Frame");
-
       // As soon as possible, grab the current time and compute the delta time since the last frame.
       const auto frameStart = std::chrono::high_resolution_clock::now();
       float time = std::chrono::duration<float, std::chrono::seconds::period>(frameStart - startTime).count();
@@ -287,262 +252,108 @@ namespace ren {
       lastTime = frameStart;
 
       {
-        REN_PROFILE_SCOPE("SDL Poll");
-        // Handle events on queue
-        while (SDL_PollEvent(&e) != 0) {
-          REN_PROFILE_SCOPE("SDL Dispatch");
-
-          window->handleEvent(e);
-
-          switch (e.type) {
-            case SDL_EVENT_QUIT: {
-              this->running = false;
-              break;
-            }
-            default: {
-              break;
-            }
-          }
-
-
-
-          {
-            REN_PROFILE_SCOPE("ImGui_ImplSDL3_ProcessEvent");
-            if (ImGui_ImplSDL3_ProcessEvent(&e)) {
-              continue;
-            }
-          }
-        }
-      }
-
-
-      // Handle swapchain rebuild if needed, and the state machine allows.
-      if (window->needsRebuild()) {
-        REN_PROFILE_SCOPE("Rebuild Swapchain");
-        window->rebuildSwapchain();
-        continue;
-      }
-
-      // handle sdl 0 size window
-      int windowWidth, windowHeight;
-      SDL_GetWindowSize(getWindow(), &windowWidth, &windowHeight);
-      if (windowWidth == 0 || windowHeight == 0) {
-        ren::println("Window minimized, skipping frame");
-        SDL_Delay(100);
-        continue;
-      }
-
-      if (!running) {
-        // TODO: cleanup!
-        break;
-      }
-
-      // TOOD: Move this to some kind of camera system.  The problem is that we
-      // need the frame globals to be set before we can render, and the camera
-      // is part of the frame globals.
-      auto &cam = ren::Camera::get();
-      cam.update(deltaTime);
-
-      renderer->beginFrame(*window);
-      auto &frame = ren::getFrameUnit();
-      const auto &backbuffer = window->getSwapchain().currentImage();
-      const glm::vec2 frameSize{backbuffer->getWidth(), backbuffer->getHeight()};
-      auto viewMatrix = cam.view_matrix();
-      auto projMatrix = ren::Camera::projectionMatrix(frameSize.x, frameSize.y);
-      frame.setFrameGlobals({
-          .time = time,
-          .deltaTime = deltaTime,
-          .frameNumber = static_cast<u32>(vulkan.frame_number),
-          .renderSize = frameSize,
-          .inverseRenderSize = 1.0f / frameSize,
-          .viewMatrix = viewMatrix,
-          .projMatrix = projMatrix,
-      });
-
-      framerateCounter.addFrame(deltaTime);
-
-
-
-      {
-        REN_PROFILE_SCOPE("ImGui New Frame");
-        ImGui_ImplVulkan_NewFrame();
-        ImGui_ImplSDL3_NewFrame();
-
-        ImGui::NewFrame();
-        ImGuizmo::BeginFrame();
-        ImGuizmo::SetDrawlist(ImGui::GetBackgroundDrawList(ImGui::GetMainViewport()));
-        ImGuizmo::SetRect(0.0f, 0.0f, windowWidth, windowHeight);
-        // Before rendering, lets create a dockspace
-        ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport(), ImGuiDockNodeFlags_PassthruCentralNode);
-      }
-
-
-
-      if (ImGui::BeginMainMenuBar()) {
-        if (ImGui::BeginMenu("View")) {
-          if (ImGui::MenuItem("ImGui Demo")) {
-            ren::logUI("ImGui Demo", [](auto &ctx) { ImGui::ShowDemoWindow(&ctx.opened); });
-          }
-          ImGui::EndMenu();
-        }
-
-
-        // Simply print the framerate in the menu bar.
-        char buf[64];
-        snprintf(buf, sizeof(buf), "%4d FPS DT=%.3f", (int)framerateCounter.getAverageFramerate(), deltaTime);
-        ImGui::MenuItem(buf);
-
-        ImGui::EndMainMenuBar();
-      }
-
-      /**
-       * Show the console log inspection.
-       * see: https://nickw.io/post/logging-user-interfaces
-       */
-      ren::inspectLog();
-
-
-      ImGui::Begin("ShaderCache");
-      renderer->getShaderCache().inspect();
-      ImGui::End();
-
-      /**
-       * Tick the world and run lua update functions. This is where all the
-       * game logic happens, in effect. This currently runs on the main thread,
-       * but needs to be moved to a worker thread in the future to avoid
-       * blocking the main render thread with game logic.
-       */
-      {
-        REN_PROFILE_SCOPE("Tick");
-        world.progress(deltaTime);
-        // Tick the ECS
-        if (0) {
-          // Update lua globals
-          lua.globals()["time"] = time;
-          lua.globals()["delta_time"] = deltaTime;
-          lua.globals()["fps"] = framerateCounter.getAverageFramerate();
-          lua.globals()["frame"] = vulkan.frame_number;
-          // Call the lua update function if it exists
-          sol::protected_function lua_update = lua["update"];
-          if (lua_update.valid()) {
-            sol::protected_function_result result = lua_update(deltaTime);
-            if (!result.valid()) {
-              sol::error err = result;
-              ren::println("Error running lua update: {}", err.what());
-            }
-          }
-        }
-      }
-
-
-
-      viewportA.drawWindow("Viewport A", deltaTime);
-      viewportA.render(*renderer);
-
-      auto enc = frame.getMainCommandEncoder();
-      auto penc = enc->beginRenderPass(*renderer->getDisplayPass(), window->getSwapchain().currentTarget());
-      {
-        REN_PROFILE_SCOPE("FullScreenPass");
-
-        /**
-         * Finally, render the ImGui draw data that has been accumulated over
-         * the course of the frame. This needs to be rendered at the end of the
-         * frame to ensure that it appears on top of all other rendered content.
-         */
+        REN_PROFILE_SCOPE("Frame");
         {
-          REN_PROFILE_SCOPE("RenderImGui");
+          REN_PROFILE_SCOPE("SDL Poll");
+          // Handle events on queue
+          while (SDL_PollEvent(&e) != 0) {
+            REN_PROFILE_SCOPE("SDL Dispatch");
 
-          ren::renderDebugLines(viewMatrix, projMatrix);
-          ImGui::Render();
-          ImGui::UpdatePlatformWindows();
-          ImGui::RenderPlatformWindowsDefault();
-          auto commandBuffer = penc.buf();  // Gross Leakage... But it is needed.
-          ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer);
+            window->handleEvent(e);
+
+            switch (e.type) {
+              case SDL_EVENT_QUIT: {
+                this->running = false;
+                break;
+              }
+              default: {
+                break;
+              }
+            }
+          }
+        }
+
+
+        // Handle swapchain rebuild if needed, and the state machine allows.
+        if (window->needsRebuild()) {
+          window->rebuildSwapchain();
+          continue;
+        }
+
+        if (!running) {
+          // TODO: cleanup!
+          break;
+        }
+
+
+        {
+          REN_PROFILE_SCOPE("Begin Frame");
+          renderer->beginFrame(*window);
+          window->beginFrame();
+        }
+
+
+        {
+          REN_PROFILE_SCOPE("Tick");
+          REN_PROFILE_COUNTER("delta_time", deltaTime * 1000.0f);
+
+          window->onUpdate(deltaTime);
+
+
+          if (1) {
+            REN_PROFILE_SCOPE("Lua");
+            // Update lua globals
+            lua.globals()["delta_time"] = deltaTime;
+            // Call the lua update function if it exists
+            sol::protected_function lua_update = lua["update"];
+            if (lua_update.valid()) {
+              sol::protected_function_result result = lua_update(deltaTime);
+              if (!result.valid()) {
+                sol::error err = result;
+                ren::println("Error running lua update: {}", err.what());
+              }
+            }
+          }
+        }
+
+
+
+        {
+          REN_PROFILE_SCOPE("render");
+          window->render(ren::getFrameUnit());
+        }
+
+        {
+          REN_PROFILE_SCOPE("End Frame");
+          renderer->endFrame(*window);
         }
       }
 
-      // End the full screen render pass, and submit the command buffer to the GPU for execution.
-      penc.end();
-      renderer->endFrame(*window);
-
-
 
       {
-        REN_PROFILE_SCOPE("Frame Pacing");
+        REN_PROFILE_SCOPE("Pacing");
 
         // FPS limiting at the end of frame (after submission) to reduce input latency.
         // If the window is not focused, limit to 30 FPS to reduce CPU/GPU usage.
-        bool isFocused = SDL_GetWindowFlags(getWindow()) & SDL_WINDOW_INPUT_FOCUS;
-        isFocused = true;
-        int maxFps = isFocused ? kMaxFPS.get() : kIdleFPS.get();
+        bool isFocused = window->hasFocus();
+        int maxFps = isFocused ? kMaxFPS.get() : std::min(kIdleFPS.get(), kMaxFPS.get());
 
         if (maxFps > 0) {
-          const auto frameDuration = std::chrono::duration<double>(1.0 / maxFps);
-          std::this_thread::sleep_until(frameStart + frameDuration);
+          const auto period = std::chrono::duration_cast<std::chrono::steady_clock::duration>(std::chrono::duration<double>(1.0 / maxFps));
+          nextFrame += period;
+          // If we are more than one period late (a hitch or a breakpoint), do
+          // not try to catch up with a burst of short frames.
+          const auto now = std::chrono::steady_clock::now();
+          if (nextFrame < now - period) {
+            nextFrame = now;
+          }
+          std::this_thread::sleep_until(nextFrame);
+        } else {
+          nextFrame = std::chrono::steady_clock::now();
         }
       }
     }
     renderer->waitForIdle();
-  }
-
-
-
-  void Application::initImGui() {
-    auto &vulkan = ren::getVulkan();
-    auto &state = ren::ensureResource<ren::Application::ImGuiState>();
-
-    VkDescriptorPoolSize pool_sizes[] = {
-        //
-        {VK_DESCRIPTOR_TYPE_SAMPLER, 1000},
-        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000},
-        {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1000},
-        {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1000},
-        {VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1000},
-        {VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 1000},
-        {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000},
-        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000},
-        {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1000},
-        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 1000},
-        {VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1000},
-    };
-
-    VkDescriptorPoolCreateInfo pool_info = {};
-    pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
-    pool_info.maxSets = 1000;
-    pool_info.poolSizeCount = 11;  // size of pool_sizes
-    pool_info.pPoolSizes = pool_sizes;
-
-    VK_CHECK(vkCreateDescriptorPool(vulkan.device, &pool_info, nullptr, &state.imguiPool));
-
-    // this initializes the core structures of imgui
-    ImGui::CreateContext();
-    ImNodes::CreateContext();
-
-    auto &io = ImGui::GetIO();
-    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
-
-    ImGui::StyleColorsDark();
-
-
-    // this initializes imgui for SDL
-    ImGui_ImplSDL3_InitForVulkan(getWindow());
-
-    // this initializes imgui for Vulkan
-    ImGui_ImplVulkan_InitInfo init_info = {};
-    init_info.Instance = vulkan.instance;
-    init_info.PhysicalDevice = vulkan.physical_device;
-    init_info.Device = vulkan.device;
-    init_info.Queue = vulkan.graphicsQueue->getHandle();
-    init_info.DescriptorPool = state.imguiPool;
-    init_info.MinImageCount = 3;
-    init_info.ImageCount = 3;
-    init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
-    init_info.RenderPass = Renderer::get().getDisplayPass()->getHandle();
-
-    ImGui_ImplVulkan_Init(&init_info);
-
-    ren::eui::configure();
   }
 
 

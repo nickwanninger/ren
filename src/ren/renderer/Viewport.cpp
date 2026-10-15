@@ -9,6 +9,7 @@
 
 #include <imgui/imgui.h>
 #include <imgui/backends/imgui_impl_vulkan.h>
+#include <ImGuizmo/ImGuizmo.h>
 #include <SDL3/SDL_keyboard.h>
 #include <ren/renderer/graph/tasks/GBufferTask.h>
 #include <ren/core/Flag.h>

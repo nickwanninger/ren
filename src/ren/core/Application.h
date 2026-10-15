@@ -42,13 +42,6 @@ namespace ren {
 
     sol::state lua;
 
-    struct ImGuiState {
-      // TODO: move this elsewhere!
-      FramerateCounter framerateCounter;            // Framerate counter for ImGui
-      VkDescriptorPool imguiPool = VK_NULL_HANDLE;  // Descriptor pool for ImGui
-    };
-    void initImGui();
-
    public:
 
     ren::AssetManager &getAssetManager() { return world.get_mut<ren::AssetManager>(); }
@@ -58,7 +51,10 @@ namespace ren {
     // We try to put everything in the world, so that we can use flecs systems to process basically
     // everything.
     flecs::world world;
-    Application(const std::string &app_name, glm::uvec2 window_size);
+    // `window` sets what the application shows. It must be constructed but
+    // not initialized; the Application initializes it. If it is null, the
+    // Application uses a plain Window.
+    Application(const std::string &app_name, glm::uvec2 window_size, Box<Window> window = nullptr);
     ~Application();
 
     void run();
@@ -67,7 +63,7 @@ namespace ren {
 
     auto &getLuaState(void) { return this->lua; }
 
-    SDL_Window *getWindow(void) const { return this->window->getHandle(); }
+    Window &getWindow(void) const { return *this->window; }
 
 
     void atExit(std::function<void(void)> func) { exitCallbacks.push_back(func); }

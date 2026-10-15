@@ -217,7 +217,6 @@ namespace ren {
   }
 
   void Renderer::endFrame(Window &window) {
-    REN_PROFILE_FUNCTION();
 
     auto &frame = ren::getFrameUnit();
     auto &swapchain = window.getSwapchain();
@@ -233,8 +232,6 @@ namespace ren {
                                               });
 
     {
-      REN_PROFILE_SCOPE("Presentation");
-
       VkSwapchainKHR swapchains[] = {swapchain.swapchain};
       u32 imageIndices[] = {swapchain.currentImageIndex()};
 
