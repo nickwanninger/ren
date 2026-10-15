@@ -122,11 +122,13 @@ namespace ren {
   /**
    * @brief Per-frame mouse state, scoped to one viewport's rectangle.
    *
-   * Everything here is derived from an ImGui InvisibleButton covering the
-   * viewport, rather than from SDL's global mouse state. That distinction is
-   * the whole point: ImGui knows which widget owns the mouse, so two viewports
-   * side by side never both react to the same drag, and a popup drawn over a
-   * viewport takes the mouse away from it for free.
+   * Everything here is derived from ImGui's window hover state and the
+   * viewport's rectangle, rather than from SDL's global mouse state. That
+   * distinction is the whole point: ImGui knows which window owns the mouse,
+   * so two viewports side by side never both react to the same drag, and a
+   * popup drawn over a viewport takes the mouse away from it for free. No
+   * ImGui item covers the viewport, because ImGuizmo does not start a drag
+   * while an item is hovered.
    */
   struct ViewportInput {
     /// The mouse is over this viewport and no other widget has claimed it.
@@ -171,6 +173,8 @@ namespace ren {
     /// Radians of rotation per pixel of mouse movement. ren::Camera uses the
     /// same 0.002 against SDL's relative motion, which is also pixels.
     float lookSensitivity = 0.002f;
+    /// Distance in front of the camera that the view cube orbits around.
+    float orbitDistance = 8.0f;
 
     glm::vec3 position = {0.0f, 0.0f, 3.0f};
     /// Pitch, yaw, roll -- matching ren::Camera's convention.
@@ -202,10 +206,17 @@ namespace ren {
     void onUpdate(float dt) override;
 
    private:
+    /// Draw the ImGuizmo view cube in the top-right corner of the viewport,
+    /// and apply its rotation to the camera.
+    void drawViewCube(glm::vec2 origin, glm::vec2 extent);
+
     ViewportInput input;
     /// True while a right-drag look is in progress. Tracked per viewport so a
     /// drag started in one viewport does not rotate another.
     bool looking = false;
+    /// Bit per ImGuiMouseButton, set while a press that started inside this
+    /// viewport is held. Replaces the active state of an ImGui item.
+    u32 capturedButtons = 0;
     bool showGraphInspector = false;
   };
 

@@ -268,7 +268,7 @@ namespace ren {
 
     // Use smaller font for log messages
     // ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[0]);
-    ImGui::SetWindowFontScale(0.9f);
+    // ImGui::SetWindowFontScale(0.9f);
 
     // Lock the mutex while we iterate
     // std::lock_guard<std::mutex> lock(g_logMutex);
@@ -338,7 +338,7 @@ namespace ren {
         strftime(timebuf, sizeof(timebuf), "%H:%M:%S", localtime(&seconds));
       }
 
-      ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.1f, 0.1f, 0.1f, 1.0f));
+      ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.2f, 0.2f, 0.2f, 1.0f));
       ImGui::TextUnformatted(timebuf);
       ImGui::SameLine();
       ImGui::PopStyleColor();

@@ -193,20 +193,27 @@ namespace ren {
     const ImVec2 avail = ImGui::GetContentRegionAvail();
     const ImVec2 extent(std::max(avail.x, 1.0f), std::max(avail.y, 1.0f));
 
-    // Capture mouse state relative to the viewport image. An InvisibleButton
-    // over the whole region gives us hover/active state that respects ImGui's
-    // window stacking, so widgets drawn on top still win the mouse -- and so
-    // that sibling viewports never both claim the same drag.
-    ImGui::SetCursorScreenPos(origin);
-    ImGui::InvisibleButton("##viewportInput", extent,
-                           ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight | ImGuiButtonFlags_MouseButtonMiddle);
-
+    // Capture mouse state relative to the viewport image. This submits no
+    // hoverable item: ImGuizmo does not start a drag while any item is hovered
+    // or active. IsWindowHovered() still respects ImGui's window stacking, so
+    // popups and the overlay child on top win the mouse.
     auto &io = ImGui::GetIO();
     const ImVec2 mouse = io.MousePos;
     const ImVec2 local(mouse.x - origin.x, mouse.y - origin.y);
 
-    input.hovered = ImGui::IsItemHovered();
-    input.active = ImGui::IsItemActive();
+    input.hovered = ImGui::IsWindowHovered() && ImGui::IsMouseHoveringRect(origin, ImVec2(origin.x + extent.x, origin.y + extent.y));
+
+    // A drag that starts inside the viewport keeps input until its button
+    // comes up, so that sibling viewports never both claim the same drag.
+    for (int button = ImGuiMouseButton_Left; button <= ImGuiMouseButton_Middle; button++) {
+      if (input.hovered && ImGui::IsMouseClicked(button)) {
+        capturedButtons |= 1u << button;
+      }
+      if (!ImGui::IsMouseDown(button)) {
+        capturedButtons &= ~(1u << button);
+      }
+    }
+    input.active = capturedButtons != 0;
     // "Has input" means hovered *or* actively dragged: a look that starts
     // inside the viewport must keep working once the cursor leaves it.
     const bool hasInput = input.hovered || input.active;
@@ -221,7 +228,9 @@ namespace ren {
 
     // A right-drag that began inside this viewport captures the look, and
     // holds it until the button comes up -- wherever the cursor has wandered.
-    if (!looking && ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+    // A view cube drag (left button) does not start a look. This reads the
+    // gizmo state from the previous frame, because the cube is drawn later.
+    if (!looking && !ImGuizmo::IsUsingViewManipulate() && input.hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
       looking = true;
     } else if (looking && !ImGui::IsMouseDown(ImGuiMouseButton_Right)) {
       looking = false;
@@ -230,12 +239,14 @@ namespace ren {
     // Update the viewport's graph
     update(dt, glm::uvec2(extent.x * renderScale, extent.y * renderScale));
 
-    // Rewind to the top-left and draw the rendered image over the button. The
-    // image is filled in later this frame, during the render phase.
+    // Draw the rendered image at the top-left. The image is filled in later
+    // this frame, during the render phase.
     ImGui::SetCursorScreenPos(origin);
     if (auto texture = getImGuiTextureID()) {
       ImGui::Image((ImTextureID)texture, extent);
     }
+
+    drawViewCube(glm::vec2(origin.x, origin.y), glm::vec2(extent.x, extent.y));
 
     if ((showInputOverlay || overlayContent) && extent.x > 16.0f && extent.y > 16.0f) {
       constexpr float margin = 8.0f;
@@ -250,14 +261,14 @@ namespace ren {
         if (ImGui::CollapsingHeader("Viewport Overlay", ImGuiTreeNodeFlags_DefaultOpen)) {
           if (showInputOverlay) {
             const auto text = std::format(
-                "hovered: {}  active: {}  looking: {}\n"
+                "hovered: {}  active: {}  looking: {}, gizmo: {}\n"
                 "L:{} R:{} M:{}\n"
                 "px: {:.0f}, {:.0f}\n"
                 "norm: {:.3f}, {:.3f}\n"
                 "delta: {:.1f}, {:.1f}  wheel: {:.2f}\n"
                 "size: {} x {}\n"
                 "pos: {:.2f}, {:.2f}, {:.2f}",
-                input.hovered, input.active, looking, input.leftDown, input.rightDown, input.middleDown, input.mousePixels.x, input.mousePixels.y,
+                input.hovered, input.active, looking, ImGuizmo::IsUsingAny(), input.leftDown, input.rightDown, input.middleDown, input.mousePixels.x, input.mousePixels.y,
                 input.mouseNormalized.x, input.mouseNormalized.y, input.mouseDelta.x, input.mouseDelta.y, input.wheel, getRenderSize().x,
                 getRenderSize().y, position.x, position.y, position.z);
             ImGui::TextWrapped("%s", text.c_str());
@@ -266,9 +277,9 @@ namespace ren {
             overlayContent();
           }
 
-          ImGui::DragInt("raysPerPixel", &raysPerPixel, 1.0f, 1, 64);
-          ImGui::DragFloat("focusDistance", &focusDistance, 0.1f, 0.1f, 100.0f);
-          ImGui::DragFloat("lensRadius", &lensRadius, 0.01f, 0.0f, 1.0f);
+          // ImGui::SliderInt("raysPerPixel", &raysPerPixel, 1, 64);
+          // ImGui::DragFloat("focusDistance", &focusDistance, 0.1f, 0.1f, 100.0f);
+          // ImGui::DragFloat("lensRadius", &lensRadius, 0.01f, 0.0f, 1.0f);
           ImGui::DragFloat("renderScale", &renderScale, 0.01f, 0.1f, 1.0f);
         }
       }
@@ -287,6 +298,53 @@ namespace ren {
     }
 
     return open ? *open : true;
+  }
+
+
+  void EditorViewport::drawViewCube(glm::vec2 origin, glm::vec2 extent) {
+    constexpr float cubeSize = 128.0f;
+    if (extent.x < cubeSize || extent.y < cubeSize) {
+      return;
+    }
+
+    // ImGuizmo keeps one global context. Point it at this window's draw list,
+    // so the cube draws over the image, and at this viewport's screen rect.
+    ImGuizmo::PushID(this);
+    ImGuizmo::SetDrawlist();
+    ImGuizmo::SetRect(origin.x, origin.y, extent.x, extent.y);
+
+    // ImGuizmo expects GL clip space, so undo the Vulkan Y-flip.
+    glm::mat4 gizmoProj = projection;
+    gizmoProj[1][1] *= -1;
+
+    glm::mat4 gizmoView = view;
+    glm::mat4 identity(1.0f);
+    ImGuizmo::ViewManipulate(glm::value_ptr(gizmoView), glm::value_ptr(gizmoProj), ImGuizmo::TRANSLATE, ImGuizmo::WORLD, glm::value_ptr(identity),
+                             orbitDistance, ImVec2(origin.x + extent.x - cubeSize, origin.y), ImVec2(cubeSize, cubeSize), 0x10101010);
+
+    // onUpdate() rebuilds the view from position and angles each frame, so
+    // write the cube's change back into them. The camera has no roll.
+    if (gizmoView != view) {
+      const glm::mat4 inverse = glm::inverse(gizmoView);
+      const glm::vec3 forward = -glm::vec3(inverse[2]);
+      position = glm::vec3(inverse[3]);
+      angles.x = std::asin(glm::clamp(forward.y, -1.0f, 1.0f));
+      angles.y = std::atan2(forward.x, -forward.z);
+      velocity = glm::vec3(0.0f);
+      view = gizmoView;
+    }
+
+
+    // ImGuizmo::DrawGrid(glm::value_ptr(view), glm::value_ptr(gizmoProj), glm::value_ptr(glm::mat4(1.0f)), 100.0f);
+    static glm::mat4 matrix(1.0f);
+
+    ImGuizmo::DrawCubes(glm::value_ptr(view), glm::value_ptr(gizmoProj), glm::value_ptr(matrix), 1);
+
+    ImGuizmo::Manipulate(glm::value_ptr(view), glm::value_ptr(gizmoProj), ImGuizmo::TRANSLATE | ImGuizmo::ROTATE | ImGuizmo::SCALE, ImGuizmo::MODE::WORLD, glm::value_ptr(matrix), NULL,
+                         NULL);
+
+
+    ImGuizmo::PopID();
   }
 
 
