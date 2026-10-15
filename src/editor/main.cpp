@@ -185,10 +185,10 @@ static void worldTest() {
 
 int main(int argc, char* argv[]) {
   worldTest();
+  REN_PROFILE_BEGIN("profile");
   // return 0;
   ren::parseFlags(argc, argv);
 
-  REN_PROFILE_BEGIN_SESSION("profile", "profile.json");
 
   glm::uvec2 res;
   res.x = 1920;
