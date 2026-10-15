@@ -178,121 +178,36 @@ namespace ren::eui {
 
   void configure() {
     ImGuiStyle &style = ImGui::GetStyle();
-    // ImVec4 *colors = style.Colors;
-    ImVec4 *colors = ImGui::GetStyle().Colors;
-
-    auto primaryColor = hexImColor(0x008540);
-
-    // auto windowBackground = ImVec4(0.011f, 0.011f, 0.011f, 1.00f);
-    auto windowBackground = ImVec4(0.005f, 0.005f, 0.005f, 1.00f);
-    auto lighten = [](const ImVec4 &color, float amount) { return ImVec4(color.x + amount, color.y + amount, color.z + amount, color.w); };
+    ImVec4 *colors = style.Colors;
 
 
-    colors[ImGuiCol_CheckMark] = primaryColor;
-    colors[ImGuiCol_SliderGrab] = primaryColor;
-    colors[ImGuiCol_SliderGrabActive] = primaryColor;
-    colors[ImGuiCol_SeparatorHovered] = primaryColor;
-    colors[ImGuiCol_SeparatorActive] = primaryColor;
-    colors[ImGuiCol_ResizeGrip] = primaryColor;
-    colors[ImGuiCol_ResizeGripHovered] = primaryColor;
-    colors[ImGuiCol_ResizeGripActive] = primaryColor;
-    colors[ImGuiCol_TextLink] = primaryColor;
-    colors[ImGuiCol_NavCursor] = primaryColor;
+    style.WindowBorderSize = 1.0f;
+    style.ChildBorderSize = 1.0f;
+    style.PopupBorderSize = 1.0f;
+    style.FrameBorderSize = 1.0f;
 
-
-    colors[ImGuiCol_MenuBarBg] = ImVec4(0.00f, 0.00f, 0.00f, 1.00f);
-    colors[ImGuiCol_TextDisabled] = ImVec4(0.11f, 0.11f, 0.11f, 1.00f);
-    colors[ImGuiCol_MenuBarBg] = windowBackground;
-    colors[ImGuiCol_ScrollbarBg] = lighten(windowBackground, 0.02f);
-    colors[ImGuiCol_ScrollbarGrab] = ImVec4(0.09f, 0.09f, 0.09f, 1.00f);
-    colors[ImGuiCol_ScrollbarGrabHovered] = ImVec4(0.30f, 0.30f, 0.30f, 1.00f);
-    colors[ImGuiCol_ScrollbarGrabActive] = ImVec4(0.67f, 0.67f, 0.67f, 1.00f);
-
-    colors[ImGuiCol_Header] = ImVec4(0.02f, 0.02f, 0.02f, 1.00f);
-    colors[ImGuiCol_HeaderHovered] = ImVec4(0.05f, 0.05f, 0.05f, 1.00f);
-    colors[ImGuiCol_HeaderActive] = ImVec4(0.08f, 0.08f, 0.08f, 1.00f);
-    colors[ImGuiCol_Tab] = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
-    colors[ImGuiCol_TabSelected] = ImVec4(0.04f, 0.04f, 0.04f, 1.00f);
-    colors[ImGuiCol_TabHovered] = ImVec4(0.16f, 0.16f, 0.16f, 0.80f);
-    colors[ImGuiCol_TabSelectedOverline] = ImVec4(1.00f, 1.00f, 1.00f, 0.0f);
-    colors[ImGuiCol_TabDimmed] = windowBackground;
-    colors[ImGuiCol_TabDimmedSelected] = lighten(windowBackground, 0.02f);
-    colors[ImGuiCol_DockingPreview] = ImVec4(0.98f, 0.99f, 1.00f, 0.09f);
-    colors[ImGuiCol_DockingEmptyBg] = ImVec4(1.00f, 1.00f, 1.00f, 1.00f);
-    colors[ImGuiCol_TableHeaderBg] = hexImColor(0x161616);
-    colors[ImGuiCol_TableBorderStrong] = lighten(windowBackground, 0.02f);
-    colors[ImGuiCol_TableBorderLight] = ImVec4(0.07f, 0.07f, 0.07f, 1.00f);
-    colors[ImGuiCol_TableRowBg] = ImVec4(0.00f, 0.00f, 0.00f, 0.03f);
-    colors[ImGuiCol_TableRowBgAlt] = ImVec4(0.29f, 0.29f, 0.29f, 0.06f);
-    colors[ImGuiCol_TreeLines] = ImVec4(0.29f, 0.29f, 0.31f, 0.50f);
-
-
-
-
-    colors[ImGuiCol_Text] = ImVec4(0.80f, 0.80f, 0.80f, 1.00f);
-
-    // Window and Child backgrounds.
-    colors[ImGuiCol_WindowBg] = windowBackground;
-    colors[ImGuiCol_ChildBg] = windowBackground;
-    colors[ImGuiCol_PopupBg] = windowBackground;
-    colors[ImGuiCol_ChildBg] = windowBackground;
-    colors[ImGuiCol_Border] = lighten(windowBackground, 0.05f);
-    colors[ImGuiCol_BorderShadow] = ImVec4(0.00f, 0.00f, 0.00f, 1.00f);
-    colors[ImGuiCol_FrameBg] = COLOR_FRAMEBG;
-    colors[ImGuiCol_FrameBgHovered] = colors[ImGuiCol_FrameBg] + ImVec4(0.05f, 0.05f, 0.05f, 0.0f);
-    colors[ImGuiCol_FrameBgActive] = colors[ImGuiCol_FrameBg] + ImVec4(0.10f, 0.10f, 0.10f, 0.0f);
-
-    // Collapsable Headers.
-    colors[ImGuiCol_TitleBg] = ImVec4(0.00f, 0.00f, 0.00f, 1.00f);
-    colors[ImGuiCol_FrameBgActive] = ImVec4(0.08f, 0.08f, 0.08f, 1.00f);
-    colors[ImGuiCol_TitleBgActive] = windowBackground;
-    colors[ImGuiCol_TitleBgCollapsed] = windowBackground;
-
-    colors[ImGuiCol_ScrollbarBg] = windowBackground;
-    colors[ImGuiCol_Button] = ImVec4(0.02f, 0.02f, 0.02f, 1.00f);
-    colors[ImGuiCol_ButtonHovered] = ImVec4(0.30f, 0.30f, 0.30f, 1.00f);
-    colors[ImGuiCol_ButtonActive] = ImVec4(0.09f, 0.09f, 0.09f, 1.00f);
-    colors[ImGuiCol_TableBorderStrong] = ImVec4(0.03f, 0.03f, 0.03f, 1.00f);
-    colors[ImGuiCol_TableBorderLight] = ImVec4(0.04f, 0.04f, 0.04f, 1.00f);
-    colors[ImGuiCol_TableRowBg] = ImVec4(1.00f, 1.00f, 1.00f, 0.00f);
-    colors[ImGuiCol_TableRowBgAlt] = ImVec4(0.10f, 0.10f, 0.10f, 0.06f);
-
-
-
-
-    style.TabRounding = 0.0f;
-    style.WindowMenuButtonPosition = ImGuiDir_None;
-    style.FontSizeBase = 13.0f;
-    style.DockingSeparatorSize = 4.0f;
+    style.WindowRounding = 2.0f;
+    style.ChildRounding = 2.0f;
     style.FrameRounding = 2.0f;
-    // style.FramePadding = ImVec2(8.0f, 2.0f);
-    // style.FrameBorderSize = 2.0f;
-    // style.WindowRounding = 5.0f;
+    style.PopupRounding = 2.0f;
+    style.GrabRounding = 2.0f;
 
-    style.WindowPadding = ImVec2(8.0f, 2.0f);
+    style.FontSizeBase = 13.0f;
 
 
-    // imnodes style.
-    // set the titlebar color for all nodes
-    {
-      ImNodesStyle &style = ImNodes::GetStyle();
-      style.Colors[ImNodesCol_TitleBar] = ImColor(lighten(windowBackground, -0.1f));
-      style.Colors[ImNodesCol_TitleBarSelected] = ImColor(primaryColor);
-      style.Colors[ImNodesCol_TitleBarHovered] = ImColor(lighten(windowBackground, 0.05f));
 
-      style.Colors[ImNodesCol_NodeBackground] = ImColor(windowBackground);
-      style.Colors[ImNodesCol_NodeBackgroundHovered] = ImColor(lighten(windowBackground, 0.01f));
-      style.Colors[ImNodesCol_NodeBackgroundSelected] = ImColor(lighten(windowBackground, 0.01f));
-      style.Colors[ImNodesCol_NodeOutline] = ImColor(lighten(windowBackground, 0.06f));
-
-      style.Colors[ImNodesCol_GridBackground] = ImColor(lighten(windowBackground, 0.02f));
-      style.Colors[ImNodesCol_GridLine] = ImColor(lighten(windowBackground, 0.03f));
-      style.Colors[ImNodesCol_GridLinePrimary] = ImColor(lighten(windowBackground, 0.1f));
+    auto srgbToLinear = [](const ImVec4 &c) -> ImVec4 {
+      auto toLinear = [](float x) -> float { return (x <= 0.04045f) ? x / 12.92f : std::pow((x + 0.055f) / 1.055f, 2.4f); };
+      return ImVec4(toLinear(c.x), toLinear(c.y), toLinear(c.z), c.w);
+    };
+    // go through the colors and srgb adjust them.
+    for (int i = 0; i < ImGuiCol_COUNT; i++) {
+      colors[i] = srgbToLinear(colors[i]);
     }
-
 
     auto &am = ren::ensureResource<ren::AssetManager>();
 
-    loadRenFonts(am);
+
+    // loadRenFonts(am);
   }
 }  // namespace ren::eui
