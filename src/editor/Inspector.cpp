@@ -73,8 +73,9 @@ namespace ren::editor {
       });
     }
 
-    if (0) {
+    if (1) {
       ren::system::onUpdate<EcsComponent>("ren::editor::ComponentInspector").run([](flecs::iter &it) {
+        REN_PROFILE_SCOPE("Editor Inspector");
         ImGui::Begin("Component Inspector");
 
 
@@ -102,8 +103,8 @@ namespace ren::editor {
       });
     }
 
-    if (0) {
-      ren::system::onUpdate<EcsComponent>("ren::editor::TextureInspector").run([](flecs::iter &it) {
+    if (1) {
+      ren::system::onUpdate("ren::editor::TextureInspector").run([](flecs::iter &it) {
         ImGui::Begin("Texture Inspector");
 
 

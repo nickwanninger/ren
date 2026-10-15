@@ -53,50 +53,50 @@ void testCalibration(void) {
 }
 
 void testSaxpy(void) {
-  using namespace ren;
-
   SubmissionUnit unit;
-  constexpr u32 length = 10000;
+  for (int i = 0; i < 1000; i++) {
+    constexpr u32 length = 10;
+    float a = 2.5f;
+    auto x = TypedBuffer<float>(length, BufferDomain::Upload, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+    auto y = TypedBuffer<float>(length, BufferDomain::Upload, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+    auto out = TypedBuffer<float>(length, BufferDomain::Readback, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
 
-  auto randomize = [](BufferMemory& buffer, u32 count) {
-    auto* mapped = buffer.hostData<float>();
-    for (u32 i = 0; i < count; i++) {
-      mapped[i] = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
+    // {
+    //   REN_PROFILE_SCOPE("Randomize");
+    //   randomize(x, length);
+    //   randomize(y, length);
+    // }
+    REN_PROFILE_SCOPE("SAXPY");
+
+    auto program = ren::getShader("test/saxpy");
+    auto cmd = unit.begin();
+    auto compute = cmd->bindCompute(program);
+    auto pushConstants = compute.root("pushConstants");
+    pushConstants.set("a", a)
+        .set("length", length)
+        .set("x", x.devicePointer<float>())
+        .set("y", y.devicePointer<float>())
+        .set("output", out.devicePointer<float>());
+
+    compute.dispatch({(length + 255) / 256, 1, 1});
+    compute.writeBarrier();
+
+    auto f = unit.submitTo(*getVulkan().computeQueue);
+    {
+      REN_PROFILE_SCOPE("Wait");
+      f->awaitCompletion();
     }
-  };
-
-  float a = 2.5f;
-  auto x = TypedBuffer<float>(length, BufferDomain::Upload, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-  auto y = TypedBuffer<float>(length, BufferDomain::Upload, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-  auto out = TypedBuffer<float>(length, BufferDomain::Readback, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-  randomize(x, length);
-  randomize(y, length);
-
-  auto program = ren::getShader("test/saxpy");
-  auto cmd = unit.begin();
-  auto compute = cmd->bindCompute(program);
-  auto pushConstants = compute.root("pushConstants");
-  pushConstants.set("a", a)
-      .set("length", length)
-      .set("x", x.devicePointer<float>())
-      .set("y", y.devicePointer<float>())
-      .set("output", out.devicePointer<float>());
-  compute.dispatch({(length + 255) / 256, 1, 1});
-  compute.writeBarrier();
-  compute.dispatch({(length + 255) / 256, 1, 1});
-  compute.writeBarrier();
-  unit.submitTo(*getVulkan().graphicsQueue)->awaitCompletion();
-
-
-  // Validate the result on the CPU
-  auto* mappedX = x.hostData();
-  auto* mappedY = y.hostData();
-  auto* mappedOut = out.hostData();
-  for (u32 i = 0; i < length; i++) {
-    float expected = a * mappedX[i] + mappedY[i];
-    REN_ASSERT(fabs(mappedOut[i] - expected) < 0.001f);
   }
-  ren::println("SAXPY validation passed for {} elements", length);
+
+
+  // // Validate the result on the CPU
+  // auto *mappedX = x.hostData();
+  // auto *mappedY = y.hostData();
+  // auto *mappedOut = out.hostData();
+  // for (u32 i = 0; i < length; i++) {
+  //   float expected = a * mappedX[i] + mappedY[i];
+  //   REN_ASSERT(fabs(mappedOut[i] - expected) < 0.001f);
+  // }
 }
 
 // #include <ren/core/ThreadPool.h>
@@ -150,41 +150,8 @@ void imageHeapSampleTest() {
 }
 
 
-#include <ren/renderer/RenderSceneProxy.h>
-
-static void worldTest() {
-  using namespace ren;
-
-  RenderSceneProxy scene;
-  flecs::world world;
-
-
-  constexpr int count = 10000;
-  uint64_t totalTime = 0;
-
-  auto e = world.entity();
-
-  // Measure average time to create a stage and destroy it.
-  for (int i = 0; i < count; i++) {
-    auto start = std::chrono::high_resolution_clock::now();
-    auto stage = world.async_stage();
-    e.set<float>(3.14f);
-    e.set<int>(42);
-
-    // stage.merge();
-    // ren::println("Created entity {} in stage", e.id());
-    auto end = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
-    totalTime += duration;
-  }
-
-  e.destruct();
-
-  ren::println("Average time to create a stage: {} microseconds", totalTime / (double)count);
-}
 
 int main(int argc, char* argv[]) {
-  worldTest();
   REN_PROFILE_BEGIN("profile");
   // return 0;
   ren::parseFlags(argc, argv);
@@ -210,7 +177,7 @@ int main(int argc, char* argv[]) {
 
   if (runSaxpyArg.get()) {
     testSaxpy();
-    // return 0;
+    return 0;
   }
 
   // if (runImageHeapArg.get()) {
