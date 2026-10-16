@@ -8,24 +8,24 @@
 
 namespace ren {
 
+  class Texture;
+
+  // Screen-space ambient occlusion from the G-buffer depth and normals. The
+  // shader (ren/core/ssao) is a fullscreen surface. It gets the view and
+  // projection from the frame globals and makes its sample kernel itself, so
+  // the parameters below are the whole push constant.
   class SSAOTask : public ren::RenderPassTask {
    public:
     ren::PipelineStateObject pso;
 
-    struct SSAOUniform {
-      glm::mat4 projection;
-      glm::mat4 inv_projection;
-      glm::mat4 normal_matrix;  // used to convert from world space normals to view space.
-      glm::vec4 samples[64];
-      glm::vec2 screen_size;
-      float radius = 1.0f;
-      float intensity = 1.0f;  // WARNING: artistic control! (BAD)
-      float bias = 0.025f;
-      int num_samples = 12;
-    };
-    SSAOUniform ssao;
+    // The view-space radius of the sample hemisphere.
+    float radius = 0.5f;
+    // Depth bias against self-occlusion on flat surfaces.
+    float bias = 0.025f;
+    i32 sampleCount = 16;
 
-    ref<ren::Image> noiseTexture;
+    // RGB noise that rotates the kernel per pixel.
+    ref<ren::Texture> noiseTexture;
 
     struct {
       GraphHandle ssao;
@@ -63,19 +63,17 @@ namespace ren {
                  GraphHandle normalHandle);
 
     void run(ren::GraphRenderPassContext &ctx) override;
+    void inspect(void) override;
   };
 
 
   inline auto &addSSAO(RenderGraph &G, ren::GraphHandle depthHandle, ren::GraphHandle normalHandle,
                        ren::GraphHandle &ssaoOut) {
     auto &ssao = G.addTask<SSAOTask>("ssao", 0.5f, depthHandle, normalHandle);
+    // The blur runs at full scale, so it also upsamples the SSAO.
     auto &blur = G.addTask<SSAOBlurTask>("ssao_blur", 1.0f, ssao.out.ssao, depthHandle, normalHandle);
-
-    // Output the blurred SSAO
     ssaoOut = blur.out.ssao_blurred;
-    // ssaoOut = ssao.out.ssao;
-
-    return ssao;  // TEMP
+    return ssao;
   }
 
 }  // namespace ren

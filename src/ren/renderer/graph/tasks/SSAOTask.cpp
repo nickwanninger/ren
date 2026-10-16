@@ -3,80 +3,29 @@
 #include <ren/renderer/shader/ShaderCache.h>
 #include <ren/renderer/graph/RenderGraph.h>
 
-#include <ren/Camera.h>
 #include <ren/renderer/vulkan/Vulkan.h>
 #include <imgui/imgui.h>
-#include <random>
 #include "ren/renderer/graph/RunContext.h"
 
-#include <stb/stb_image.h>
+#include <ren/renderer/Texture.h>
+#include <ren/renderer/graph/ImageResource.h>
 
 namespace ren {
 
   constexpr VkFormat ssaoFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
 
-  static const u32 ssaoNoiseSize = 8;
-  static ref<ren::Image> createSSAONoiseTexture(void) {
-    auto &am = ren::getAssetManager();
-    // TODO: load textures correctly!
+  // The noise is data, not color, so it is UNORM. Its sampler repeats, which
+  // the shader needs to tile it over the screen.
+  static ref<ren::Texture> loadSSAONoiseTexture(void) {
     std::vector<u8> noiseBytes;
-    if (am.load("shaders/noise/bluenoise64.png", noiseBytes) == false) {
+    if (!ren::getAssetManager().load("shaders/noise/bluenoise64.png", noiseBytes)) {
       throw std::runtime_error("Failed to load SSAO noise texture");
     }
-
-
-
-    int texWidth, texHeight, texChannels;
-    stbi_uc *pixels = nullptr;
-
-
-    pixels = stbi_load_from_memory((stbi_uc *)noiseBytes.data(), (int)noiseBytes.size(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
-
-
-    std::vector<glm::vec4> noiseData(texWidth * texHeight);
-    for (u32 y = 0; y < (u32)texHeight; ++y) {
-      for (u32 x = 0; x < (u32)texWidth; ++x) {
-        u32 index = y * texWidth + x;
-        u8 r = pixels[index * 4 + 0];
-        u8 g = pixels[index * 4 + 1];
-        u8 b = pixels[index * 4 + 2];
-        // Map from [0,255] to [-1,1]
-        glm::vec4 noise((r / 255.0f) * 2.0f - 1.0f, (g / 255.0f) * 2.0f - 1.0f, (b / 255.0f) * 2.0f - 1.0f, 1.0f);
-        noiseData[index] = noise;
-      }
+    auto texture = ren::Texture::load("ssao_noise", noiseBytes.data(), noiseBytes.size(), VK_FORMAT_R8G8B8A8_UNORM);
+    if (!texture) {
+      throw std::runtime_error("Failed to decode SSAO noise texture");
     }
-
-
-    stbi_image_free(pixels);
-
-
-    // make a staging buffer.
-    VkDeviceSize bufferSize = noiseData.size() * sizeof(glm::vec4);
-    ren::BufferMemory stagingBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_ONLY);
-    stagingBuffer.copyFromHost(noiseData.data(), bufferSize, 0);
-
-
-    ren::ImageBuilder b("ssao_noise_texture");
-    VkFormat format = VK_FORMAT_R32G32B32A32_SFLOAT;
-    b.setFormat(format);
-    b.setWidth(texWidth);
-    b.setHeight(texHeight);
-    b.setUsage(VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT);
-    b.setAllocationUsage(VMA_MEMORY_USAGE_GPU_ONLY);
-
-
-    auto image = b.build();
-
-    // transfer data from staging buffer to image.
-    auto &vulkan = ren::getVulkan();
-
-    vulkan.transitionImageLayout(image->getImage(), format, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-
-    vulkan.copyBufferToImage(stagingBuffer.getHandle(), image->getImage(), static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight));
-
-    vulkan.transitionImageLayout(image->getImage(), format, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-
-    return image;
+    return texture;
   }
 
   SSAOTask::SSAOTask(ren::RenderGraph &G, float fscale, GraphHandle depth, GraphHandle normal)
@@ -84,93 +33,48 @@ namespace ren {
     this->in.depth = depth;
     this->in.normal = normal;
 
-
-
     auto scale = glm::vec2(fscale);
-    // Not sure about the format right now.
     this->out.ssao = addColorAttachment("ssao", {.relativeScale = scale, .format = ssaoFormat});
 
     this->read(in.depth, ren::GraphAccess::ShaderRead);
     this->read(in.normal, ren::GraphAccess::ShaderRead);
 
-    // pso.program = ren::ShaderProgram::makeFullScreenProgram("shaders/ssao.frag");
-    pso.program = ren::getShader("ren/core/ssao");
+    pso.debugName = "SSAO";
+    pso.program = ren::getShader("ren/core/ssao", "ren/pass/fullscreen");
+    // The fullscreen triangle comes from SV_VertexID: no vertex buffer, no
+    // culling, and no depth.
+    pso.hasVertexBinding = false;
     pso.cullMode = ren::CullMode::None;
     pso.depthTest = false;
     pso.depthWrite = false;
-    pso.hasVertexBinding = false;
 
-
-
-    this->noiseTexture = createSSAONoiseTexture();
+    this->noiseTexture = loadSSAONoiseTexture();
   }
 
   void SSAOTask::run(ren::GraphRenderPassContext &ctx) {
-    // ctx.renderer.bind(pso);
+    // One noise texel per output pixel. The output is smaller than the
+    // G-buffer when the task scale is below 1.
+    auto target = graph().getImage(out.ssao);
+    glm::vec2 noiseScale = glm::vec2(target->getWidth(), target->getHeight()) /
+                           glm::vec2(noiseTexture->getWidth(), noiseTexture->getHeight());
 
-
-    // auto &cam = ren::Camera::get();
-    // auto viewMatrix = cam.view_matrix();
-
-    // auto ssaoImage = graph().getImage(out.ssao);
-    // auto width = ssaoImage->getWidth();
-    // auto height = ssaoImage->getHeight();
-
-    // ssao.normal_matrix = glm::transpose(glm::inverse(viewMatrix));
-    // ssao.projection = ren::Camera::projectionMatrix(width, height);
-    // ssao.inv_projection = glm::inverse(ssao.projection);
-    // ssao.screen_size = glm::vec2(width, height);
-    // std::uniform_real_distribution<float> randomFloats(0.0,
-    //                                                    1.0);  // random floats between [0.0, 1.0]
-    // std::default_random_engine generator;
-    // for (unsigned int i = 0; i < ssao.num_samples; ++i) {
-    //   // Generate a random sample vector in tangent space pointing up the hemisphere
-    //   glm::vec4 sample(randomFloats(generator) * 2.0 - 1.0, randomFloats(generator) * 2.0 - 1.0,
-    //                    randomFloats(generator), 0.0);
-
-    //   sample = glm::normalize(sample);
-    //   sample *= randomFloats(generator);
-
-    //   float scale = float(i) / (float)ssao.num_samples;
-    //   scale = lerp(0.1f, 1.0f, scale * scale);
-    //   sample *= scale;
-
-    //   ssao.samples[i] = sample;
-    // }
-
-
-    // if (!obj.block("params").setEntireBuffer(ssao)) {
-    //   throw std::runtime_error("Failed to set SSAO uniform buffer");
-    // }
-
-
-    // ctx.encoder.bind(pso, obj);
-
-
-    // uSSAO.update(ssao);
-
-    // VkFilter filter = VK_FILTER_NEAREST;
-
-    // auto binder = ctx.renderer.startBinding(0);
-    // binder.bind("ssao", uSSAO);
-    // binder.bind("depth_sampler", *graph().getImage(in.depth), filter);
-    // binder.bind("normal_sampler", *graph().getImage(in.normal), filter);
-    // binder.bind("noise_sampler", *noiseTexture, VK_FILTER_NEAREST);
-    // binder.apply();
-
-    // vkCmdDraw(ctx.encoder.buf(), 3, 1, 0, 0);
+    auto shader = ctx.encoder.bindGraphics(pso);
+    auto root = shader.root("root");
+    root.set("depth", graph().get<ren::ImageResource>(in.depth)->textureHandle());
+    root.set("normal", graph().get<ren::ImageResource>(in.normal)->textureHandle());
+    root.set("noise", noiseTexture->handle());
+    root.set("noiseScale", noiseScale);
+    root.set("radius", radius);
+    root.set("bias", bias);
+    root.set("sampleCount", static_cast<u32>(sampleCount));
+    shader.drawFullscreenTriangle();
   }
 
   void SSAOTask::inspect(void) {
-    pso.program->inspect();
+    ImGui::DragFloat("Radius", &radius, 0.01f, 0.01f, 10.0f);
+    ImGui::DragFloat("Bias", &bias, 0.001f, 0.0f, 1.0f);
+    ImGui::SliderInt("Samples", &sampleCount, 1, 64);
     ImGui::Separator();
-    // ImGui::Text("SSAO Params:");
-    // ImGui::DragFloat("Radius", &ssao.radius, 0.01f, 0.0f, 10.0f);
-    // ImGui::DragFloat("Bias", &ssao.bias, 0.001f, 0.0f, 1.0f);
-    // ImGui::DragInt("Num Samples", &ssao.num_samples, 1, 1, 64);
-    // ImGui::DragFloat("Noise Divide", &ssao.noise_divide, 0.1f, 1.0f, 20.0f);
-    // ImGui::DragFloat("Intensity", &ssao.intensity, 0.1f, 0.1f, 10.0f);
-
     graph().getResource(out.ssao)->inspect();
   }
 
@@ -188,30 +92,33 @@ namespace ren {
     this->out.ssao_blurred = addColorAttachment("ssao_blurred", {.relativeScale = scale, .format = ssaoFormat});
 
     this->read(in.ssao, ren::GraphAccess::ShaderRead);
+    this->read(in.depth, ren::GraphAccess::ShaderRead);
+    this->read(in.normal, ren::GraphAccess::ShaderRead);
 
-    pso.program = ren::getShader("shaders/ssao_blur.frag");
+    pso.debugName = "SSAOBlur";
+    pso.program = ren::getShader("ren/core/ssao_blur", "ren/pass/fullscreen");
+    pso.hasVertexBinding = false;
     pso.cullMode = ren::CullMode::None;
     pso.depthTest = false;
     pso.depthWrite = false;
-    pso.hasVertexBinding = false;
   }
 
 
   void SSAOBlurTask::run(ren::GraphRenderPassContext &ctx) {
-    // ctx.renderer.bind(pso);
+    // The taps step in SSAO texels, which are larger than output texels when
+    // the SSAO runs at a lower scale.
+    auto ssaoImage = graph().getImage(in.ssao);
+    glm::vec2 ssaoTexelSize = 1.0f / glm::vec2(ssaoImage->getWidth(), ssaoImage->getHeight());
 
-    // VkFilter filter = VK_FILTER_LINEAR;
-
-    // auto binder = ctx.renderer.startBinding(0);
-    // binder.bind("ssao", *graph().getImage(in.ssao), filter);
-    // binder.bind("depth", *graph().getImage(in.depth), VK_FILTER_NEAREST);
-    // binder.bind("normal", *graph().getImage(in.normal), VK_FILTER_NEAREST);
-    // binder.apply();
-
-    // vkCmdDraw(ctx.cmd, 3, 1, 0, 0);
+    auto shader = ctx.encoder.bindGraphics(pso);
+    auto root = shader.root("root");
+    root.set("ssao", graph().get<ren::ImageResource>(in.ssao)->textureHandle());
+    root.set("depth", graph().get<ren::ImageResource>(in.depth)->textureHandle());
+    root.set("normal", graph().get<ren::ImageResource>(in.normal)->textureHandle());
+    root.set("ssaoTexelSize", ssaoTexelSize);
+    shader.drawFullscreenTriangle();
   }
 
-
-
+  void SSAOBlurTask::inspect(void) { graph().getResource(out.ssao_blurred)->inspect(); }
 
 }  // namespace ren

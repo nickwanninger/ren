@@ -206,6 +206,13 @@ namespace ren {
     image = b.build();
   }
 
+  TextureHandle ImageResource::textureHandle() const {
+    if (!image) {
+      throw std::runtime_error("ImageResource has no image yet");
+    }
+    return TextureHandle::pack(image->sampledIndex(), sampler->index());
+  }
+
   void ImageResource::inspect() const {
     ImGui::Text("Vulkan Image: %p, View: %p", (void *)image->getImage(), (void *)image->getImageView());
     ImGui::Text("Format: %u", spec.format);

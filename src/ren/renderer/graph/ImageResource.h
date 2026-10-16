@@ -3,6 +3,7 @@
 #include <ren/renderer/Image.h>
 #include <ren/renderer/graph/Resource.h>
 #include <ren/renderer/Sampler.h>
+#include <ren/renderer/TextureHandle.h>
 
 namespace ren {
 
@@ -31,6 +32,10 @@ namespace ren {
     void emitBarrier(GraphRunContext &ctx, GraphAccess fromAccess, GraphAccess toAccess) override;
 
     void inspect() const override;
+
+    // A bindless handle to the current image, with this resource's sampler.
+    // A resize replaces the image, so get the handle at record time.
+    TextureHandle textureHandle() const;
 
     /**
      * @brief Build or rebuild the VkImage resource.

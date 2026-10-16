@@ -12,6 +12,7 @@
 #include <ImGuizmo/ImGuizmo.h>
 #include <SDL3/SDL_keyboard.h>
 #include <ren/renderer/graph/tasks/GBufferTask.h>
+#include <ren/renderer/graph/tasks/SSAOTask.h>
 #include <ren/core/Flag.h>
 
 static ren::Flag<std::string> skyBoxPath("skybox", "assets/hdri/sky.jpg", "Path to the skybox texture to use in the viewport.");
@@ -31,6 +32,7 @@ namespace ren {
     ren::GraphHandle ssao;
     ren::GraphHandle gbufferAlbedo, gbufferNormal, gbufferMaterial, gbufferDepth;
     auto &gbp = ren::addGBuffer(graph, gbufferAlbedo, gbufferNormal, gbufferMaterial, gbufferDepth);
+    ren::addSSAO(graph, gbufferDepth, gbufferNormal, ssao);
 
 
 
