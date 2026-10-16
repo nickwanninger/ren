@@ -67,12 +67,22 @@ static ren::Flag<int> kIdleFPS("idle-fps", 15, "Maximum framerate when the appli
 static ren::Flag<bool> kFullscreen("fullscreen", false, "Start the application in fullscreen mode.");
 static ren::Flag<bool> kHighDPI("high-dpi", true, "Enable high DPI support.");
 
+static const char *introGraphic =
+    "Welcome to\n"
+    "   \x1b[31m_ __\x1b[0m \x1b[32m___\x1b[0m \x1b[34m_ __\x1b[0m  \n"
+    "  \x1b[31m| '__/\x1b[0m \x1b[32m_ \\\x1b[0m \x1b[34m'_ \\\x1b[0m \n"
+    "  \x1b[31m| |\x1b[0m \x1b[32m|  __/\x1b[0m \x1b[34m| | |\x1b[0m\n"
+    "  \x1b[31m|_|\x1b[0m  \x1b[32m\\___|\x1b[0m\x1b[34m_| |_|\x1b[0m\n";
+
 static ren::Application *g_application = nullptr;
 namespace ren {
 
   Application &Application::get(void) { return *g_application; }
   Application::Application(const std::string &app_name, glm::uvec2 window_size, Box<Window> window)
       : window(window ? std::move(window) : makeBox<Window>()) {
+
+    printf("%s\n", introGraphic);
+
     REN_PROFILE_SCOPE("BringupApplication");
     g_application = this;
     // Initialize the SDL window
