@@ -172,14 +172,12 @@ void ren::VulkanInstance::select_present_format(VkSurfaceKHR surface) {
 
 
 void ren::VulkanInstance::init_instance(void) {
-  REN_PROFILE_FUNCTION();
+  REN_PROFILE_SCOPE("Vulkan Instance Init");
   vkb::InstanceBuilder builder;
 
 
   int required_major = 1;
   int required_minor = 3;
-
-  ren::println("Enabling validation layers: {}", validationLayers.get() ? "Yes" : "No");
 
   // Configure validation layers with custom debug callback
   auto inst_ret = builder.set_app_name("Example Vulkan Application")
@@ -212,7 +210,7 @@ void ren::VulkanInstance::init_instance(void) {
 
 
 void ren::VulkanInstance::init_device(VkSurfaceKHR surface) {
-  REN_PROFILE_FUNCTION();
+  REN_PROFILE_SCOPE("Vulkan Device Init");
   int required_major = 1;
   int required_minor = 3;
 
@@ -275,13 +273,10 @@ void ren::VulkanInstance::init_device(VkSurfaceKHR surface) {
 
   // Print the selected physical device information
   ren::println("Selected physical device: {}", physicalDevice.name);
-  ren::println("Physical device features:\n");
-  ren::println("  Geometry Shader: {}", physicalDevice.features.geometryShader ? "Enabled" : "Disabled");
-  ren::println("  Anisotropic Filtering: {}", physicalDevice.features.samplerAnisotropy ? "Enabled" : "Disabled");
-  ren::println("  Fill Mode Non-Solid: {}", physicalDevice.features.fillModeNonSolid ? "Enabled" : "Disabled");
-  ren::println("Physical device properties:\n");
-  ren::println("  Driver Version: {}", physicalDevice.properties.driverVersion);
-  ren::println("  API Version: {}.{}.{}", VK_VERSION_MAJOR(physicalDevice.properties.apiVersion),
+  ren::println("Anisotropic Filtering: {}", physicalDevice.features.samplerAnisotropy ? "Enabled" : "Disabled");
+  ren::println("Fill Mode Non-Solid: {}", physicalDevice.features.fillModeNonSolid ? "Enabled" : "Disabled");
+  ren::println("Driver Version: {}", physicalDevice.properties.driverVersion);
+  ren::println("API Version: {}.{}.{}", VK_VERSION_MAJOR(physicalDevice.properties.apiVersion),
                VK_VERSION_MINOR(physicalDevice.properties.apiVersion), VK_VERSION_PATCH(physicalDevice.properties.apiVersion));
   ren::println("  Max Push Constant Size: {}", physicalDevice.properties.limits.maxPushConstantsSize);
   if (physicalDevice.properties.limits.maxPushConstantsSize < 128) {
@@ -304,28 +299,6 @@ void ren::VulkanInstance::init_device(VkSurfaceKHR surface) {
   std::vector<VkQueueFamilyProperties> queue_families(queue_family_count);
   vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &queue_family_count, queue_families.data());
 
-  // Iterate over all queue families
-  for (uint32_t i = 0; i < queue_family_count; i++) {
-    VkQueueFamilyProperties& props = queue_families[i];
-
-    fmt::print("Queue Family {}    x{}    ", i, props.queueCount);
-#define PRINTCAP(cap, c) fmt::print("{}", props.queueFlags& cap ? c : "-");
-
-    PRINTCAP(VK_QUEUE_GRAPHICS_BIT, "G");
-    PRINTCAP(VK_QUEUE_COMPUTE_BIT, "C");
-    PRINTCAP(VK_QUEUE_TRANSFER_BIT, "T");
-    PRINTCAP(VK_QUEUE_SPARSE_BINDING_BIT, "S");
-    PRINTCAP(VK_QUEUE_PROTECTED_BIT, "P");
-    PRINTCAP(VK_QUEUE_VIDEO_DECODE_BIT_KHR, "d");
-    PRINTCAP(VK_QUEUE_VIDEO_ENCODE_BIT_KHR, "e");
-    PRINTCAP(VK_QUEUE_OPTICAL_FLOW_BIT_NV, "o");
-#undef PRINTCAP
-
-    fmt::print("\n");
-  }
-
-
-
   auto tryToMakeQueue = [&vkbDevice](vkb::QueueType type, ref<SubmissionQueue> def) -> ref<SubmissionQueue> {
     auto queue = vkbDevice.get_queue(type);
     auto index = vkbDevice.get_queue_index(type);
@@ -334,8 +307,6 @@ void ren::VulkanInstance::init_device(VkSurfaceKHR surface) {
     }
     return SubmissionQueue::make(queue.value(), index.value());
   };
-
-
 
   // This must be guaranteed.
   this->graphicsQueue = tryToMakeQueue(vkb::QueueType::graphics, nullptr);
@@ -356,11 +327,6 @@ void ren::VulkanInstance::init_device(VkSurfaceKHR surface) {
   // parallelism, but them being unique is not strictly needed.
   this->computeQueue = tryToMakeQueue(vkb::QueueType::compute, this->graphicsQueue);
   this->transferQueue = tryToMakeQueue(vkb::QueueType::transfer, this->graphicsQueue);
-
-  ren::println("Graphics Queue: {}", this->graphicsQueue->family());
-  ren::println("Compute Queue: {}", this->computeQueue->family());
-  ren::println("Transfer Queue: {}", this->transferQueue->family());
-
 
   // Now that we have an instance, allocate the vulkan allocator
   VmaVulkanFunctions vulkanFunctions = {};
@@ -383,52 +349,8 @@ void ren::VulkanInstance::init_device(VkSurfaceKHR surface) {
   fmt::print("Selected GPU: {} (type: {}, ID: {}, driver: {})\n", props.deviceName, static_cast<u32>(props.deviceType), props.deviceID,
              props.driverVersion);
   fmt::print("Max bound descriptor sets: {}\n", props.limits.maxBoundDescriptorSets);
-  fmt::print("Max samplers per set: {}\n", props.limits.maxDescriptorSetSamplers);
-  fmt::print("Max UBOs per stage: {}\n", props.limits.maxPerStageDescriptorUniformBuffers);
   fmt::print("Push constants size: {} bytes\n", props.limits.maxPushConstantsSize);
 
-  fmt::print("Pipeline Cache UUID: ");
-  for (size_t i = 0; i < VK_UUID_SIZE; i++) {
-    fmt::print("{:02x} ", props.pipelineCacheUUID[i]);
-  }
-  fmt::print("\n");
-
-
-  // Check out the memory properties
-  VkPhysicalDeviceMemoryProperties memProperties;
-  vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
-
-  // Print em out nice.
-  ren::println("Memory Heaps:");
-  for (uint32_t i = 0; i < memProperties.memoryHeapCount; i++) {
-    const VkMemoryHeap& heap = memProperties.memoryHeaps[i];
-    ren::println("  Heap {}: Size: {} MB, Flags: {}{}", i, heap.size / (1024 * 1024),
-                 (heap.flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) ? "DEVICE_LOCAL" : "HOST_VISIBLE",
-                 (heap.flags & VK_MEMORY_HEAP_MULTI_INSTANCE_BIT) ? " | MULTI_INSTANCE" : "");
-  }
-
-  ren::println("Memory Types:");
-  for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
-    const VkMemoryType& type = memProperties.memoryTypes[i];
-
-    std::string props;
-    if (type.propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) {
-      props += "DEVICE_LOCAL ";
-    }
-    if (type.propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
-      props += "HOST_VISIBLE ";
-    }
-    if (type.propertyFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) {
-      props += "HOST_COHERENT ";
-    }
-    if (type.propertyFlags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT) {
-      props += "HOST_CACHED ";
-    }
-    if (type.propertyFlags & VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT) {
-      props += "LAZILY_ALLOCATED ";
-    }
-    ren::println("  Type {}: Heap: {}, Property Flags: {}", i, type.heapIndex, props);
-  }
 }
 
 ren::VulkanInstance::~VulkanInstance() {

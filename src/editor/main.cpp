@@ -101,62 +101,16 @@ void testSaxpy(void) {
   // }
 }
 
-// #include <ren/core/ThreadPool.h>
-#include <ren/renderer/DescriptorHeap.h>
-
-void imageHeapSampleTest() {
-  constexpr u32 size = 2;
-  auto img = ren::ImageBuilder("image heap sample").setSize(size).setFormat(VK_FORMAT_R8G8B8A8_UNORM).build();
-
-  std::array<u8, size * size * 4> pixels;
-  for (u32 pixel = 0; pixel < size * size; ++pixel) {
-    pixels[pixel * 4 + 0] = 128;
-    pixels[pixel * 4 + 1] = 128;
-    pixels[pixel * 4 + 2] = 128;
-    pixels[pixel * 4 + 3] = 255;
-  }
-  img->uploadPixels(pixels.data());
-  auto program = ren::getShader("test/imageheap");
-
-
-
-  auto outBuffer = TypedBuffer<glm::vec4>(1, BufferDomain::Readback, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-
-  SubmissionUnit unit;
-
-  for (int i = 0; i < 15; i++) {
-    auto start = std::chrono::high_resolution_clock::now();
-    auto cmd = unit.begin();
-
-    auto compute = cmd->bindCompute(program);
-    auto args = compute.root("pc");
-
-    auto& renderer = Renderer::get();
-    auto sampler = renderer.getSamplerCache().get(SamplerDesc{});
-
-    args.set("image", img).set("sampler", sampler).set("out", outBuffer.devicePointer<glm::vec4>());
-
-    compute.dispatch({1, 1, 1});  // Fire off the compute shader.
-
-    // Submit, and wait for completion
-    unit.submitTo(*getVulkan().computeQueue)->awaitCompletion();
-    auto end = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
-    ren::println("Image heap sample test completed in {} microseconds", duration);
-  }
-
-
-  // Validate the result
-  const glm::vec4 result = *outBuffer.hostData();
-  ren::println("Image heap sample passed: [{}, {}, {}, {}]", result.x, result.y, result.z, result.w);
-}
-
 
 
 int main(int argc, char* argv[]) {
-  REN_PROFILE_BEGIN("profile");
   // return 0;
   ren::parseFlags(argc, argv);
+
+
+  if (instrumentArg.get()) {
+    REN_PROFILE_BEGIN("profile");
+  }
 
 
   glm::uvec2 res;
@@ -176,11 +130,8 @@ int main(int argc, char* argv[]) {
     return 0;
   }
 
-  // if (runImageHeapArg.get()) {
-  //   imageHeapSampleTest();
-  //   return 0;
-  // }
 
+  auto s = ren::getShader("test/modules/red", "ren/pass/deferred");
   app.run();
 
 

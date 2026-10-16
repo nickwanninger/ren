@@ -287,8 +287,6 @@ namespace ren {
           }
         }
       }
-
-      ren::errln("[!!] Failed to load lua module '{}'\n", modname);
       // On failure, return nil and an error string.
       lua_pushnil(L);
       lua_pushfstring(L, "Module '%s' not found", modname);
