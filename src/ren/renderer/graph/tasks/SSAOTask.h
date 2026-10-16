@@ -8,8 +8,6 @@
 
 namespace ren {
 
-  class Texture;
-
   // Screen-space ambient occlusion from the G-buffer depth and normals. The
   // shader (ren/core/ssao) is a fullscreen surface. It gets the view and
   // projection from the frame globals and makes its sample kernel itself, so
@@ -23,9 +21,6 @@ namespace ren {
     // Depth bias against self-occlusion on flat surfaces.
     float bias = 0.025f;
     i32 sampleCount = 16;
-
-    // RGB noise that rotates the kernel per pixel.
-    ref<ren::Texture> noiseTexture;
 
     struct {
       GraphHandle ssao;
@@ -69,8 +64,10 @@ namespace ren {
 
   inline auto &addSSAO(RenderGraph &G, ren::GraphHandle depthHandle, ren::GraphHandle normalHandle,
                        ren::GraphHandle &ssaoOut) {
-    auto &ssao = G.addTask<SSAOTask>("ssao", 0.5f, depthHandle, normalHandle);
-    // The blur runs at full scale, so it also upsamples the SSAO.
+    // Full scale: at half scale, the SSAO texels along a silhouette step in
+    // 2-pixel stairs that the blur cannot hide, and the edges shimmer in
+    // motion. The blur can also upsample a smaller SSAO.
+    auto &ssao = G.addTask<SSAOTask>("ssao", 1.0f, depthHandle, normalHandle);
     auto &blur = G.addTask<SSAOBlurTask>("ssao_blur", 1.0f, ssao.out.ssao, depthHandle, normalHandle);
     ssaoOut = blur.out.ssao_blurred;
     return ssao;

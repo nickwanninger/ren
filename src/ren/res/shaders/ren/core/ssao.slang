@@ -13,10 +13,9 @@ cbuffer root {
   TextureHandle depth;
   // The G-buffer world-space normal, stored raw (not remapped to [0, 1]).
   TextureHandle normal;
-  // RGB noise in [0, 1] that rotates the kernel per pixel. It must repeat.
-  TextureHandle noise;
-  // UV scale that maps one noise texel to one output pixel.
-  float2 noiseScale;
+  // The size of the SSAO target in pixels. It selects the kernel rotation of
+  // each pixel.
+  float2 targetSize;
   // The view-space radius of the sample hemisphere.
   float radius;
   // Depth bias against self-occlusion on flat surfaces.
@@ -26,24 +25,6 @@ cbuffer root {
 }
 
 export struct Surface : IFullscreenSurface = SSAO;
-
-// The projection is glm::perspective (right-handed, depth in [0, 1]) with Y
-// flipped for Vulkan. Matrix indices select rows (see viewport_clear.slang):
-//   clip = (P00 x, P11 y, P22 z + P23, -z)
-// so depth = (P22 z + P23) / -z, and z = -P23 / (depth + P22).
-float3 viewPositionFromDepth(float2 uv, float depthValue) {
-  let P = frameGlobals.projMatrix;
-  float z = -P[2][3] / (depthValue + P[2][2]);
-  float2 ndc = uv * 2.0 - 1.0;
-  return float3(ndc.x * -z / P[0][0], ndc.y * -z / P[1][1], z);
-}
-
-// Project a view-space position to a UV in the same convention as the
-// fullscreen pass (uv = ndc * 0.5 + 0.5).
-float2 uvFromViewPosition(float3 p) {
-  float4 clip = mul(frameGlobals.projMatrix, float4(p, 1.0));
-  return clip.xy / clip.w * 0.5 + 0.5;
-}
 
 // A fixed kernel sample in the +Z hemisphere. The directions are spherical
 // Fibonacci points, which spread evenly. The lengths use a second, unrelated
@@ -57,6 +38,18 @@ float3 kernelSample(uint i, uint count) {
 
   float u = frac(float(i) * 0.7548776662 + 0.5);
   return dir * lerp(0.1, 1.0, u * u);
+}
+
+// The kernel rotation of a pixel, in [0, 2 pi). The 16 rotations repeat in
+// 4x4 pixel tiles, in Bayer order, so that neighbors differ as much as
+// possible. A blur over 4x4 pixels (ssao_blur.slang) then averages all 16
+// rotations, which gives 16 times the samples without the blotches of a
+// larger noise pattern.
+float kernelRotation(float2 uv) {
+  static const uint kBayer4x4[16] = { 0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5 };
+  uint2 pixel = uint2(uv * targetSize);
+  uint index = kBayer4x4[(pixel.y & 3u) * 4u + (pixel.x & 3u)];
+  return (float(index) + 0.5) / 16.0 * 6.28318531;
 }
 
 struct SSAO : IFullscreenSurface {
@@ -76,9 +69,12 @@ struct SSAO : IFullscreenSurface {
     float3 worldNormal = normal.SampleLevel(input.uv, 0.0).xyz;
     float3 N = normalize(mul((float3x3)frameGlobals.viewMatrix, worldNormal));
 
-    // A tangent frame around N, rotated by the noise (Gram-Schmidt).
-    float3 randomVec = normalize(noise.SampleLevel(input.uv * noiseScale, 0.0).xyz * 2.0 - 1.0);
-    float3 T = normalize(randomVec - N * dot(randomVec, N));
+    // A tangent frame around N, rotated about N by the pixel's rotation.
+    float3 up = abs(N.z) < 0.999 ? float3(0.0, 0.0, 1.0) : float3(1.0, 0.0, 0.0);
+    float3 T0 = normalize(cross(up, N));
+    float3 B0 = cross(N, T0);
+    float angle = kernelRotation(input.uv);
+    float3 T = cos(angle) * T0 + sin(angle) * B0;
     float3 B = cross(N, T);
 
     float occlusion = 0.0;

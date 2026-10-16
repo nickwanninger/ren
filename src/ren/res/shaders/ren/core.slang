@@ -84,6 +84,28 @@ public float4 transformToClipSpace(float3 position, float4x4 model, float4x4 vie
   return mul(proj, viewPos);
 }
 
+// The view-space position of a pixel from its depth value, for the
+// projection in frameGlobals. That projection is glm::perspective
+// (right-handed, depth in [0, 1]) with Y flipped for Vulkan. Matrix indices
+// select rows, so:
+//   clip = (P00 x, P11 y, P22 z + P23, -z)
+// thus depth = (P22 z + P23) / -z, and z = -P23 / (depth + P22). The camera
+// looks down -Z, so z is negative in front of it. uv is in the convention of
+// ren/pass/fullscreen (ndc = uv * 2 - 1).
+public float3 viewPositionFromDepth(float2 uv, float depth) {
+  let P = frameGlobals.projMatrix;
+  float z = -P[2][3] / (depth + P[2][2]);
+  float2 ndc = uv * 2.0 - 1.0;
+  return float3(ndc.x * -z / P[0][0], ndc.y * -z / P[1][1], z);
+}
+
+// The inverse of viewPositionFromDepth for the UV: project a view-space
+// position to a UV in the same convention.
+public float2 uvFromViewPosition(float3 p) {
+  float4 clip = mul(frameGlobals.projMatrix, float4(p, 1.0));
+  return clip.xy / clip.w * 0.5 + 0.5;
+}
+
 public struct ObjectData {
   public float4x4 modelMatrix;
   public float4x4 normalMatrix;
