@@ -1,6 +1,6 @@
 #include "SSAOTask.h"
 #include <ren/core/Application.h>
-#include <ren/renderer/shader/ShaderProgram.h>
+#include <ren/renderer/shader/ShaderCache.h>
 #include <ren/renderer/graph/RenderGraph.h>
 
 #include <ren/Camera.h>
@@ -52,10 +52,8 @@ namespace ren {
 
     // make a staging buffer.
     VkDeviceSize bufferSize = noiseData.size() * sizeof(glm::vec4);
-    ren::Buffer stagingBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_ONLY);
-    stagingBuffer.map();
+    ren::BufferMemory stagingBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_ONLY);
     stagingBuffer.copyFromHost(noiseData.data(), bufferSize, 0);
-    stagingBuffer.unmap();
 
 
     ren::ImageBuilder b("ssao_noise_texture");
@@ -81,8 +79,6 @@ namespace ren {
     return image;
   }
 
-  static float lerp(float a, float b, float f) { return a + f * (b - a); }
-
   SSAOTask::SSAOTask(ren::RenderGraph &G, float fscale, GraphHandle depth, GraphHandle normal)
       : ren::RenderPassTask(G) {
     this->in.depth = depth;
@@ -98,7 +94,7 @@ namespace ren {
     this->read(in.normal, ren::GraphAccess::ShaderRead);
 
     // pso.program = ren::ShaderProgram::makeFullScreenProgram("shaders/ssao.frag");
-    pso.program = ren::make<ren::ShaderProgram>("ren/core/ssao");
+    pso.program = ren::getShader("ren/core/ssao");
     pso.cullMode = ren::CullMode::None;
     pso.depthTest = false;
     pso.depthWrite = false;
@@ -143,7 +139,6 @@ namespace ren {
     // }
 
 
-    // auto &obj = ctx.encoder.createShaderObject(this->pso.program);
     // if (!obj.block("params").setEntireBuffer(ssao)) {
     //   throw std::runtime_error("Failed to set SSAO uniform buffer");
     // }
@@ -194,7 +189,7 @@ namespace ren {
 
     this->read(in.ssao, ren::GraphAccess::ShaderRead);
 
-    pso.program = ren::ShaderProgram::makeFullScreenProgram("shaders/ssao_blur.frag");
+    pso.program = ren::getShader("shaders/ssao_blur.frag");
     pso.cullMode = ren::CullMode::None;
     pso.depthTest = false;
     pso.depthWrite = false;

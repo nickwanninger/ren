@@ -1,6 +1,6 @@
 #include "DepthPrepassTask.h"
 #include <ren/core/Application.h>
-#include <ren/renderer/shader/ShaderProgram.h>
+#include <ren/renderer/shader/ShaderCache.h>
 #include <ren/renderer/graph/RenderGraph.h>
 #include <ren/renderer/RenderWorld.h>
 
@@ -16,7 +16,7 @@ namespace ren {
     this->depthOut = addDepthAttachment("dpp_depth", {.relativeScale = scale});
     this->normalOut = addColorAttachment("dpp_normal", {.relativeScale = scale, .format = VK_FORMAT_R16G16B16A16_SFLOAT});
 
-    pso.program = make<ShaderProgram>("shaders/depth_pre_pass");
+    pso.program = ren::getShader("shaders/depth_pre_pass");
     pso.depthWrite = true;
     pso.cullMode = ren::CullMode::Back;
   }

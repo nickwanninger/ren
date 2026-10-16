@@ -24,6 +24,7 @@ namespace ren {
     // TODO: STORE THESE ON THE GRAPH RUN CONTEXT ALONG WITH CAMERA INFO AND SCENE INFO!
     ren::EngineUBO engineUBO;
     UniformBufferSet<ren::EngineUBO> engineUBOBuffer;
+    ren::PipelineStateObject pso;
 
     GBufferTask(ren::RenderGraph &G);
 

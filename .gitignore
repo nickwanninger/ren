@@ -13,6 +13,10 @@ build/
 engine_run_profile.json
 
 
+**/__pycache__/
+
 /CLAUDE.md
 /.claude
+/.agents
 /profile.json
+*.fxt.gz

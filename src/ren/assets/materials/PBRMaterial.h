@@ -1,6 +1,7 @@
 #pragma once
 
 #include <ren/assets/Material.h>
+#include <ren/renderer/CommandEncoder.h>
 #include <ren/renderer/pipelines/PipelineStateObject.h>
 #include <ren/renderer/Texture.h>
 #include <ren/renderer/Buffer.h>
@@ -24,7 +25,7 @@ namespace ren {
     ~PBRMaterial() override = default;
 
     // Bind the material to the renderer.
-    bool bind(Renderer &R) override;
+    BoundGraphicsEncoder bind(RenderPassEncoder &R); // TODO.
 
     // Render the material to the imgui-based inspector.
     void inspect(void) override;

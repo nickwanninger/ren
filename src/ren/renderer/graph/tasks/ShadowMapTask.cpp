@@ -1,6 +1,6 @@
 #include "ShadowMapTask.h"
 #include <ren/core/Application.h>
-#include <ren/renderer/shader/ShaderProgram.h>
+#include <ren/renderer/shader/ShaderCache.h>
 #include <ren/renderer/graph/RenderGraph.h>
 #include <ren/renderer/RenderWorld.h>
 
@@ -19,7 +19,7 @@ namespace ren {
       : ren::RenderPassTask(G) {
     out.shadow = addDepthAttachment("shadow_map", {.absoluteSize = glm::uvec2(resolution, resolution)});
 
-    pso.program = make<ShaderProgram>("shaders/shadow_map");
+    pso.program = ren::getShader("shaders/shadow_map");
     pso.depthWrite = true;
     pso.depthTest = true;
     pso.cullMode = ren::CullMode::Front;

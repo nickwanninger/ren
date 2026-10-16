@@ -75,7 +75,6 @@ target_link_libraries(ren PUBLIC
   PkgConfig::LuaJIT
   assimp
   Vulkan::Vulkan # Vulkan SDK
-  Vulkan::shaderc_combined
 )
 
 # if not on windows, link libm

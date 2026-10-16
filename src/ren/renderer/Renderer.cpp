@@ -2,41 +2,66 @@
 #include <ren/misc/DeprecationLogger.h>
 #include <ren/renderer/CommandEncoder.h>
 #include <ren/renderer/submission/SubmissionQueue.h>
-#include <ren/core/Flag.h>
+#include <ren/core/Window.h>
 
 namespace ren {
 
-  static ren::Flag<bool> vsyncFlag("vsync", true, "Enable VSync for the swapchain");
-
   static Renderer *g_renderer = nullptr;
+  static FrameContext *g_frameUnit = nullptr;
+
+  FrameContext &getFrameUnit(void) {
+    if (!g_frameUnit) {
+      throw std::runtime_error("No current frame. Call Renderer::beginFrame() first.");
+    }
+    return *g_frameUnit;
+  }
+
   Renderer &Renderer::get(void) {
     if (g_renderer == nullptr) { throw std::runtime_error("Renderer not initialized"); }
     return *g_renderer;
   }
 
 
-  Renderer::Renderer(SDL_Window *window)
-      : window(window) {
+  Renderer::Renderer(ref<VulkanInstance> vulkan)
+      : vulkan(std::move(vulkan)) {
     REN_PROFILE_FUNCTION();
 
     g_renderer = this;
 
-    // Create the Vulkan instance
-    this->vulkan = make<VulkanInstance>(this->window);
+    if (!this->vulkan->hasDevice()) {
+      throw std::runtime_error("Renderer needs a Vulkan device. Call VulkanInstance::selectDevice() first.");
+    }
+    this->imageHeap = make<ImageDescriptorHeap>();
+    this->samplerHeap = make<SamplerDescriptorHeap>();
+    this->samplerCache = make<SamplerCache>(this->samplerHeap);
+    this->frameGlobalsAllocator = makeBox<FrameGlobalsAllocator>();
 
-
-    rebuildSwapchain();
+    // Frame contexts allocate their frame globals from the allocator above.
+    for (u32 i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+      this->frames.push_back(makeBox<FrameContext>(i));
+    }
   }
 
   Renderer::~Renderer(void) {
     REN_PROFILE_FUNCTION();
     waitForIdle();
 
+    g_frameUnit = nullptr;
+    this->frames.clear();
+
     // For various reasons, we want to explicitly clear the render pass cache
     // before destroying the vulkan instance or anything else.
+    this->currentPipeline.reset();
+    this->currentPass.reset();
+    this->displayPass.reset();
     this->renderPassCache.clearCache();
 
-    this->swapchain.reset();
+    this->pipelineCache.reset();
+    this->shaderCache.reset();
+    this->samplerCache.reset();
+    this->imageHeap.reset();
+    this->samplerHeap.reset();
+    this->frameGlobalsAllocator.reset();
     this->vulkan.reset();
   }
 
@@ -137,22 +162,13 @@ namespace ren {
     // printf("Binding PSO: %s (%p)\n", pso.debugName.c_str(), currentPipeline->getHandle());
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, currentPipeline->getHandle());
+    std::array sets{
+        frame.getFrameGlobalsSet(), imageHeap->getSet(), samplerHeap->getSet()};
+    vkCmdBindDescriptorSets(
+        cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, currentPipeline->getLayout(),
+        ShaderABI::frameSet, static_cast<u32>(sets.size()),
+        sets.data(), 0, nullptr);
   }
-
-
-
-  ShaderBinder Renderer::startBinding(u32 set) {
-
-    // Start binding the shader program.
-    if (this->currentPipeline == nullptr) {
-      throw std::runtime_error(
-          "Cannot start binding without a current pipeline set. Call bind() first.");
-    }
-
-    // Create a shader binder for the current program.
-    return ShaderBinder(*getCurrentProgram(), set);
-  }
-
 
   void Renderer::bind(ref<ShaderProgram> program) {
     // Bind the shader program.
@@ -166,65 +182,75 @@ namespace ren {
 
   VkCommandBuffer Renderer::getCommandBuffer() { return getFrameUnit().getMainCommandEncoder()->buf(); }
 
-  void Renderer::beginFrame(void) {
+  void Renderer::beginFrame(Window &window) {
     REN_PROFILE_FUNCTION();
 
     this->currentPass = nullptr;
     this->currentPipeline = nullptr;
 
-    ren::FrameSubmissionUnit *frame = nullptr;
+    const u32 slot = vulkan->frame_number % frames.size();
+    auto &frame = *frames[slot];
 
+    // Wait for this slot's previous work before we reuse its resources. This
+    // also frees the acquire semaphore of this slot in every swapchain.
+    frame.waitForFence();
 
-    // check if the SDL window is a different size than the swapchain.
-    int width, height;
-    SDL_GetWindowSizeInPixels(this->window, &width, &height);
-
-    for (int i = 0; i < 10 && frame == nullptr; i++) {
+    bool acquired = false;
+    for (int i = 0; i < 10 && !acquired; i++) {
       REN_PROFILE_SCOPE("Acquire Next Frame");
-      frame = this->swapchain->acquireNextFrame();
+      acquired = window.getSwapchain().acquire(slot);
 
-      if (frame == nullptr) {
-        REN_PROFILE_SCOPE("Acquire Next Frame");
+      if (!acquired) {
         // Swapchain is out of date, rebuild it.
-        rebuildSwapchain();
+        window.rebuildSwapchain();
       }
     }
 
-    if (frame == nullptr) {
+    if (!acquired) {
       throw std::runtime_error("Failed to acquire next frame from swapchain.");
     }
 
-
+    g_frameUnit = &frame;
     vulkan->frame_number += 1;
 
-    // Begin the frame (waits for fence and starts command buffer)
-    frame->beginFrame();
+    frame.beginFrame();
   }
 
-  void Renderer::endFrame(void) {
-    REN_PROFILE_FUNCTION();
+  void Renderer::endFrame(Window &window) {
 
     auto &frame = ren::getFrameUnit();
+    auto &swapchain = window.getSwapchain();
 
-    // Submit and present using the frame unit's method
-    frame.submitAndPresent(*vulkan->graphicsQueue, swapchain->swapchain);
+    VkSemaphore waitSems[] = {swapchain.currentImageAvailable()};
+    VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+    VkSemaphore signalSems[] = {swapchain.currentRenderDone()};
+
+    frame.submitFrame(*vulkan->graphicsQueue, {
+                                                  .waitSemaphores = waitSems,
+                                                  .waitStages = waitStages,
+                                                  .signalSemaphores = signalSems,
+                                              });
+
+    {
+      VkSwapchainKHR swapchains[] = {swapchain.swapchain};
+      u32 imageIndices[] = {swapchain.currentImageIndex()};
+
+      VkPresentInfoKHR presentInfo{};
+      presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+      presentInfo.waitSemaphoreCount = 1;
+      presentInfo.pWaitSemaphores = signalSems;
+      presentInfo.swapchainCount = 1;
+      presentInfo.pSwapchains = swapchains;
+      presentInfo.pImageIndices = imageIndices;
+
+      auto result = vkQueuePresentKHR(vulkan->graphicsQueue->getHandle(), &presentInfo);
+      // A resize (or going fullscreen) makes the swapchain out of date. That's
+      // not an error: the next acquire will report it and rebuild.
+      if (result != VK_ERROR_OUT_OF_DATE_KHR && result != VK_SUBOPTIMAL_KHR) {
+        VK_CHECK(result);
+      }
+    }
   }
-
-
-  void Renderer::rebuildSwapchain() {
-    REN_PROFILE_FUNCTION();
-    // wait for the GPU to be idle.
-    this->vulkan->waitForIdle();
-    this->swapchain.reset();
-
-    auto info = ren::SwapchainCreateInfo{
-        .window = this->window,
-        .enableVSync = vsyncFlag.get(),
-    };
-
-    this->swapchain = makeBox<ren::Swapchain>(info);
-  }
-
 
 
 }  // namespace ren

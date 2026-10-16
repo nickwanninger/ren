@@ -1,5 +1,6 @@
 #include <ren/assets/AssetSource.h>
 #include <miniz/miniz.h>
+#include <fstream>
 
 namespace ren {
 

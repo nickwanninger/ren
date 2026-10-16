@@ -7,6 +7,8 @@
 #include <imgui/imgui.h>
 
 
+
+
 namespace ren::editor {
 
 
@@ -55,7 +57,8 @@ namespace ren::editor {
   }
 
   static void inspectorPlugin(ren::Application &app) {
-    if (0)
+
+    if (1) {
       ren::system::onUpdate("ren::editor::EditorInspector").run([&](flecs::iter &it) {
         ImGui::Begin("Inspector");
 
@@ -68,38 +71,40 @@ namespace ren::editor {
 
         ImGui::End();
       });
+    }
 
-    if (0)
-      ren::system::onUpdate<EcsComponent>("ren::editor::ComponentInspector")
-          .run([](flecs::iter &it) {
-            ImGui::Begin("Component Inspector");
-
-
-            auto &comps = ren::getRegisteredComponents();
-            for (const auto &comp : comps) {
-              ImGui::Text("Registered Component: %s", comp.typeName);
-              ImGui::Text("  Size: %llu bytes", comp.typeSize);
-              ImGui::Text("  Alignment: %llu bytes", comp.typeAlignment);
-            }
-
-            ImGui::Separator();
-
-            while (it.next()) {
-              auto comps = it.field<EcsComponent>(0);
-
-              for (auto i : it) {
-                ImGui::Text("Component: %s", it.entity(i).path().c_str());
-                ImGui::Text("  Size: %d bytes", comps[i].size);
-                ImGui::Text("  Alignment: %d bytes", comps[i].alignment);
-              }
-            }
+    if (1) {
+      ren::system::onUpdate<EcsComponent>("ren::editor::ComponentInspector").run([](flecs::iter &it) {
+        REN_PROFILE_SCOPE("Editor Inspector");
+        ImGui::Begin("Component Inspector");
 
 
-            ImGui::End();
-          });
+        auto &comps = ren::getRegisteredComponents();
+        for (const auto &comp : comps) {
+          ImGui::Text("Registered Component: %s", comp.typeName);
+          ImGui::Text("  Size: %llu bytes", comp.typeSize);
+          ImGui::Text("  Alignment: %llu bytes", comp.typeAlignment);
+        }
 
-    if (0)
-      ren::system::onUpdate<EcsComponent>("ren::editor::TextureInspector").run([](flecs::iter &it) {
+        ImGui::Separator();
+
+        while (it.next()) {
+          auto comps = it.field<EcsComponent>(0);
+
+          for (auto i : it) {
+            ImGui::Text("Component: %s", it.entity(i).path().c_str());
+            ImGui::Text("  Size: %d bytes", comps[i].size);
+            ImGui::Text("  Alignment: %d bytes", comps[i].alignment);
+          }
+        }
+
+
+        ImGui::End();
+      });
+    }
+
+    if (1) {
+      ren::system::onUpdate("ren::editor::TextureInspector").run([](flecs::iter &it) {
         ImGui::Begin("Texture Inspector");
 
 
@@ -132,6 +137,7 @@ namespace ren::editor {
 
         ImGui::End();
       });
+    }
   }
 
   REN_PLUGIN("EditorInspector", inspectorPlugin);

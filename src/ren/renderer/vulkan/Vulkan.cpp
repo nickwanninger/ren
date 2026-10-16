@@ -10,7 +10,6 @@
 #include <imgui/imgui.h>
 #include "vkb/VkBootstrap.h"
 #include "vulkan/vulkan_core.h"
-#include <SDL3/SDL_vulkan.h>
 #include <fmt/core.h>
 #include <stb/stb_image.h>
 
@@ -97,6 +96,9 @@ ren::VulkanInstance& ren::getVulkan(void) {
   if (g_vulkan_instance == nullptr) {
     throw std::runtime_error("Vulkan instance not initialized");
   }
+  if (!g_vulkan_instance->hasDevice()) {
+    throw std::runtime_error("Vulkan device not selected. Call VulkanInstance::selectDevice() first.");
+  }
   return *g_vulkan_instance;
 }
 
@@ -107,17 +109,32 @@ ren::ref<ren::VulkanInstance> ren::getVulkanRef(void) {
   return g_vulkan_instance->shared_from_this();
 }
 
-ren::VulkanInstance::VulkanInstance(SDL_Window* window) {
-  this->window = window;
+ren::VulkanInstance::VulkanInstance(void) {
   if (g_vulkan_instance != nullptr) {
     throw std::runtime_error("Vulkan instance already initialized");
   }
   g_vulkan_instance = this;
 
-
   init_instance();
+}
 
-  // ASAP, create a command pool.
+
+void ren::VulkanInstance::selectDevice(VkSurfaceKHR surface) {
+  REN_PROFILE_FUNCTION();
+  if (hasDevice()) {
+    throw std::runtime_error("Vulkan device already selected");
+  }
+  if (surface == VK_NULL_HANDLE) {
+    throw std::runtime_error("selectDevice() needs a valid surface");
+  }
+
+  init_device(surface);
+  select_present_format(surface);
+  init_command_pool();
+}
+
+
+void ren::VulkanInstance::init_command_pool(void) {
   VkCommandPoolCreateInfo poolInfo{};
   poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
   poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
@@ -131,15 +148,36 @@ ren::VulkanInstance::VulkanInstance(SDL_Window* window) {
 
 
 
+void ren::VulkanInstance::select_present_format(VkSurfaceKHR surface) {
+  u32 count = 0;
+  VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, surface, &count, nullptr));
+  std::vector<VkSurfaceFormatKHR> formats(count);
+  VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, surface, &count, formats.data()));
+
+  // In order of preference. The engine writes linear color and relies on an
+  // sRGB swapchain to encode it.
+  constexpr VkFormat candidates[] = {VK_FORMAT_B8G8R8A8_SRGB, VK_FORMAT_R8G8B8A8_SRGB};
+  for (VkFormat candidate : candidates) {
+    for (const auto& f : formats) {
+      if (f.format == candidate && f.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
+        this->presentFormat = f.format;
+        this->presentColorSpace = f.colorSpace;
+        return;
+      }
+    }
+  }
+
+  throw std::runtime_error("The surface supports no sRGB 8-bit swapchain format");
+}
+
+
 void ren::VulkanInstance::init_instance(void) {
-  REN_PROFILE_FUNCTION();
+  REN_PROFILE_SCOPE("Vulkan Instance Init");
   vkb::InstanceBuilder builder;
 
 
   int required_major = 1;
   int required_minor = 3;
-
-  ren::println("Enabling validation layers: {}", validationLayers.get() ? "Yes" : "No");
 
   // Configure validation layers with custom debug callback
   auto inst_ret = builder.set_app_name("Example Vulkan Application")
@@ -167,26 +205,43 @@ void ren::VulkanInstance::init_instance(void) {
 
   // Store the debug messenger handle for proper cleanup (only present when validation enabled)
   this->debug_messenger = vkb_inst.debug_messenger;
+  this->vkbInstance = makeBox<vkb::Instance>(vkb_inst);
+}
 
-  // Create the vulkan surface from SDL
-  SDL_Vulkan_CreateSurface(window, instance, NULL, &surface);
 
-  // And select the GPU to use (I think we'd need to figure out how to pick the
+void ren::VulkanInstance::init_device(VkSurfaceKHR surface) {
+  REN_PROFILE_SCOPE("Vulkan Device Init");
+  int required_major = 1;
+  int required_minor = 3;
+
+  // Select the GPU to use (I think we'd need to figure out how to pick the
   // best one if you have multiple GPUs, but I don't so this is fine for now)
-  vkb::PhysicalDeviceSelector selector{vkb_inst};
+  vkb::PhysicalDeviceSelector selector{*vkbInstance};
   VkPhysicalDeviceFeatures requiredFeatures = {};
   // requiredFeatures.geometryShader = VK_FALSE;    // Enable geometry shaders
   requiredFeatures.samplerAnisotropy = true;  // Enable anisotropic filtering
   // requiredFeatures.fillModeNonSolid = VK_TRUE;
 
+  requiredFeatures.multiDrawIndirect = true;  // Batched vkCmdDrawIndexedIndirect
+
   selector.set_required_features(requiredFeatures);
+
+  // SV_DrawIndex (gl_DrawID) in the vertex stage, used by the batched material
+  // root to index into the instance/object/material arrays.
+  VkPhysicalDeviceVulkan11Features vk11Features{
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
+      .shaderDrawParameters = true,
+  };
+  selector.set_required_features_11(vk11Features);
 
   // Request the specific features you need
   VkPhysicalDeviceVulkan12Features vk12Features{
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
       .descriptorIndexing = true,
       .shaderSampledImageArrayNonUniformIndexing = true,
+      .shaderStorageImageArrayNonUniformIndexing = true,
       .descriptorBindingSampledImageUpdateAfterBind = true,
+      .descriptorBindingUpdateUnusedWhilePending = true,
       .descriptorBindingPartiallyBound = true,
       .descriptorBindingVariableDescriptorCount = true,
       .runtimeDescriptorArray = true,
@@ -201,10 +256,6 @@ void ren::VulkanInstance::init_instance(void) {
       .dynamicRendering = true,
   };
   selector.set_required_features_13(vk13Features);
-
-  selector.add_required_extension(VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME);
-  // selector.add_required_extension(VK_GOOGLE_USR_TYPE_EXTENSION_NAME);
-
 
   selector.set_minimum_version(required_major, required_minor);
   selector.set_surface(surface);
@@ -222,15 +273,15 @@ void ren::VulkanInstance::init_instance(void) {
 
   // Print the selected physical device information
   ren::println("Selected physical device: {}", physicalDevice.name);
-  ren::println("Physical device features:\n");
-  ren::println("  Geometry Shader: {}", physicalDevice.features.geometryShader ? "Enabled" : "Disabled");
-  ren::println("  Anisotropic Filtering: {}", physicalDevice.features.samplerAnisotropy ? "Enabled" : "Disabled");
-  ren::println("  Fill Mode Non-Solid: {}", physicalDevice.features.fillModeNonSolid ? "Enabled" : "Disabled");
-  ren::println("Physical device properties:\n");
-  ren::println("  Driver Version: {}", physicalDevice.properties.driverVersion);
-  ren::println("  API Version: {}.{}.{}", VK_VERSION_MAJOR(physicalDevice.properties.apiVersion),
+  ren::println("Anisotropic Filtering: {}", physicalDevice.features.samplerAnisotropy ? "Enabled" : "Disabled");
+  ren::println("Fill Mode Non-Solid: {}", physicalDevice.features.fillModeNonSolid ? "Enabled" : "Disabled");
+  ren::println("Driver Version: {}", physicalDevice.properties.driverVersion);
+  ren::println("API Version: {}.{}.{}", VK_VERSION_MAJOR(physicalDevice.properties.apiVersion),
                VK_VERSION_MINOR(physicalDevice.properties.apiVersion), VK_VERSION_PATCH(physicalDevice.properties.apiVersion));
   ren::println("  Max Push Constant Size: {}", physicalDevice.properties.limits.maxPushConstantsSize);
+  if (physicalDevice.properties.limits.maxPushConstantsSize < 128) {
+    throw std::runtime_error("REN requires at least 128 bytes of Vulkan push constants");
+  }
 
   this->physical_device = physicalDevice.physical_device;
 
@@ -248,28 +299,6 @@ void ren::VulkanInstance::init_instance(void) {
   std::vector<VkQueueFamilyProperties> queue_families(queue_family_count);
   vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &queue_family_count, queue_families.data());
 
-  // Iterate over all queue families
-  for (uint32_t i = 0; i < queue_family_count; i++) {
-    VkQueueFamilyProperties& props = queue_families[i];
-
-    fmt::print("Queue Family {}    x{}    ", i, props.queueCount);
-#define PRINTCAP(cap, c) fmt::print("{}", props.queueFlags& cap ? c : "-");
-
-    PRINTCAP(VK_QUEUE_GRAPHICS_BIT, "G");
-    PRINTCAP(VK_QUEUE_COMPUTE_BIT, "C");
-    PRINTCAP(VK_QUEUE_TRANSFER_BIT, "T");
-    PRINTCAP(VK_QUEUE_SPARSE_BINDING_BIT, "S");
-    PRINTCAP(VK_QUEUE_PROTECTED_BIT, "P");
-    PRINTCAP(VK_QUEUE_VIDEO_DECODE_BIT_KHR, "d");
-    PRINTCAP(VK_QUEUE_VIDEO_ENCODE_BIT_KHR, "e");
-    PRINTCAP(VK_QUEUE_OPTICAL_FLOW_BIT_NV, "o");
-#undef PRINTCAP
-
-    fmt::print("\n");
-  }
-
-
-
   auto tryToMakeQueue = [&vkbDevice](vkb::QueueType type, ref<SubmissionQueue> def) -> ref<SubmissionQueue> {
     auto queue = vkbDevice.get_queue(type);
     auto index = vkbDevice.get_queue_index(type);
@@ -279,20 +308,25 @@ void ren::VulkanInstance::init_instance(void) {
     return SubmissionQueue::make(queue.value(), index.value());
   };
 
-
-
   // This must be guaranteed.
   this->graphicsQueue = tryToMakeQueue(vkb::QueueType::graphics, nullptr);
+  if (this->graphicsQueue == nullptr) {
+    throw std::runtime_error("Selected device has no graphics queue");
+  }
+
+  // We present on the graphics queue. vk-bootstrap only makes sure that
+  // *some* queue family can present to the surface, so verify the graphics
+  // family.
+  VkBool32 graphicsCanPresent = VK_FALSE;
+  VK_CHECK(vkGetPhysicalDeviceSurfaceSupportKHR(physical_device, this->graphicsQueue->family(), surface, &graphicsCanPresent));
+  if (!graphicsCanPresent) {
+    throw std::runtime_error("The graphics queue cannot present to the surface");
+  }
   // These other queues must be created as well, but can fall back to graphics
   // if not available. Having multiple queues helps performance by allowing
   // parallelism, but them being unique is not strictly needed.
   this->computeQueue = tryToMakeQueue(vkb::QueueType::compute, this->graphicsQueue);
   this->transferQueue = tryToMakeQueue(vkb::QueueType::transfer, this->graphicsQueue);
-
-  ren::println("Graphics Queue: {}", this->graphicsQueue->family());
-  ren::println("Compute Queue: {}", this->computeQueue->family());
-  ren::println("Transfer Queue: {}", this->transferQueue->family());
-
 
   // Now that we have an instance, allocate the vulkan allocator
   VmaVulkanFunctions vulkanFunctions = {};
@@ -300,8 +334,8 @@ void ren::VulkanInstance::init_instance(void) {
   vulkanFunctions.vkGetDeviceProcAddr = &vkGetDeviceProcAddr;
 
   VmaAllocatorCreateInfo allocatorCreateInfo = {};
-  allocatorCreateInfo.flags = VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT;
-  allocatorCreateInfo.vulkanApiVersion = VK_API_VERSION_1_2;
+  allocatorCreateInfo.flags = VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT | VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
+  allocatorCreateInfo.vulkanApiVersion = VK_API_VERSION_1_3;
   allocatorCreateInfo.physicalDevice = physicalDevice;
   allocatorCreateInfo.device = device;
   allocatorCreateInfo.instance = instance;
@@ -315,71 +349,27 @@ void ren::VulkanInstance::init_instance(void) {
   fmt::print("Selected GPU: {} (type: {}, ID: {}, driver: {})\n", props.deviceName, static_cast<u32>(props.deviceType), props.deviceID,
              props.driverVersion);
   fmt::print("Max bound descriptor sets: {}\n", props.limits.maxBoundDescriptorSets);
-  fmt::print("Max samplers per set: {}\n", props.limits.maxDescriptorSetSamplers);
-  fmt::print("Max UBOs per stage: {}\n", props.limits.maxPerStageDescriptorUniformBuffers);
   fmt::print("Push constants size: {} bytes\n", props.limits.maxPushConstantsSize);
 
-  fmt::print("Pipeline Cache UUID: ");
-  for (size_t i = 0; i < VK_UUID_SIZE; i++) {
-    fmt::print("{:02x} ", props.pipelineCacheUUID[i]);
-  }
-  fmt::print("\n");
-
-
-  this->swapchainFormat =
-      findSupportedFormat({VK_FORMAT_B8G8R8A8_SRGB, VK_FORMAT_R8G8B8A8_UNORM}, VK_IMAGE_TILING_OPTIMAL, VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT);
-
-
-  // Check out the memory properties
-  VkPhysicalDeviceMemoryProperties memProperties;
-  vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
-
-  // Print em out nice.
-  ren::println("Memory Heaps:");
-  for (uint32_t i = 0; i < memProperties.memoryHeapCount; i++) {
-    const VkMemoryHeap& heap = memProperties.memoryHeaps[i];
-    ren::println("  Heap {}: Size: {} MB, Flags: {}{}", i, heap.size / (1024 * 1024),
-                 (heap.flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) ? "DEVICE_LOCAL" : "HOST_VISIBLE",
-                 (heap.flags & VK_MEMORY_HEAP_MULTI_INSTANCE_BIT) ? " | MULTI_INSTANCE" : "");
-  }
-
-  ren::println("Memory Types:");
-  for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
-    const VkMemoryType& type = memProperties.memoryTypes[i];
-
-    std::string props;
-    if (type.propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) {
-      props += "DEVICE_LOCAL ";
-    }
-    if (type.propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
-      props += "HOST_VISIBLE ";
-    }
-    if (type.propertyFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) {
-      props += "HOST_COHERENT ";
-    }
-    if (type.propertyFlags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT) {
-      props += "HOST_CACHED ";
-    }
-    if (type.propertyFlags & VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT) {
-      props += "LAZILY_ALLOCATED ";
-    }
-    ren::println("  Type {}: Heap: {}, Property Flags: {}", i, type.heapIndex, props);
-  }
 }
 
 ren::VulkanInstance::~VulkanInstance() {
   // ImGui_ImplVulkan_Shutdown();
 
-  // Command Pool
-  vkDestroyCommandPool(device, commandPool, nullptr);
+  if (hasDevice()) {
+    // Queue wrappers call vkQueueWaitIdle in their destructors and therefore
+    // must die before the VkDevice.
+    transferQueue.reset();
+    computeQueue.reset();
+    graphicsQueue.reset();
 
+    // Command Pool
+    vkDestroyCommandPool(device, commandPool, nullptr);
 
-  vkDestroySurfaceKHR(instance, surface, nullptr);
+    vmaDestroyAllocator(allocator);
 
-  vmaDestroyAllocator(allocator);
-
-
-  vkDestroyDevice(device, nullptr);
+    vkDestroyDevice(device, nullptr);
+  }
 
   // Destroy debug messenger if validation layers were enabled
   if (debug_messenger != VK_NULL_HANDLE) {
@@ -593,7 +583,7 @@ u32 ren::VulkanInstance::find_memory_type(u32 typeFilter, VkMemoryPropertyFlags 
   throw std::runtime_error("failed to find suitable memory type!");
 }
 
-void ren::VulkanInstance::cleanup_swapchain(void) { abort(); }
+
 
 
 

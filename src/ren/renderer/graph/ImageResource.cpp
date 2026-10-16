@@ -1,4 +1,5 @@
 #include <ren/renderer/graph/ImageResource.h>
+#include <ren/renderer/Renderer.h>
 #include <ren/renderer/graph/RenderGraph.h>
 #include <fmt/core.h>
 #include <vulkan/vulkan.h>
@@ -83,6 +84,7 @@ namespace ren {
       : spec(spec) {
     this->type = GraphResourceType::Image;
     this->image = nullptr;
+    sampler = Renderer::get().getSamplerCache().get({});
   }
 
   bool ImageResource::update(RenderGraph &G) {
@@ -181,6 +183,20 @@ namespace ren {
 
     if (this->imguiTextureID != VK_NULL_HANDLE) {
       // If we had an ImGui texture ID, we need to remove it, as the image is changing.
+      //
+      // HACK: the descriptor set being freed here was very likely recorded into
+      // a command buffer that is still in flight -- an ImGui::Image() from an
+      // earlier frame referencing this same image. Freeing it now is a
+      // use-after-free that the validation layer catches as
+      // VUID-vkFreeDescriptorSets-pDescriptorSets-00309.
+      //
+      // Stalling the whole device is a blunt way to make that safe, and it
+      // makes a viewport resize drag synchronous. RenderGraph::startFrame()
+      // already stalls right after this for the same underlying reason. The
+      // real fix is a deletion queue that defers frees until every frame slot
+      // referencing the resource has retired; until that exists, this keeps
+      // the resize path correct rather than merely quiet.
+      getVulkan().waitForIdle();
       ImGui_ImplVulkan_RemoveTexture(this->imguiTextureID);
       this->imguiTextureID = VK_NULL_HANDLE;
     }
@@ -208,7 +224,7 @@ namespace ren {
       ImGui::TextDisabled("... not yet allocated!");
     }
     if (imguiTextureID == VK_NULL_HANDLE) {
-      imguiTextureID = ImGui_ImplVulkan_AddTexture(sampler.getHandle(), image->getImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+      imguiTextureID = ImGui_ImplVulkan_AddTexture(sampler->getHandle(), image->getImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     }
     ImGui::Text("ImGui Texture ID: %p", (void *)imguiTextureID);
 

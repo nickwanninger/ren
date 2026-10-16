@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := renderer
-.PHONY: clean compile_debug
+.PHONY: clean compile_debug test
 MAKEFLAGS += --no-print-directory
 
 
@@ -18,6 +18,11 @@ renderer: # $(BUILD_REQ)
 	@cmake --build $(BUILD) --config $(MODE)
 	@cmake --install $(BUILD) --config $(MODE)
 	@cp build/compile_commands.json .
+
+test:
+	@cmake -S . -B $(BUILD) -G ${GENERATOR} -DCMAKE_INSTALL_PREFIX=dist/ -DCMAKE_BUILD_TYPE=$(MODE) -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DBUILD_TESTING=ON
+	@cmake --build $(BUILD) --config $(MODE) --target ren-tests
+	@ctest --test-dir $(BUILD) --build-config $(MODE) --output-on-failure
 
 
 clean:
