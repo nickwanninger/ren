@@ -6,7 +6,6 @@
 
 #include <slang-com-ptr.h>
 #include <slang.h>
-#include "./SlangPrinter.h"
 
 namespace ren {
 
@@ -1357,8 +1356,6 @@ namespace ren {
 
       json j = json::parse(std::string_view((const char*)jsonBlob->getBufferPointer(), jsonBlob->getBufferSize()));
       ren::println("{}", j.dump(2));
-      ren::ReflectingPrinting printer;
-      printer.printProgramLayout(programLayout, SlangCompileTarget::SLANG_SPIRV);
     }
 
     // Create root node

@@ -4,7 +4,9 @@
 #include <ren/renderer/shader/ShaderProgram.h>
 #include <slang.h>
 #include <slang-com-ptr.h>
+#include <optional>
 #include <string>
+#include <concepts>
 #include <string_view>
 #include <unordered_map>
 #include <vector>
@@ -33,14 +35,35 @@ namespace ren {
     ShaderCache(ShaderCache &&) = delete;
     ShaderCache &operator=(ShaderCache &&) = delete;
 
+    struct Desc {
+      // Canonicalize and then add a module path to the list of modules that
+      // make up this program.
+      void addModule(std::string_view path);
+      const std::vector<std::string> &getModules(void) const { return modules; }
+
+      // Comma-separated module list. For logs and the inspector.
+      std::string toString(void) const;
+
+      // Required for keys in the unordered_map. Hashes the canonicalized module paths.
+      bool operator==(const Desc &) const = default;
+      u64 hash(void) const;
+      struct Hasher {
+        size_t operator()(const Desc &desc) const { return static_cast<size_t>(desc.hash()); }
+      };
+
+     private:
+      // I am not sure I like the fact we copy the strings here,
+      // but its easier to manage the lifetimes of the strings this way.
+      std::vector<std::string> modules;
+    };
+
+    ref<ShaderProgram> get(const Desc &desc);
+
     // Get (compiling on a miss) the program for `path`. Throws if the shader
     // cannot be compiled, matching the old `make<ShaderProgram>` behavior.
     // Failures are cached too: a broken shader is not recompiled on every call,
     // the recorded error is simply rethrown.
     ref<ShaderProgram> get(std::string_view path);
-
-    // As `get`, but returns nullptr instead of throwing.
-    ref<ShaderProgram> tryGet(std::string_view path);
 
     // Map an arbitrary shader name onto its canonical cache key. Strips a
     // `.slang` extension and a redundant leading `shaders/`, and normalizes
@@ -64,30 +87,39 @@ namespace ren {
       std::vector<std::string> dependencies;  // source files the compile touched
     };
 
-    Entry &lookup(std::string_view path);
+    Entry &lookup(const Desc &desc);
 
     // Create the global/shared session if needed. Returns true if the session
     // was (re)built, which invalidates everything compiled before it.
     bool ensureSession(void);
 
     // Run the Slang front end. Throws on any diagnostic.
-    CompiledProgram compile(const std::string &canonicalPath);
+    CompiledProgram compile(const Desc &desc);
 
-    // Warn when two keys differ only by case: they are the same file on macOS
-    // but two different files on Linux.
-    void checkCaseCollision(const std::string &canonicalPath);
 
     Slang::ComPtr<slang::IGlobalSession> globalSession;
     Slang::ComPtr<slang::ISession> session;
     int sessionOptLevel = -1;
 
-    std::unordered_map<std::string, Entry> entries;
-    std::string selected;  // inspector selection
-    std::unordered_map<std::string, std::string> lowercaseKeys;
+    std::unordered_map<Desc, Entry, Desc::Hasher> entries;
+    std::optional<Desc> selected;  // inspector selection
   };
 
 
   // The primary way to load a shader. Resolves through the Renderer's cache.
-  ref<ShaderProgram> getShader(std::string_view path);
+  // ref<ShaderProgram> getShader(std::string_view path);
+  ref<ShaderProgram> getShader(const ShaderCache::Desc& desc);
+
+  // Link two or more modules into one program:
+  //   getShader("test/modules/red", "test/modules/deferred_pass")
+  // The constraint keeps this template away from the Desc overload and from
+  // single-path calls.
+  template <typename... Paths>
+    requires((std::convertible_to<const Paths &, std::string_view> && ...))
+  inline ref<ShaderProgram> getShader(const Paths &...paths) {
+    ShaderCache::Desc desc;
+    (desc.addModule(std::string_view(paths)), ...);
+    return getShader(desc);
+  }
 
 }  // namespace ren

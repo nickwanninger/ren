@@ -36,7 +36,8 @@ namespace ren {
 
 
     forwardPSO.debugName = "ViewportForward";
-    forwardPSO.program = ren::getShader("demo/viewport_clear");
+    // forwardPSO.program = ren::getShader("demo/viewport_clear");
+    forwardPSO.program = ren::getShader("demo/viewport_clear", "ren/pass/fullscreen");
     // The fullscreen triangle is generated from SV_VertexID, so there is no
     // vertex buffer to bind, nothing to cull, and no depth to test.
     forwardPSO.hasVertexBinding = false;
@@ -54,7 +55,7 @@ namespace ren {
         .reads(gbufferAlbedo, GraphAccess::ShaderRead)
         .render([this, skybox](GraphRenderPassContext &ctx) {
           auto shader = ctx.encoder.bindGraphics(forwardPSO);
-          auto root = shader.root("pc");
+          auto root = shader.root("root");
           root.set("skyboxHdri", skybox);
           // root.set("raysPerPixel", raysPerPixel);
           // root.set("focusDistance", focusDistance);

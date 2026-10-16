@@ -1,4 +1,5 @@
 #include <ren/renderer/shader/ShaderCache.h>
+#include <ren/misc/hash.h>
 #include <ren/renderer/shader/ShaderReflection.h>
 #include <ren/renderer/shader/SlangFileSystem.h>
 #include <ren/renderer/Renderer.h>
@@ -43,12 +44,6 @@ namespace ren {
       }
     }
 
-    std::string toLower(std::string_view s) {
-      std::string out(s);
-      std::transform(out.begin(), out.end(), out.begin(),
-                     [](unsigned char c) { return std::tolower(c); });
-      return out;
-    }
   }  // namespace
 
 
@@ -75,7 +70,9 @@ namespace ren {
     size_t i = 0;
     while (i <= s.size()) {
       size_t j = s.find('/', i);
-      if (j == std::string::npos) j = s.size();
+      if (j == std::string::npos) {
+        j = s.size();
+      }
       std::string_view seg(s.data() + i, j - i);
       if (seg.empty() || seg == ".") {
         // skip
@@ -84,7 +81,9 @@ namespace ren {
       } else {
         parts.push_back(seg);
       }
-      if (j == s.size()) break;
+      if (j == s.size()) {
+        break;
+      }
       i = j + 1;
     }
 
@@ -96,7 +95,9 @@ namespace ren {
 
     std::string out;
     for (size_t k = 0; k < parts.size(); k++) {
-      if (k > 0) out += '/';
+      if (k > 0) {
+        out += '/';
+      }
       out.append(parts[k]);
     }
     return out;
@@ -157,52 +158,124 @@ namespace ren {
   }
 
 
-  CompiledProgram ShaderCache::compile(const std::string& canonicalPath) {
+  CompiledProgram ShaderCache::compile(const Desc& desc) {
     REN_PROFILE_SCOPE("CompileShader");
 
     Slang::ComPtr<slang::IBlob> diagnosticsBlob;
-    Slang::ComPtr<slang::IModule> module;
 
-    // Load the module from the filepath.
-    {
+    const auto& paths = desc.getModules();
+    if (paths.empty()) {
+      throw std::runtime_error("Shader desc has no modules");
+    }
+
+    // Load every module. The session caches modules by name, so a module that
+    // is part of many programs (a surface, a pass) runs the front end one time.
+    std::vector<Slang::ComPtr<slang::IModule>> modules;
+    for (const auto& path : paths) {
       REN_PROFILE_SCOPE("LoadSlangModule");
-      module = session->loadModule(canonicalPath.c_str(), diagnosticsBlob.writeRef());
+      Slang::ComPtr<slang::IModule> module;
+      module = session->loadModule(path.c_str(), diagnosticsBlob.writeRef());
       if (!module) {
         checkSlangDiagnostics(diagnosticsBlob);
-        throw std::runtime_error(fmt::format("Failed to load Slang module '{}'", canonicalPath));
+        throw std::runtime_error(fmt::format("Failed to load Slang module '{}'", path));
       }
+      modules.push_back(module);
     }
 
-    // Get the entry point count.
-    SlangInt32 entryPointCount = module->getDefinedEntryPointCount();
-    if (entryPointCount == 0) {
-      throw std::runtime_error(fmt::format("No entry points found in shader '{}'", canonicalPath));
-    }
+    // Debug: print the constants that each module declares at the top level and
+    // one level into structs, with their extern/export modifiers and initializer
+    // bytes.
+    {
+      auto printVar = [](slang::VariableReflection* var, const std::string& scope) {
+        bool isStatic = var->findModifier(slang::Modifier::Static) != nullptr;
+        bool isConst = var->findModifier(slang::Modifier::Const) != nullptr;
+        bool isExtern = var->findModifier(slang::Modifier::Extern) != nullptr;
+        bool isExport = var->findModifier(slang::Modifier::Export) != nullptr;
+        if (!isStatic && !isConst && !isExtern && !isExport) {
+          return;
+        }
+        std::string mods = fmt::format("{}{}{}{}", isExtern ? "extern " : "", isExport ? "export " : "", isStatic ? "static " : "",
+                                       isConst ? "const " : "");
+        slang::TypeReflection* type = var->getType();
+        const char* typeName = type && type->getName() ? type->getName() : "?";
 
-    std::vector<slang::IComponentType*> allComponents;
-    allComponents.push_back(module);
+        Slang::ComPtr<slang::IBlob> value;
+        SlangResult res = var->getDefaultValueBlob(value.writeRef());
+        std::string valueText;
+        if (SLANG_FAILED(res)) {
+          valueText = fmt::format("<unavailable, 0x{:x}>", (u32)res);
+        } else if (!value) {
+          valueText = "<no initializer>";
+        } else {
+          auto* bytes = (const u8*)value->getBufferPointer();
+          size_t size = value->getBufferSize();
+          for (size_t b = 0; b < size; ++b) {
+            valueText += fmt::format("{:02x}", bytes[b]);
+          }
+          if (size == 4) {
+            i32 asInt;
+            f32 asFloat;
+            memcpy(&asInt, bytes, 4);
+            memcpy(&asFloat, bytes, 4);
+            valueText += fmt::format(" (int {}, float {})", asInt, asFloat);
+          }
+        }
+        ren::println("    {}{}{} {} = {}", mods, scope, var->getName() ? var->getName() : "<null>", typeName, valueText);
+      };
 
-    for (SlangInt32 i = 0; i < entryPointCount; ++i) {
-      REN_PROFILE_SCOPE("CompileSlangEntryPoint");
-      Slang::ComPtr<slang::IEntryPoint> entryPoint;
-
-      {
-        REN_PROFILE_SCOPE("GetDefinedEntryPoint");
-        if (SLANG_FAILED(module->getDefinedEntryPoint(i, entryPoint.writeRef()))) {
-          throw std::runtime_error("Failed to get entry point");
+      for (auto& module : modules) {
+        ren::println("[ShaderCache] constants in module '{}':", module->getName());
+        slang::DeclReflection* root = module->getModuleReflection();
+        for (unsigned i = 0; i < root->getChildrenCount(); ++i) {
+          slang::DeclReflection* decl = root->getChild(i);
+          if (decl->getKind() == slang::DeclReflection::Kind::Variable) {
+            printVar(decl->asVariable(), "");
+          } else if (decl->getKind() == slang::DeclReflection::Kind::Struct) {
+            std::string scope = fmt::format("{}.", decl->getName() ? decl->getName() : "?");
+            for (unsigned c = 0; c < decl->getChildrenCount(); ++c) {
+              slang::DeclReflection* child = decl->getChild(c);
+              if (child->getKind() == slang::DeclReflection::Kind::Variable) {
+                printVar(child->asVariable(), scope);
+              }
+            }
+          }
         }
       }
+    }
 
-      // Compose the program (module + entry point)
-      allComponents.push_back(entryPoint);
+    // The composite holds all modules first, then the entry points. The link
+    // step resolves each `extern` in one module against an `export` in another.
+    std::vector<slang::IComponentType*> allComponents;
+    for (auto& module : modules) {
+      allComponents.push_back(module);
+    }
+
+    // The program is every entry point that the listed modules define. The
+    // order of the modules does not matter. Entry points of imported modules
+    // are not added.
+    std::vector<Slang::ComPtr<slang::IEntryPoint>> entryPoints;
+    for (size_t m = 0; m < modules.size(); ++m) {
+      SlangInt32 count = modules[m]->getDefinedEntryPointCount();
+      for (SlangInt32 i = 0; i < count; ++i) {
+        Slang::ComPtr<slang::IEntryPoint> entryPoint;
+        if (SLANG_FAILED(modules[m]->getDefinedEntryPoint(i, entryPoint.writeRef()))) {
+          throw std::runtime_error("Failed to get entry point");
+        }
+        entryPoints.push_back(entryPoint);
+        allComponents.push_back(entryPoint);
+      }
+    }
+
+    SlangInt32 entryPointCount = (SlangInt32)entryPoints.size();
+    if (entryPointCount == 0) {
+      throw std::runtime_error(fmt::format("No entry points found in shader '{}'", desc.toString()));
     }
 
     // Link the modules.
     Slang::ComPtr<slang::IComponentType> program;
     {
       Slang::ComPtr<slang::IComponentType> unlinkedProgram;
-      if (SLANG_FAILED(session->createCompositeComponentType(
-              allComponents.data(), allComponents.size(), unlinkedProgram.writeRef()))) {
+      if (SLANG_FAILED(session->createCompositeComponentType(allComponents.data(), allComponents.size(), unlinkedProgram.writeRef()))) {
         checkSlangDiagnostics(diagnosticsBlob);
         throw std::runtime_error("Failed to create composite program");
       }
@@ -214,7 +287,10 @@ namespace ren {
     }
 
     CompiledProgram compiled;
-    compiled.path = canonicalPath;
+    compiled.path = desc.toString();
+
+
+    ftr_begin("shader", compiled.path.c_str());
 
     for (SlangInt32 i = 0; i < entryPointCount; ++i) {
       REN_PROFILE_SCOPE("GetEntryPointCode");
@@ -244,47 +320,40 @@ namespace ren {
 
     // Record the files this compile actually touched. Nothing consumes these
     // yet, but they are what a future hot-reload has to watch.
-    SlangInt32 depCount = module->getDependencyFileCount();
-    for (SlangInt32 i = 0; i < depCount; ++i) {
-      if (const char* dep = module->getDependencyFilePath(i)) {
-        compiled.dependencies.emplace_back(dep);
+    // This is the union for all modules. Shared imports such as `ren/core`
+    // occur only one time.
+    for (auto& module : modules) {
+      SlangInt32 depCount = module->getDependencyFileCount();
+      for (SlangInt32 i = 0; i < depCount; ++i) {
+        const char* dep = module->getDependencyFilePath(i);
+        if (dep && std::find(compiled.dependencies.begin(), compiled.dependencies.end(), dep) == compiled.dependencies.end()) {
+          compiled.dependencies.emplace_back(dep);
+        }
       }
     }
+
+    ftr_end("shader", compiled.path.c_str());
 
     return compiled;
   }
 
 
-  void ShaderCache::checkCaseCollision(const std::string& canonicalPath) {
-    auto lowered = toLower(canonicalPath);
-    auto [it, inserted] = lowercaseKeys.emplace(lowered, canonicalPath);
-    if (!inserted && it->second != canonicalPath) {
-      ren::println(
-          "[ShaderCache] warning: '{}' and '{}' differ only by case. These are "
-          "one file on macOS and two on Linux.",
-          it->second, canonicalPath);
-    }
-  }
 
 
-  ShaderCache::Entry& ShaderCache::lookup(std::string_view path) {
-    auto canonical = canonicalize(path);
-
+  ShaderCache::Entry& ShaderCache::lookup(const Desc& desc) {
     // A rebuilt session invalidates everything compiled against the old one.
     if (ensureSession()) {
       entries.clear();
     }
 
-    if (auto it = entries.find(canonical); it != entries.end()) {
+    if (auto it = entries.find(desc); it != entries.end()) {
       return it->second;
     }
-
-    checkCaseCollision(canonical);
 
     Entry entry;
     auto start = std::chrono::steady_clock::now();
     try {
-      auto compiled = compile(canonical);
+      auto compiled = compile(desc);
       entry.dependencies = compiled.dependencies;
       // Private constructor: the cache is the only thing that builds programs.
       entry.program = ref<ShaderProgram>(new ShaderProgram(std::move(compiled)));
@@ -292,34 +361,33 @@ namespace ren {
       // Cache the failure too, so a broken shader is compiled once rather than
       // on every call.
       entry.error = e.what();
-      ren::println("[ShaderCache] failed to compile '{}': {}", canonical, entry.error);
+      ren::println("[ShaderCache] failed to compile '{}': {}", desc.toString(), entry.error);
     }
-    entry.compileMillis =
-        std::chrono::duration<f64, std::milli>(std::chrono::steady_clock::now() - start).count();
+    entry.compileMillis = std::chrono::duration<f64, std::milli>(std::chrono::steady_clock::now() - start).count();
 
-    return entries.emplace(std::move(canonical), std::move(entry)).first->second;
+    return entries.emplace(desc, std::move(entry)).first->second;
   }
 
-
-  ref<ShaderProgram> ShaderCache::get(std::string_view path) {
-    auto& entry = lookup(path);
+  ref<ShaderProgram> ShaderCache::get(const Desc& desc) {
+    auto& entry = lookup(desc);
     if (!entry.program) {
-      throw std::runtime_error(
-          fmt::format("Shader '{}' failed to compile: {}", path, entry.error));
+      throw std::runtime_error(fmt::format("Shader '{}' failed to compile: {}", desc.toString(), entry.error));
     }
     return entry.program;
   }
 
 
-  ref<ShaderProgram> ShaderCache::tryGet(std::string_view path) {
-    return lookup(path).program;
+  ref<ShaderProgram> ShaderCache::get(std::string_view path) {
+    Desc d;
+    d.addModule(path);
+    return get(d);
   }
+
 
 
   void ShaderCache::clear(void) {
     entries.clear();
-    lowercaseKeys.clear();
-    selected.clear();
+    selected.reset();
     session = nullptr;
     sessionOptLevel = -1;
   }
@@ -338,14 +406,15 @@ namespace ren {
     {
       ImGui::BeginChild("ShaderListPanel", ImVec2(200, -ImGui::GetFrameHeightWithSpacing()), ImGuiChildFlags_Border);
       {
-        for (const auto &[path, entry] : entries) {
-          ImGui::PushID(path.c_str());
+        for (const auto& [desc, entry] : entries) {
+          auto name = desc.toString();
+          ImGui::PushID(name.c_str());
           // Failed compiles stay in the list, flagged, so they are debuggable.
           if (!entry.program) {
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.4f, 0.4f, 1.0f));
           }
-          if (ImGui::Selectable(path.c_str(), path == selected)) {
-            selected = path;
+          if (ImGui::Selectable(name.c_str(), selected == desc)) {
+            selected = desc;
           }
           if (!entry.program) {
             ImGui::PopStyleColor();
@@ -364,12 +433,12 @@ namespace ren {
     {
       ImGui::BeginChild("ShaderDetailsPanel", ImVec2(0, -ImGui::GetFrameHeightWithSpacing()), ImGuiChildFlags_Border);
       {
-        auto it = entries.find(selected);
+        auto it = selected ? entries.find(*selected) : entries.end();
         if (it == entries.end()) {
           ImGui::TextDisabled("Select a shader.");
         } else {
-          const auto &entry = it->second;
-          ImGui::Text("%s", it->first.c_str());
+          const auto& entry = it->second;
+          ImGui::Text("%s", it->first.toString().c_str());
           ImGui::SameLine();
           ImGui::TextDisabled("(compiled in %.2f ms)", entry.compileMillis);
           ImGui::Separator();
@@ -382,7 +451,7 @@ namespace ren {
           }
 
           if (!entry.dependencies.empty() && ImGui::TreeNode("Dependencies")) {
-            for (const auto &dep : entry.dependencies) {
+            for (const auto& dep : entry.dependencies) {
               ImGui::TextUnformatted(dep.c_str());
             }
             ImGui::TreePop();
@@ -395,8 +464,31 @@ namespace ren {
   }
 
 
-  ref<ShaderProgram> getShader(std::string_view path) {
-    return Renderer::get().getShaderCache().get(path);
+  ref<ShaderProgram> getShader(const ShaderCache::Desc& desc) { return Renderer::get().getShaderCache().get(desc); }
+
+  void ShaderCache::Desc::addModule(std::string_view path) {
+    modules.push_back(std::string(ShaderCache::canonicalize(path)));
+  }
+
+
+  std::string ShaderCache::Desc::toString(void) const {
+    std::string out;
+    for (size_t i = 0; i < modules.size(); ++i) {
+      if (i > 0) {
+        out += ",";
+      }
+      out += modules[i];
+    }
+    return out;
+  }
+
+
+  u64 ShaderCache::Desc::hash(void) const {
+    u64 state = 0;
+    for (const auto& module : modules) {
+      hashStd(state, module);
+    }
+    return state;
   }
 
 }  // namespace ren

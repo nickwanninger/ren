@@ -23,6 +23,7 @@ ren::Flag<std::string> loadArg("load", "", "Path to a mesh to load at startup");
 ren::Flag<float> scaleArg("load-scale", 1.0f, "Uniform scale to apply to the loaded mesh");
 ren::Flag<bool> runSaxpyArg("run-saxpy", false, "Run the synchronous Slang/BDA SAXPY smoke test before opening the editor");
 ren::Flag<bool> runImageHeapArg("run-imageheap", false, "Run the bindless image heap smoke test before opening the editor");
+ren::Flag<bool> instrumentArg("instrument", false, "Enable instrumentation and profiling");
 
 
 void loadMeshIntoScene(const char* path, float scaleChange = 0.0f) {

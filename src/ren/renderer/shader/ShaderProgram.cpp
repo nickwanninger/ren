@@ -188,7 +188,7 @@ namespace ren {
           // if `system` is defined, call spirv-dis on it
           system(fmt::format("spirv-dis {}", dumpPath).c_str());
           system(fmt::format("spirv-reflect {}", dumpPath).c_str());
-          unlink(dumpPath.c_str());
+          // unlink(dumpPath.c_str());
           ren::ShaderReflection refl;
           refl.parseFromSpirv(reinterpret_cast<const u8*>(module->getCode().data()), module->getCode().size() * sizeof(u32));
           // ren::println("Reflection:\n{}", refl.getRoot()->toJson().dump(2));
