@@ -89,7 +89,35 @@ if(APPLE)
   # add -Wno-unused-const-variable to assimp. I think the compiler is new enough
   target_compile_options(assimp PRIVATE -Wno-unused-const-variable)
 endif(APPLE)
+# configure CXX flags on gcc or msvc differently
+if(MSVC)
+    # I have no idea what to put here yet.
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+else()
+    # add -O3 in release
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-unused-function -Wno-unused-const-variable ")
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-unused-function -Wno-deprecated-volatile -Wno-unused-function -Wno-deprecated-literal-operator")
+endif()
 
+
+
+include_directories(${CMAKE_SOURCE_DIR}/lib)
+include_directories(${CMAKE_SOURCE_DIR}/lib/imgui) # hack to include imgui headers properly
+include_directories(${CMAKE_SOURCE_DIR}/lib/imgui/backends)
+include_directories(${CMAKE_SOURCE_DIR}/lib/fmt/include)
+include_directories(${CMAKE_SOURCE_DIR}/src)
+
+
+# Set RPATH for all executables to find shared libraries relative to executable location.
+# This must be set here (not in src/) so that apps/ also gets it.
+set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+if(APPLE)
+  list(APPEND CMAKE_INSTALL_RPATH "@loader_path/../lib/")
+elseif(UNIX)
+  list(APPEND CMAKE_INSTALL_RPATH "$ORIGIN/../lib/")
+endif()
 
 
 add_subdirectory(src)
+add_subdirectory(apps)

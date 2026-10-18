@@ -20,3 +20,5 @@ engine_run_profile.json
 /.agents
 /profile.json
 *.fxt.gz
+
+assets/store
