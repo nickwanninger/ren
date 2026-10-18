@@ -7,7 +7,6 @@
 #include <ren/core/Flag.h>
 #include <chrono>
 #include <ren/assets/MeshScene.hpp>
-#include "ren/assets/AssetSource.h"
 #include <ren/core/ThreadPool.h>
 #include "ren/renderer/Buffer.h"
 #include "ren/renderer/shader/ShaderCache.h"

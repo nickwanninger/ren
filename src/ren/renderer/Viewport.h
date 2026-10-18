@@ -94,9 +94,14 @@ namespace ren {
     /// Subclass hook, called by update() once renderSize is set.
     virtual void onUpdate(float dt) {}
 
-    /// Subclass hook, called once by the first update(). Not called from the
+    /// Subclass hook, called once by ensureGraphBuilt(). Not called from the
     /// constructor, where virtual dispatch would skip the override.
     virtual void buildGraph();
+
+    /// Calls buildGraph() the first time. update() calls it, but a caller
+    /// that reads settings buildGraph() sets (such as renderScale) must call
+    /// it before it reads them.
+    void ensureGraphBuilt();
 
     /// Subclass hook, called by render() before the graph runs, outside any
     /// render pass. Use it to record barriers for resources the graph does
@@ -118,7 +123,7 @@ namespace ren {
     /// False until update() has prepared the graph at least once; the graph's
     /// images do not exist before that.
     bool prepared = false;
-    /// False until the first update() has called buildGraph().
+    /// False until ensureGraphBuilt() has called buildGraph().
     bool graphBuilt = false;
 
     /// The PSO for the placeholder fullscreen pass. Owned here rather than

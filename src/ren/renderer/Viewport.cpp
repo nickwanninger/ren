@@ -73,7 +73,7 @@ namespace ren {
   }
 
 
-  void Viewport::update(float dt, glm::uvec2 size) {
+  void Viewport::ensureGraphBuilt() {
     // The graph is built once. Rebuilding it per frame would mean re-adding
     // every task (RenderGraph has no removal path) and paying the compile()
     // cost, which is already flagged as slow.
@@ -81,6 +81,10 @@ namespace ren {
       buildGraph();
       graphBuilt = true;
     }
+  }
+
+  void Viewport::update(float dt, glm::uvec2 size) {
+    ensureGraphBuilt();
 
     // Clamp render size
     renderSize = glm::max(size, glm::uvec2(1, 1));
@@ -255,7 +259,9 @@ namespace ren {
       looking = false;
     }
 
-    // Update the viewport's graph
+    // Update the viewport's graph. buildGraph() can set renderScale, so build
+    // the graph before the size uses it.
+    ensureGraphBuilt();
     update(dt, glm::uvec2(extent.x * renderScale, extent.y * renderScale));
 
     // Draw the rendered image at the top-left. The image is filled in later
@@ -299,7 +305,7 @@ namespace ren {
           // ImGui::SliderInt("raysPerPixel", &raysPerPixel, 1, 64);
           // ImGui::DragFloat("focusDistance", &focusDistance, 0.1f, 0.1f, 100.0f);
           // ImGui::DragFloat("lensRadius", &lensRadius, 0.01f, 0.0f, 1.0f);
-          ImGui::DragFloat("renderScale", &renderScale, 0.01f, 0.1f, 2.0f);
+          ImGui::DragFloat("renderScale", &renderScale, 0.01f, 0.01f, 1.0f);
           ImGui::DragFloat("ssaoContrast", &ssaoContrast, 0.01f, 0.1f, 10.0f);
           ImGui::SliderFloat("moveSpeed", &moveSpeed, 1.0f, 128.0f);
           ImGui::SliderFloat("Fov", &fovDegrees, 1.0f, 179.0f);
