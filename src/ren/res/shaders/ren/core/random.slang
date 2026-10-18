@@ -15,7 +15,9 @@ public float RandomValue(inout uint state) {
 public float RandomValueNormalDistribution(inout uint state) {
   // Thanks to https://stackoverflow.com/a/6178290
   float theta = 2 * 3.1415926 * RandomValue(state);
-  float rho = sqrt(-2 * log(RandomValue(state)));
+  // RandomValue can return 0. log(0) is -inf, which makes RandomDirection
+  // return NaN, and a NaN ray visits every BVH node.
+  float rho = sqrt(-2 * log(max(RandomValue(state), 1e-12f)));
   return rho * cos(theta);
 }
 
