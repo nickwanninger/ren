@@ -247,6 +247,9 @@ void ren::VulkanInstance::init_device(VkSurfaceKHR surface) {
       .descriptorBindingPartiallyBound = true,
       .descriptorBindingVariableDescriptorCount = true,
       .runtimeDescriptorArray = true,
+      // Slang uses natural (scalar) layout for data behind pointers, e.g. a
+      // Vertex* into the MegaMeshBuffer.
+      .scalarBlockLayout = true,
       .bufferDeviceAddress = true,
   };
   selector.set_required_features_12(vk12Features);

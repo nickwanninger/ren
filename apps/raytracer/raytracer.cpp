@@ -6,6 +6,7 @@
 
 #include <ren/core/Flag.h>
 #include <ren/assets/MeshScene.hpp>
+#include "ren/renderer/RenderWorld.h"
 #include <ren/core/ThreadPool.h>
 
 #include <ren/core/Systems.h>
@@ -20,25 +21,46 @@ using namespace ren;
 
 
 static ren::Flag<std::string> skyBoxPath("skybox", "assets/hdri/sky.jpg", "Path to the skybox texture to use in the viewport.");
+static ren::Flag<std::string> scenePath("scene", "assets/test/meshes/simple_scene.glb", "Path to the scene mesh");
 
 
 namespace shd {
 
   // These are shader structures we need to be careful with it.
-  struct alignas(16) RayTracingMaterial {
+  struct RayTracingMaterial {
     glm::vec4 color;
     glm::vec4 emissionColor = glm::vec4(0.0f);
-
-    bool operator==(const RayTracingMaterial &) const = default;
+    float smoothness = 0.0f;
   };
 
-  struct alignas(16) Sphere {
-    alignas(16) glm::vec3 position;
+  struct Sphere {
+    glm::vec3 position;
     float radius;
     RayTracingMaterial material;
-
-    bool operator==(const Sphere &) const = default;
   };
+
+
+  // The padding makes the layout the same under std430, scalar and natural
+  // layout rules.
+  struct Mesh {
+    // Moves a world-space ray into the model space of the mesh.
+    glm::mat4 worldToModel;
+    // Bounding box in model space.
+    glm::vec3 minBounds;
+    // The triangles of the mesh in the MegaMeshBuffer index buffer.
+    u32 indexOffset;
+    glm::vec3 maxBounds;
+    u32 indexCount;
+    // The indices are relative to this vertex in the MegaMeshBuffer.
+    u32 vertexOffset;
+    u32 _pad[3];
+  };
+  static_assert(sizeof(Mesh) == 112);
+  static_assert(offsetof(Mesh, minBounds) == 64);
+  static_assert(offsetof(Mesh, indexOffset) == 76);
+  static_assert(offsetof(Mesh, maxBounds) == 80);
+  static_assert(offsetof(Mesh, indexCount) == 92);
+  static_assert(offsetof(Mesh, vertexOffset) == 96);
 
 }  // namespace shd
 
@@ -47,7 +69,7 @@ class RaytraceViewport : public ren::EditorViewport {
   std::vector<shd::Sphere> spheres;
   PipelineStateObject rtPSO;
   u32 maxBounces = 4;
-  u32 raysPerPixel = 4;
+  u32 raysPerPixel = 1;
   bool randomizeSeed = true;
   u32 randomSeed = 0;
 
@@ -62,6 +84,8 @@ class RaytraceViewport : public ren::EditorViewport {
   glm::mat4 lastProjection = glm::mat4(0.0f);
   glm::uvec2 lastSize = {0, 0};
   u32 lastMaxBounces = 0;
+
+  ref<MeshScene> scene;
 
 
   ref<Texture> skybox;
@@ -82,14 +106,24 @@ class RaytraceViewport : public ren::EditorViewport {
 
 
   void buildGraph() override {
+    scene = ren::MeshScene::load(scenePath.get());
+    scene->instantiate({});
     spheres.push_back(
-        {{1.600000, 3.100000, 0.000000}, 1.200000, {{2.000000, 1.000000, 0.100000, 1.000000}, {0.000000, 0.000000, 0.000000, 0.000000}}});
+        {{8.600000, 10.400000, 0.000000}, 2.800000, {{1.000000, 0.546569, 0.093137, 1.000000}, {1.000000, 0.000000, 0.000000, 10.000000}}});
     spheres.push_back(
-        {{0.000000, 2.800000, 1.500000}, 0.800000, {{0.100000, 0.200000, 1.000000, 1.000000}, {0.000000, 0.000000, 0.000000, 0.000000}}});
+        {{-6.600000, 8.500000, 4.500000}, 2.400000, {{1.000000, 1.000000, 1.000000, 1.000000}, {0.000000, 0.264706, 1.000000, 10.000000}}});
     spheres.push_back(
-        {{0.000000, -7.900000, 0.000000}, 10.000000, {{1.000000, 1.000000, 1.000000, 1.000000}, {0.000000, 0.000000, 0.000000, 0.000000}}});
-    spheres.push_back(
-        {{-0.600000, 2.800000, -1.000000}, 1.000000, {{0.897059, 0.140715, 0.140715, 1.000000}, {0.000000, 0.000000, 0.000000, 0.000000}}});
+        {{-2.700000, 10.200000, -6.700000}, 2.200000, {{1.000000, 1.000000, 1.000000, 1.000000}, {0.088235, 1.000000, 0.000000, 7.903000}}});
+
+
+    // spheres.push_back(
+    //     {{1.600000, 3.100000, 0.000000}, 1.200000, {{1.000000, 1.000000, 0.100000, 1.000000}, {0.000000, 0.000000, 0.000000, 0.000000}}});
+    // spheres.push_back(
+    //     {{0.000000, 2.800000, 1.500000}, 0.800000, {{0.100000, 0.200000, 1.000000, 1.000000}, {0.000000, 0.000000, 0.000000, 0.000000}}});
+    // spheres.push_back(
+    //     {{0.000000, -7.900000, 0.000000}, 10.000000, {{1.000000, 1.000000, 1.000000, 1.000000}, {0.000000, 0.000000, 0.000000, 0.000000}}});
+    // spheres.push_back(
+    //     {{-0.600000, 2.800000, -1.000000}, 1.000000, {{0.897059, 0.140715, 0.140715, 1.000000}, {0.000000, 0.000000, 0.000000, 0.000000}}});
 
 
     this->renderScale = 0.5f;
@@ -115,9 +149,38 @@ class RaytraceViewport : public ren::EditorViewport {
     // alloate a buffer for the sphere data.
     auto &arena = encoder.getArena();
     auto *sphereBuf = arena.push<StorageBuffer<shd::Sphere>>(this->spheres.size());
-
-
     sphereBuf->copyFromHost(this->spheres.data(), this->spheres.size());
+
+
+    // construct the meshes from the scene.
+    ren::RenderWorld world;
+    world.extractFromECS(ren::world());
+
+    auto &mmb = ren::resource<ren::MegaMeshBuffer>();
+
+    std::vector<shd::Mesh> meshes;
+    for (auto &r : world.renderables) {
+      shd::Mesh mesh = {};
+
+      // The shader moves each ray into model space, so the box stays tight
+      // when the mesh rotates.
+      auto &bb = r.mesh->getAABB();
+      mesh.worldToModel = glm::inverse(r.transform);
+      mesh.minBounds = bb.min;
+      mesh.maxBounds = bb.max;
+
+      auto entry = mmb.getEntry(r.mesh->megaHandle);
+      mesh.indexOffset = entry.indexOffset;
+      mesh.indexCount = entry.indexCount;
+      mesh.vertexOffset = entry.vertexOffset;
+      meshes.push_back(mesh);
+    }
+
+    auto *meshBuf = arena.push<StorageBuffer<shd::Mesh>>(meshes.size());
+    meshBuf->copyFromHost(meshes.data(), meshes.size());
+    //
+
+
     auto root = shader.root("root");
     root.set("randomSeed", randomizeSeed ? static_cast<u32>(rand()) : randomSeed);
     root.set("maxBounces", this->maxBounces);
@@ -127,6 +190,11 @@ class RaytraceViewport : public ren::EditorViewport {
     root.set("accumulatedFrames", accumulatedFrames);
     root.set("accumulation", accumulation->getGPUAddress());
     root.set("skyboxHdri", skybox);
+
+    root.set("vertices", mmb.getVertexBuffer().getGPUAddress());
+    root.set("indices", mmb.getIndexBuffer().getGPUAddress());
+    root.set("numMeshes", static_cast<u32>(meshes.size()));
+    root.set("meshes", meshBuf->getGPUAddress());
 
     shader.drawFullscreenTriangle();
 
@@ -143,6 +211,7 @@ class RaytraceViewport : public ren::EditorViewport {
     ImGui::Checkbox("Accumulate", &accumulate);
     ImGui::SameLine();
     ImGui::Text("(%u frames)", accumulatedFrames);
+
     ImGui::Separator();
     // Spheres
     for (auto &sphere : spheres) {
@@ -152,6 +221,7 @@ class RaytraceViewport : public ren::EditorViewport {
       ImGui::ColorEdit3("Color", &sphere.material.color.x);
       ImGui::ColorEdit3("Emission Color", &sphere.material.emissionColor.x);
       ImGui::SliderFloat("Emission Strength", &sphere.material.emissionColor.w, 0.0f, 10.0f);
+      ImGui::SliderFloat("Smoothness", &sphere.material.smoothness, 0.0f, 1.0f);
       ImGui::PopID();
       ImGui::Separator();
       ImGui::Spacing();
@@ -252,6 +322,10 @@ class RaytraceWindow : public ren::Window {
     ImGui::Separator();
     m_viewport->inspect();
     ImGui::End();
+
+    // The ECS systems calculate the world matrix of each transform.
+    auto &world = ren::world();
+    REN_PROFILE_EXPR("World Tick", world.progress(dt));
   }
 
 

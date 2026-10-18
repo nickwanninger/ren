@@ -1,7 +1,6 @@
 import ren.core;
 import ren.surface;
-
-static const float PI = 3.14159;
+import ren.core.random;
 
 [[vk::push_constant]]
 cbuffer root {
@@ -16,6 +15,17 @@ cbuffer root {
   float4 *accumulation;
 
   TextureHandle skyboxHdri;
+
+  // From the megamesh buffer, which is a single buffer that contains all the vertex and index data for all meshes.
+  Vertex *vertices;
+  uint *indices;
+  uint numMeshes;
+  Mesh *meshes;
+}
+
+struct DebugInfo {
+  uint boundsTests;
+  uint triangleTests;
 }
 
 struct Ray {
@@ -26,7 +36,7 @@ struct Ray {
   float3 invDir;
   // Number of times the path has collided with an object
   int bounceCount;
-};
+}
 
 struct HitInfo {
   bool didHit;
@@ -39,6 +49,8 @@ struct HitInfo {
 struct RayTracingMaterial {
   float4 color;
   float4 emissionColor;
+  float smoothness;
+  // float3 _pad;
 }
 
 struct Sphere {
@@ -46,7 +58,8 @@ struct Sphere {
   float radius;
   RayTracingMaterial material;
 
-  HitInfo intersect(float3 rayPos, float3 rayDir) {
+  HitInfo intersect(float3 rayPos, float3 rayDir, inout DebugInfo dbg) {
+    dbg.boundsTests++;
     HitInfo hitInfo = (HitInfo)0;
 
     float3 offsetRayOrigin = rayPos - position;
@@ -70,13 +83,118 @@ struct Sphere {
   }
 }
 
-HitInfo calculateRayCollision(Ray ray) {
+// Ray-triangle intersection (thanks to stackoverflow.com/a/42752998)
+// a, b and c are absolute indices into the vertex buffer.
+HitInfo RayTriangle(Ray ray, uint a, uint b, uint c, bool cullBackface) {
+  Vertex vertA = vertices[a];
+  Vertex vertB = vertices[b];
+  Vertex vertC = vertices[c];
+
+  float3 edgeAB = vertB.position - vertA.position;
+  float3 edgeAC = vertC.position - vertA.position;
+  float3 triFaceVector = cross(edgeAB, edgeAC);
+  float3 vertRayOffset = ray.pos - vertA.position;
+  float3 rayOffsetPerp = cross(vertRayOffset, ray.dir);
+  float determinant = -dot(ray.dir, triFaceVector);
+  float invDet = 1 / determinant;
+
+  // Calculate hit-dst and barycentric coordinates
+  float dst = dot(vertRayOffset, triFaceVector) * invDet;
+  float u = dot(edgeAC, rayOffsetPerp) * invDet;
+  float v = -dot(edgeAB, rayOffsetPerp) * invDet;
+  float w = 1 - u - v;
+
+  // Initialize hit info
+  HitInfo hitInfo = (HitInfo)0;
+  bool keep = cullBackface ? determinant >= 1E-8 : abs(determinant) >= 1E-8;
+  hitInfo.didHit = keep && dst > 0 && u >= 0 && v >= 0 && w >= 0;
+  float3 smoothNormal = normalize(vertA.normal * w + vertB.normal * u + vertC.normal * v);
+  hitInfo.normal = smoothNormal * sign(determinant);
+  // hitInfo.normal = normalize(triFaceVector);
+  // hitInfo.isBackface = determinant < 0;
+  hitInfo.hitPoint = ray.pos + ray.dir * dst;
+  hitInfo.dst = dst;
+  return hitInfo;
+}
+
+struct Mesh {
+  // Moves a world-space ray into the model space of the mesh.
+  float4x4 worldToModel;
+  // Bounding box in model space.
+  float3 minBounds;
+  // The triangles of the mesh in the index buffer.
+  uint indexOffset;
+  float3 maxBounds;
+  uint indexCount;
+  // The indices are relative to this vertex in the vertex buffer.
+  uint vertexOffset;
+  uint _pad[3];
+
+  HitInfo intersect(float3 rayPos, float3 rayDir, inout DebugInfo dbg) {
+    HitInfo hitInfo = (HitInfo)0;
+
+    // Do not normalize the model-space direction. Then t is the same in
+    // both spaces, and hits on different meshes stay comparable.
+    float3 modelPos = mul(worldToModel, float4(rayPos, 1.0f)).xyz;
+    float3 modelDir = mul(worldToModel, float4(rayDir, 0.0f)).xyz;
+
+    float3 invDir = 1.0f / modelDir;
+    float3 t0s = (minBounds - modelPos) * invDir;
+    float3 t1s = (maxBounds - modelPos) * invDir;
+    float3 tsmaller = min(t0s, t1s);
+    float3 tbigger = max(t0s, t1s);
+    float tmin = max(max(tsmaller.x, tsmaller.y), tsmaller.z);
+    float tmax = min(min(tbigger.x, tbigger.y), tbigger.z);
+    dbg.boundsTests++;
+
+    if (tmax < max(tmin, 0.0f)) {
+      return hitInfo;
+    }
+
+    // No BVH: test every triangle of the mesh.
+    Ray modelRay = (Ray)0;
+    modelRay.pos = modelPos;
+    modelRay.dir = modelDir;
+    modelRay.invDir = invDir;
+    for (uint i = 0; i + 2 < indexCount; i += 3) {
+      uint a = vertexOffset + indices[indexOffset + i + 0];
+      uint b = vertexOffset + indices[indexOffset + i + 1];
+      uint c = vertexOffset + indices[indexOffset + i + 2];
+      dbg.triangleTests++;
+      HitInfo hit = RayTriangle(modelRay, a, b, c, false);
+      if (hit.didHit && (hitInfo.didHit == false || hit.dst < hitInfo.dst)) {
+        hitInfo = hit;
+      }
+    }
+
+    if (hitInfo.didHit) {
+      // RayTriangle works in model space. dst is the same in world space.
+      hitInfo.hitPoint = rayPos + rayDir * hitInfo.dst;
+      // Normals move to world space with the inverse transpose of the model
+      // matrix, which is the transpose of worldToModel.
+      hitInfo.normal = normalize(mul(transpose((float3x3)worldToModel), hitInfo.normal));
+      // TODO: send a material per mesh.
+      hitInfo.material.color = float4(0.8f, 0.8f, 0.8f, 1.0f);
+    }
+    return hitInfo;
+  }
+}
+
+HitInfo calculateRayCollision(Ray ray, inout DebugInfo dbg) {
   HitInfo closestHit = (HitInfo)0;
   closestHit.didHit = false;
 
   for (uint i = 0; i < numSpheres; i++) {
     Sphere sphere = spheres[i];
-    HitInfo hit = sphere.intersect(ray.pos, ray.dir);
+    HitInfo hit = sphere.intersect(ray.pos, ray.dir, dbg);
+    if (hit.didHit && (closestHit.didHit == false || hit.dst < closestHit.dst)) {
+      closestHit = hit;
+    }
+  }
+
+  for (uint i = 0; i < numMeshes; i++) {
+    Mesh mesh = meshes[i];
+    HitInfo hit = mesh.intersect(ray.pos, ray.dir, dbg);
     if (hit.didHit && (closestHit.didHit == false || hit.dst < closestHit.dst)) {
       closestHit = hit;
     }
@@ -85,50 +203,8 @@ HitInfo calculateRayCollision(Ray ray) {
   return closestHit;
 }
 
-// PCG (permuted congruential generator). Thanks to:
-// www.pcg-random.org and www.shadertoy.com/view/XlGcRh
-uint NextRandom(inout uint state) {
-  state = state * 747796405 + 2891336453;
-  uint result = ((state >> ((state >> 28) + 4)) ^ state) * 277803737;
-  result = (result >> 22) ^ result;
-  return result;
-}
-
-float RandomValue(inout uint state) {
-  return NextRandom(state) / 4294967295.0; // 2^32 - 1
-}
-
-// Random value in normal distribution (with mean=0 and sd=1)
-float RandomValueNormalDistribution(inout uint state) {
-  // Thanks to https://stackoverflow.com/a/6178290
-  float theta = 2 * 3.1415926 * RandomValue(state);
-  float rho = sqrt(-2 * log(RandomValue(state)));
-  return rho * cos(theta);
-}
-
-// Calculate a random direction
-float3 RandomDirection(inout uint state) {
-  // Thanks to https://math.stackexchange.com/a/1585996
-  float x = RandomValueNormalDistribution(state);
-  float y = RandomValueNormalDistribution(state);
-  float z = RandomValueNormalDistribution(state);
-  return normalize(float3(x, y, z));
-}
-
-float2 RandomPointInCircle(inout uint rngState) {
-  float angle = RandomValue(rngState) * 2 * PI;
-  float2 pointOnCircle = float2(cos(angle), sin(angle));
-  return pointOnCircle * sqrt(RandomValue(rngState));
-}
-
-// Calculate a random direction
-float3 RandomHemisphereDirection(float3 normal, inout uint state) {
-  float3 dir = RandomDirection(state);
-  return dir * sign(dot(normal, dir));
-}
-
 float3 GetEnvironmentLight(float3 dir) {
-
+  // return float3(0);
   const float invPi = 0.318309886f;
   float2 skyUV = float2(0.5f + atan2(dir.x, -dir.z) * (0.5f * invPi), acos(clamp(dir.y, -1.0f, 1.0f)) * invPi);
 
@@ -136,20 +212,29 @@ float3 GetEnvironmentLight(float3 dir) {
   return color;
 }
 
-float3 Trace(Ray ray, inout uint rngState) {
+float3 Trace(Ray ray, inout uint rngState, inout DebugInfo dbg) {
   float3 incomingLight = 0.0f;
   float3 rayColor = 1.0f;
 
-  for (uint i = 0; i < maxBounces; i++) {
-    HitInfo hitInfo = calculateRayCollision(ray);
+  for (uint i = 0; i <= maxBounces; i++) {
+    HitInfo hitInfo = calculateRayCollision(ray, dbg);
     if (hitInfo.didHit) {
-      ray.pos = hitInfo.hitPoint + hitInfo.normal * 1e-4f; // Offset to avoid self-intersection
-      ray.dir = RandomHemisphereDirection(hitInfo.normal, rngState);
+      // Offset to avoid self-intersection. This must be larger than
+      // kBulbHitEpsilon, or the bounce ray hits the bulb at t = 0.
+      ray.pos = hitInfo.hitPoint + hitInfo.normal * 1e-3f;
+
+      let material = hitInfo.material;
+
+      // Cosine weighted random direction.
+      let diffuseDir = normalize(hitInfo.normal + RandomDirection(rngState));
+      let specularDir = reflect(ray.dir, hitInfo.normal);
+
+      ray.dir = normalize(lerp(diffuseDir, specularDir, material.smoothness));
       ray.invDir = 1.0f / ray.dir;
 
-      float3 emittedLight = hitInfo.material.emissionColor.rgb * hitInfo.material.emissionColor.a;
-      incomingLight += rayColor * emittedLight;
-      rayColor *= hitInfo.material.color.rgb;
+      float3 emittedLight = material.emissionColor.rgb * material.emissionColor.a;
+      incomingLight += emittedLight * rayColor;
+      rayColor *= saturate(material.color.rgb);
     } else {
       incomingLight += GetEnvironmentLight(ray.dir) * rayColor;
       break;
@@ -185,9 +270,9 @@ struct RaytraceFullScreenSurface : IFullscreenSurface {
     uint2 pixel = min(uint2(input.uv * frameGlobals.renderSize), size - 1);
     uint index = pixel.y * size.x + pixel.x;
 
-    // Seed from the pixel index, not the UV: UV-based seeds repeat across
-    // pixels, and that pattern does not average out.
     uint state = index + randomSeed * 719393u;
+
+    DebugInfo dbg = (DebugInfo)0;
 
     float3 totalIncomingLight = 0.0f;
     for (uint i = 0; i < raysPerPixel; i++) {
@@ -196,7 +281,7 @@ struct RaytraceFullScreenSurface : IFullscreenSurface {
       float2 jitter = RandomPointInCircle(state) / float2(size);
       jitteredRay.dir = normalize(jitteredRay.dir + float3(jitter, 0.0f));
       jitteredRay.invDir = 1.0f / jitteredRay.dir;
-      totalIncomingLight += Trace(jitteredRay, state);
+      totalIncomingLight += Trace(jitteredRay, state, dbg);
     }
     float3 color = totalIncomingLight / raysPerPixel;
 
@@ -206,6 +291,9 @@ struct RaytraceFullScreenSurface : IFullscreenSurface {
       color = average + (color - average) / float(accumulatedFrames + 1);
     }
     accumulation[index] = float4(color, 1.0f);
+
+
+    // return float4(dbg.triangleTests / 1000.0f, 0, 0, 1.0f);
 
     return float4(color, 1.0f);
   }

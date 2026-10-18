@@ -39,6 +39,8 @@ namespace ren {
     auto &getIndexBuffer(void) { return indexBuffer; }
     auto &getVertexBuffer(void) { return vertexBuffer; }
 
+    auto getEntry(MegaMeshHandle handle) { return entries.at(handle); }
+
    private:
     MegaMeshHandle nextMeshHandle = 1;
     std::unordered_map<MegaMeshHandle, MegaMeshEntry> entries;
