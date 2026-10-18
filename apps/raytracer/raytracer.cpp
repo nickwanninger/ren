@@ -20,16 +20,34 @@ using namespace ren;
 
 
 
+
+namespace shd {
+
+  struct RayTracingMaterial {
+    glm::vec4 color;
+  };
+
+  struct Sphere {
+    glm::vec3 position;
+    float radius;
+    RayTracingMaterial material;
+  };
+
+}  // namespace shd
+
 class RaytraceViewport : public ren::EditorViewport {
  public:
-  //
-
+  std::vector<shd::Sphere> spheres;
   PipelineStateObject rtPSO;
 
-
   void buildGraph() override {
-    this->renderScale = 0.5f;
 
+
+    spheres.push_back({{0.0f, 0.0f, 0.0f}, 1.0f, {{1.0f, 0.0f, 0.0f, 1.0f}}});
+    spheres.push_back({{2.0f, 1.5f, 0.0f}, 1.0f, {{0.0f, 1.0f, 0.0f, 1.0f}}});
+
+
+    this->renderScale = 0.5f;
 
     rtPSO.debugName = "Raytracer";
     rtPSO.program = ren::getShader("raytrace", "ren/pass/fullscreen");
@@ -45,15 +63,22 @@ class RaytraceViewport : public ren::EditorViewport {
 
   void runRaytracer(ren::RenderPassEncoder &encoder) {
     auto shader = encoder.bindGraphics(rtPSO);
-    // auto root = shader.root("root");
-    // root.set("skyboxHdri", skybox);
+
+    // alloate a buffer for the sphere data.
+    auto &arena = encoder.getArena();
+    auto *sphereBuf = arena.push<StorageBuffer<shd::Sphere>>(this->spheres.size());
+
+
+    sphereBuf->copyFromHost(this->spheres.data(), this->spheres.size());
+    auto root = shader.root("root");
+    root.set("numSpheres", static_cast<u32>(this->spheres.size()));
+    root.set("spheres", sphereBuf->getGPUAddress());
+
     shader.drawFullscreenTriangle();
   }
 
 
-  void inspect(void) {
-    ImGui::Text("Raytracer viewport");
-  }
+  void inspect(void) { ImGui::Text("Raytracer viewport"); }
 };
 
 

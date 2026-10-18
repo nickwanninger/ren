@@ -2,12 +2,14 @@ import ren.core;
 import ren.surface;
 
 [[vk::push_constant]]
-cbuffer root {}
+cbuffer root {
+  uint numSpheres;
+  Sphere *spheres;
+}
 
 export struct Surface : IFullscreenSurface = RaytraceFullScreenSurface;
 
-struct Ray
-{
+struct Ray {
   // Current position and direction of the ray
   // (inverse dir cached to speed up collision tests)
   float3 pos;
@@ -22,28 +24,55 @@ struct HitInfo {
   float dst;
   float3 hitPoint;
   float3 normal;
+  RayTracingMaterial material;
 }
 
-HitInfo raySphereIntersection(float3 rayPos, float3 rayDir, float3 sphereCeter, float sphereRadius) {
-  HitInfo hitInfo = (HitInfo)0;
+struct RayTracingMaterial {
+  float4 color;
+}
 
-  float3 offsetRayOrigin = rayPos - sphereCeter;
-  // From the equation: sqrLength(offsetRayOrigin + ray.dir * t) = sphereRadius^2
-  float a = dot(rayDir, rayDir); // a = 1 assuming unit vector.
-  float b = 2 * dot(offsetRayOrigin, rayDir);
-  float c = dot(offsetRayOrigin, offsetRayOrigin) - sphereRadius * sphereRadius;
-  float discriminant = b * b - 4 * a * c;
-  if (discriminant >= 0) {
-    float dst = (-b - sqrt(discriminant)) / (2 * a);
-    if (dst > 0) {
-      hitInfo.didHit = true;
-      hitInfo.dst = dst;
-      hitInfo.hitPoint = rayPos + rayDir * dst;
-      hitInfo.normal = normalize(hitInfo.hitPoint - sphereCeter);
+struct Sphere {
+  float3 position;
+  float radius;
+  RayTracingMaterial material;
+
+  HitInfo intersect(float3 rayPos, float3 rayDir) {
+    HitInfo hitInfo = (HitInfo)0;
+
+    float3 offsetRayOrigin = rayPos - position;
+    // From the equation: sqrLength(offsetRayOrigin + ray.dir * t) = radius^2
+    float a = dot(rayDir, rayDir); // a = 1 assuming unit vector.
+    float b = 2 * dot(offsetRayOrigin, rayDir);
+    float c = dot(offsetRayOrigin, offsetRayOrigin) - radius * radius;
+    float discriminant = b * b - 4 * a * c;
+    if (discriminant >= 0) {
+      float dst = (-b - sqrt(discriminant)) / (2 * a);
+      if (dst > 0) {
+        hitInfo.didHit = true;
+        hitInfo.dst = dst;
+        hitInfo.hitPoint = rayPos + rayDir * dst;
+        hitInfo.normal = normalize(hitInfo.hitPoint - position);
+        hitInfo.material = material;
+      }
+    }
+
+    return hitInfo;
+  }
+}
+
+HitInfo calculateRayCollision(Ray ray) {
+  HitInfo closestHit = (HitInfo)0;
+  closestHit.didHit = false;
+
+  for (uint i = 0; i < numSpheres; i++) {
+    Sphere sphere = spheres[i];
+    HitInfo hit = sphere.intersect(ray.pos, ray.dir);
+    if (hit.didHit && (closestHit.didHit == false || hit.dst < closestHit.dst)) {
+      closestHit = hit;
     }
   }
 
-  return hitInfo;
+  return closestHit;
 }
 
 struct RaytraceFullScreenSurface : IFullscreenSurface {
@@ -57,9 +86,8 @@ struct RaytraceFullScreenSurface : IFullscreenSurface {
     // the view-space origin, so 0 = R * cameraPos + t, and
     // cameraPos = -transpose(R) * t. The translation is column 3; matrix
     // indices here select rows.
-    float3 viewTranslation = float3(frameGlobals.viewMatrix[0][3],
-                                    frameGlobals.viewMatrix[1][3],
-                                    frameGlobals.viewMatrix[2][3]);
+    float3 viewTranslation =
+        float3(frameGlobals.viewMatrix[0][3], frameGlobals.viewMatrix[1][3], frameGlobals.viewMatrix[2][3]);
 
     Ray ray;
     ray.pos = -mul(transpose(viewRotation), viewTranslation);
@@ -67,10 +95,12 @@ struct RaytraceFullScreenSurface : IFullscreenSurface {
     ray.invDir = 1.0f / ray.dir;
     ray.bounceCount = 0;
 
-    HitInfo hit = raySphereIntersection(ray.pos, ray.dir, float3(0.0f), 1.0f);
-    if (hit.didHit) {
-      return float4(hit.normal * 0.5f + 0.5f, 1.0f);
-    }
-    return float4(ray.dir * 0.5f + 0.5f, 1.0f);
+
+    return float4(calculateRayCollision(ray).material.color.rgb, 1.0f);
+
+    // if (closestHit.didHit) {
+    //   return float4(closestHit.material.color.rgb, 1.0f);
+    // }
+    // return float4(ray.dir * 0.5f + 0.5f, 1.0f);
   }
 }
