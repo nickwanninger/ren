@@ -18,6 +18,11 @@ namespace ren {
     }
 
     this->megaHandle = ren::resource<ren::MegaMeshBuffer>().allocate(vertices, indices);
+
+    // TODO: build only for meshes that need ray tracing.
+    if (!indices.empty()) {
+      this->bvh = makeBox<MeshBVH>(vertices, indices);
+    }
   }
 
   Mesh::~Mesh() {}
