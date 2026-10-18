@@ -167,6 +167,8 @@ namespace ren {
 
     encoder->setFrameGlobals(globalsSet);
 
+    onBeforeGraph(*encoder);
+
     try {
       graph.run(renderer);
     } catch (const std::exception &e) {

@@ -23,14 +23,20 @@ using namespace ren;
 
 namespace shd {
 
-  struct RayTracingMaterial {
+  // These are shader structures we need to be careful with it.
+  struct alignas(16) RayTracingMaterial {
     glm::vec4 color;
+    glm::vec4 emissionColor = glm::vec4(0.0f);
+
+    bool operator==(const RayTracingMaterial &) const = default;
   };
 
-  struct Sphere {
-    glm::vec3 position;
+  struct alignas(16) Sphere {
+    alignas(16) glm::vec3 position;
     float radius;
     RayTracingMaterial material;
+
+    bool operator==(const Sphere &) const = default;
   };
 
 }  // namespace shd
@@ -39,12 +45,90 @@ class RaytraceViewport : public ren::EditorViewport {
  public:
   std::vector<shd::Sphere> spheres;
   PipelineStateObject rtPSO;
+  u32 maxBounces = 4;
+  u32 raysPerPixel = 4;
+  bool randomizeSeed = true;
+  u32 randomSeed = 0;
+
+  // Progressive accumulation. Each pixel keeps the running average of every
+  // frame since the last reset, in a buffer the graph does not own.
+  bool accumulate = true;
+  u32 accumulatedFrames = 0;
+  ren::Box<StorageBuffer<glm::vec4>> accumulation;
+
+  // What the current average was rendered with. Any change resets it.
+  glm::mat4 lastView = glm::mat4(0.0f);
+  glm::mat4 lastProjection = glm::mat4(0.0f);
+  glm::uvec2 lastSize = {0, 0};
+  u32 lastMaxBounces = 0;
+  std::vector<shd::Sphere> lastSpheres;
+
+  // A camera that moves less than this per matrix element counts as still.
+  static constexpr float kStillEpsilon = 1e-4f;
+
+  static bool nearlyEqual(const glm::mat4 &a, const glm::mat4 &b) {
+    for (int c = 0; c < 4; c++) {
+      for (int r = 0; r < 4; r++) {
+        if (glm::abs(a[c][r] - b[c][r]) > kStillEpsilon) return false;
+      }
+    }
+    return true;
+  }
+
+  void onBeforeGraph(ren::CommandEncoder &encoder) override {
+    const glm::uvec2 size = getRenderSize();
+    const size_t pixelCount = static_cast<size_t>(size.x) * size.y;
+    if (!accumulation || accumulation->count() != pixelCount) {
+      // Earlier frames can still be using the old buffer. Like a graph image
+      // resize, stall until they finish before the buffer is freed.
+      getVulkan().waitForIdle();
+      accumulation = ren::makeBox<StorageBuffer<glm::vec4>>(pixelCount);
+    }
+
+    const bool cameraStill = nearlyEqual(view, lastView) && nearlyEqual(projection, lastProjection);
+    const bool sceneSame = size == lastSize && maxBounces == lastMaxBounces && spheres == lastSpheres;
+    if (!accumulate || !cameraStill || !sceneSame) {
+      accumulatedFrames = 0;
+    }
+    lastView = view;
+    lastProjection = projection;
+    lastSize = size;
+    lastMaxBounces = maxBounces;
+    lastSpheres = spheres;
+
+    // The previous frame's fragment shader wrote the buffer, and this frame's
+    // fragment shader reads and writes it again.
+    const VkMemoryBarrier2 barrier{
+        .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
+        .srcStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+        .srcAccessMask = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
+        .dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+        .dstAccessMask = VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
+    };
+    const VkDependencyInfo dependency{
+        .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+        .memoryBarrierCount = 1,
+        .pMemoryBarriers = &barrier,
+    };
+    vkCmdPipelineBarrier2(encoder.buf(), &dependency);
+  }
 
   void buildGraph() override {
-
-
-    spheres.push_back({{0.0f, 0.0f, 0.0f}, 1.0f, {{1.0f, 0.0f, 0.0f, 1.0f}}});
-    spheres.push_back({{2.0f, 1.5f, 0.0f}, 1.0f, {{0.0f, 1.0f, 0.0f, 1.0f}}});
+    spheres.push_back(
+        {{25.799999, 12.100000, 0.000000}, 10.000000, {{1.000000, 1.000000, 1.000000, 1.000000}, {1.000000, 1.000000, 1.000000, 2.308000}}});
+    spheres.push_back(
+        {{1.600000, 3.100000, 0.000000}, 1.200000, {{2.000000, 1.000000, 0.100000, 1.000000}, {0.000000, 0.000000, 0.000000, 0.000000}}});
+    spheres.push_back(
+        {{0.000000, 2.800000, 1.500000}, 0.800000, {{0.100000, 0.200000, 1.000000, 1.000000}, {0.000000, 0.000000, 0.000000, 0.000000}}});
+    spheres.push_back(
+        {{0.000000, -7.900000, 0.000000}, 10.000000, {{1.000000, 1.000000, 1.000000, 1.000000}, {0.000000, 0.000000, 0.000000, 0.000000}}});
+    spheres.push_back(
+        {{-0.600000, 2.800000, -1.000000}, 1.000000, {{0.897059, 0.140715, 0.140715, 1.000000}, {0.000000, 0.000000, 0.000000, 0.000000}}});
+    spheres.push_back(
+        {{0.000000, 0.000000, 0.000000}, 1.000000, {{1.000000, 1.000000, 1.000000, 1.000000}, {0.000000, 0.000000, 0.000000, 0.000000}}});
+    // spheres.push_back({{0.0f, 0.0f, 0.0f}, 1.0f, {{1.0f, 0.1f, 0.1f, 1.0f}, {1, 1, 1, 1.0f}}});
+    // spheres.push_back({{2.0f, 1.5f, 0.0f}, 1.4f, {{2.0f, 1.0f, 0.1f, 1.0f}, {0, 0, 0, 0.0f}}});
+    // spheres.push_back({{0.0f, 1.5f, 1.5f}, 0.9f, {{0.10f, 0.2f, 1.0f, 1.0f}, {0, 0, 0, 0.0f}}});
 
 
     this->renderScale = 0.5f;
@@ -71,14 +155,56 @@ class RaytraceViewport : public ren::EditorViewport {
 
     sphereBuf->copyFromHost(this->spheres.data(), this->spheres.size());
     auto root = shader.root("root");
+    root.set("randomSeed", randomizeSeed ? static_cast<u32>(rand()) : randomSeed);
+    root.set("maxBounces", this->maxBounces);
+    root.set("raysPerPixel", this->raysPerPixel);
     root.set("numSpheres", static_cast<u32>(this->spheres.size()));
     root.set("spheres", sphereBuf->getGPUAddress());
+    root.set("accumulatedFrames", accumulatedFrames);
+    root.set("accumulation", accumulation->getGPUAddress());
 
     shader.drawFullscreenTriangle();
+
+    if (accumulate) {
+      accumulatedFrames++;
+    }
   }
 
 
-  void inspect(void) { ImGui::Text("Raytracer viewport"); }
+  void inspect(void) {
+    ImGui::Text("Raytracer viewport");
+    ImGui::SliderInt("Max Bounces", reinterpret_cast<int *>(&maxBounces), 1, 10);
+    ImGui::SliderInt("Rays Per Pixel", reinterpret_cast<int *>(&raysPerPixel), 1, 10);
+    ImGui::Checkbox("Accumulate", &accumulate);
+    ImGui::SameLine();
+    ImGui::Text("(%u frames)", accumulatedFrames);
+    ImGui::Separator();
+    // Spheres
+    for (auto &sphere : spheres) {
+      ImGui::PushID(&sphere);
+      ImGui::DragFloat3("Position", &sphere.position.x, 0.1f);
+      ImGui::DragFloat("Radius", &sphere.radius, 0.1f, 0.1f, 10.0f);
+      ImGui::ColorEdit3("Color", &sphere.material.color.x);
+      ImGui::ColorEdit3("Emission Color", &sphere.material.emissionColor.x);
+      ImGui::SliderFloat("Emission Strength", &sphere.material.emissionColor.w, 0.0f, 10.0f);
+      ImGui::PopID();
+      ImGui::Separator();
+      ImGui::Spacing();
+    }
+    if (ImGui::Button("Add Sphere")) {
+      spheres.push_back({{0.0f, 0.0f, 0.0f}, 1.0f, {{1.0f, 1.0f, 1.0f, 1.0f}, {0, 0, 0, 0.0f}}});
+    }
+
+    if (ImGui::Button("Dump Spheres")) {
+      // Print each sphere as valid c++ code to the console.
+      // This is so I can edit the spheres, but then copy them into the code to make them permanent.
+      for (auto &sphere : spheres) {
+        printf("spheres.push_back({{%f, %f, %f}, %f, {{%f, %f, %f, %f}, {%f, %f, %f, %f}}});\n", sphere.position.x, sphere.position.y,
+               sphere.position.z, sphere.radius, sphere.material.color.x, sphere.material.color.y, sphere.material.color.z, sphere.material.color.w,
+               sphere.material.emissionColor.x, sphere.material.emissionColor.y, sphere.material.emissionColor.z, sphere.material.emissionColor.w);
+      }
+    }
+  }
 };
 
 

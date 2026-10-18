@@ -221,8 +221,10 @@ void ren::VulkanInstance::init_device(VkSurfaceKHR surface) {
   // requiredFeatures.geometryShader = VK_FALSE;    // Enable geometry shaders
   requiredFeatures.samplerAnisotropy = true;  // Enable anisotropic filtering
   // requiredFeatures.fillModeNonSolid = VK_TRUE;
+  requiredFeatures.shaderInt64 = true;
 
   requiredFeatures.multiDrawIndirect = true;  // Batched vkCmdDrawIndexedIndirect
+  requiredFeatures.fragmentStoresAndAtomics = true;  // Storage buffer writes from fragment shaders
 
   selector.set_required_features(requiredFeatures);
 

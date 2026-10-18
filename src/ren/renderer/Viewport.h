@@ -10,6 +10,7 @@
 namespace ren {
 
   class Renderer;
+  class CommandEncoder;
 
   /**
    * @brief A single view of a scene, rendered by its own render graph.
@@ -96,6 +97,11 @@ namespace ren {
     /// Subclass hook, called once by the first update(). Not called from the
     /// constructor, where virtual dispatch would skip the override.
     virtual void buildGraph();
+
+    /// Subclass hook, called by render() before the graph runs, outside any
+    /// render pass. Use it to record barriers for resources the graph does
+    /// not own.
+    virtual void onBeforeGraph(CommandEncoder &encoder) {}
 
     RenderGraph graph;
     /// The handle the graph's final image lives at. Set by buildGraph().
