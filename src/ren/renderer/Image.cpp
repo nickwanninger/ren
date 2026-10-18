@@ -167,9 +167,10 @@ namespace ren {
     }
 
     // Transition all mip levels to SHADER_READ_ONLY_OPTIMAL at the end
-    // Mip level 0 is in TRANSFER_SRC_OPTIMAL, all others are in TRANSFER_DST_OPTIMAL
+    // Mip levels 0..N-2 are in TRANSFER_SRC_OPTIMAL (each was a blit source),
+    // the last level is in TRANSFER_DST_OPTIMAL (only a blit destination)
 
-    // Transition mip level 0 (which was used as source)
+    // Transition mip levels 0..N-2 (which were used as sources)
     {
       VkImageMemoryBarrier barrier{};
       barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -180,7 +181,7 @@ namespace ren {
       barrier.image = image;
       barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
       barrier.subresourceRange.baseMipLevel = 0;
-      barrier.subresourceRange.levelCount = 1;
+      barrier.subresourceRange.levelCount = imageCreateInfo.mipLevels - 1;
       barrier.subresourceRange.baseArrayLayer = 0;
       barrier.subresourceRange.layerCount = 1;
       barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
@@ -189,8 +190,8 @@ namespace ren {
       vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
     }
 
-    // Transition mip levels 1+ (which are in TRANSFER_DST_OPTIMAL)
-    if (imageCreateInfo.mipLevels > 1) {
+    // Transition the last mip level (which is in TRANSFER_DST_OPTIMAL)
+    {
       VkImageMemoryBarrier barrier{};
       barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
       barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
@@ -199,8 +200,8 @@ namespace ren {
       barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
       barrier.image = image;
       barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-      barrier.subresourceRange.baseMipLevel = 1;
-      barrier.subresourceRange.levelCount = imageCreateInfo.mipLevels - 1;
+      barrier.subresourceRange.baseMipLevel = imageCreateInfo.mipLevels - 1;
+      barrier.subresourceRange.levelCount = 1;
       barrier.subresourceRange.baseArrayLayer = 0;
       barrier.subresourceRange.layerCount = 1;
       barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
