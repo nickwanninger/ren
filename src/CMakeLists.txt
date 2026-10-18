@@ -1,21 +1,3 @@
-# configure CXX flags on gcc or msvc differently
-if(MSVC)
-    # I have no idea what to put here yet.
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
-else()
-    # add -O3 in release
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-unused-function -Wno-unused-const-variable ")
-    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-unused-function -Wno-deprecated-volatile -Wno-unused-function -Wno-deprecated-literal-operator")
-endif()
-
-
-include_directories(${CMAKE_SOURCE_DIR}/lib)
-include_directories(${CMAKE_SOURCE_DIR}/lib/imgui) # hack to include imgui headers properly
-include_directories(${CMAKE_SOURCE_DIR}/lib/imgui/backends)
-include_directories(${CMAKE_SOURCE_DIR}/lib/fmt/include)
-include_directories(${CMAKE_SOURCE_DIR}/src)
-
 # ---------------------- Embedded Resources ---------------------- #
 
 function(embed_file input_file output_file variable_name)
@@ -93,15 +75,7 @@ function(collect_sources OUT_VAR DIR)
 endfunction()
 
 
-set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
-set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
-# Set RPATH for all executables to find shared libraries relative to executable location
-if(APPLE)
-  list(APPEND CMAKE_INSTALL_RPATH "@loader_path/../lib/")
-elseif(UNIX)
-  list(APPEND CMAKE_INSTALL_RPATH "$ORIGIN/../lib/")
-endif()
-
 add_subdirectory(ren)
 add_subdirectory(editor)
+add_subdirectory(renctl)
 add_subdirectory(bundler)

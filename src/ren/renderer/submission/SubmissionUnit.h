@@ -80,6 +80,10 @@ namespace ren {
 
 
    private:
+    // Read back the timestamp queries of the previous submission and write
+    // them to the trace as spans on a "GPU" thread.
+    void writeQueriesToTrace();
+
     VkCommandBuffer m_vkCmd;
     ref<CommandEncoder> m_cmd;
 
@@ -89,6 +93,10 @@ namespace ren {
     ren::Arena m_arena{0xFFFF, true};  // 64KB initial size, growable
     VkQueryPool m_timestampQueryPool;
     Query *m_queries = nullptr;
+    // Spans the full command buffer, from begin() to submitTo().
+    Query *m_submissionQuery = nullptr;
+    // The flow from the CPU submit to m_submissionQuery. 0 if not submitted.
+    u64 m_submitFlowId = 0;
     u32 nextQueryIndex = 0;
     float timestampPeriod;
   };

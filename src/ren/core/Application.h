@@ -44,6 +44,8 @@ namespace ren {
 
    public:
 
+    bool isRunning() const { return running; }
+
     ren::AssetManager &getAssetManager() { return world.get_mut<ren::AssetManager>(); }
 
     double timeSeconds = 0.0f;
@@ -145,4 +147,13 @@ namespace ren {
   }
 
   static inline auto evalLua(const std::string_view &code) { return ren::sol().script(code); }
+
+
+
+  template <typename WindowT, typename ...Args>
+  requires(std::is_base_of<ren::Window, WindowT>::value)
+  inline auto run(std::string app_name, glm::uvec2 res, Args &&...args) {
+    ren::Application app(app_name, res, ren::makeBox<WindowT>(std::forward<Args>(args)...));
+    return app.run();
+  }
 }  // namespace ren

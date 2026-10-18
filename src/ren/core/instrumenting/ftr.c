@@ -221,59 +221,6 @@ static void commit_record(ftr_record_t *r) {
   buf_unlock();
 }
 
-#if defined(__i386__) || defined(__x86_64__)
-static inline uint64_t rdtsc(void) {
-  uint32_t lo, hi;
-  __asm__ volatile("rdtscp" : "=a"(lo), "=d"(hi));
-  return ((uint64_t)hi << 32) | lo;
-}
-static uint64_t tsc_freq_calibrate(void) {
-  // Warm up
-  struct timespec ts;
-  clock_gettime(CLOCK_MONOTONIC, &ts);
-
-  // Take multiple samples and use the best (shortest wall time = least noise)
-  uint64_t best_tsc_delta = 0;
-  uint64_t best_ns_delta = 0;
-
-  for (int i = 0; i < 50; i++) {
-    struct timespec t1, t2;
-
-    // Align to a clock tick boundary to reduce start jitter
-    clock_gettime(CLOCK_MONOTONIC, &t1);
-    struct timespec t1_check;
-    do {
-      clock_gettime(CLOCK_MONOTONIC, &t1_check);
-    } while (t1_check.tv_nsec == t1.tv_nsec && t1_check.tv_sec == t1.tv_sec);
-    t1 = t1_check;
-
-    uint64_t tsc1 = rdtsc();
-
-    // Sleep long enough to amortize clock granularity
-    // 10ms gives ~0.01% accuracy at typical TSC frequencies
-    struct timespec sleep = {0, 10000000}; // 10ms
-    nanosleep(&sleep, NULL);
-
-    uint64_t tsc2 = rdtsc();
-    clock_gettime(CLOCK_MONOTONIC, &t2);
-
-    uint64_t ns_delta =
-        (t2.tv_sec - t1.tv_sec) * 1000000000ULL + (t2.tv_nsec - t1.tv_nsec);
-    uint64_t tsc_delta = tsc2 - tsc1;
-
-    // Pick the iteration with smallest wall time (least scheduling noise)
-    if (best_ns_delta == 0 || ns_delta < best_ns_delta) {
-      best_ns_delta = ns_delta;
-      best_tsc_delta = tsc_delta;
-    }
-  }
-
-  // freq = ticks / seconds = tsc_delta / (ns_delta / 1e9)
-  //      = tsc_delta * 1e9 / ns_delta
-  return best_tsc_delta * 1000000000ULL / best_ns_delta;
-}
-#endif
-
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -293,12 +240,8 @@ static void ftr_do_init(void) {
   g_ftr_pid = (uint64_t)getpid();
   intern_count = 0;
 
+  // ftr_now_ns() returns nanoseconds on all platforms.
   uint64_t ticks_per_sec = 1000000000ULL;
-#if defined(__i386__) || defined(__x86_64__)
-  ticks_per_sec = tsc_freq_calibrate();
-  printf("[ftr] Calibrated TSC frequency: %lu Hz\n",
-         (unsigned long)ticks_per_sec);
-#endif
 
   // Write header directly — trace_enabled is still 0, so commit_record would
   // drop it.
@@ -375,9 +318,8 @@ void ftr_close(void) {
 }
 
 ftr_timestamp_t ftr_now_ns(void) {
-#if defined(__i386__) || defined(__x86_64__)
-  return rdtsc();
-#else
+  // CLOCK_MONOTONIC_RAW on all platforms, so that GPU timestamps calibrated
+  // against it (VK_TIME_DOMAIN_CLOCK_MONOTONIC_RAW_KHR) line up with CPU spans.
   struct timespec ts;
   clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
 
@@ -392,7 +334,6 @@ ftr_timestamp_t ftr_now_ns(void) {
     now = last + 1;
   last = now;
   return now;
-#endif
 }
 
 void ftr_write_span(uint64_t pid, uint64_t tid, const char *name,
@@ -524,10 +465,9 @@ static _Atomic uint64_t next_flow_id = 1;
 
 uint64_t ftr_new_flow_id(void) { return atomic_fetch_add(&next_flow_id, 1); }
 
-static void ftr_write_flow_event(uint16_t name_ref, uint64_t flow_id,
-                                 int event_type) {
-  uint64_t pid = g_ftr_pid;
-  uint64_t tid = get_local_thread_id();
+static void ftr_write_flow_event_at(uint64_t pid, uint64_t tid,
+                                    uint16_t name_ref, ftr_timestamp_t ts,
+                                    uint64_t flow_id, int event_type) {
   // header + timestamp + pid + tid + flow_correlation_id
   size_t size_words = 1 + 3 + 1;
 
@@ -542,12 +482,28 @@ static void ftr_write_flow_event(uint16_t name_ref, uint64_t flow_id,
 
   ftr_record_t r = {.pos = 0};
   rec_u64(&r, ev.raw);
-  rec_u64(&r, ftr_now_ns());
+  rec_u64(&r, ts);
   rec_u64(&r, pid);
   rec_u64(&r, tid);
   rec_u64(&r, flow_id);
 
   commit_record(&r);
+}
+
+static void ftr_write_flow_event(uint16_t name_ref, uint64_t flow_id,
+                                 int event_type) {
+  ftr_write_flow_event_at(g_ftr_pid, get_local_thread_id(), name_ref,
+                          ftr_now_ns(), flow_id, event_type);
+}
+
+void ftr_write_flow_begin(uint64_t pid, uint64_t tid, uint16_t name_ref,
+                          ftr_timestamp_t ts, uint64_t flow_id) {
+  ftr_write_flow_event_at(pid, tid, name_ref, ts, flow_id, 8);
+}
+
+void ftr_write_flow_end(uint64_t pid, uint64_t tid, uint16_t name_ref,
+                        ftr_timestamp_t ts, uint64_t flow_id) {
+  ftr_write_flow_event_at(pid, tid, name_ref, ts, flow_id, 10);
 }
 
 void ftr_write_flow_begini(uint16_t name_ref, uint64_t flow_id) {
@@ -622,10 +578,9 @@ void ftr_logf(const char *fmt, ...) {
   commit_record(&r);
 }
 
-static inline void write_begin_end(int event_type, const char *cat,
-                                   const char *msg) {
-  uint64_t pid = g_ftr_pid;
-  uint64_t tid = get_local_thread_id();
+static void write_begin_end_at(uint64_t pid, uint64_t tid, ftr_timestamp_t ts,
+                               int event_type, const char *cat,
+                               const char *msg) {
 
   int cat_len = (int)strlen(cat); // TODO: string wrapping/interning.
   int msg_len = (int)strlen(msg); // TODO: string wrapping/interning.
@@ -644,13 +599,29 @@ static inline void write_begin_end(int event_type, const char *cat,
 
   ftr_record_t r = {.pos = 0};
   rec_u64(&r, ev.raw);
-  rec_u64(&r, ftr_now_ns());
+  rec_u64(&r, ts);
   rec_u64(&r, pid);
   rec_u64(&r, tid);
   rec_str_padded(&r, cat, cat_len);
   rec_str_padded(&r, msg, msg_len);
 
   commit_record(&r);
+}
+
+static inline void write_begin_end(int event_type, const char *cat,
+                                   const char *msg) {
+  write_begin_end_at(g_ftr_pid, get_local_thread_id(), ftr_now_ns(),
+                     event_type, cat, msg);
+}
+
+void ftr_write_begin(uint64_t pid, uint64_t tid, const char *name,
+                     ftr_timestamp_t ts) {
+  write_begin_end_at(pid, tid, ts, 2, "app", name);
+}
+
+void ftr_write_end(uint64_t pid, uint64_t tid, const char *name,
+                   ftr_timestamp_t ts) {
+  write_begin_end_at(pid, tid, ts, 3, "app", name);
 }
 
 void ftr_begin(const char *cat, const char *msg) {
@@ -678,6 +649,45 @@ void ftr_set_process_name(const char *name) {
   rec_u64(&r, hdr);
   rec_u64(&r, g_ftr_pid); // Word 1: Object ID
   rec_str_padded(&r, name, name_len);
+
+  commit_record(&r);
+}
+
+uint64_t ftr_get_pid(void) { return g_ftr_pid; }
+
+void ftr_set_thread_name(uint64_t tid, const char *name) {
+  if (!name)
+    return;
+  size_t name_len = strlen(name);
+  if (name_len > 255)
+    name_len = 255;
+  size_t name_words = (name_len + 7) / 8;
+  // One argument: "process" (koid) = g_ftr_pid. It links the thread to the
+  // process.
+  const char *arg_name = "process";
+  size_t arg_name_len = 7;
+  size_t arg_words = 1 + (arg_name_len + 7) / 8 + 1;
+  size_t size_words = 2 + name_words + arg_words;
+
+  uint64_t hdr = 0;
+  hdr |= (uint64_t)7; // Record Type: Kernel Object
+  hdr |= (uint64_t)size_words << 4;
+  hdr |= (uint64_t)2 << 16;                   // Object Type: 2 (Thread)
+  hdr |= (uint64_t)(0x8000 | name_len) << 24; // Name string ref (inline)
+  hdr |= (uint64_t)1 << 40;                   // Argument count
+
+  uint64_t arg_hdr = 0;
+  arg_hdr |= (uint64_t)8; // Argument Type: Kernel Object ID
+  arg_hdr |= (uint64_t)arg_words << 4;
+  arg_hdr |= (uint64_t)(0x8000 | arg_name_len) << 16;
+
+  ftr_record_t r = {.pos = 0};
+  rec_u64(&r, hdr);
+  rec_u64(&r, tid); // Word 1: Object ID
+  rec_str_padded(&r, name, name_len);
+  rec_u64(&r, arg_hdr);
+  rec_str_padded(&r, arg_name, arg_name_len);
+  rec_u64(&r, g_ftr_pid);
 
   commit_record(&r);
 }

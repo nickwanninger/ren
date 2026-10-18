@@ -3,7 +3,8 @@
 #include <imgui/imgui.h>
 #include <math.h>
 
-#include <ren/assets/materials/PBRMaterial.h>
+#include <ren/assets/Material.h>
+#include <ren/renderer/shader/ShaderCache.h>
 #include <assimp/GltfMaterial.h>
 
 #include <assimp/Importer.hpp>
@@ -423,13 +424,31 @@ namespace ren {
     // Textures that hold data instead of color must not be sRGB decoded.
     std::vector<bool> isDataTexture(scene->mNumTextures, false);
     for (unsigned int m = 0; m < scene->mNumMaterials; ++m) {
-      for (aiTextureType type : {aiTextureType_NORMALS, aiTextureType_DIFFUSE_ROUGHNESS}) {
+      for (aiTextureType type : {aiTextureType_NORMALS, aiTextureType_DIFFUSE_ROUGHNESS, aiTextureType_LIGHTMAP}) {
         aiString path;
         if (scene->mMaterials[m]->GetTexture(type, 0, &path) == aiReturn_SUCCESS && path.C_Str()[0] == '*') {
           unsigned int index = (unsigned int)atoi(&path.C_Str()[1]);
-          if (index < isDataTexture.size()) isDataTexture[index] = true;
+          if (index < isDataTexture.size()) {
+            isDataTexture[index] = true;
+          }
         }
       }
+    }
+
+    // Decode the embedded images on the thread pool. The decode is the slow
+    // part, and it does no Vulkan work. The Texture constructor submits to
+    // the queue, so this thread makes the textures after the decode.
+    std::vector<ren::Texture::DecodedImage> decoded(scene->mNumTextures);
+    {
+      REN_PROFILE_SCOPE("Decode Assimp Textures");
+      // An lvalue, so that parallel_for copies it into each chunk.
+      auto decodeOne = [&](int i) {
+        const aiTexture *assimpTexture = scene->mTextures[i];
+        if (assimpTexture->mHeight == 0) {
+          decoded[i] = ren::Texture::decode(assimpTexture->pcData, assimpTexture->mWidth);
+        }
+      };
+      ren::parallel_for((int)scene->mNumTextures, decodeOne);
     }
 
     for (unsigned int i = 0; i < scene->mNumTextures; ++i) {
@@ -439,7 +458,14 @@ namespace ren {
       ref<Texture> texture;
       if (assimpTexture->mHeight == 0) {
         std::string embeddedName = fmt::format("embedded_{}_{}", i, assimpTexture->mFilename.C_Str());
-        texture = ren::Texture::load(embeddedName, assimpTexture->pcData, assimpTexture->mWidth, format);
+        auto &image = decoded[i];
+        if (image) {
+          texture = ren::Texture::create(embeddedName, image.width, image.height, image.pixels.get(), format);
+        } else {
+          ren::warnln("Failed to decode embedded texture '{}'", embeddedName);
+        }
+        // Free the pixels now. The upload copied them to a staging buffer.
+        image = {};
       } else {
         texture = ren::Texture::load(assimpTexture->mFilename.C_Str(), format);
       }
@@ -466,7 +492,7 @@ namespace ren {
     for (unsigned int i = 0; i < scene->mNumMaterials; ++i) {
       REN_PROFILE_SCOPE("Read Assimp Material");
       const aiMaterial *assimpMaterial = scene->mMaterials[i];
-      auto material = make<ren::PBRMaterial>();
+      auto material = make<ren::Material>(ren::getShader("ren/core/pbr", "ren/pass/deferred"));
 
       // Set the material name
       aiString materialName;
@@ -476,33 +502,49 @@ namespace ren {
         material->setName(fmt::format("{}_mat{}", filenameWithoutExtension, i));
       }
 
+      // The material data starts as zeros. Set defaults, so that a key that
+      // the file does not have does not give a black or mirror-like material.
+      // The glTF importer always writes the factors, so these apply to other
+      // formats. Metallic is 0 here, not the glTF default of 1, because such
+      // files are mostly not metal.
+      material->setColor("baseColor", glm::vec4(1.0f));
+      material->setColor("emissiveFactor", glm::vec4(0.0f));
+      material->setFloat("metallic", 0.0f);
+      material->setFloat("roughness", 1.0f);
+      material->setFloat("occlusionStrength", 1.0f);
+      // material->getPSO().fillMode = ren::FillMode::Wireframe;
+
 
       float occlusionStrength = 1.0f;
       if (assimpMaterial->Get(AI_MATKEY_GLTF_TEXTURE_STRENGTH(aiTextureType_LIGHTMAP, 0), occlusionStrength) == aiReturn_SUCCESS) {
-        // Got occlusion strength
-        material->props.occlusionStrength = glm::clamp(occlusionStrength, 0.0f, 1.0f);
-        printf("Material %s occlusion strength: %f\n", material->getName().c_str(), material->props.occlusionStrength);
+        occlusionStrength = glm::clamp(occlusionStrength, 0.0f, 1.0f);
+        material->setFloat("occlusionStrength", occlusionStrength);
+        printf("Material %s occlusion strength: %f\n", material->getName().c_str(), occlusionStrength);
       };
       // Set the material properties
       aiColor4D color;
       if (assimpMaterial->Get(AI_MATKEY_COLOR_DIFFUSE, color) == aiReturn_SUCCESS) {
-        material->props.baseColorFactor = glm::vec4(color.r, color.g, color.b, color.a);
+        material->setColor("baseColor", glm::vec4(color.r, color.g, color.b, color.a));
       }
       // if (assimpMaterial->Get(AI_MATKEY_COLOR_SPECULAR, color) == aiReturn_SUCCESS) {
       //   material->props.specularColor = glm::vec4(color.r, color.g, color.b, 1.0f);
       // }
       if (assimpMaterial->Get(AI_MATKEY_COLOR_EMISSIVE, color) == aiReturn_SUCCESS) {
-        material->props.emissive = glm::vec4(color.r, color.g, color.b, color.a);
+        material->setColor("emissiveFactor", glm::vec4(color.r, color.g, color.b, color.a));
       }
 
       // metallic
-      if (assimpMaterial->Get(AI_MATKEY_METALLIC_FACTOR, material->props.metallicFactor) == aiReturn_SUCCESS) {
-        material->props.metallicFactor = glm::clamp(material->props.metallicFactor, 0.0f, 1.0f);
+      float metallicFactor;
+      if (assimpMaterial->Get(AI_MATKEY_METALLIC_FACTOR, metallicFactor) == aiReturn_SUCCESS) {
+        metallicFactor = glm::clamp(metallicFactor, 0.0f, 1.0f);
+        material->setFloat("metallic", metallicFactor);
       }
 
       // roughness
-      if (assimpMaterial->Get(AI_MATKEY_ROUGHNESS_FACTOR, material->props.roughnessFactor) == aiReturn_SUCCESS) {
-        material->props.roughnessFactor = glm::clamp(material->props.roughnessFactor, 0.0f, 1.0f);
+      float roughnessFactor;
+      if (assimpMaterial->Get(AI_MATKEY_ROUGHNESS_FACTOR, roughnessFactor) == aiReturn_SUCCESS) {
+        roughnessFactor = glm::clamp(roughnessFactor, 0.0f, 1.0f);
+        material->setFloat("roughness", roughnessFactor);
       }
 
       // textures
@@ -523,23 +565,27 @@ namespace ren {
       int twoSided;
       if (assimpMaterial->Get(AI_MATKEY_TWOSIDED, twoSided) == AI_SUCCESS) {
         if (twoSided) {
+
           material->getPSO().cullMode = ren::CullMode::None;
         }
       }
 
 
       if (auto diffuseTexture = grabTexture(aiTextureType_DIFFUSE)) {
-        material->baseColorTexture = diffuseTexture;
+        material->setTexture("baseColorTexture", diffuseTexture);
       }
       if (auto metallicRoughnessTexture = grabTexture(aiTextureType_DIFFUSE_ROUGHNESS)) {
-        material->metallicRoughnessTexture = metallicRoughnessTexture;
+        material->setTexture("metallicRoughnessTexture", metallicRoughnessTexture);
       }
       if (auto normalTexture = grabTexture(aiTextureType_NORMALS)) {
-        material->normalTexture = normalTexture;
+        material->setTexture("normalTexture", normalTexture);
+      }
+      if (auto occlusionTexture = grabTexture(aiTextureType_LIGHTMAP)) {
+        material->setTexture("occlusionTexture", occlusionTexture);
       }
 
       if (auto emissiveTexture = grabTexture(aiTextureType_EMISSIVE)) {
-        material->emissiveTexture = emissiveTexture;
+        material->setTexture("emissiveTexture", emissiveTexture);
       }
 
 

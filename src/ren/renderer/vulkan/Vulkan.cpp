@@ -285,9 +285,23 @@ void ren::VulkanInstance::init_device(VkSurfaceKHR surface) {
 
   this->physical_device = physicalDevice.physical_device;
 
+  // Optional: maps GPU timestamp queries onto the CPU clock of the profiler.
+  const char *calibratedTimestampsFn = nullptr;
+  if (physicalDevice.enable_extension_if_present(VK_KHR_CALIBRATED_TIMESTAMPS_EXTENSION_NAME)) {
+    calibratedTimestampsFn = "vkGetCalibratedTimestampsKHR";
+  } else if (physicalDevice.enable_extension_if_present(VK_EXT_CALIBRATED_TIMESTAMPS_EXTENSION_NAME)) {
+    calibratedTimestampsFn = "vkGetCalibratedTimestampsEXT";
+  }
+
   vkb::DeviceBuilder deviceBuilder{physicalDevice};
   vkb::Device vkbDevice = deviceBuilder.build().value();
   this->device = vkbDevice.device;
+
+  if (calibratedTimestampsFn != nullptr) {
+    this->getCalibratedTimestamps =
+        (PFN_vkGetCalibratedTimestampsKHR)vkGetDeviceProcAddr(this->device, calibratedTimestampsFn);
+  }
+  ren::println("Calibrated Timestamps: {}", this->getCalibratedTimestamps ? "Enabled" : "Disabled");
 
 
 

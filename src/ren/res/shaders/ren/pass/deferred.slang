@@ -5,9 +5,9 @@ import ren.core;
 import ren.surface;
 
 extern struct Surface : ISurface;
-
+extern struct SurfaceParams; // for the layout only
 [[vk::push_constant]]
-MaterialRoot<Surface.Params> root;
+MaterialRoot<SurfaceParams> root;
 
 
 
@@ -22,12 +22,12 @@ PassVarying vertexMain(Vertex input, uint drawIndex: SV_DrawIndex) {
   let obj = root.getObject(drawIndex);
 
   PassVarying output;
-  output.surface = Surface.vertex(input, obj, root.getMaterial(drawIndex), output.position);
+  output.surface = Surface.vertex(input, obj, (Surface.Params *)root.getMaterial(drawIndex), output.position);
   output.drawIndex = drawIndex;
   return output;
 }
 
 [shader("fragment")]
 GBufferOutput fragmentMain(PassVarying input) {
-  return Surface.shade(input.surface, root.getMaterial(input.drawIndex));
+  return Surface.shade(input.surface, (Surface.Params *)root.getMaterial(input.drawIndex));
 }

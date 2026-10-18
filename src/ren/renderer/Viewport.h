@@ -93,8 +93,8 @@ namespace ren {
     /// Subclass hook, called by update() once renderSize is set.
     virtual void onUpdate(float dt) {}
 
-    /// Populate the graph. Called once, from the constructor.
-    /// Eventually this is what a RenderPipeline abstraction would replace.
+    /// Subclass hook, called once by the first update(). Not called from the
+    /// constructor, where virtual dispatch would skip the override.
     virtual void buildGraph();
 
     RenderGraph graph;
@@ -105,12 +105,15 @@ namespace ren {
     float focusDistance = 5.0f;
     float lensRadius = 0.06f;
     float renderScale = 1.0f;
+    float ssaoContrast = 1.0f;
 
    private:
     glm::uvec2 renderSize{1, 1};
     /// False until update() has prepared the graph at least once; the graph's
     /// images do not exist before that.
     bool prepared = false;
+    /// False until the first update() has called buildGraph().
+    bool graphBuilt = false;
 
     /// The PSO for the placeholder fullscreen pass. Owned here rather than
     /// captured by the graph lambda so its lifetime is obviously the

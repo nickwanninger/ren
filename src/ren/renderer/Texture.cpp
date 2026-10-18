@@ -163,6 +163,25 @@ ren::ref<ren::Texture> ren::Texture::load(const std::string_view &filename, VkFo
 }
 
 
+void ren::Texture::DecodedImage::PixelDeleter::operator()(u8 *pixels) const { stbi_image_free(pixels); }
+
+
+
+ren::Texture::DecodedImage ren::Texture::decode(const void *data, u64 size) {
+  REN_PROFILE_SCOPE("stbi_load_from_memory");
+  int width, height, channels;
+  stbi_uc *pixels = stbi_load_from_memory((const stbi_uc *)data, (int)size, &width, &height, &channels, STBI_rgb_alpha);
+
+  DecodedImage image;
+  if (pixels != nullptr) {
+    image.width = (u32)width;
+    image.height = (u32)height;
+    image.pixels.reset(pixels);
+  }
+  return image;
+}
+
+
 ren::ref<ren::Texture> ren::Texture::load(const std::string_view &name, void *data, u64 size, VkFormat format) {
   REN_PROFILE_FUNCTION();
   int texWidth, texHeight, texChannels;

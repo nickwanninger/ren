@@ -48,6 +48,14 @@ typedef uint16_t ftr_str_t;   // 1-based string index
 
 extern void ftr_write_span(uint64_t pid, uint64_t tid, const char *name,
                            ftr_timestamp_t start_ns, ftr_timestamp_t end_ns);
+// Like ftr_write_span, but as separate begin and end records. Perfetto pops a
+// complete span (ftr_write_span) from its slice stack only when a later span
+// begins, so a flow event after the span can still bind to it. An end record
+// pops the span at its end time.
+extern void ftr_write_begin(uint64_t pid, uint64_t tid, const char *name,
+                            ftr_timestamp_t ts);
+extern void ftr_write_end(uint64_t pid, uint64_t tid, const char *name,
+                          ftr_timestamp_t ts);
 extern void ftr_write_spani(uint16_t name_ref, ftr_timestamp_t start_ns,
                             ftr_timestamp_t end_ns);
 extern void ftr_write_marki(uint16_t name_ref);
@@ -56,6 +64,12 @@ extern void ftr_write_flow_begini(uint16_t name_ref, uint64_t flow_id);
 extern void ftr_write_flow_stepi(uint16_t name_ref, uint64_t flow_id);
 extern void ftr_write_flow_endi(uint16_t name_ref, uint64_t flow_id);
 extern uint64_t ftr_new_flow_id(void);
+// Like ftr_write_flow_begini and ftr_write_flow_endi, but on any thread and at
+// any time. Use them to connect a flow to a span that ftr_write_span wrote.
+extern void ftr_write_flow_begin(uint64_t pid, uint64_t tid, uint16_t name_ref,
+                                 ftr_timestamp_t ts, uint64_t flow_id);
+extern void ftr_write_flow_end(uint64_t pid, uint64_t tid, uint16_t name_ref,
+                               ftr_timestamp_t ts, uint64_t flow_id);
 extern uint16_t ftr_intern_string(const char *s);
 
 // Like printf, but emits to a mark point in the trace location.  This is useful
@@ -65,6 +79,14 @@ extern void ftr_logf(const char *fmt, ...)
     __attribute__((format(printf, 1, 2)));
 
 extern void ftr_set_process_name(const char *name);
+
+// The process id that FTR writes on each record. Use it with ftr_write_span
+// to put spans on a thread that is not the calling thread.
+extern uint64_t ftr_get_pid(void);
+
+// Give a name to a thread id. The tid does not need to be a real OS thread.
+// For example, a GPU queue.
+extern void ftr_set_thread_name(uint64_t tid, const char *name);
 
 extern void ftr_begin(const char *cat, const char *msg);
 extern void ftr_end(const char *cat, const char *msg);

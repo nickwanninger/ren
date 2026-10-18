@@ -71,6 +71,10 @@ namespace ren {
     VkPhysicalDevice physical_device = VK_NULL_HANDLE;
     VkDevice device = VK_NULL_HANDLE;
 
+    // From VK_KHR_calibrated_timestamps (or the EXT). Null if the device does
+    // not support it.
+    PFN_vkGetCalibratedTimestampsKHR getCalibratedTimestamps = nullptr;
+
     // -- Submission Queues -- //
     ref<SubmissionQueue> graphicsQueue;
     ref<SubmissionQueue> computeQueue;

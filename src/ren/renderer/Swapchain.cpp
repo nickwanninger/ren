@@ -41,12 +41,10 @@ namespace ren {
     vkb::Swapchain vkb_swapchain =
         swapchain_builder.use_default_format_selection()
             .set_desired_present_mode(presentMode)
-            .set_image_usage_flags(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-                                   VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT)
-            .set_desired_format(
-                {vulkan.presentFormat, vulkan.presentColorSpace})  // chosen by selectDevice()
-            .set_desired_extent(deviceExtent.width, deviceExtent.height)      // Window size
-            .set_desired_min_image_count(3)                                   // Triple buffering
+            .set_image_usage_flags(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT)
+            .set_desired_format({vulkan.presentFormat, vulkan.presentColorSpace})  // chosen by selectDevice()
+            .set_desired_extent(deviceExtent.width, deviceExtent.height)           // Window size
+            .set_desired_min_image_count(3)                                        // Triple buffering
             .build()
             .value();
 
@@ -126,9 +124,7 @@ namespace ren {
     assert(frameSlot < m_imageAvailable.size());
     m_frameSlot = frameSlot;
 
-    auto result = vkAcquireNextImageKHR(vulkan.device, this->swapchain, UINT64_MAX,
-                                        m_imageAvailable[frameSlot], VK_NULL_HANDLE,
-                                        &m_imageIndex);
+    auto result = vkAcquireNextImageKHR(vulkan.device, this->swapchain, UINT64_MAX, m_imageAvailable[frameSlot], VK_NULL_HANDLE, &m_imageIndex);
 
     if (result == VK_ERROR_OUT_OF_DATE_KHR) {
       ren::dbgln("Swapchain image out of date. Rebuilding...");

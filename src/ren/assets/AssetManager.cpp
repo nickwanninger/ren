@@ -10,15 +10,24 @@ namespace ren {
 
   AssetManager &getAssetManager() { return ren::world().get_mut<AssetManager>(); }
 
-  AssetManager::AssetManager() {}
+  AssetManager::AssetManager()
+      : store(source) {}
 
   AssetManager::~AssetManager() { fmt::print("AssetManager destroyed.\n"); }
 
 
   void AssetManager::addFilesystemSource(const std::string_view &path) {
     this->source.addFilesystem(path);
+    store.reinit();
   }
-  void AssetManager::addEmbeddedSource(void) { this->source.addEmbeddedSource(); }
+  void AssetManager::addEmbeddedSource(void) {
+    this->source.addEmbeddedSource();
+    store.reinit();
+  }
+  void AssetManager::addDefaultSources(const std::string_view &root) {
+    addEmbeddedSource();
+    addFilesystemSource(root);
+  }
 
 
   AssetID AssetManager::getID(const std::string_view &name) {
@@ -44,8 +53,7 @@ namespace ren {
     if (type == AssetType::Unknown) {
       auto extension = [&](const char *ext, AssetType t) {
         // I don't have string_view::ends_with, so we do it manually.
-        if (path.size() >= strlen(ext) &&
-            path.compare(path.size() - strlen(ext), strlen(ext), ext) == 0) {
+        if (path.size() >= strlen(ext) && path.compare(path.size() - strlen(ext), strlen(ext), ext) == 0) {
           type = t;
           fmt::print("Detected asset type {} for path {}\n", static_cast<int>(t), path);
         }
@@ -125,8 +133,7 @@ namespace ren {
         break;
       }
       case AssetType::Shader: {
-        throw std::runtime_error(
-            "Standalone GLSL/SPIR-V shader assets were removed; load a Slang ShaderProgram");
+        throw std::runtime_error("Standalone GLSL/SPIR-V shader assets were removed; load a Slang ShaderProgram");
       }
       case AssetType::Material: {
         fmt::print("IMPORTING MATERIAL FROM {} IS NOT IMPLEMENTED\n", path);
@@ -171,9 +178,7 @@ namespace ren {
   //   }
   // }
 
-  bool loadAssetBytes(const std::string_view &path, std::vector<u8> &out) {
-    return getAssetManager().load(path, out);
-  }
+  bool loadAssetBytes(const std::string_view &path, std::vector<u8> &out) { return getAssetManager().load(path, out); }
 
 
 
@@ -185,8 +190,7 @@ namespace ren {
 
   // A tiny path expander similar to package.path semantics.
   // We’ll try <name>.lua, <name>/init.lua, and allow a configurable prefix like "scripts/".
-  inline void build_candidate_keys(const std::string &mod, const std::string &prefix,
-                                   std::vector<std::string> &out) {
+  inline void build_candidate_keys(const std::string &mod, const std::string &prefix, std::vector<std::string> &out) {
     const std::string base = dot_to_slash(mod);
     out.push_back(prefix + base + ".lua");
     out.push_back(prefix + base + "/init.lua");  // init
@@ -272,8 +276,7 @@ namespace ren {
         if (am.load(candidate, scriptData)) {
           // if the script is found, and it ends in .lua, load as lua.
           if (candidate.ends_with(".lua")) {
-            if (luaL_loadbuffer(L, (const char *)scriptData.data(), scriptData.size(),
-                                candidate.c_str()) == LUA_OK) {
+            if (luaL_loadbuffer(L, (const char *)scriptData.data(), scriptData.size(), candidate.c_str()) == LUA_OK) {
               return 1;  // return the loaded chunk
             } else {
               // Loading failed; return the error message

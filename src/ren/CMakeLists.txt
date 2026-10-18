@@ -22,14 +22,19 @@ set(IMGUI_SOURCES
 )
 
 
+file(GLOB MESHOPTIMIZER_SOURCES ${CMAKE_SOURCE_DIR}/lib/meshoptimizer/*.cpp)
+
+
 add_library(ren SHARED
   ${SOURCE_FILES}
+  ${MESHOPTIMIZER_SOURCES}
 
   ${CMAKE_SOURCE_DIR}/lib/spirv_reflect/spirv_reflect.c
   ${CMAKE_SOURCE_DIR}/lib/spirv_reflect/common.cpp
   ${CMAKE_SOURCE_DIR}/lib/spirv_reflect/output_stream.cpp
   ${CMAKE_SOURCE_DIR}/lib/vkb/VkBootstrap.cpp
   ${CMAKE_SOURCE_DIR}/lib/stb/stb_image.c
+  ${CMAKE_SOURCE_DIR}/lib/hash-library/sha256.cpp
 
 
   # Imguizmo

@@ -19,12 +19,9 @@ static ren::Flag<std::string> skyBoxPath("skybox", "assets/hdri/sky.jpg", "Path 
 
 namespace ren {
 
-  Viewport::Viewport() {
-    // The graph is built once. Rebuilding it per frame would mean re-adding
-    // every task (RenderGraph has no removal path) and paying the compile()
-    // cost, which is already flagged as slow.
-    buildGraph();
-  }
+  // The graph is not built here: a virtual call in a constructor dispatches to
+  // Viewport::buildGraph(), never to a subclass override. update() builds it.
+  Viewport::Viewport() {}
 
 
   void Viewport::buildGraph() {
@@ -52,13 +49,22 @@ namespace ren {
 
     // The sky texture is an LDR JPEG. The shader samples its values into a
     // SRGB target and uses FrameGlobals to orient the sky and grid.
-    graph.pass("forward")
+    graph.pass("viewport")
         .createColorAttachment("viewportColor", {.relativeScale = glm::vec2(1.0f), .format = VK_FORMAT_R8G8B8A8_SRGB}, finalImage)
         .reads(gbufferAlbedo, GraphAccess::ShaderRead)
-        .render([this, skybox](GraphRenderPassContext &ctx) {
+        .reads(gbufferNormal, GraphAccess::ShaderRead)
+        .reads(gbufferDepth, GraphAccess::ShaderRead)
+        .reads(ssao, GraphAccess::ShaderRead)
+        .render([this, skybox, gbufferAlbedo, gbufferNormal, gbufferDepth, ssao](GraphRenderPassContext &ctx) {
           auto shader = ctx.encoder.bindGraphics(forwardPSO);
           auto root = shader.root("root");
           root.set("skyboxHdri", skybox);
+          // TEST lighting composite (see viewport_clear.slang).
+          root.set("albedo", ctx.graph.get<ImageResource>(gbufferAlbedo)->textureHandle());
+          root.set("normal", ctx.graph.get<ImageResource>(gbufferNormal)->textureHandle());
+          root.set("depth", ctx.graph.get<ImageResource>(gbufferDepth)->textureHandle());
+          root.set("ssao", ctx.graph.get<ImageResource>(ssao)->textureHandle());
+          root.set("ssaoContrast", ssaoContrast);
           // root.set("raysPerPixel", raysPerPixel);
           // root.set("focusDistance", focusDistance);
           // root.set("lensRadius", lensRadius);
@@ -68,6 +74,14 @@ namespace ren {
 
 
   void Viewport::update(float dt, glm::uvec2 size) {
+    // The graph is built once. Rebuilding it per frame would mean re-adding
+    // every task (RenderGraph has no removal path) and paying the compile()
+    // cost, which is already flagged as slow.
+    if (!graphBuilt) {
+      buildGraph();
+      graphBuilt = true;
+    }
+
     // Clamp render size
     renderSize = glm::max(size, glm::uvec2(1, 1));
 
@@ -283,7 +297,10 @@ namespace ren {
           // ImGui::SliderInt("raysPerPixel", &raysPerPixel, 1, 64);
           // ImGui::DragFloat("focusDistance", &focusDistance, 0.1f, 0.1f, 100.0f);
           // ImGui::DragFloat("lensRadius", &lensRadius, 0.01f, 0.0f, 1.0f);
-          ImGui::DragFloat("renderScale", &renderScale, 0.01f, 0.1f, 1.0f);
+          ImGui::DragFloat("renderScale", &renderScale, 0.01f, 0.1f, 2.0f);
+          ImGui::DragFloat("ssaoContrast", &ssaoContrast, 0.01f, 0.1f, 10.0f);
+          ImGui::SliderFloat("moveSpeed", &moveSpeed, 1.0f, 128.0f);
+          ImGui::SliderFloat("Fov", &fovDegrees, 1.0f, 179.0f);
         }
       }
       ImGui::EndChild();
@@ -316,6 +333,7 @@ namespace ren {
     ImGuizmo::SetDrawlist();
     ImGuizmo::SetRect(origin.x, origin.y, extent.x, extent.y);
 
+    #if 0
     // ImGuizmo expects GL clip space, so undo the Vulkan Y-flip.
     glm::mat4 gizmoProj = projection;
     gizmoProj[1][1] *= -1;
@@ -345,6 +363,7 @@ namespace ren {
 
     ImGuizmo::Manipulate(glm::value_ptr(view), glm::value_ptr(gizmoProj), ImGuizmo::TRANSLATE | ImGuizmo::ROTATE | ImGuizmo::SCALE, ImGuizmo::MODE::WORLD, glm::value_ptr(matrix), NULL,
                          NULL);
+    #endif
 
 
     ImGuizmo::PopID();

@@ -149,8 +149,7 @@ namespace ren {
 
     // Create an asset manager. This part of the heirarchy will hold loaded assets.
     auto &am = ren::ensureResource<ren::AssetManager>();
-    am.addEmbeddedSource();
-    am.addFilesystemSource("assets/");
+    am.addDefaultSources();
 
     // Configure the lua interpreter to pull from the asset manager.
     am.configureLua(lua);
@@ -341,8 +340,6 @@ namespace ren {
 
 
       {
-        REN_PROFILE_SCOPE("Pacing");
-
         // FPS limiting at the end of frame (after submission) to reduce input latency.
         // If the window is not focused, limit to 30 FPS to reduce CPU/GPU usage.
         bool isFocused = window->hasFocus();

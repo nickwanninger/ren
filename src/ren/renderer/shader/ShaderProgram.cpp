@@ -285,7 +285,7 @@ namespace ren {
     j["reflection"] = reflection->toJson();
 
 
-    ren::BundleBuilder bundle;
+    ren::Bundle bundle;
 
     // write the shader programs to disk as spirv.
     auto shadersJson = json::array();
@@ -295,7 +295,7 @@ namespace ren {
       js["stage"] = shader->getStage();
 
       auto& code = shader->getCode();
-      auto blobIndex = bundle.attachBlob(code);
+      auto blobIndex = bundle.attachBlob(shader->getFilename(), code);
       js["blob"] = blobIndex;
 
       shadersJson.push_back(js);

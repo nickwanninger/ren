@@ -51,7 +51,15 @@ public struct TextureHandle {
       return float4(1.0, 0.0, 1.0, 1.0);
     return getTexture2D(imageIndex()).SampleLevel(getSampler(samplerIndex()), uv, lod);
   }
+
+
+  // Sample t, or return the fallback when the handle is not set. Use it for
+  // optional material textures, where a missing texture must not be magenta.
+  public float4 sampleOr(float2 uv, float4 fallback) {
+    return isValid() ? Sample(uv) : fallback;
+  }
 }
+
 
 // The standard vertex structure that is used in the MegaMeshBuffer and other places.
 public struct Vertex {

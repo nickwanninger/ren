@@ -19,7 +19,7 @@ namespace ren {
       : ren::RenderPassTask(G) {
     out.shadow = addDepthAttachment("shadow_map", {.absoluteSize = glm::uvec2(resolution, resolution)});
 
-    pso.program = ren::getShader("shaders/shadow_map");
+    pso.program = NULL; ren::getShader("shaders/shadow_map");
     pso.depthWrite = true;
     pso.depthTest = true;
     pso.cullMode = ren::CullMode::Front;

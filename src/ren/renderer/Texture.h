@@ -9,6 +9,8 @@
 #include <ren/assets/Asset.h>
 #include <glm/glm.hpp>
 
+#include <memory>
+
 namespace ren {
 
 
@@ -25,6 +27,22 @@ namespace ren {
     ~Texture();
 
     // -- //
+
+    // RGBA8 pixels decoded from an encoded image (PNG, JPEG, ...).
+    struct DecodedImage {
+      struct PixelDeleter {
+        void operator()(u8 *pixels) const;
+      };
+      u32 width = 0;
+      u32 height = 0;
+      std::unique_ptr<u8, PixelDeleter> pixels;
+
+      explicit operator bool() const { return pixels != nullptr; }
+    };
+
+    // Decode an encoded image in memory. This does no Vulkan work, so it is
+    // safe to call from worker threads. On failure, the result is empty.
+    static DecodedImage decode(const void *data, u64 size);
 
     // Load a texture from a file path. This will eventually be moved to a resource manager.
     static ref<Texture> load(const std::string_view &filename, VkFormat format = VK_FORMAT_R8G8B8A8_SRGB);

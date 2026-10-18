@@ -9,28 +9,29 @@
 
 namespace ren {
 
-  Material::Material(ref<ShaderProgram> shader)
-      : program(std::move(shader)) {
-    if (!program || !program->getReflection()) {
+  Material::Material(ref<ShaderProgram> shader) {
+    pso.program = shader;
+    if (!pso.program || !pso.program->getReflection()) {
       throw std::invalid_argument("Material needs a shader with reflection");
     }
     const auto *schema = getSchema();
-    if (!schema || schema->byteSize == 0) {
+    if (!schema) {
+      throw std::invalid_argument("Material needs a shader with a MaterialRoot schema");
+    }
+
+    if (schema->byteSize == 0) {
       throw std::invalid_argument("Material needs a nonempty MaterialRoot schema");
     }
     cpuMaterialData.resize(schema->byteSize, 0);
-    this->setName(program->getPath());
+    this->setName(pso.program->getPath());
   }
 
 
-  Material::Material(std::string_view shader)
-      : Material(ren::getShader(shader)) {}
-
   const ShaderReflection::MaterialSchema *Material::getSchema() const {
-    if (!program || !program->getReflection()) {
+    if (!pso.program || !pso.program->getReflection()) {
       return nullptr;
     }
-    const auto &schema = program->getReflection()->getMaterialSchema();
+    const auto &schema = pso.program->getReflection()->getMaterialSchema();
     return schema.isSome() ? &schema.unwrap() : nullptr;
   }
 
@@ -62,7 +63,25 @@ namespace ren {
     writeField(target, value);
   }
 
-  void Material::setColor(std::string_view name, const glm::vec4 &color) {
+  void Material::setFloat2(std::string_view name, const glm::vec2 &value) {
+    const auto &target = field(name);
+    if (target.kind != ShaderReflection::ValueKind::Vector || target.scalarKind != ShaderReflection::ScalarKind::Float32 ||
+        target.rowCount * target.columnCount != 2) {
+      throw std::invalid_argument(fmt::format("Material field '{}' is not a float2", name));
+    }
+    writeField(target, value);
+  }
+
+  void Material::setFloat3(std::string_view name, const glm::vec3 &value) {
+    const auto &target = field(name);
+    if (target.kind != ShaderReflection::ValueKind::Vector || target.scalarKind != ShaderReflection::ScalarKind::Float32 ||
+        target.rowCount * target.columnCount != 3) {
+      throw std::invalid_argument(fmt::format("Material field '{}' is not a float3", name));
+    }
+    writeField(target, value);
+  }
+
+  void Material::setFloat4(std::string_view name, const glm::vec4 &color) {
     const auto &target = field(name);
     if (target.kind != ShaderReflection::ValueKind::Vector || target.scalarKind != ShaderReflection::ScalarKind::Float32 ||
         target.rowCount * target.columnCount != 4) {
@@ -71,6 +90,14 @@ namespace ren {
     writeField(target, color);
   }
 
+
+  void Material::setTexture(std::string_view name, const ref<Texture> &texture) {
+    const auto &target = field(name);
+    auto handle = texture->handle();
+    // TODO: validate that the target is a texture type.
+    writeField(target, ren::ByteSpan(handle));
+    boundTextures[name.data()] = texture;
+  }
 
   static void inspectMaterialFieldValueRecursive(const ShaderReflection::MaterialField &field, ren::ByteSpan rootData) {
     // This is an 'editor' inspection view. We want to show the field's name,

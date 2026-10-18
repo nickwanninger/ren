@@ -151,6 +151,10 @@ namespace ren {
           m_resizing = true;
           break;
 
+        // If there is a mouse click event, the window should be raised.
+        case SDL_EVENT_MOUSE_BUTTON_DOWN:
+          SDL_RaiseWindow(m_window);
+
         case SDL_EVENT_WINDOW_EXPOSED:
           m_resizing = false;
           break;

@@ -162,10 +162,25 @@ namespace ren {
         : data(static_cast<u8*>(bytes))
         , size(byte_size) {}
 
+    ByteSpan(const char* str) noexcept
+        : data(reinterpret_cast<u8*>(const_cast<char*>(str)))
+        , size(strlen(str)) {}
+
+    ByteSpan(std::string_view str) noexcept
+        : data(reinterpret_cast<u8*>(const_cast<char*>(str.data())))
+        , size(str.size()) {}
+
+    ByteSpan(const std::string& str) noexcept
+        : data(reinterpret_cast<u8*>(const_cast<char*>(str.data())))
+        , size(str.size()) {}
+
     // A span converted from a value remains valid only while that value is
     // alive. Functions must not retain the span.
+    // ByteSpan itself is excluded: otherwise, copying a non-const ByteSpan
+    // selects this constructor (an exact match for ByteSpan&) instead of the
+    // copy constructor, and gives a span of the 16-byte ByteSpan object.
     template <typename T>
-      requires(!std::is_volatile_v<T> && __is_trivially_copyable(T) && (sizeof(T) & 3u) == 0)
+      requires(!std::is_volatile_v<T> && !std::is_same_v<std::remove_cv_t<T>, ByteSpan> && __is_trivially_copyable(T) && (sizeof(T) & 3u) == 0)
     ByteSpan(T& value) noexcept
         : data(reinterpret_cast<u8*>(const_cast<std::remove_const_t<T>*>(__builtin_addressof(value))))
         , size(sizeof(T)) {}

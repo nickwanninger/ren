@@ -13,16 +13,14 @@ namespace ren {
 
   constexpr VkFormat ssaoFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
 
-  SSAOTask::SSAOTask(ren::RenderGraph &G, float fscale, GraphHandle depth, GraphHandle normal)
+  SSAOTask::SSAOTask(ren::RenderGraph &G, float fscale, GraphHandle depth)
       : ren::RenderPassTask(G) {
     this->in.depth = depth;
-    this->in.normal = normal;
 
     auto scale = glm::vec2(fscale);
     this->out.ssao = addColorAttachment("ssao", {.relativeScale = scale, .format = ssaoFormat});
 
     this->read(in.depth, ren::GraphAccess::ShaderRead);
-    this->read(in.normal, ren::GraphAccess::ShaderRead);
 
     pso.debugName = "SSAO";
     pso.program = ren::getShader("ren/core/ssao", "ren/pass/fullscreen");
@@ -38,12 +36,14 @@ namespace ren {
     // The shader picks the kernel rotation from the pixel position.
     auto target = graph().getImage(out.ssao);
     glm::vec2 targetSize = glm::vec2(target->getWidth(), target->getHeight());
+    auto depthImage = graph().getImage(in.depth);
+    glm::vec2 depthSize = glm::vec2(depthImage->getWidth(), depthImage->getHeight());
 
     auto shader = ctx.encoder.bindGraphics(pso);
     auto root = shader.root("root");
     root.set("depth", graph().get<ren::ImageResource>(in.depth)->textureHandle());
-    root.set("normal", graph().get<ren::ImageResource>(in.normal)->textureHandle());
     root.set("targetSize", targetSize);
+    root.set("depthSize", depthSize);
     root.set("radius", radius);
     root.set("bias", bias);
     root.set("sampleCount", static_cast<u32>(sampleCount));
@@ -96,6 +96,8 @@ namespace ren {
     root.set("depth", graph().get<ren::ImageResource>(in.depth)->textureHandle());
     root.set("normal", graph().get<ren::ImageResource>(in.normal)->textureHandle());
     root.set("ssaoTexelSize", ssaoTexelSize);
+    auto depthImage = graph().getImage(in.depth);
+    root.set("depthSize", glm::vec2(depthImage->getWidth(), depthImage->getHeight()));
     shader.drawFullscreenTriangle();
   }
 

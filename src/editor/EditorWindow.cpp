@@ -103,13 +103,16 @@ namespace editor {
     m_viewport->drawWindow("Viewport A", m_deltaTime);
     m_viewport->render(renderer);
 
-    auto pass = frame.getMainCommandEncoder()->beginRenderPass(*renderer.getDisplayPass(), getSwapchain().currentTarget());
+    auto encoder = frame.getMainCommandEncoder();
+    auto timestampTicket = encoder->beginTimestampQuery("FullScreenPass");
+    auto pass = encoder->beginRenderPass(*renderer.getDisplayPass(), getSwapchain().currentTarget());
     {
       REN_PROFILE_SCOPE("FullScreenPass");
       ren::renderDebugLines(m_viewMatrix, m_projMatrix);
       drawImGui(pass);
     }
     pass.end();
+    encoder->endTimestampQuery(timestampTicket);
   }
 
 }  // namespace editor

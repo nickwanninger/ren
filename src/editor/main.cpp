@@ -5,7 +5,10 @@
 #include <ren/renderer/shader/ShaderReflection.h>
 
 #include <ren/core/Flag.h>
+#include <chrono>
 #include <ren/assets/MeshScene.hpp>
+#include "ren/assets/AssetSource.h"
+#include <ren/core/ThreadPool.h>
 #include "ren/renderer/Buffer.h"
 #include "ren/renderer/shader/ShaderCache.h"
 
@@ -103,8 +106,15 @@ void testSaxpy(void) {
 }
 
 
+#include <ren/assets/AssetStore.h>
 
 int main(int argc, char* argv[]) {
+  // ren::FilesystemAssetSource source("assets");
+  // source.mkdir("store");
+  // ren::AssetStore store(source);
+
+  // store.storeBlob("Hello", {{"name", "test.asset"}, {"type", "mesh"}, {"source", "test.glb"}}, "a-message");
+
   // return 0;
   ren::parseFlags(argc, argv);
 
@@ -121,9 +131,16 @@ int main(int argc, char* argv[]) {
   ren::Application app("Editor", res, ren::makeBox<editor::EditorWindow>());
 
 
-  if (loadArg.get() != "") {
-    loadMeshIntoScene(loadArg.get().c_str(), scaleArg.get());
-  }
+
+  // if (loadArg.get() != "") {
+  //   loadMeshIntoScene(loadArg.get().c_str(), scaleArg.get());
+  // }
+
+  // loadMeshIntoScene("/Users/nick/dev/Models/sponza.glb");
+  // loadMeshIntoScene("/Users/nick/dev/Models/thinker.glb", 1);
+
+  ren::getAssetManager().importMesh("/Users/nick/dev/Models/sponza.glb");
+  // ren::getAssetManager().importMesh("assets/test/meshes/unit_cube.glb");
 
 
   if (runSaxpyArg.get()) {
@@ -132,7 +149,15 @@ int main(int argc, char* argv[]) {
   }
 
 
-  auto s = ren::getShader("test/modules/red", "ren/pass/deferred");
+  return 0;
+
+  ren::backgroundWork([&]() {
+    while (app.isRunning()) {
+      REN_PROFILE_SCOPE("Background work thread");
+      std::this_thread::sleep_for(std::chrono::milliseconds(250));
+    }
+  });
+
   app.run();
 
 

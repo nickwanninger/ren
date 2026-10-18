@@ -182,67 +182,6 @@ namespace ren {
       modules.push_back(module);
     }
 
-    // Debug: print the constants that each module declares at the top level and
-    // one level into structs, with their extern/export modifiers and initializer
-    // bytes.
-    {
-      auto printVar = [](slang::VariableReflection* var, const std::string& scope) {
-        bool isStatic = var->findModifier(slang::Modifier::Static) != nullptr;
-        bool isConst = var->findModifier(slang::Modifier::Const) != nullptr;
-        bool isExtern = var->findModifier(slang::Modifier::Extern) != nullptr;
-        bool isExport = var->findModifier(slang::Modifier::Export) != nullptr;
-        if (!isStatic && !isConst && !isExtern && !isExport) {
-          return;
-        }
-        std::string mods = fmt::format("{}{}{}{}", isExtern ? "extern " : "", isExport ? "export " : "", isStatic ? "static " : "",
-                                       isConst ? "const " : "");
-        slang::TypeReflection* type = var->getType();
-        const char* typeName = type && type->getName() ? type->getName() : "?";
-
-        Slang::ComPtr<slang::IBlob> value;
-        SlangResult res = var->getDefaultValueBlob(value.writeRef());
-        std::string valueText;
-        if (SLANG_FAILED(res)) {
-          valueText = fmt::format("<unavailable, 0x{:x}>", (u32)res);
-        } else if (!value) {
-          valueText = "<no initializer>";
-        } else {
-          auto* bytes = (const u8*)value->getBufferPointer();
-          size_t size = value->getBufferSize();
-          for (size_t b = 0; b < size; ++b) {
-            valueText += fmt::format("{:02x}", bytes[b]);
-          }
-          if (size == 4) {
-            i32 asInt;
-            f32 asFloat;
-            memcpy(&asInt, bytes, 4);
-            memcpy(&asFloat, bytes, 4);
-            valueText += fmt::format(" (int {}, float {})", asInt, asFloat);
-          }
-        }
-        ren::println("    {}{}{} {} = {}", mods, scope, var->getName() ? var->getName() : "<null>", typeName, valueText);
-      };
-
-      for (auto& module : modules) {
-        ren::println("[ShaderCache] constants in module '{}':", module->getName());
-        slang::DeclReflection* root = module->getModuleReflection();
-        for (unsigned i = 0; i < root->getChildrenCount(); ++i) {
-          slang::DeclReflection* decl = root->getChild(i);
-          if (decl->getKind() == slang::DeclReflection::Kind::Variable) {
-            printVar(decl->asVariable(), "");
-          } else if (decl->getKind() == slang::DeclReflection::Kind::Struct) {
-            std::string scope = fmt::format("{}.", decl->getName() ? decl->getName() : "?");
-            for (unsigned c = 0; c < decl->getChildrenCount(); ++c) {
-              slang::DeclReflection* child = decl->getChild(c);
-              if (child->getKind() == slang::DeclReflection::Kind::Variable) {
-                printVar(child->asVariable(), scope);
-              }
-            }
-          }
-        }
-      }
-    }
-
     // The composite holds all modules first, then the entry points. The link
     // step resolves each `extern` in one module against an `export` in another.
     std::vector<slang::IComponentType*> allComponents;
@@ -466,9 +405,7 @@ namespace ren {
 
   ref<ShaderProgram> getShader(const ShaderCache::Desc& desc) { return Renderer::get().getShaderCache().get(desc); }
 
-  void ShaderCache::Desc::addModule(std::string_view path) {
-    modules.push_back(std::string(ShaderCache::canonicalize(path)));
-  }
+  void ShaderCache::Desc::addModule(std::string_view path) { modules.push_back(std::string(ShaderCache::canonicalize(path))); }
 
 
   std::string ShaderCache::Desc::toString(void) const {
