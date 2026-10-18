@@ -14,6 +14,8 @@ cbuffer root {
   Sphere *spheres;
   // One running average per pixel, row by row.
   float4 *accumulation;
+
+  TextureHandle skyboxHdri;
 }
 
 struct Ray {
@@ -125,6 +127,15 @@ float3 RandomHemisphereDirection(float3 normal, inout uint state) {
   return dir * sign(dot(normal, dir));
 }
 
+float3 GetEnvironmentLight(float3 dir) {
+
+  const float invPi = 0.318309886f;
+  float2 skyUV = float2(0.5f + atan2(dir.x, -dir.z) * (0.5f * invPi), acos(clamp(dir.y, -1.0f, 1.0f)) * invPi);
+
+  float3 color = skyboxHdri.Sample(skyUV).rgb;
+  return color;
+}
+
 float3 Trace(Ray ray, inout uint rngState) {
   float3 incomingLight = 0.0f;
   float3 rayColor = 1.0f;
@@ -140,6 +151,7 @@ float3 Trace(Ray ray, inout uint rngState) {
       incomingLight += rayColor * emittedLight;
       rayColor *= hitInfo.material.color.rgb;
     } else {
+      incomingLight += GetEnvironmentLight(ray.dir) * rayColor;
       break;
     }
   }
@@ -179,7 +191,12 @@ struct RaytraceFullScreenSurface : IFullscreenSurface {
 
     float3 totalIncomingLight = 0.0f;
     for (uint i = 0; i < raysPerPixel; i++) {
-      totalIncomingLight += Trace(ray, state);
+
+      Ray jitteredRay = ray;
+      float2 jitter = RandomPointInCircle(state) / float2(size);
+      jitteredRay.dir = normalize(jitteredRay.dir + float3(jitter, 0.0f));
+      jitteredRay.invDir = 1.0f / jitteredRay.dir;
+      totalIncomingLight += Trace(jitteredRay, state);
     }
     float3 color = totalIncomingLight / raysPerPixel;
 
@@ -191,12 +208,5 @@ struct RaytraceFullScreenSurface : IFullscreenSurface {
     accumulation[index] = float4(color, 1.0f);
 
     return float4(color, 1.0f);
-
-    // return float4(calculateRayCollision(ray).material.color.rgb, 1.0f);
-
-    // if (closestHit.didHit) {
-    //   return float4(closestHit.material.color.rgb, 1.0f);
-    // }
-    // return float4(ray.dir * 0.5f + 0.5f, 1.0f);
   }
 }

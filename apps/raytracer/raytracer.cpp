@@ -19,6 +19,7 @@
 using namespace ren;
 
 
+static ren::Flag<std::string> skyBoxPath("skybox", "assets/hdri/sky.jpg", "Path to the skybox texture to use in the viewport.");
 
 
 namespace shd {
@@ -61,7 +62,9 @@ class RaytraceViewport : public ren::EditorViewport {
   glm::mat4 lastProjection = glm::mat4(0.0f);
   glm::uvec2 lastSize = {0, 0};
   u32 lastMaxBounces = 0;
-  std::vector<shd::Sphere> lastSpheres;
+
+
+  ref<Texture> skybox;
 
   // A camera that moves less than this per matrix element counts as still.
   static constexpr float kStillEpsilon = 1e-4f;
@@ -69,53 +72,16 @@ class RaytraceViewport : public ren::EditorViewport {
   static bool nearlyEqual(const glm::mat4 &a, const glm::mat4 &b) {
     for (int c = 0; c < 4; c++) {
       for (int r = 0; r < 4; r++) {
-        if (glm::abs(a[c][r] - b[c][r]) > kStillEpsilon) return false;
+        if (glm::abs(a[c][r] - b[c][r]) > kStillEpsilon) {
+          return false;
+        }
       }
     }
     return true;
   }
 
-  void onBeforeGraph(ren::CommandEncoder &encoder) override {
-    const glm::uvec2 size = getRenderSize();
-    const size_t pixelCount = static_cast<size_t>(size.x) * size.y;
-    if (!accumulation || accumulation->count() != pixelCount) {
-      // Earlier frames can still be using the old buffer. Like a graph image
-      // resize, stall until they finish before the buffer is freed.
-      getVulkan().waitForIdle();
-      accumulation = ren::makeBox<StorageBuffer<glm::vec4>>(pixelCount);
-    }
-
-    const bool cameraStill = nearlyEqual(view, lastView) && nearlyEqual(projection, lastProjection);
-    const bool sceneSame = size == lastSize && maxBounces == lastMaxBounces && spheres == lastSpheres;
-    if (!accumulate || !cameraStill || !sceneSame) {
-      accumulatedFrames = 0;
-    }
-    lastView = view;
-    lastProjection = projection;
-    lastSize = size;
-    lastMaxBounces = maxBounces;
-    lastSpheres = spheres;
-
-    // The previous frame's fragment shader wrote the buffer, and this frame's
-    // fragment shader reads and writes it again.
-    const VkMemoryBarrier2 barrier{
-        .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
-        .srcStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
-        .srcAccessMask = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
-        .dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
-        .dstAccessMask = VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
-    };
-    const VkDependencyInfo dependency{
-        .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-        .memoryBarrierCount = 1,
-        .pMemoryBarriers = &barrier,
-    };
-    vkCmdPipelineBarrier2(encoder.buf(), &dependency);
-  }
 
   void buildGraph() override {
-    spheres.push_back(
-        {{25.799999, 12.100000, 0.000000}, 10.000000, {{1.000000, 1.000000, 1.000000, 1.000000}, {1.000000, 1.000000, 1.000000, 2.308000}}});
     spheres.push_back(
         {{1.600000, 3.100000, 0.000000}, 1.200000, {{2.000000, 1.000000, 0.100000, 1.000000}, {0.000000, 0.000000, 0.000000, 0.000000}}});
     spheres.push_back(
@@ -124,14 +90,12 @@ class RaytraceViewport : public ren::EditorViewport {
         {{0.000000, -7.900000, 0.000000}, 10.000000, {{1.000000, 1.000000, 1.000000, 1.000000}, {0.000000, 0.000000, 0.000000, 0.000000}}});
     spheres.push_back(
         {{-0.600000, 2.800000, -1.000000}, 1.000000, {{0.897059, 0.140715, 0.140715, 1.000000}, {0.000000, 0.000000, 0.000000, 0.000000}}});
-    spheres.push_back(
-        {{0.000000, 0.000000, 0.000000}, 1.000000, {{1.000000, 1.000000, 1.000000, 1.000000}, {0.000000, 0.000000, 0.000000, 0.000000}}});
-    // spheres.push_back({{0.0f, 0.0f, 0.0f}, 1.0f, {{1.0f, 0.1f, 0.1f, 1.0f}, {1, 1, 1, 1.0f}}});
-    // spheres.push_back({{2.0f, 1.5f, 0.0f}, 1.4f, {{2.0f, 1.0f, 0.1f, 1.0f}, {0, 0, 0, 0.0f}}});
-    // spheres.push_back({{0.0f, 1.5f, 1.5f}, 0.9f, {{0.10f, 0.2f, 1.0f, 1.0f}, {0, 0, 0, 0.0f}}});
 
 
     this->renderScale = 0.5f;
+
+
+    this->skybox = ren::Texture::load(skyBoxPath.get(), VK_FORMAT_R8G8B8A8_SRGB);
 
     rtPSO.debugName = "Raytracer";
     rtPSO.program = ren::getShader("raytrace", "ren/pass/fullscreen");
@@ -162,6 +126,7 @@ class RaytraceViewport : public ren::EditorViewport {
     root.set("spheres", sphereBuf->getGPUAddress());
     root.set("accumulatedFrames", accumulatedFrames);
     root.set("accumulation", accumulation->getGPUAddress());
+    root.set("skyboxHdri", skybox);
 
     shader.drawFullscreenTriangle();
 
@@ -204,6 +169,43 @@ class RaytraceViewport : public ren::EditorViewport {
                sphere.material.emissionColor.x, sphere.material.emissionColor.y, sphere.material.emissionColor.z, sphere.material.emissionColor.w);
       }
     }
+  }
+
+  void onBeforeGraph(ren::CommandEncoder &encoder) override {
+    const glm::uvec2 size = getRenderSize();
+    const size_t pixelCount = static_cast<size_t>(size.x) * size.y;
+    if (!accumulation || accumulation->count() != pixelCount) {
+      // Earlier frames can still be using the old buffer. Like a graph image
+      // resize, stall until they finish before the buffer is freed.
+      getVulkan().waitForIdle();
+      accumulation = ren::makeBox<StorageBuffer<glm::vec4>>(pixelCount);
+    }
+
+    const bool cameraStill = nearlyEqual(view, lastView) && nearlyEqual(projection, lastProjection);
+    const bool sceneSame = size == lastSize && maxBounces == lastMaxBounces;
+    if (!accumulate || !cameraStill || !sceneSame) {
+      accumulatedFrames = 0;
+    }
+    lastView = view;
+    lastProjection = projection;
+    lastSize = size;
+    lastMaxBounces = maxBounces;
+
+    // The previous frame's fragment shader wrote the buffer, and this frame's
+    // fragment shader reads and writes it again.
+    const VkMemoryBarrier2 barrier{
+        .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
+        .srcStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+        .srcAccessMask = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
+        .dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+        .dstAccessMask = VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
+    };
+    const VkDependencyInfo dependency{
+        .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+        .memoryBarrierCount = 1,
+        .pMemoryBarriers = &barrier,
+    };
+    vkCmdPipelineBarrier2(encoder.buf(), &dependency);
   }
 };
 
