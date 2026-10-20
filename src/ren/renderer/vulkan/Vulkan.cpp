@@ -214,9 +214,10 @@ void ren::VulkanInstance::init_device(VkSurfaceKHR surface) {
   int required_major = 1;
   int required_minor = 3;
 
-  // Select the GPU to use (I think we'd need to figure out how to pick the
-  // best one if you have multiple GPUs, but I don't so this is fine for now)
+  // Prefer a compatible discrete GPU. Other GPU types remain fallback options.
   vkb::PhysicalDeviceSelector selector{*vkbInstance};
+  selector.prefer_gpu_device_type(vkb::PreferredDeviceType::discrete);
+  selector.allow_any_gpu_device_type(false);
   VkPhysicalDeviceFeatures requiredFeatures = {};
   // requiredFeatures.geometryShader = VK_FALSE;    // Enable geometry shaders
   requiredFeatures.samplerAnisotropy = true;  // Enable anisotropic filtering

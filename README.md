@@ -11,6 +11,16 @@ make MODE=Release -j8
 dist/bin/editor
 ```
 
+REN prefers a discrete GPU that supports the required Vulkan features and
+presentation. It falls back to another compatible GPU if needed. Startup logs
+show the selected device under `Selected physical device`.
+
+Use `dist/bin/editor --no-vsync --max-fps 0` to remove the application frame
+limit and request `IMMEDIATE` presentation. If the surface does not support
+`IMMEDIATE`, REN tries `MAILBOX`, then `FIFO`.
+`MAILBOX` replaces pending frames but still synchronizes display updates
+with the monitor refresh.
+
 Run the headless test suite and the GPU compute smoke test:
 
 ```bash

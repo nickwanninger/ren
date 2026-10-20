@@ -37,10 +37,14 @@ namespace ren {
     if (info.enableVSync) {
       presentMode = VK_PRESENT_MODE_FIFO_RELAXED_KHR;
     }
+    swapchain_builder.set_desired_present_mode(presentMode);
+    if (!info.enableVSync) {
+      // MAILBOX replaces pending frames instead of queuing them for display.
+      swapchain_builder.add_fallback_present_mode(VK_PRESENT_MODE_MAILBOX_KHR);
+    }
 
     vkb::Swapchain vkb_swapchain =
         swapchain_builder.use_default_format_selection()
-            .set_desired_present_mode(presentMode)
             .set_image_usage_flags(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT)
             .set_desired_format({vulkan.presentFormat, vulkan.presentColorSpace})  // chosen by selectDevice()
             .set_desired_extent(deviceExtent.width, deviceExtent.height)           // Window size
