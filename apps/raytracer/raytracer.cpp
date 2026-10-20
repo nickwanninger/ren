@@ -15,6 +15,7 @@
 #include <ren/renderer/submission/SubmissionUnit.h>
 #include <ren/core/Result.h>
 #include <ren/renderer/Viewport.h>
+#include <ren/renderer/graph/tasks/BloomTask.h>
 #include <cstring>
 
 
@@ -79,6 +80,8 @@ class RaytraceViewport : public ren::EditorViewport {
 
   u32 debugView = 0;
   u32 debugTestScale = 2000;
+  float exposure = 0.0f;
+  BloomCompositeTask *bloom = nullptr;
   ref<Texture> skybox;
 
   void buildGraph() override {
@@ -99,9 +102,11 @@ class RaytraceViewport : public ren::EditorViewport {
     rtPSO.depthTest = false;
     rtPSO.depthWrite = false;
 
+    GraphHandle sceneColor;
     graph.pass("raytrace")
-        .createColorAttachment("output", {.relativeScale = glm::vec2(1.0f), .format = VK_FORMAT_R8G8B8A8_SRGB}, finalImage)
+        .createColorAttachment("sceneColor", {.relativeScale = glm::vec2(1.0f), .format = VK_FORMAT_R16G16B16A16_SFLOAT}, sceneColor)
         .render([this](GraphRenderPassContext &ctx) { this->runRaytracer(ctx.encoder); });
+    bloom = &addBloom(graph, sceneColor, finalImage);
   }
 
   void runRaytracer(ren::RenderPassEncoder &encoder) {
@@ -201,6 +206,8 @@ class RaytraceViewport : public ren::EditorViewport {
 
     root.set("debugView", debugView);
     root.set("debugTestScale", debugTestScale);
+    bloom->exposure = exposure;
+    bloom->bypass = debugView != 0;
 
     shader.drawFullscreenTriangle();
   }
@@ -210,6 +217,10 @@ class RaytraceViewport : public ren::EditorViewport {
     ImGui::Text("Raytracer viewport");
     const auto size = getRenderSize();
     ImGui::Text("Primary rays per frame: %zu", static_cast<size_t>(size.x) * size.y);
+    ImGui::SliderFloat("Exposure (stops)", &exposure, -10.0f, 10.0f, "%.2f");
+    if (bloom) {
+      bloom->inspect();
+    }
     ImGui::SeparatorText("Debug Views");
 
     ImGui::SliderInt("Debug View", reinterpret_cast<int *>(&debugView), 0, 2);

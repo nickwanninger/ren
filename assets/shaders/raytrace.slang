@@ -226,7 +226,7 @@ struct RaytraceFullScreenSurface : IFullscreenSurface {
     if (payload.didHit) {
       float3 shadowOrigin = payload.hitPoint + payload.normal * kShadowOriginOffset;
       // Keep a small ambient term so blocked surfaces retain their albedo.
-      color *= lerp(0.15f, 1.0f, sunVisibility(shadowOrigin, sunDirection, sunTracer));
+      color *= lerp(0.15f, 10.0f, sunVisibility(shadowOrigin, sunDirection, sunTracer));
     }
     stats += sunTracer.getStats();
 
