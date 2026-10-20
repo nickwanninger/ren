@@ -5,6 +5,7 @@
 #include <ren/core/ComponentRegistration.h>
 
 #include <imgui/imgui.h>
+#include <cinttypes>
 
 
 
@@ -26,7 +27,7 @@ namespace ren::editor {
       auto comp = compId.entity();
 
       // auto type = comp.type();
-      ImGui::Text("%s #%llu", compId.entity().path(".", "").c_str(), comp.raw_id());
+      ImGui::Text("%s #%" PRIu64, compId.entity().path(".", "").c_str(), comp.raw_id());
       const EcsComponent *comp_desc = comp.try_get<EcsComponent>();
       // const void *comp_data = e.try_get(comp);
       if (comp_desc) {
@@ -41,9 +42,9 @@ namespace ren::editor {
   static void drawEntityHeirarchy(Entity e) {
     char buf[64];
     if (e.name().length() > 0) {
-      snprintf(buf, sizeof(buf), "%s #%llu", e.name().c_str(), e.id());
+      snprintf(buf, sizeof(buf), "%s #%" PRIu64, e.name().c_str(), e.id());
     } else {
-      snprintf(buf, sizeof(buf), "Entity #%llu", e.id());
+      snprintf(buf, sizeof(buf), "Entity #%" PRIu64, e.id());
     }
     if (ImGui::TreeNode(buf)) {
       // iterate over the components and draw them.
@@ -82,8 +83,8 @@ namespace ren::editor {
         auto &comps = ren::getRegisteredComponents();
         for (const auto &comp : comps) {
           ImGui::Text("Registered Component: %s", comp.typeName);
-          ImGui::Text("  Size: %llu bytes", comp.typeSize);
-          ImGui::Text("  Alignment: %llu bytes", comp.typeAlignment);
+          ImGui::Text("  Size: %" PRIu64 " bytes", comp.typeSize);
+          ImGui::Text("  Alignment: %" PRIu64 " bytes", comp.typeAlignment);
         }
 
         ImGui::Separator();

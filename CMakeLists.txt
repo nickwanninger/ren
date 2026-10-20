@@ -72,6 +72,12 @@ set(CMAKE_BUILD_WITH_INSTALL_RPATH ON)
 set(ASSIMP_BUILD_TESTS OFF)
 set(ASSIMP_BUILD_STATIC_LIB ON)
 set(BUILD_SHARED_LIBS OFF)
+# Static dependencies are linked into the shared ren library.
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+# Resolve zlib before Assimp's finder starts preferring static system archives,
+# which may not have been compiled with PIC.
+find_package(ZLIB REQUIRED)
+set(ZLIB_LIBRARIES ZLIB::ZLIB)
 
 # Disable the assimp formats we don't want.
 set(ASSIMP_BUILD_ALL_IMPORTERS_BY_DEFAULT OFF)
@@ -83,6 +89,12 @@ set(ASSIMP_BUILD_OBJ_IMPORTER ON)
 # Don't install assimp, we just want to link against it statically.
 set(ASSIMP_INSTALL OFF)
 add_subdirectory(lib/assimp)
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  # Enable the large-file API used by Assimp's ZIP implementation.
+  set_property(SOURCE lib/assimp/contrib/zip/src/zip.c TARGET_DIRECTORY assimp
+    APPEND PROPERTY COMPILE_DEFINITIONS _LARGEFILE64_SOURCE)
+endif()
 
 # if on mac...
 if(APPLE)

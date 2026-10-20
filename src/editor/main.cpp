@@ -131,14 +131,14 @@ int main(int argc, char* argv[]) {
 
 
 
-  // if (loadArg.get() != "") {
-  //   loadMeshIntoScene(loadArg.get().c_str(), scaleArg.get());
-  // }
+  if (loadArg.get() != "") {
+    loadMeshIntoScene(loadArg.get().c_str(), scaleArg.get());
+  }
 
   // loadMeshIntoScene("/Users/nick/dev/Models/sponza.glb");
   // loadMeshIntoScene("/Users/nick/dev/Models/thinker.glb", 1);
 
-  ren::getAssetManager().importMesh("/Users/nick/dev/Models/sponza.glb");
+  //ren::getAssetManager().importMesh("/Users/nick/dev/Models/sponza.glb");
   // ren::getAssetManager().importMesh("assets/test/meshes/unit_cube.glb");
 
 
@@ -146,9 +146,6 @@ int main(int argc, char* argv[]) {
     testSaxpy();
     return 0;
   }
-
-
-  return 0;
 
   ren::backgroundWork([&]() {
     while (app.isRunning()) {

@@ -2,6 +2,10 @@
 #include <ren/assets/Mesh.h>
 #include <ren/core/Instrumentation.h>
 
+// Use TinyBVH's scalar path when the x86 build has no SIMD extensions enabled.
+#if (defined(__x86_64__) || defined(_M_X64)) && !defined(__SSE4_2__) && !defined(__AVX__) && !defined(_MSC_VER)
+#define TINYBVH_NO_SIMD
+#endif
 #define TINYBVH_IMPLEMENTATION
 #include <tinybvh/tiny_bvh.h>
 
