@@ -11,6 +11,7 @@ static const float kFogDensity = 0.012f;
 static const float kFogMaxDistance = 120.0f;
 static const float3 kFogColor = float3(0.45f, 0.65f, 0.9f);
 static const float kAlphaCutoff = 0.1f;
+static const float kShadowOriginOffset = 1e-3f;
 
 [[vk::push_constant]]
 cbuffer root {
@@ -122,6 +123,7 @@ AnyHitAction testAlpha<C : IHitContext>(TriangleAttributes attributes, C context
 struct AlbedoPayload {
   float3 color;
   float3 hitPoint;
+  float3 normal;
   bool didHit;
 }
 
@@ -138,6 +140,15 @@ struct AlbedoProgram : ITraceProgram {
   override static void closestHit<C : IHitContext>(inout Payload payload, TriangleAttributes attributes, C context) {
     payload.didHit = true;
     payload.hitPoint = context.worldRayOrigin() + context.worldRayDirection() * context.rayTCurrent();
+    uint instance = context.instanceIndex();
+    uint first = meshes[instance].indexOffset + context.primitiveIndex() * 3;
+    uint offset = meshes[instance].vertexOffset;
+    float3 a = vertices[offset + indices[first]].position;
+    float3 b = vertices[offset + indices[first + 1]].position;
+    float3 c = vertices[offset + indices[first + 2]].position;
+    float3 normal = normalize(mul(transpose((float3x3)context.worldToObject()), cross(b - a, c - a)));
+    // Offset toward the side seen by the primary ray, for either winding.
+    payload.normal = dot(normal, context.worldRayDirection()) > 0.0f ? -normal : normal;
     payload.color = sampleAlbedo(attributes, context).rgb;
   }
 
@@ -172,7 +183,8 @@ struct SunOcclusionProgram : ITraceProgram {
 float sunVisibility(float3 position, float3 direction, inout Tracer<SunOcclusionProgram, AppScene, true> tracer) {
   Ray ray;
   ray.update(position, direction);
-  ray.tMin = 1e-3f;
+  // The surface caller offsets the origin. Keep nearby wall intersections.
+  ray.tMin = 0.0f;
   ray.tMax = kBVHMiss;
   OcclusionPayload payload;
   payload.occluded = true;
@@ -212,8 +224,9 @@ struct RaytraceFullScreenSurface : IFullscreenSurface {
                          -sunBaseDirection.x * sunSin + sunBaseDirection.z * sunCos));
     var sunTracer = Tracer<SunOcclusionProgram, AppScene, true>(scene);
     if (payload.didHit) {
+      float3 shadowOrigin = payload.hitPoint + payload.normal * kShadowOriginOffset;
       // Keep a small ambient term so blocked surfaces retain their albedo.
-      color *= lerp(0.15f, 1.0f, sunVisibility(payload.hitPoint, sunDirection, sunTracer));
+      color *= lerp(0.15f, 1.0f, sunVisibility(shadowOrigin, sunDirection, sunTracer));
     }
     stats += sunTracer.getStats();
 

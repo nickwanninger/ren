@@ -22,9 +22,11 @@
 using namespace ren;
 
 
+static ren::Flag<float> renderScale("render-scale", 0.25, "raytracing scale");
 static ren::Flag<std::string> skyBoxPath("skybox", "assets/hdri/sky.jpg", "Path to the skybox texture to use in the viewport.");
 static ren::Flag<std::string> scenePath("scene", "assets/test/meshes/simple_scene.glb", "Path to the scene mesh");
-static ren::Flag<float> renderScale("render-scale", 0.25, "raytracing scale");
+static ren::Flag<float> scaleArg("scene-scale", 1.0f, "Uniform scale to apply to the loaded mesh");
+
 
 
 namespace shd {
@@ -80,7 +82,9 @@ class RaytraceViewport : public ren::EditorViewport {
   ref<Texture> skybox;
 
   void buildGraph() override {
-    ren::MeshScene::load(scenePath.get())->instantiate({});
+    ren::MeshScene::load("assets/test/meshes/unit_cube.glb")->instantiate({});
+    auto e = ren::MeshScene::load(scenePath.get())->instantiate({});
+    e.get_mut<ren::comp::Transform>().scale = glm::vec3(scaleArg.get());
 
 
     this->renderScale = ::renderScale.get();
@@ -199,7 +203,6 @@ class RaytraceViewport : public ren::EditorViewport {
     root.set("debugTestScale", debugTestScale);
 
     shader.drawFullscreenTriangle();
-
   }
 
 
@@ -218,9 +221,7 @@ class RaytraceViewport : public ren::EditorViewport {
       }
       ImGui::DragInt("Debug Test Scale", reinterpret_cast<int *>(&debugTestScale), 1, 10000);
     }
-
   }
-
 };
 
 
