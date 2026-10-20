@@ -24,6 +24,7 @@ using namespace ren;
 
 static ren::Flag<std::string> skyBoxPath("skybox", "assets/hdri/sky.jpg", "Path to the skybox texture to use in the viewport.");
 static ren::Flag<std::string> scenePath("scene", "assets/test/meshes/simple_scene.glb", "Path to the scene mesh");
+static ren::Flag<float> renderScale("render-scale", 0.25, "raytracing scale");
 
 
 namespace shd {
@@ -33,16 +34,11 @@ namespace shd {
     glm::vec4 color;
     glm::vec4 emissionColor = glm::vec4(0.0f);
     float smoothness = 0.0f;
-    float _pad[3] = {};
+    // Packed bindless TextureHandle. 0 means no texture.
+    u32 albedoTexture = 0;
+    float _pad[2] = {};
   };
   static_assert(sizeof(RayTracingMaterial) == 48);
-
-  struct Sphere {
-    glm::vec3 position;
-    float radius;
-    RayTracingMaterial material;
-  };
-
 
   // The padding makes the layout the same under std430, scalar and natural
   // layout rules.
@@ -57,7 +53,7 @@ namespace shd {
     u32 indexCount;
     // The indices are relative to this vertex in the MegaMeshBuffer.
     u32 vertexOffset;
-    u32 _pad;
+    u32 opaque = 1;
     // Device addresses of the ren::MeshBVH nodes and triangle list.
     u64 bvhNodes;
     u64 bvhTriangles;
@@ -77,66 +73,17 @@ namespace shd {
 
 class RaytraceViewport : public ren::EditorViewport {
  public:
-  std::vector<shd::Sphere> spheres;
   PipelineStateObject rtPSO;
-  u32 maxBounces = 4;
-  u32 raysPerPixel = 1;
-  // Next event estimation toward emissive spheres, with MIS.
-  bool lightSampling = true;
-  bool randomizeSeed = true;
-  u32 randomSeed = 0;
-
-  // Progressive accumulation. Each pixel keeps the running average of every
-  // frame since the last reset, in a buffer the graph does not own.
-  bool accumulate = true;
-  u32 accumulatedFrames = 0;
-  ren::Box<StorageBuffer<glm::vec4>> accumulation;
-
-  // What the current average was rendered with. Any change resets it.
-  glm::mat4 lastView = glm::mat4(0.0f);
-  glm::mat4 lastProjection = glm::mat4(0.0f);
-  glm::uvec2 lastSize = {0, 0};
-  u32 lastMaxBounces = 0;
-  bool lastLightSampling = true;
 
   u32 debugView = 0;
   u32 debugTestScale = 2000;
-
-  ref<MeshScene> scene;
-
-
   ref<Texture> skybox;
 
-  // A camera that moves less than this per matrix element counts as still.
-  static constexpr float kStillEpsilon = 1e-4f;
-
-  static bool nearlyEqual(const glm::mat4 &a, const glm::mat4 &b) {
-    for (int c = 0; c < 4; c++) {
-      for (int r = 0; r < 4; r++) {
-        if (glm::abs(a[c][r] - b[c][r]) > kStillEpsilon) {
-          return false;
-        }
-      }
-    }
-    return true;
-  }
-
-
   void buildGraph() override {
-    scene = ren::MeshScene::load(scenePath.get());
-    scene->instantiate({});
+    ren::MeshScene::load(scenePath.get())->instantiate({});
 
 
-    // spheres.push_back(
-    //     {{3.000000, 3.000000, 0.000000}, 1.000000, {{1.000000, 0.199827, 0.093137, 1.000000}, {1.000000, 0.009804, 0.009804, 1.676000}}});
-    // spheres.push_back(
-    //     {{0.000000, 2.000000, 0.000000}, 1.000000, {{0.123078, 0.965686, 0.123078, 1.000000}, {0.235486, 0.960784, 0.278151, 1.620000}}});
-    // spheres.push_back(
-    //     {{-3.000000, 1.000000, 0.000000}, 1.000000, {{0.000000, 0.029412, 1.000000, 1.000000}, {0.000000, 0.147059, 1.000000, 1.229000}}});
-
-
-
-    this->renderScale = 0.5f;
+    this->renderScale = ::renderScale.get();
 
 
     this->skybox = ren::Texture::load(skyBoxPath.get(), VK_FORMAT_R8G8B8A8_SRGB);
@@ -156,10 +103,7 @@ class RaytraceViewport : public ren::EditorViewport {
   void runRaytracer(ren::RenderPassEncoder &encoder) {
     auto shader = encoder.bindGraphics(rtPSO);
 
-    // alloate a buffer for the sphere data.
     auto &arena = encoder.getArena();
-    auto *sphereBuf = arena.push<StorageBuffer<shd::Sphere>>(this->spheres.size());
-    // sphereBuf->copyFromHost(this->spheres.data(), this->spheres.size());
 
 
     // construct the meshes from the scene.
@@ -169,6 +113,8 @@ class RaytraceViewport : public ren::EditorViewport {
     auto &mmb = ren::resource<ren::MegaMeshBuffer>();
 
     std::vector<shd::Mesh> meshes;
+    // World-space box of each mesh, for the top-level BVH.
+    std::vector<ren::AABB> meshBoxes;
     for (auto &r : world.renderables) {
       if (r.mesh->getBVH() == nullptr) {
         continue;
@@ -189,53 +135,64 @@ class RaytraceViewport : public ren::EditorViewport {
       mesh.bvhNodes = r.mesh->getBVH()->getNodeAddress();
       mesh.bvhTriangles = r.mesh->getBVH()->getTriangleAddress();
       mesh.material.color = glm::vec4(1.0f);
-      mesh.material.smoothness = 0.1f;
       if (r.material) {
         if (const auto *schema = r.material->getSchema()) {
           const auto &data = r.material->getCpuMaterialData();
           auto readField = [&](const auto &field, auto &value) {
-            if (field.scalarKind == ShaderReflection::ScalarKind::Float32 && field.byteSize == sizeof(value) &&
-                field.byteOffset <= data.size() && sizeof(value) <= data.size() - field.byteOffset) {
+            if (field.scalarKind == ShaderReflection::ScalarKind::Float32 && field.byteSize == sizeof(value) && field.byteOffset <= data.size() &&
+                sizeof(value) <= data.size() - field.byteOffset) {
               std::memcpy(&value, data.data() + field.byteOffset, sizeof(value));
             }
           };
           for (const auto &field : schema->fields) {
             if (field.name == "baseColor") {
               readField(field, mesh.material.color);
-            } else if (field.name == "emissiveFactor") {
-              readField(field, mesh.material.emissionColor);
-              mesh.material.emissionColor.a = 1.0f;
-            } else if (field.name == "roughness") {
-              float roughness = 1.0f - mesh.material.smoothness;
-              readField(field, roughness);
-              mesh.material.smoothness = 1.0f - glm::clamp(roughness, 0.0f, 1.0f);
+            } else if (field.name == "baseColorTexture" && field.byteSize == sizeof(u32) && field.byteOffset <= data.size() &&
+                       sizeof(u32) <= data.size() - field.byteOffset) {
+              std::memcpy(&mesh.material.albedoTexture, data.data() + field.byteOffset, sizeof(u32));
             }
           }
         }
       }
       meshes.push_back(mesh);
+
+      ren::AABB worldBox(glm::vec3(INFINITY), glm::vec3(-INFINITY));
+      for (int corner = 0; corner < 8; corner++) {
+        glm::vec3 p((corner & 1) ? bb.max.x : bb.min.x, (corner & 2) ? bb.max.y : bb.min.y, (corner & 4) ? bb.max.z : bb.min.z);
+        glm::vec3 worldPos = glm::vec3(r.transform * glm::vec4(p, 1.0f));
+        worldBox.min = glm::min(worldBox.min, worldPos);
+        worldBox.max = glm::max(worldBox.max, worldPos);
+      }
+      meshBoxes.push_back(worldBox);
     }
 
     auto *meshBuf = arena.push<StorageBuffer<shd::Mesh>>(meshes.size());
     meshBuf->copyFromHost(meshes.data(), meshes.size());
-    //
+
+    // The top-level BVH over the meshes. The transforms can change each
+    // frame, so build it each frame.
+    u64 sceneNodes = 0;
+    u64 sceneEntries = 0;
+    if (!meshBoxes.empty()) {
+      ren::BoundsBVH sceneBVH = ren::buildBoundsBVH(meshBoxes);
+      auto *nodeBuf = arena.push<StorageBuffer<ren::BVHNode>>(sceneBVH.nodes.size());
+      nodeBuf->copyFromHost(sceneBVH.nodes.data(), sceneBVH.nodes.size());
+      auto *entryBuf = arena.push<StorageBuffer<u32>>(sceneBVH.entries.size());
+      entryBuf->copyFromHost(sceneBVH.entries.data(), sceneBVH.entries.size());
+      sceneNodes = nodeBuf->getGPUAddress();
+      sceneEntries = entryBuf->getGPUAddress();
+    }
 
 
     auto root = shader.root("root");
-    root.set("randomSeed", randomizeSeed ? static_cast<u32>(rand()) : randomSeed);
-    root.set("maxBounces", this->maxBounces);
-    root.set("raysPerPixel", this->raysPerPixel);
-    root.set("lightSampling", static_cast<u32>(this->lightSampling));
-    root.set("numSpheres", static_cast<u32>(this->spheres.size()));
-    root.set("spheres", sphereBuf->getGPUAddress());
-    root.set("accumulatedFrames", accumulatedFrames);
-    root.set("accumulation", accumulation->getGPUAddress());
     root.set("skyboxHdri", skybox);
 
     root.set("vertices", mmb.getVertexBuffer().getGPUAddress());
     root.set("indices", mmb.getIndexBuffer().getGPUAddress());
     root.set("numMeshes", static_cast<u32>(meshes.size()));
     root.set("meshes", meshBuf->getGPUAddress());
+    root.set("sceneNodes", sceneNodes);
+    root.set("sceneEntries", sceneEntries);
 
 
     root.set("debugView", debugView);
@@ -243,23 +200,13 @@ class RaytraceViewport : public ren::EditorViewport {
 
     shader.drawFullscreenTriangle();
 
-    if (accumulate) {
-      accumulatedFrames++;
-    }
   }
 
 
   void inspect(void) {
     ImGui::Text("Raytracer viewport");
-    ImGui::SliderInt("Max Bounces", reinterpret_cast<int *>(&maxBounces), 1, 10);
-    ImGui::SliderInt("Rays Per Pixel", reinterpret_cast<int *>(&raysPerPixel), 1, 10);
-    ImGui::Checkbox("Light Sampling", &lightSampling);
-    ImGui::Checkbox("Accumulate", &accumulate);
-    ImGui::SameLine();
-    u64 raysPerFrame = raysPerPixel * (u64)(getRenderSize().x * getRenderSize().y);
-    u64 accumulatedRays = accumulatedFrames * raysPerFrame;
-    ImGui::Text("(%u frames, %.2fM rays)", accumulatedFrames, accumulatedRays / 1e6f);
-    ImGui::Text("Rays per frame: %zu", (size_t)raysPerFrame);
+    const auto size = getRenderSize();
+    ImGui::Text("Primary rays per frame: %zu", static_cast<size_t>(size.x) * size.y);
     ImGui::SeparatorText("Debug Views");
 
     ImGui::SliderInt("Debug View", reinterpret_cast<int *>(&debugView), 0, 2);
@@ -272,72 +219,8 @@ class RaytraceViewport : public ren::EditorViewport {
       ImGui::DragInt("Debug Test Scale", reinterpret_cast<int *>(&debugTestScale), 1, 10000);
     }
 
-    ImGui::Separator();
-    // Spheres
-    for (auto &sphere : spheres) {
-      ImGui::PushID(&sphere);
-      ImGui::DragFloat3("Position", &sphere.position.x, 0.1f);
-      ImGui::DragFloat("Radius", &sphere.radius, 0.1f, 0.1f, 10.0f);
-      ImGui::ColorEdit3("Color", &sphere.material.color.x);
-      ImGui::ColorEdit3("Emission Color", &sphere.material.emissionColor.x);
-      ImGui::SliderFloat("Emission Strength", &sphere.material.emissionColor.w, 0.0f, 10.0f);
-      ImGui::SliderFloat("Smoothness", &sphere.material.smoothness, 0.0f, 1.0f);
-      ImGui::PopID();
-      ImGui::Separator();
-      ImGui::Spacing();
-    }
-    if (ImGui::Button("Add Sphere")) {
-      spheres.push_back({{0.0f, 0.0f, 0.0f}, 1.0f, {{1.0f, 1.0f, 1.0f, 1.0f}, {0, 0, 0, 0.0f}}});
-    }
-
-    if (ImGui::Button("Dump Spheres")) {
-      // Print each sphere as valid c++ code to the console.
-      // This is so I can edit the spheres, but then copy them into the code to make them permanent.
-      for (auto &sphere : spheres) {
-        printf("spheres.push_back({{%f, %f, %f}, %f, {{%f, %f, %f, %f}, {%f, %f, %f, %f}}});\n", sphere.position.x, sphere.position.y,
-               sphere.position.z, sphere.radius, sphere.material.color.x, sphere.material.color.y, sphere.material.color.z, sphere.material.color.w,
-               sphere.material.emissionColor.x, sphere.material.emissionColor.y, sphere.material.emissionColor.z, sphere.material.emissionColor.w);
-      }
-    }
   }
 
-  void onBeforeGraph(ren::CommandEncoder &encoder) override {
-    const glm::uvec2 size = getRenderSize();
-    const size_t pixelCount = static_cast<size_t>(size.x) * size.y;
-    if (!accumulation || accumulation->count() != pixelCount) {
-      // Earlier frames can still be using the old buffer. Like a graph image
-      // resize, stall until they finish before the buffer is freed.
-      getVulkan().waitForIdle();
-      accumulation = ren::makeBox<StorageBuffer<glm::vec4>>(pixelCount);
-    }
-
-    const bool cameraStill = nearlyEqual(view, lastView) && nearlyEqual(projection, lastProjection);
-    const bool sceneSame = size == lastSize && maxBounces == lastMaxBounces && lightSampling == lastLightSampling;
-    if (!accumulate || !cameraStill || !sceneSame) {
-      accumulatedFrames = 0;
-    }
-    lastView = view;
-    lastProjection = projection;
-    lastSize = size;
-    lastMaxBounces = maxBounces;
-    lastLightSampling = lightSampling;
-
-    // The previous frame's fragment shader wrote the buffer, and this frame's
-    // fragment shader reads and writes it again.
-    const VkMemoryBarrier2 barrier{
-        .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
-        .srcStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
-        .srcAccessMask = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
-        .dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
-        .dstAccessMask = VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
-    };
-    const VkDependencyInfo dependency{
-        .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-        .memoryBarrierCount = 1,
-        .pMemoryBarriers = &barrier,
-    };
-    vkCmdPipelineBarrier2(encoder.buf(), &dependency);
-  }
 };
 
 

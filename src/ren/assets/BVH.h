@@ -6,6 +6,8 @@
 
 namespace ren {
 
+  struct AABB;
+
   // One BVH node in the 64-byte layout from Aila and Laine (tinybvh BVH_GPU).
   // A node holds the boxes of its two children, so one fetch tests both. The
   // shaders use the same layout.
@@ -45,5 +47,16 @@ namespace ren {
     // entries.
     Box<StorageBuffer<u32>> triangles;
   };
+
+
+  // A BVH over boxes, in the same layout as MeshBVH. Each leaf entry is the
+  // index of a box. The root is node 0, and it is always an inner node.
+  struct BoundsBVH {
+    std::vector<BVHNode> nodes;
+    std::vector<u32> entries;
+  };
+
+  // Builds on the CPU. boxes must not be empty.
+  BoundsBVH buildBoundsBVH(std::span<const AABB> boxes);
 
 }  // namespace ren
