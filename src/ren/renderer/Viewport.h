@@ -6,6 +6,7 @@
 #include <ren/renderer/pipelines/PipelineStateObject.h>
 
 #include <functional>
+#include <imgui/imgui.h>
 
 namespace ren {
 
@@ -207,6 +208,9 @@ namespace ren {
      */
     bool drawWindow(const char *title, float dt, bool *open = nullptr);
 
+    // Resolve the image requested by drawWindow before ImGui records GPU commands.
+    void resolveImGuiImage();
+
     /// The input captured during the last drawWindow() call.
     const ViewportInput &getInput() const { return input; }
 
@@ -223,6 +227,11 @@ namespace ren {
     /// Draw the ImGuizmo view cube in the top-right corner of the viewport,
     /// and apply its rotation to the camera.
     void drawViewCube(glm::vec2 origin, glm::vec2 extent);
+
+    // Only an indirect descriptor reference. ImageResource owns the descriptor.
+    // Do not register this entry in ImGui's texture upload queue.
+    ImTextureData displayTexture;
+    bool imageRequested = false;
 
     ViewportInput input;
     /// True while a right-drag look is in progress. Tracked per viewport so a

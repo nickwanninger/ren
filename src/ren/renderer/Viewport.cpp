@@ -187,10 +187,23 @@ namespace ren {
 
   void Viewport::inspect(void) { graph.inspect(); }
 
+  void EditorViewport::resolveImGuiImage() {
+    if (!imageRequested) {
+      return;
+    }
+    auto descriptor = getImGuiTextureID();
+    if (descriptor == VK_NULL_HANDLE) {
+      throw std::runtime_error("Viewport image is unavailable before ImGui recording");
+    }
+    displayTexture.SetTexID((ImTextureID)descriptor);
+  }
+
 
   // ------------------------------------------------------------------ //
 
   bool EditorViewport::drawWindow(const char *title, float dt, bool *open) {
+    imageRequested = false;
+    displayTexture.SetTexID(ImTextureID_Invalid);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
     const bool visible = ImGui::Begin(title, open, ImGuiWindowFlags_MenuBar);
     ImGui::PopStyleVar();  // Popped right after Begin so nested widgets are unaffected.
@@ -267,8 +280,9 @@ namespace ren {
     // Draw the rendered image at the top-left. The image is filled in later
     // this frame, during the render phase.
     ImGui::SetCursorScreenPos(origin);
-    if (auto texture = getImGuiTextureID()) {
-      ImGui::Image((ImTextureID)texture, extent);
+    if (getFinalImage()) {
+      imageRequested = true;
+      ImGui::Image(displayTexture.GetTexRef(), extent);
     }
 
     drawViewCube(glm::vec2(origin.x, origin.y), glm::vec2(extent.x, extent.y));

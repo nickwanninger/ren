@@ -313,6 +313,7 @@ class RaytraceWindow : public ren::Window {
 
     m_viewport->drawWindow("Viewport A", m_deltaTime);
     m_viewport->render(renderer);
+    m_viewport->resolveImGuiImage();
 
     auto encoder = frame.getMainCommandEncoder();
     auto timestampTicket = encoder->beginTimestampQuery("FullScreenPass");
