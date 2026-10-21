@@ -25,15 +25,16 @@ namespace rentest {
     u32 frames = 3;
     // The time step of each frame, in seconds. The wall clock is not used.
     float deltaTime = 1.0f / 60.0f;
-    // What a person must see in the window if the test passes. The
-    // interactive mode shows it.
-    const char *expect = "";
     // The largest mean error (0 to 1) of the final image against the golden
     // image. See GoldenComparison.
     float goldenTolerance = 0.5f / 255.0f;
     // How the readback maps a float final image to 8 bits, for the golden
     // image and checkPixel(). It does not change an RGBA8 image.
     FloatEncoding floatEncoding = FloatEncoding::Srgb;
+    // What a person must see in the window if the test passes. The
+    // interactive mode shows it. It is last, so that a designated initializer
+    // can end with the long text.
+    const char *expect = "";
   };
 
 
