@@ -208,6 +208,6 @@ namespace ren::eui {
     auto &am = ren::ensureResource<ren::AssetManager>();
 
 
-    // loadRenFonts(am);
+    loadRenFonts(am);
   }
 }  // namespace ren::eui

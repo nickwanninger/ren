@@ -6,7 +6,6 @@
 #include <ren/renderer/Descriptors.h>
 #include <spirv_reflect/spirv_reflect.h>
 #include <ren/misc/json_serialize.h>
-#include <ren/core/File.h>
 #include <ren/renderer/shader/ShaderReflection.h>
 #include <vector>
 
