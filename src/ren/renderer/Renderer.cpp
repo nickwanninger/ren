@@ -228,6 +228,7 @@ namespace ren {
     frame.beginFrame();
     graph.beginFrame();
     graphImages.beginFrame();
+    frameDiscarded = false;
   }
 
   void Renderer::prepareGraph() { graph.prepareFrame(this, &getFrameUnit()); }
@@ -240,13 +241,15 @@ namespace ren {
   void Renderer::discardFrame(Window &window) {
     graph.discard();
     graphImages.beginFrame();
+
+    // Reset the command buffer, and record only a clear pass. The acquired
+    // swapchain image must still be submitted and presented.
     auto &frame = getFrameUnit();
     frame.beginFrame();
-    prepareGraph();
-    recordGraph();
-    // Submit a clear pass to consume the acquired semaphore and release the image.
     auto pass = frame.getMainCommandEncoder()->beginRenderPass(*getDisplayPass(), window.getSwapchain().currentTarget());
     pass.end();
+
+    frameDiscarded = true;
   }
 
   void Renderer::endFrame(Window &window) {
@@ -264,9 +267,10 @@ namespace ren {
                                                   .signalSemaphores = signalSems,
                                               });
 
-    // Detached windows sample graph images after the main work on the same queue.
+    // Detached windows sample graph images after the main work on the same
+    // queue. A discarded frame has no ImGui draw data, so they are not drawn.
     ImGui::UpdatePlatformWindows();
-    if (ImGui::GetPlatformIO().Viewports.Size > 1) {
+    if (!frameDiscarded && ImGui::GetPlatformIO().Viewports.Size > 1) {
       ImGui::RenderPlatformWindowsDefault();
       frame.extendCompletion(*vulkan->graphicsQueue);
     }

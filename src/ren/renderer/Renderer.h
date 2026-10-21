@@ -44,9 +44,20 @@ namespace ren {
     // End the current frame. This will submit the command buffer to the GPU and
     // present the swapchain image to the window.
     void endFrame(Window &window);
+
+    // Prepare the graph for this frame. Call after the UI enqueues its work
+    // and requests its images.
     void prepareGraph();
+
+    // Connect the requested ImGui images, then record the graph. Call before
+    // the window records its own passes.
     void recordGraph();
+
+    // Drop the work of this frame after an error. The frame records only a
+    // clear pass, so endFrame() still submits and presents the acquired image.
     void discardFrame(Window &);
+
+    // Wait for all frames, and release what they retain. Call at shutdown.
     void releaseCompletedFrames();
     RenderGraph &getGraph() { return graph; }
     ImGuiImages &getGraphImages() { return graphImages; }
@@ -138,6 +149,7 @@ namespace ren {
    private:
     RenderGraph graph;
     ImGuiImages graphImages{graph};
+    bool frameDiscarded = false;  // Set by discardFrame(). The frame has no ImGui draw data.
     ref<PipelineCache> pipelineCache;
     ref<ShaderCache> shaderCache;
     ref<RenderPass> currentPass = nullptr;

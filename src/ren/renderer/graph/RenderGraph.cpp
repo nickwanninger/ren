@@ -646,8 +646,14 @@ namespace ren {
 
 
   void RenderGraph::submitted() {
+    // Nothing was recorded, e.g. the frame was discarded. Drop the work of
+    // this frame, and do not save state that no command produced.
     if (phase != Phase::Recorded && phase != Phase::Compiled) {
-      throw std::runtime_error("Cannot publish unfinished graph work");
+      if (!roots.empty()) {
+        ren::warnln("Enqueued graph work was not recorded in this frame");
+      }
+      discard();
+      return;
     }
 
     // The next frame starts its barriers from this access state.

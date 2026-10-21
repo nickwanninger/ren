@@ -43,12 +43,19 @@ namespace {
           .render([](GraphRenderPassContext &) {});
       ordinary = Texture::createSinglePixel("Ordinary user texture", 255, 0, 255, 255);
     }
+    // The frames that fail on purpose. Window::render() discards them.
+    bool expectedFailure(const std::string &message) const {
+      return (tick == 12 && message == "Expected preparation failure") || (tick == 30 && message == "Expected layout failure") ||
+             (tick == 33 && message == "Expected failure after preparation");
+    }
+
+
     void onRender(FrameContext &frame) override {
       ++tick;
       try {
         exercise(frame);
       } catch (const std::exception &error) {
-        if (tick == 12 && std::string(error.what()) == "Expected preparation failure") {
+        if (expectedFailure(error.what())) {
           throw;
         }
         failed = true;
@@ -79,6 +86,10 @@ namespace {
       }
       ImGui::SetNextWindowSize(ImVec2(300, 220), ImGuiCond_Always);
       ImGui::Begin("Current and previous");
+      // Fail with a window open. Window::render() must close it before EndFrame().
+      if (tick == 30) {
+        throw std::runtime_error("Expected layout failure");
+      }
       auto currentRef = renderer.getGraphImages().request(current);
       auto previousRef = renderer.getGraphImages().request(previous);
       ImGui::Image(currentRef, ImVec2(128, 64));
@@ -86,7 +97,8 @@ namespace {
       ImGui::Image((ImTextureID)ordinary->getImGui(), ImVec2(16, 16));
       ImGui::End();
       if (right) {
-        // Move this window outside the main OS window to exercise detached recording.
+        // Move this window outside the main OS window. ImGui viewports are not
+        // enabled, so the window does not detach, and the detached path is not tested.
         if (tick == 25) {
           ImGui::SetNextWindowPos(ImVec2(1100, 100), ImGuiCond_Always);
         }
@@ -111,6 +123,12 @@ namespace {
         verify(graph.resolve(previous) == last, "Previous mapping mismatch");
       }
       verify(graph.resolve(previous) != graph.resolve(current), "Temporal current overwrote history");
+
+      // Fail after preparation. The "Previous mapping mismatch" check in the next
+      // frame shows that this frame did not save its history.
+      if (tick == 33) {
+        throw std::runtime_error("Expected failure after preparation");
+      }
       // A mutation after capture cannot change prepared output or globals.
       a->renderSize = {1000, 1000};
       renderer.recordGraph();

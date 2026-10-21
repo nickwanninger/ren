@@ -11,6 +11,7 @@
 #include <fmt/core.h>
 
 #include <imgui.h>
+#include <imgui_internal.h>
 #include <backends/imgui_impl_vulkan.h>
 #include <backends/imgui_impl_sdl3.h>
 #include <imnodes/imnodes.h>
@@ -213,11 +214,23 @@ namespace ren {
 
   void Window::render(FrameContext &frame) {
     m_imguiDrawn = false;
+
+    // Save the ImGui stacks, so that an error in the middle of the UI can
+    // close the windows that it left open.
+    ImGuiErrorRecoveryState imguiState;
+    ImGui::ErrorRecoveryStoreState(&imguiState);
+
     try {
       onRender(frame);
     } catch (const std::exception &error) {
       ren::errln("Frame discarded: {}", error.what());
       if (!m_imguiDrawn) {
+        // The error is already reported, so recover without an assert.
+        auto &io = ImGui::GetIO();
+        bool asserts = io.ConfigErrorRecoveryEnableAssert;
+        io.ConfigErrorRecoveryEnableAssert = false;
+        ImGui::ErrorRecoveryTryToRecoverState(&imguiState);
+        io.ConfigErrorRecoveryEnableAssert = asserts;
         ImGui::EndFrame();
       }
       Renderer::get().discardFrame(*this);

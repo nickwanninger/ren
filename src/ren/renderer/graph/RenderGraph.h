@@ -117,8 +117,9 @@ namespace ren {
     void record();
 
     // Save the resource state and history of this frame (step 5). Call after
-    // the frame is submitted to the queue. Then the graph returns to the
-    // update step.
+    // the frame is submitted to the queue. If the graph did not record this
+    // frame, its work is dropped and nothing is saved. Then the graph returns
+    // to the update step.
     void submitted();
 
     // Drop the work of this frame and return to the update step. This does
