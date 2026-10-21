@@ -4,6 +4,8 @@
 #include <ren/core/Instrumentation.h>
 #include <ren/misc/DeprecationLogger.h>
 
+#include <atomic>
+#include <mutex>
 #include <vector>
 #include <fmt/core.h>
 #include <fstream>
@@ -42,7 +44,28 @@ namespace {
     }
     return "UNKNOWN";
   }
+
+
+  // The layers can call the debug callback from any thread.
+  std::atomic<u64> g_validationErrors{0};
+  std::mutex g_lastValidationErrorMutex;
+  std::string g_lastValidationError;
+
+  void recordValidationError(const char* id, const char* message) {
+    std::lock_guard lock(g_lastValidationErrorMutex);
+    g_lastValidationError = fmt::format("{} {}", id, message);
+    g_validationErrors++;
+  }
 }  // namespace
+
+
+u64 ren::getValidationErrorCount(void) { return g_validationErrors.load(); }
+
+
+std::string ren::getLastValidationError(void) {
+  std::lock_guard lock(g_lastValidationErrorMutex);
+  return g_lastValidationError;
+}
 
 // Custom debug callback - called by validation layers
 static VKAPI_ATTR VkBool32 VKAPI_CALL vulkanDebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
@@ -81,6 +104,10 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL vulkanDebugCallback(VkDebugUtilsMessageSev
   // if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
   //   ren::errln("^^^ VALIDATION ERROR - This may cause crashes or incorrect rendering ^^^");
   // }
+
+  if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT && (messageType & VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT)) {
+    recordValidationError(pCallbackData->pMessageIdName ? pCallbackData->pMessageIdName : "", pCallbackData->pMessage ? pCallbackData->pMessage : "");
+  }
 
   // Return VK_FALSE to continue execution (VK_TRUE would abort the Vulkan call)
   // Only validation layer should ever return VK_TRUE, and only in specific cases

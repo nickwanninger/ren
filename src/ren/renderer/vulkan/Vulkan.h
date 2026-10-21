@@ -35,6 +35,14 @@ namespace ren {
   // True if a depth format also has a stencil component.
   bool hasStencilComponent(VkFormat format);
 
+  // The number of validation errors that the debug callback received since the
+  // program started, over all Vulkan instances. Tools and tests compare it
+  // before and after their work. Always zero without --validation.
+  u64 getValidationErrorCount(void);
+
+  // The text of the last validation error, or an empty string.
+  std::string getLastValidationError(void);
+
 
   template <typename T>
   using VulkanResult = Result<T, VkResult>;
