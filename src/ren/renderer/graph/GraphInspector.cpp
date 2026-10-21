@@ -1,7 +1,6 @@
 #include <ren/renderer/graph/RenderGraph.h>
 #include <ren/renderer/Renderer.h>
 #include <imgui/imgui.h>
-#include <vulkan/vk_enum_string_helper.h>
 #include <unordered_set>
 
 namespace ren {
@@ -183,8 +182,7 @@ namespace ren {
     }
 
     const auto &image = *storage->image;
-    ImGui::TextDisabled("%u x %u, %s%s", image.getWidth(), image.getHeight(), string_VkFormat(image.getFormat()),
-                        resource->temporal ? ", temporal" : "");
+    ImGui::TextDisabled("%u x %u%s", image.getWidth(), image.getHeight(), resource->temporal ? ", temporal" : "");
 
     // Fit the image to the width of the panel.
     float width = std::max(1.0f, ImGui::GetContentRegionAvail().x);
