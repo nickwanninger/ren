@@ -126,7 +126,10 @@ namespace ren {
     // not save resource state or history.
     void discard();
 
-    // Show the registered tasks in ImGui.
+    // Draw the graph inspector: a list of the registered tasks, and the
+    // details and output images of the selected task. Call it during layout,
+    // before prepareFrame(), because it requests images from ImGuiImages.
+    // Showing an image does not make its producer run.
     void inspect();
 
     // These steps are separate for tests. prepareFrame() and record() call
@@ -179,6 +182,10 @@ namespace ren {
     // so a handle does not keep its producer alive.
     std::unordered_map<u64, std::weak_ptr<RenderTask>> producers;
 
+    // The tasks of the last submitted frame, in order. For the inspector.
+    std::vector<std::weak_ptr<RenderTask>> lastOrder;
+    std::weak_ptr<RenderTask> inspectedTask;  // The task that the inspector shows.
+
     // The rest of the state is for the current frame. discard() clears it.
 
     std::vector<ref<RenderTask>> roots;  // The enqueued tasks.
@@ -223,6 +230,15 @@ namespace ren {
     // Add a barrier from the last access of the storage to this access. Reads
     // accumulate until the next write.
     void appendAccess(ref<GraphStorage>, GraphAccess);
+
+    // Parts of the inspector. See GraphInspector.cpp.
+    using TaskPositions = std::unordered_map<const RenderTask *, size_t>;  // Position in the last frame.
+    void inspectTaskList(const TaskPositions &);
+    void inspectSelection();
+    void inspectTask(RenderTask &);
+    void inspectUsage(const RenderTask &, const GraphHandleUsage &, bool input) const;
+    void inspectImage(GraphHandle) const;
+    std::string producerName(u64 task) const;
     friend class RenderTask;
     friend class GraphScope;
   };

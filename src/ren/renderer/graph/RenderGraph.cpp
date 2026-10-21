@@ -652,6 +652,7 @@ namespace ren {
       if (!roots.empty()) {
         ren::warnln("Enqueued graph work was not recorded in this frame");
       }
+      lastOrder.clear();
       discard();
       return;
     }
@@ -674,6 +675,7 @@ namespace ren {
       }
     }
 
+    lastOrder.assign(schedule.tasks.begin(), schedule.tasks.end());
     discard();
   }
 
@@ -694,20 +696,5 @@ namespace ren {
     requireUpdate();
     std::erase_if(registry, [](const auto &entry) { return entry.expired(); });
     std::erase_if(producers, [](const auto &entry) { return entry.second.expired(); });
-  }
-
-
-  void RenderGraph::inspect() {
-    ImGui::TextUnformatted("Renderer graph");
-    for (auto &entry : registry) {
-      if (auto task = entry.lock()) {
-        ImGui::PushID(task.get());
-        if (ImGui::TreeNode(task->name().c_str())) {
-          task->inspect();
-          ImGui::TreePop();
-        }
-        ImGui::PopID();
-      }
-    }
   }
 }  // namespace ren

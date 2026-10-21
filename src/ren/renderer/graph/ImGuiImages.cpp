@@ -9,10 +9,11 @@ namespace ren {
   }
 
 
-  ImTextureRef ImGuiImages::request(GraphHandle handle) {
+  ImTextureRef ImGuiImages::request(GraphHandle handle, bool optional) {
     entries.emplace_back();
     auto &entry = entries.back();
     entry.handle = handle;
+    entry.optional = optional;
     entry.texture.SetTexID(ImTextureID_Invalid);
     return entry.texture.GetTexRef();
   }
@@ -20,7 +21,12 @@ namespace ren {
 
   void ImGuiImages::resolve(SubmissionUnit &submission) {
     for (auto &entry : entries) {
-      auto image = graph.displayImage(entry.handle);
+      // An optional image without storage skips displayImage(), which throws for it.
+      ref<ImageStorage> image;
+      if (!entry.optional || graph.resolve(entry.handle)) {
+        image = graph.displayImage(entry.handle);
+      }
+
       if (!image) {
         // History that is not available shows a black pixel.
         if (!placeholder) {

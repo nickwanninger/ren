@@ -36,8 +36,10 @@ namespace ren {
     // Return a texture for ImGui::Image() that shows the image of a handle in
     // this frame. Call it during layout, before Renderer::recordGraph(). This
     // does not make the producer of the image run. History that is not
-    // available shows a black pixel.
-    ImTextureRef request(GraphHandle image);
+    // available shows a black pixel. An optional image without storage (e.g.
+    // of a task that never ran) also shows the black pixel; a required one
+    // makes resolve() throw.
+    ImTextureRef request(GraphHandle image, bool optional = false);
 
     // Write the descriptor of each requested image into its entry. Call after
     // RenderGraph::prepareFrame() and before RenderGraph::record(), because
@@ -65,6 +67,7 @@ namespace ren {
     // One request() call. texture.TexID is invalid until resolve().
     struct Entry {
       GraphHandle handle;
+      bool optional = false;
       ImTextureData texture;
     };
     RenderGraph &graph;
