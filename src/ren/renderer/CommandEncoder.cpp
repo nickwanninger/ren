@@ -200,12 +200,13 @@ namespace ren {
     if (clearValues.empty()) {
       for (const auto &attachment : attachments) {
         if (attachment.loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR) {
-          // If the attachment is a color attachment, clear it to white.
-          if (attachment.format != VK_FORMAT_D32_SFLOAT && attachment.format != VK_FORMAT_D24_UNORM_S8_UINT) {
-            clearValues.push_back({.color = {{0.0f, 0.0f, 0.0f, 0.0f}}});
-          } else {
-            // Otherwise, it's a depth attachment, clear it to 1.0f.
+          // VkClearValue is a union, so a depth attachment must get the
+          // depthStencil member. A color value there reads as depth 0.
+          if (isDepthFormat(attachment.format)) {
             clearValues.push_back({.depthStencil = {1.0f, 0}});
+          } else {
+            // A color attachment clears to transparent black.
+            clearValues.push_back({.color = {{0.0f, 0.0f, 0.0f, 0.0f}}});
           }
         } else {
           // If the attachment is not cleared, we don't need to specify a clear value.

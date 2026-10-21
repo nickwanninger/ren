@@ -35,6 +35,9 @@ namespace ren {
   // True if a depth format also has a stencil component.
   bool hasStencilComponent(VkFormat format);
 
+  // True if the format has a depth component, with or without stencil.
+  bool isDepthFormat(VkFormat format);
+
   // The number of validation errors that the debug callback received since the
   // program started, over all Vulkan instances. Tools and tests compare it
   // before and after their work. Always zero without --validation.
