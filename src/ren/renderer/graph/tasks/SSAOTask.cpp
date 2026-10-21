@@ -18,7 +18,7 @@ namespace ren {
     this->in.depth = depth;
 
     auto scale = glm::vec2(fscale);
-    this->out.ssao = addColorAttachment("ssao", {.relativeScale = scale, .format = ssaoFormat});
+    this->out.ssao = addColorAttachment("ssao", {.size = ImageSize::viewRelative(scale.x), .format = ssaoFormat});
 
     this->read(in.depth, ren::GraphAccess::ShaderRead);
 
@@ -32,16 +32,16 @@ namespace ren {
     pso.depthWrite = false;
   }
 
-  void SSAOTask::run(ren::GraphRenderPassContext &ctx) {
+  void SSAOTask::run(ren::GraphRenderPassContext &ctx) const {
     // The shader picks the kernel rotation from the pixel position.
-    auto target = graph().getImage(out.ssao);
+    auto target = ctx.resources.getImage(out.ssao);
     glm::vec2 targetSize = glm::vec2(target->getWidth(), target->getHeight());
-    auto depthImage = graph().getImage(in.depth);
+    auto depthImage = ctx.resources.getImage(in.depth);
     glm::vec2 depthSize = glm::vec2(depthImage->getWidth(), depthImage->getHeight());
 
     auto shader = ctx.encoder.bindGraphics(pso);
     auto root = shader.root("root");
-    root.set("depth", graph().get<ren::ImageResource>(in.depth)->textureHandle());
+    root.set("depth", ctx.resources.texture(in.depth));
     root.set("targetSize", targetSize);
     root.set("depthSize", depthSize);
     root.set("radius", radius);
@@ -55,7 +55,6 @@ namespace ren {
     ImGui::DragFloat("Bias", &bias, 0.001f, 0.0f, 1.0f);
     ImGui::SliderInt("Samples", &sampleCount, 1, 64);
     ImGui::Separator();
-    graph().getResource(out.ssao)->inspect();
   }
 
 
@@ -69,7 +68,7 @@ namespace ren {
     this->in.normal = normalHandle;
 
     auto scale = glm::vec2(fscale);
-    this->out.ssao_blurred = addColorAttachment("ssao_blurred", {.relativeScale = scale, .format = ssaoFormat});
+    this->out.ssao_blurred = addColorAttachment("ssao_blurred", {.size = ImageSize::viewRelative(scale.x), .format = ssaoFormat});
 
     this->read(in.ssao, ren::GraphAccess::ShaderRead);
     this->read(in.depth, ren::GraphAccess::ShaderRead);
@@ -84,23 +83,23 @@ namespace ren {
   }
 
 
-  void SSAOBlurTask::run(ren::GraphRenderPassContext &ctx) {
+  void SSAOBlurTask::run(ren::GraphRenderPassContext &ctx) const {
     // The taps step in SSAO texels, which are larger than output texels when
     // the SSAO runs at a lower scale.
-    auto ssaoImage = graph().getImage(in.ssao);
+    auto ssaoImage = ctx.resources.getImage(in.ssao);
     glm::vec2 ssaoTexelSize = 1.0f / glm::vec2(ssaoImage->getWidth(), ssaoImage->getHeight());
 
     auto shader = ctx.encoder.bindGraphics(pso);
     auto root = shader.root("root");
-    root.set("ssao", graph().get<ren::ImageResource>(in.ssao)->textureHandle());
-    root.set("depth", graph().get<ren::ImageResource>(in.depth)->textureHandle());
-    root.set("normal", graph().get<ren::ImageResource>(in.normal)->textureHandle());
+    root.set("ssao", ctx.resources.texture(in.ssao));
+    root.set("depth", ctx.resources.texture(in.depth));
+    root.set("normal", ctx.resources.texture(in.normal));
     root.set("ssaoTexelSize", ssaoTexelSize);
-    auto depthImage = graph().getImage(in.depth);
+    auto depthImage = ctx.resources.getImage(in.depth);
     root.set("depthSize", glm::vec2(depthImage->getWidth(), depthImage->getHeight()));
     shader.drawFullscreenTriangle();
   }
 
-  void SSAOBlurTask::inspect(void) { graph().getResource(out.ssao_blurred)->inspect(); }
+  void SSAOBlurTask::inspect(void) {}
 
 }  // namespace ren

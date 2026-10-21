@@ -101,9 +101,10 @@ namespace ren {
       return Some(index);
     }
 
+    // The caller makes sure that no pending command buffer uses this slot.
     void release(u32 index, RenTypeRef resource) {
-      // TODO: release it n frames later.
-      // TODO: remove it from the resource map to release our reference.
+      m_resources.erase(resource);
+      m_freelist.push_back(index);
     }
 
 

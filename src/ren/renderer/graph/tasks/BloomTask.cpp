@@ -31,7 +31,7 @@ namespace ren {
       , detail(detail)
       , upsample(upsample)
       , prefilter(prefilter) {
-    output = addColorAttachment("bloom", {.relativeScale = glm::vec2(scale), .format = VK_FORMAT_R16G16B16A16_SFLOAT});
+    output = addColorAttachment("bloom", {.size = ImageSize::viewRelative(scale), .format = VK_FORMAT_R16G16B16A16_SFLOAT});
     read(source, GraphAccess::ShaderRead);
     useLinearClamp(graph, source);
     if (upsample) {
@@ -41,15 +41,15 @@ namespace ren {
     setupFullscreen(pso, "BloomFilter", "ren/core/bloom_filter");
   }
 
-  void BloomFilterTask::run(GraphRenderPassContext &ctx) {
-    auto image = graph().getImage(source);
+  void BloomFilterTask::run(GraphRenderPassContext &ctx) const {
+    auto image = ctx.resources.getImage(source);
     auto shader = ctx.encoder.bindGraphics(pso);
     auto root = shader.root("root");
-    root.set("source", graph().get<ImageResource>(source)->textureHandle());
+    root.set("source", ctx.resources.texture(source));
     // Bind a valid texture even when the downsample branch does not use it.
     auto detailHandle = upsample ? detail : source;
-    auto detailImage = graph().getImage(detailHandle);
-    root.set("detail", graph().get<ImageResource>(detailHandle)->textureHandle());
+    auto detailImage = ctx.resources.getImage(detailHandle);
+    root.set("detail", ctx.resources.texture(detailHandle));
     root.set("sourceTexelSize", 1.0f / glm::vec2(image->getWidth(), image->getHeight()));
     root.set("detailTexelSize", 1.0f / glm::vec2(detailImage->getWidth(), detailImage->getHeight()));
     root.set("upsample", static_cast<u32>(upsample));
@@ -58,25 +58,25 @@ namespace ren {
     shader.drawFullscreenTriangle();
   }
 
-  void BloomFilterTask::inspect() { graph().getResource(output)->inspect(); }
+  void BloomFilterTask::inspect() {}
 
   BloomCompositeTask::BloomCompositeTask(RenderGraph &graph, GraphHandle scene, GraphHandle bloom)
       : RenderPassTask(graph)
       , scene(scene)
       , bloom(bloom) {
-    output = addColorAttachment("tonemapped", {.relativeScale = glm::vec2(1.0f), .format = VK_FORMAT_R8G8B8A8_SRGB});
+    output = addColorAttachment("tonemapped", {.size = ImageSize::viewRelative(1.0f), .format = VK_FORMAT_R8G8B8A8_SRGB});
     read(scene, GraphAccess::ShaderRead);
     read(bloom, GraphAccess::ShaderRead);
     useLinearClamp(graph, bloom);
     setupFullscreen(pso, "BloomComposite", "ren/core/bloom_composite");
   }
 
-  void BloomCompositeTask::run(GraphRenderPassContext &ctx) {
-    auto image = graph().getImage(bloom);
+  void BloomCompositeTask::run(GraphRenderPassContext &ctx) const {
+    auto image = ctx.resources.getImage(bloom);
     auto shader = ctx.encoder.bindGraphics(pso);
     auto root = shader.root("root");
-    root.set("scene", graph().get<ImageResource>(scene)->textureHandle());
-    root.set("bloom", graph().get<ImageResource>(bloom)->textureHandle());
+    root.set("scene", ctx.resources.texture(scene));
+    root.set("bloom", ctx.resources.texture(bloom));
     root.set("bloomTexelSize", 1.0f / glm::vec2(image->getWidth(), image->getHeight()));
     root.set("strength", strength);
     root.set("exposure", exposure);
@@ -91,7 +91,7 @@ namespace ren {
     }
   }
 
-  BloomCompositeTask &addBloom(RenderGraph &graph, GraphHandle scene, GraphHandle &output) {
+  BloomCompositeTask &addBloom(GraphScope &graph, GraphHandle scene, GraphHandle &output) {
     constexpr size_t levels = 5;
     std::array<GraphHandle, levels> down;
     std::array<float, levels> scales;

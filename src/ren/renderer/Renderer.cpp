@@ -3,6 +3,7 @@
 #include <ren/renderer/CommandEncoder.h>
 #include <ren/renderer/submission/SubmissionQueue.h>
 #include <ren/core/Window.h>
+#include <imgui/imgui.h>
 
 namespace ren {
 
@@ -48,6 +49,8 @@ namespace ren {
 
     g_frameUnit = nullptr;
     this->frames.clear();
+    graph.discard();
+    graphImages.clear();
 
     // For various reasons, we want to explicitly clear the render pass cache
     // before destroying the vulkan instance or anything else.
@@ -63,6 +66,15 @@ namespace ren {
     this->samplerHeap.reset();
     this->frameGlobalsAllocator.reset();
     this->vulkan.reset();
+  }
+
+  void Renderer::releaseCompletedFrames() {
+    for (auto &frame : frames) {
+      frame->waitForFence();
+      frame->releaseRetained();
+    }
+    graph.discard();
+    graphImages.clear();
   }
 
   void Renderer::waitForIdle(void) {
@@ -214,6 +226,27 @@ namespace ren {
     vulkan->frame_number += 1;
 
     frame.beginFrame();
+    graph.beginFrame();
+    graphImages.beginFrame();
+  }
+
+  void Renderer::prepareGraph() { graph.prepareFrame(this, &getFrameUnit()); }
+
+  void Renderer::recordGraph() {
+    graphImages.resolve(getFrameUnit());
+    graph.record();
+  }
+
+  void Renderer::discardFrame(Window &window) {
+    graph.discard();
+    graphImages.beginFrame();
+    auto &frame = getFrameUnit();
+    frame.beginFrame();
+    prepareGraph();
+    recordGraph();
+    // Submit a clear pass to consume the acquired semaphore and release the image.
+    auto pass = frame.getMainCommandEncoder()->beginRenderPass(*getDisplayPass(), window.getSwapchain().currentTarget());
+    pass.end();
   }
 
   void Renderer::endFrame(Window &window) {
@@ -230,6 +263,14 @@ namespace ren {
                                                   .waitStages = waitStages,
                                                   .signalSemaphores = signalSems,
                                               });
+
+    // Detached windows sample graph images after the main work on the same queue.
+    ImGui::UpdatePlatformWindows();
+    if (ImGui::GetPlatformIO().Viewports.Size > 1) {
+      ImGui::RenderPlatformWindowsDefault();
+      frame.extendCompletion(*vulkan->graphicsQueue);
+    }
+    graph.submitted();
 
     {
       VkSwapchainKHR swapchains[] = {swapchain.swapchain};

@@ -133,3 +133,19 @@ endif()
 
 add_subdirectory(src)
 add_subdirectory(apps)
+
+if(BUILD_TESTING)
+  add_executable(ren-tests tests/render_graph.cpp)
+  target_link_libraries(ren-tests PRIVATE ren)
+
+  add_executable(ren-graph-vulkan-tests tests/render_graph_vulkan.cpp)
+  target_link_libraries(ren-graph-vulkan-tests PRIVATE ren)
+
+  install(TARGETS ren-tests ren-graph-vulkan-tests RUNTIME DESTINATION bin)
+
+  # Run the installed binaries from the source root, like the apps, so that
+  # the rpath finds dist/lib and assets/ resolves.
+  add_test(NAME render-graph
+    COMMAND ${CMAKE_INSTALL_PREFIX}/bin/ren-tests
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+endif()

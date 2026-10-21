@@ -28,6 +28,11 @@ namespace ren {
     return begin();
   }
 
+  void FrameContext::extendCompletion(SubmissionQueue &queue) {
+    retain(m_inFlightFence);
+    m_inFlightFence = queue.submit({});
+  }
+
   void FrameContext::submitFrame(SubmissionQueue &queue, SubmissionInfo info) {
     m_inFlightFence = submitTo(queue, info);
   }

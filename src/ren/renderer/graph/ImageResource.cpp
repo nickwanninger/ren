@@ -1,284 +1,135 @@
 #include <ren/renderer/graph/ImageResource.h>
+#include <ren/renderer/graph/RunContext.h>
 #include <ren/renderer/Renderer.h>
-#include <ren/renderer/graph/RenderGraph.h>
-#include <fmt/core.h>
-#include <vulkan/vulkan.h>
-
-
-#include <imgui/imgui.h>
-#include <imgui/backends/imgui_impl_vulkan.h>
 
 namespace ren {
-
   namespace {
-    struct ImageBarrierInfo {
+    struct BarrierInfo {
       VkPipelineStageFlags stage;
       VkAccessFlags access;
       VkImageLayout layout;
     };
 
-    static ImageBarrierInfo getImageBarrierInfoForAccess(GraphAccess access) {
-      ImageBarrierInfo info;
 
+    // The pipeline stage, access, and layout of each graph access. ShaderRead
+    // is for reads whose stage is not known (e.g. ImGui), so it waits on all
+    // commands.
+    BarrierInfo barrierInfo(GraphAccess access) {
       switch (access) {
         case GraphAccess::RenderTarget:
-          info.stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-          info.access = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-
-          // TODO: is this correct? we have attachment.finalLayout set to this
-          // in RenderPass.cpp, but I think that is only for the swapchain?
-          info.layout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-          break;
+          return {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                  VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
         case GraphAccess::DepthTarget:
-          info.stage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-          info.access = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-          info.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-          break;
-        case GraphAccess::FragmentShaderRead:
-          info.stage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-          info.access = VK_ACCESS_SHADER_READ_BIT;
-          info.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-          break;
+          return {VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+                  VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+                  VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
         case GraphAccess::VertexShaderRead:
-          info.stage = VK_PIPELINE_STAGE_VERTEX_SHADER_BIT;
-          info.access = VK_ACCESS_SHADER_READ_BIT;
-          info.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-          break;
+          return {VK_PIPELINE_STAGE_VERTEX_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+        case GraphAccess::FragmentShaderRead:
+          return {VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
         case GraphAccess::ComputeShaderRead:
-          info.stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
-          info.access = VK_ACCESS_SHADER_READ_BIT;
-          info.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-          break;
+          return {VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
         case GraphAccess::ComputeShaderWrite:
-          info.stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
-          info.access = VK_ACCESS_SHADER_WRITE_BIT;
-          info.layout = VK_IMAGE_LAYOUT_GENERAL;
-          break;
+          return {VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT, VK_IMAGE_LAYOUT_GENERAL};
         case GraphAccess::ComputeShaderReadWrite:
-          info.stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
-          info.access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
-          info.layout = VK_IMAGE_LAYOUT_GENERAL;
-          break;
+          return {VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT, VK_IMAGE_LAYOUT_GENERAL};
         case GraphAccess::ShaderRead:
-          info.stage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
-          info.access = VK_ACCESS_SHADER_READ_BIT;
-          info.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-          break;
-          // No default to get compiler warning on missing cases
+          return {VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_ACCESS_SHADER_READ_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
       }
-
-      return info;
-    }
-
-    // Helper: determine aspect mask based on layout
-    static VkImageAspectFlags getAspectMask(GraphAccess initialAccess) {
-      if (initialAccess == ren::GraphAccess::DepthTarget) {
-        return VK_IMAGE_ASPECT_DEPTH_BIT;
-      } else {
-        return VK_IMAGE_ASPECT_COLOR_BIT;
-      }
+      throw std::runtime_error("Unsupported graph access");
     }
   }  // namespace
 
-  ImageResource::ImageResource(const GraphImageSpec &spec)
-      : spec(spec) {
-    this->type = GraphResourceType::Image;
-    this->image = nullptr;
+
+  ImageStorage::~ImageStorage() {
+    if (image) {
+      image->releaseSampledIndex();
+    }
+  }
+
+
+  TextureHandle ImageStorage::textureHandle() const { return TextureHandle::pack(image->sampledIndex(), sampler->index()); }
+
+
+  void ImageStorage::transition(RecordContext &ctx, const std::vector<GraphAccess> &from, GraphAccess to) const {
+    const auto destination = barrierInfo(to);
+
+    // Combine the stages of all earlier readers, so that a write waits for
+    // each of them. An empty from leaves the layout UNDEFINED.
+    VkPipelineStageFlags stages = 0;
+    VkAccessFlags accesses = 0;
+    VkImageLayout layout = VK_IMAGE_LAYOUT_UNDEFINED;
+    for (auto access : from) {
+      auto source = barrierInfo(access);
+      stages |= source.stage;
+      accesses |= source.access;
+      layout = source.layout;
+    }
+
+    // A combined depth/stencil format needs both aspects in a layout transition.
+    VkImageAspectFlags aspects = VK_IMAGE_ASPECT_COLOR_BIT;
+    if (depth) {
+      aspects = VK_IMAGE_ASPECT_DEPTH_BIT;
+      if (hasStencilComponent(image->getFormat())) {
+        aspects |= VK_IMAGE_ASPECT_STENCIL_BIT;
+      }
+    }
+
+    VkImageMemoryBarrier barrier{
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .srcAccessMask = accesses,
+        .dstAccessMask = destination.access,
+        .oldLayout = layout,
+        .newLayout = destination.layout,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = image->getImage(),
+        .subresourceRange = {.aspectMask = aspects, .baseMipLevel = 0, .levelCount = 1, .baseArrayLayer = 0, .layerCount = 1},
+    };
+
+    // With no earlier access, there is nothing to wait for.
+    auto sourceStages = stages ? stages : VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+    vkCmdPipelineBarrier(ctx.encoder.buf(), sourceStages, destination.stage, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+  }
+
+
+  ImageResource::ImageResource(const GraphImageSpec &spec, GraphAccess access)
+      : spec(spec)
+      , initialAccess(access) {
+    temporal = spec.temporal;
     sampler = Renderer::get().getSamplerCache().get({});
   }
 
-  bool ImageResource::update(RenderGraph &G) {
-    auto swapchainSize = G.getSwapchainSize();
 
-    bool isRelativeScale = spec.relativeScale.isSome();
-
-    // Determine if we need to rebuild
-    bool needsRebuild = false;
-
-    if (image == nullptr) {
-      // Image hasn't been allocated yet
-      needsRebuild = true;
-    } else if (isRelativeScale) {
-      auto relativeScale = spec.relativeScale.unwrap();
-      // For swapchain-relative images, check if size changed
-      u32 expectedWidth = static_cast<u32>(swapchainSize.x * relativeScale.x);
-      u32 expectedHeight = static_cast<u32>(swapchainSize.y * relativeScale.y);
-
-      if (expectedWidth < 1) {
-        expectedWidth = 1;
-      }
-      if (expectedHeight < 1) {
-        expectedHeight = 1;
-      }
-
-      u32 currentWidth = image->getWidth();
-      u32 currentHeight = image->getHeight();
-
-      if (currentWidth != expectedWidth || currentHeight != expectedHeight) {
-        needsRebuild = true;
-      }
-    }
-    // Fixed-size images are never rebuilt once allocated (handled by null check above)
-
-    if (needsRebuild) {
-      buildImage(swapchainSize);
-      return true;
-    }
-
-    return false;
+  bool ImageResource::compatible(const GraphStorage &storage, const CapturedView *view) const {
+    const auto &image = dynamic_cast<const ImageStorage &>(storage).image;
+    auto size = spec.size.resolve(view);
+    return image->getWidth() == size.x && image->getHeight() == size.y && image->getFormat() == spec.format;
   }
 
-  void ImageResource::buildImage(glm::uvec2 swapchainSize) {
-    bool isRelativeScale = spec.relativeScale.isSome();
 
-    assert(spec.relativeScale.isSome() || spec.absoluteSize.isSome());
+  ref<GraphStorage> ImageResource::allocate(const CapturedView *view) const {
+    auto size = spec.size.resolve(view);
+    auto result = make<ImageStorage>();
+    result->depth = initialAccess == GraphAccess::DepthTarget;
+    result->sampler = sampler;
 
-    u32 width = 0;
-    u32 height = 0;
-
-    if (spec.absoluteSize.isSome()) {
-      auto absoluteSize = spec.absoluteSize.unwrap();
-      width = absoluteSize.x;
-      height = absoluteSize.y;
-    } else {
-      auto relativeScale = spec.relativeScale.unwrap();
-      width = static_cast<u32>(swapchainSize.x * relativeScale.x);
-      height = static_cast<u32>(swapchainSize.y * relativeScale.y);
+    // Every graph image can be sampled, copied, and used as an attachment. Only
+    // images that a compute shader writes are storage images.
+    VkImageUsageFlags usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    usage |= result->depth ? VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT : VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    if (initialAccess == GraphAccess::ComputeShaderWrite || initialAccess == GraphAccess::ComputeShaderReadWrite) {
+      usage |= VK_IMAGE_USAGE_STORAGE_BIT;
     }
 
-
-    if (width < 1) {
-      width = 1;
-    }
-    if (height < 1) {
-      height = 1;
-    }
-
-    ren::ImageBuilder b(name);
-
-    // Set usage flags based on initial access type
-    switch (initialAccess) {
-      case GraphAccess::RenderTarget:
-        b.setUsage(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
-                   VK_IMAGE_USAGE_TRANSFER_DST_BIT);
-        break;
-      case GraphAccess::DepthTarget:
-        b.setUsage(VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
-                   VK_IMAGE_USAGE_TRANSFER_DST_BIT);
-        b.setViewAspectMask(VK_IMAGE_ASPECT_DEPTH_BIT);
-        break;
-      default:
-        b.setUsage(VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT);
-        break;
-    }
-
-    b.setWidth(width)
-        .setHeight(height)
-        .setFormat(spec.format)
-        .setTiling(VK_IMAGE_TILING_OPTIMAL)
-        .setSamples(VK_SAMPLE_COUNT_1_BIT)
-        .setMipLevels(1)
-        .setArrayLayers(1)
-        .setInitialLayout(VK_IMAGE_LAYOUT_UNDEFINED);
-
-    if (this->imguiTextureID != VK_NULL_HANDLE) {
-      // If we had an ImGui texture ID, we need to remove it, as the image is changing.
-      //
-      // HACK: the descriptor set being freed here was very likely recorded into
-      // a command buffer that is still in flight -- an ImGui::Image() from an
-      // earlier frame referencing this same image. Freeing it now is a
-      // use-after-free that the validation layer catches as
-      // VUID-vkFreeDescriptorSets-pDescriptorSets-00309.
-      //
-      // Stalling the whole device is a blunt way to make that safe, and it
-      // makes a viewport resize drag synchronous. RenderGraph::startFrame()
-      // already stalls right after this for the same underlying reason. The
-      // real fix is a deletion queue that defers frees until every frame slot
-      // referencing the resource has retired; until that exists, this keeps
-      // the resize path correct rather than merely quiet.
-      getVulkan().waitForIdle();
-      ImGui_ImplVulkan_RemoveTexture(this->imguiTextureID);
-      this->imguiTextureID = VK_NULL_HANDLE;
-    }
-
-
-
-    image = b.build();
+    result->image = ImageBuilder(name)
+                        .setWidth(size.x)
+                        .setHeight(size.y)
+                        .setFormat(spec.format)
+                        .setUsage(usage)
+                        .setViewAspectMask(result->depth ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT)
+                        .setInitialLayout(VK_IMAGE_LAYOUT_UNDEFINED)
+                        .build();
+    return result;
   }
-
-  TextureHandle ImageResource::textureHandle() const {
-    if (!image) {
-      throw std::runtime_error("ImageResource has no image yet");
-    }
-    return TextureHandle::pack(image->sampledIndex(), sampler->index());
-  }
-
-  void ImageResource::inspect() const {
-    ImGui::Text("Vulkan Image: %p, View: %p", (void *)image->getImage(), (void *)image->getImageView());
-    ImGui::Text("Format: %u", spec.format);
-
-    spec.relativeScale.ifSome([](auto scale) {
-      ImGui::Text("Swapchain-relative Scale: (%.2f, %.2f)", scale.x, scale.y);
-    });
-
-    spec.absoluteSize.ifSome([&](auto size) {
-      ImGui::Text("Absolute Size: %u x %u", size.x, size.y);
-    });
-
-    if (image) {
-      ImGui::Text("Allocated size: %u x %u", image->getWidth(), image->getHeight());
-    } else {
-      ImGui::TextDisabled("... not yet allocated!");
-    }
-    if (imguiTextureID == VK_NULL_HANDLE) {
-      imguiTextureID = ImGui_ImplVulkan_AddTexture(sampler->getHandle(), image->getImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-    }
-    ImGui::Text("ImGui Texture ID: %p", (void *)imguiTextureID);
-
-    // Calculate the width to fit the remaining container space
-    float containerWidth = ImGui::GetContentRegionAvail().x;
-    float aspectRatio = (float)image->getHeight() / (float)image->getWidth();
-    float imageWidth = std::max(1.0f, containerWidth);
-    float imageHeight = imageWidth * aspectRatio;
-
-    ImGui::Image((ImTextureID)imguiTextureID, ImVec2(imageWidth, imageHeight));
-
-    ImGui::Separator();
-
-
-    // ImGui::Image((ImTextureID)imguiTextureID,
-    //              ImVec2(256, 256 * ((float)image->getHeight() / (float)image->getWidth())));
-  }
-
-  void ImageResource::emitBarrier(GraphRunContext &ctx, GraphAccess fromAccess, GraphAccess toAccess) {
-    // if (fromAccess == toAccess) {
-    //   return;  // No barrier needed
-    // }
-
-    if (!image) {
-      return;  // Image not yet allocated
-    }
-
-    const auto fromInfo = getImageBarrierInfoForAccess(fromAccess);
-    const auto toInfo = getImageBarrierInfoForAccess(toAccess);
-
-    VkImageMemoryBarrier barrier{};
-    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    barrier.pNext = nullptr;
-    barrier.srcAccessMask = fromInfo.access;
-    barrier.dstAccessMask = toInfo.access;
-    barrier.oldLayout = fromInfo.layout;
-    barrier.newLayout = toInfo.layout;
-    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.image = image->getImage();
-    barrier.subresourceRange.aspectMask = getAspectMask(this->initialAccess);
-    barrier.subresourceRange.baseMipLevel = 0;
-    barrier.subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
-    barrier.subresourceRange.baseArrayLayer = 0;
-    barrier.subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
-
-    vkCmdPipelineBarrier(ctx.encoder.buf(), fromInfo.stage, toInfo.stage, 0, 0, nullptr, 0, nullptr, 1, &barrier);
-  }
-
 }  // namespace ren

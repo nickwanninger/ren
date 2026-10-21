@@ -532,7 +532,7 @@ VkFormat ren::VulkanInstance::findSupportedFormat(const std::vector<VkFormat>& c
 }
 
 
-bool hasStencilComponent(VkFormat format) { return format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT; }
+bool ren::hasStencilComponent(VkFormat format) { return format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT; }
 
 
 

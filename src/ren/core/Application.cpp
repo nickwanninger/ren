@@ -220,6 +220,7 @@ namespace ren {
   Application::~Application() {
     REN_PROFILE_FUNCTION();
     this->renderer->waitForIdle();
+    this->renderer->releaseCompletedFrames();
     // Not quite sure when to tear down lua yet.
 
     // Call exit callbacks
@@ -250,7 +251,6 @@ namespace ren {
     auto nextFrame = std::chrono::steady_clock::now();
     SDL_Event e;
 
-    SDL_RaiseWindow(window->getHandle());
 
     while (this->running) {
       // As soon as possible, grab the current time and compute the delta time since the last frame.

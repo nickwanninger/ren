@@ -21,7 +21,8 @@ namespace ren {
 
   // The graph is not built here: a virtual call in a constructor dispatches to
   // Viewport::buildGraph(), never to a subclass override. update() builds it.
-  Viewport::Viewport() {}
+  Viewport::Viewport()
+      : graph(Renderer::get().getGraph(), viewContext) {}
 
 
   void Viewport::buildGraph() {
@@ -50,7 +51,7 @@ namespace ren {
     // The sky texture is an LDR JPEG. The shader samples its values into a
     // SRGB target and uses FrameGlobals to orient the sky and grid.
     graph.pass("viewport")
-        .createColorAttachment("viewportColor", {.relativeScale = glm::vec2(1.0f), .format = VK_FORMAT_R8G8B8A8_SRGB}, finalImage)
+        .createColorAttachment("viewportColor", {.size = ImageSize::viewRelative(1.0f), .format = VK_FORMAT_R8G8B8A8_SRGB}, finalImage)
         .reads(gbufferAlbedo, GraphAccess::ShaderRead)
         .reads(gbufferNormal, GraphAccess::ShaderRead)
         .reads(gbufferDepth, GraphAccess::ShaderRead)
@@ -60,10 +61,10 @@ namespace ren {
           auto root = shader.root("root");
           root.set("skyboxHdri", skybox);
           // TEST lighting composite (see viewport_clear.slang).
-          root.set("albedo", ctx.graph.get<ImageResource>(gbufferAlbedo)->textureHandle());
-          root.set("normal", ctx.graph.get<ImageResource>(gbufferNormal)->textureHandle());
-          root.set("depth", ctx.graph.get<ImageResource>(gbufferDepth)->textureHandle());
-          root.set("ssao", ctx.graph.get<ImageResource>(ssao)->textureHandle());
+          root.set("albedo", ctx.resources.texture(gbufferAlbedo));
+          root.set("normal", ctx.resources.texture(gbufferNormal));
+          root.set("depth", ctx.resources.texture(gbufferDepth));
+          root.set("ssao", ctx.resources.texture(ssao));
           root.set("ssaoContrast", ssaoContrast);
           // root.set("raysPerPixel", raysPerPixel);
           // root.set("focusDistance", focusDistance);
@@ -85,125 +86,18 @@ namespace ren {
 
   void Viewport::update(float dt, glm::uvec2 size) {
     ensureGraphBuilt();
-
-    // Clamp render size
-    renderSize = glm::max(size, glm::uvec2(1, 1));
-
-    // call out to subclass for controls and per-frame logic.
+    viewContext->renderSize = glm::max(size, glm::uvec2(1));
     onUpdate(dt);
-
-    // Prepare the graph for the frame.
-    graph.startFrame(renderSize);
-    prepared = true;
+    viewContext->view = view;
+    viewContext->projection = projection;
+    graph.enqueue();
   }
 
-
-  ImageRef Viewport::getFinalImage() const {
-    if (!prepared || finalImage == nullGraphHandle) {
-      return nullptr;
-    }
-    return graph.getImage(finalImage);
-  }
-
-
-  VkDescriptorSet Viewport::getImGuiTextureID() const {
-    if (!prepared || finalImage == nullGraphHandle) {
-      return VK_NULL_HANDLE;
-    }
-
-    auto resource = graph.get<ImageResource>(finalImage);
-    if (!resource->image) {
-      return VK_NULL_HANDLE;
-    }
-
-    // Created lazily and cached on the resource itself, which is also what
-    // frees it: buildImage() drops the descriptor set whenever it reallocates,
-    // so this re-creates it against the new image view on the next frame.
-    if (resource->imguiTextureID == VK_NULL_HANDLE) {
-      resource->imguiTextureID =
-          ImGui_ImplVulkan_AddTexture(resource->sampler->getHandle(), resource->image->getImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-    }
-    return resource->imguiTextureID;
-  }
-
-
-  void Viewport::render(Renderer &renderer) {
-    if (!prepared) {
-      return;  // update() has not run, so the graph has no images yet.
-    }
-
-    auto &frame = ren::getFrameUnit();
-    auto encoder = frame.getMainCommandEncoder();
-
-    // Allocate and initialize the frame globals buffer.
-    auto *globalsBuffer = frame.getArena().push<UniformBuffer<FrameGlobals>>(1);
-
-    const glm::vec2 sizeF(renderSize);
-    globalsBuffer->hostData()[0] = FrameGlobals{
-        .time = static_cast<float>(ren::Application::get().timeSeconds),
-        .deltaTime = ren::deltaTime(),
-        .frameNumber = static_cast<u32>(ren::getVulkan().frame_number),
-        .renderSize = sizeF,
-        .inverseRenderSize = 1.0f / sizeF,
-        .viewMatrix = view,
-        .projMatrix = projection,
-    };
-
-    VkDescriptorSet globalsSet = VK_NULL_HANDLE;
-    if (!frame.getDescriptorAllocator().allocate(&globalsSet, renderer.getFrameGlobalsAllocator().getLayout())) {
-      throw std::runtime_error("Viewport: failed to allocate frame globals descriptor set");
-    }
-
-    VkDescriptorBufferInfo bufferInfo{
-        .buffer = globalsBuffer->getHandle(),
-        .offset = 0,
-        .range = sizeof(FrameGlobals),
-    };
-    VkWriteDescriptorSet write{
-        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-        .dstSet = globalsSet,
-        .dstBinding = ShaderABI::frameBinding,
-        .descriptorCount = 1,
-        .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-        .pBufferInfo = &bufferInfo,
-    };
-    vkUpdateDescriptorSets(getVulkan().device, 1, &write, 0, nullptr);
-
-    encoder->setFrameGlobals(globalsSet);
-
-    onBeforeGraph(*encoder);
-
-    try {
-      graph.run(renderer);
-    } catch (const std::exception &e) {
-      ren::println("✗ Viewport render graph failed: {}", e.what());
-    }
-
-    // Hand set 0 back to the frame's own globals, so anything drawn outside a
-    // viewport (the display pass, ImGui, debug lines) is unaffected by this.
-    encoder->setFrameGlobals(VK_NULL_HANDLE);
-  }
-
-
-  void Viewport::inspect(void) { graph.inspect(); }
-
-  void EditorViewport::resolveImGuiImage() {
-    if (!imageRequested) {
-      return;
-    }
-    auto descriptor = getImGuiTextureID();
-    if (descriptor == VK_NULL_HANDLE) {
-      throw std::runtime_error("Viewport image is unavailable before ImGui recording");
-    }
-    displayTexture.SetTexID((ImTextureID)descriptor);
-  }
-
+  void Viewport::inspect() { graph.graph().inspect(); }
 
   // ------------------------------------------------------------------ //
 
   bool EditorViewport::drawWindow(const char *title, float dt, bool *open) {
-    imageRequested = false;
-    displayTexture.SetTexID(ImTextureID_Invalid);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
     const bool visible = ImGui::Begin(title, open, ImGuiWindowFlags_MenuBar);
     ImGui::PopStyleVar();  // Popped right after Begin so nested widgets are unaffected.
@@ -280,9 +174,8 @@ namespace ren {
     // Draw the rendered image at the top-left. The image is filled in later
     // this frame, during the render phase.
     ImGui::SetCursorScreenPos(origin);
-    if (getFinalImage()) {
-      imageRequested = true;
-      ImGui::Image(displayTexture.GetTexRef(), extent);
+    if (finalImage) {
+      ImGui::Image(Renderer::get().getGraphImages().request(finalImage), extent);
     }
 
     drawViewCube(glm::vec2(origin.x, origin.y), glm::vec2(extent.x, extent.y));
@@ -335,7 +228,7 @@ namespace ren {
 
     if (showGraphInspector) {
       ImGui::Begin("Graph Inspector", &showGraphInspector);
-      this->graph.inspect();
+      this->graph.graph().inspect();
       ImGui::End();
     }
 

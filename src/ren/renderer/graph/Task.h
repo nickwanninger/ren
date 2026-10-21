@@ -1,194 +1,137 @@
 #pragma once
-
-#include <ren/renderer/graph/Handle.h>
-#include <ren/renderer/graph/Resource.h>
 #include <ren/renderer/graph/RunContext.h>
-
-#include <unordered_set>
+#include <functional>
 
 namespace ren {
-
-  class RenderGraph;  // Forward declaration
-  class RenderTask;   // Forward declaration
-
-  struct GraphHandleUsage {
-    GraphHandle handle;
-    GraphAccess access;
-
-    GraphHandleUsage(GraphHandle h, GraphAccess a)
-        : handle(h)
-        , access(a) {}
-  };
+  class RenderGraph;
+  class GraphScope;
 
 
-  /**
-   * @class RenderTask
-   * @brief Base class for tasks that perform rendering operations within a render graph.
-   *
-   * RenderTask implements the core abstraction for SSA-style dataflow in the render graph system.
-   * Tasks declare their inputs (operands) and outputs (results), which allows the graph to
-   * automatically derive data dependencies and schedule tasks in proper order.
-   *
-   * @note Tasks are typically created via @ref RenderGraph::addTask<>() or
-   *       @ref RenderGraph::addTask(const char*, Callback&&). Direct instantiation is possible
-   *       but not recommended as the graph maintains ownership.
-   *
-   * @see RenderGraph
-   * @see GraphRunContext
-   */
+
+  // A RenderTask is one unit of GPU work in the graph, e.g. a render pass or a
+  // compute dispatch. When the task is built, it declares the resources that it
+  // reads, writes, and updates, and the graph orders tasks by these
+  // declarations. In each frame where the task is selected, the graph calls
+  // prepareFrame() and then run(). Make tasks with GraphScope::addTask() or
+  // with a TaskBuilder.
   class RenderTask {
    public:
-    RenderTask(RenderGraph &graph)
-        : m_graph(graph) {}
-
-    /// Virtual destructor for safe polymorphic deletion
+    explicit RenderTask(RenderGraph &graph);
     virtual ~RenderTask() = default;
 
 
-    /**
-     * @brief Executes the task's rendering operations.
-     *
-     * This is the main work function of the task. It is called during the frame execution
-     * phase, after all dependencies have completed and resources are prepared. The task should
-     * perform its actual rendering work (bind pipelines, issue draw calls, compute dispatches,
-     * etc.)
-     *
-     * @param ctx Execution context containing graph reference and task information. Valid only
-     *            during this function call.
-     */
-    virtual void run(GraphRunContext &ctx) = 0;
+    // Get ready for this frame: copy settings, and make the objects that
+    // recording uses. The storage of each input is ready. Dependencies cannot
+    // change here.
+    virtual void prepareFrame(PrepareContext &) {}
+
+    // Record the commands of this task. Recording should not change state;
+    // per-frame state belongs in prepareFrame().
+    virtual void run(RecordContext &) const = 0;
+
+    // Show the settings of the task in ImGui.
+    virtual void inspect() {}
 
 
-    /**
-     * @brief Prepares the task for execution after graph resources are allocated.
-     */
-    virtual void prepare() {}
-
-    /**
-     * @brief Cleans up any prepared state before resource deallocation.
-     */
-    virtual void unprepare() {}
-
-    /**
-     * @brief Inspect the task in the imgui-based inspector.
-     */
-    virtual void inspect(void) {}
-
-    const std::string &name() const { return m_name; }
-
-    void setName(const std::string &name) { m_name = name; }
+    const std::string &name() const { return taskName; }
+    void setName(std::string value) { taskName = std::move(value); }
 
 
-    RenderTask &read(GraphHandle handle, GraphAccess access);
-    RenderTask &write(GraphHandle handle, GraphAccess access);
+    // Declare how the task uses resources. Call these while the task is built,
+    // in the update step. After the task is first selected, its dependencies
+    // are fixed and these calls throw. write() makes this task the producer of
+    // the version, and throws if the version already has a producer.
+    RenderTask &read(GraphHandle, GraphAccess);
+    RenderTask &write(GraphHandle, GraphAccess);
 
-    const auto &getOperands(void) const { return m_operands; }
-    const auto &getResults(void) const { return m_results; }
-    virtual std::string toString(void) const;
+    // Updating is like "add to every pixel": the task changes the contents of a
+    // version, and returns the handle of the new version. The new version uses
+    // the same storage. Readers of the old version run first. A version can
+    // have only one update.
+    GraphHandle updates(GraphHandle, GraphAccess = GraphAccess::RenderTarget);
 
+    // The declared inputs and outputs of the task.
+    const auto &getOperands() const { return operands; }
+    const auto &getResults() const { return results; }
+    RenderGraph &graph() const { return owner; }
 
-    RenderGraph &graph(void) const { return m_graph; }
-
-
-
-    /**
-     * @brief Executes the task within the given context. This method is called
-     * by the render graph schedule.
-     */
-    void execute(GraphRunContext &ctx);
-
-    inline float averageTimeNs(void) {
-      if (numExecutions == 0) {
-        return 0.0f;
-      }
-      return static_cast<float>(totalTimeNs / static_cast<double>(numExecutions));
-    }
+    // The graph calls this to record the task. It calls run() and measures the
+    // CPU time of recording.
+    void execute(RecordContext &);
 
    private:
-    std::string m_name;    ///< Human-readable name of this task
-    RenderGraph &m_graph;  ///< Reference to owning render graph
+    RenderGraph &owner;
+    u64 id;               // Unique in the graph, and never used again.
+    bool sealed = false;  // True after the first selection. The dependencies are then fixed.
+    std::string taskName;
 
-    std::vector<GraphOperand> m_operands;
-    std::vector<GraphHandleUsage> m_results;
+    // Inputs and outputs. An update adds its old version to the operands.
+    std::vector<GraphHandleUsage> operands, results;
+    ref<ViewContext> view;  // From the GraphScope. Can be null.
 
-    int version = 1;  // Every time the task is re-prepared, this goes up
-
-    double totalTimeNs = 0.0;
+    // The CPU time of recording. Nothing shows these yet.
+    double totalTimeNs = 0;
     u64 numExecutions = 0;
 
-   protected:
     friend class RenderGraph;
-    friend class RenderSchedule;
-
-    std::unordered_set<RenderTask *> dependencies;
+    friend class GraphScope;
   };
 
 
 
-  inline void RenderTask::execute(GraphRunContext &ctx) {
-    REN_PROFILE_SCOPE(this->name().c_str());
-    auto start = std::chrono::high_resolution_clock::now();
-    run(ctx);
-    auto end = std::chrono::high_resolution_clock::now();
-    float durationNs = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
-
-    totalTimeNs += durationNs;
-    numExecutions++;
-  }
+  using RenderTaskLambda = std::function<void(RecordContext &)>;
+  using PrepareTaskLambda = std::function<void(PrepareContext &)>;
 
 
-  // This is a builder class for constructing tasks in a clean declarative way.
-  // It allows you to configure things like read/write resources, and then
-  // finalize it and construct a task with a given execution function (like a
-  // lambda).  For example, a RenderTask can be constructed by setting up
-  // reads/writes and then calling render().  A simple compute task can be
-  // constructed with execute() and manually binding resources.
+  // This class provides a builder pattern to define tasks in the render graph
+  // using lambda callbacks, not subclassing. It's just a little nicer sometimes.
+  // The builder adds nothing to the graph until execute() or render() is
+  // called. A builder that is destroyed before that adds no task.
   class TaskBuilder {
    public:
-    TaskBuilder(RenderGraph &graph, std::string name);
-
-    // Move-only (prevent copying and reuse)
+    TaskBuilder(GraphScope &, std::string);
     TaskBuilder(const TaskBuilder &) = delete;
     TaskBuilder &operator=(const TaskBuilder &) = delete;
     TaskBuilder(TaskBuilder &&) = default;
-    TaskBuilder &operator=(TaskBuilder &&) = delete;
 
-    // Fluent API for dependencies
-    TaskBuilder &reads(GraphHandle handle, GraphAccess access);
-    TaskBuilder &writes(GraphHandle handle, GraphAccess access);
 
-    // Convenience overloads
-    TaskBuilder &reads(GraphHandleUsage resource);
-    TaskBuilder &writes(GraphHandleUsage resource);
+    // Declare that the task will read or write a resource. The declarations
+    // apply when the task is made.
+    TaskBuilder &reads(GraphHandle, GraphAccess);
+    TaskBuilder &writes(GraphHandle, GraphAccess);
 
-    // Attachment creation (for render passes)
-    TaskBuilder &createColorAttachment(const std::string_view &name, const GraphImageSpec &spec, GraphHandle &out_handle);
+    // Provide a lambda callback that prepares the task before execution. The
+    // run method is const, but const does not apply to the captures of a
+    // lambda. Preparation is where per-frame state belongs, because recording
+    // should not change state.
+    TaskBuilder &prepare(PrepareTaskLambda);
 
-    TaskBuilder &createDepthAttachment(const std::string_view &name, const GraphImageSpec &spec, GraphHandle &out_handle);
+    // Add color or depth attachments to a render pass. The output handle is
+    // written when render() is called, so it stays null until then. execute()
+    // throws if the builder has attachments.
+    TaskBuilder &createColorAttachment(std::string_view, const GraphImageSpec &, GraphHandle &);
+    TaskBuilder &createDepthAttachment(std::string_view, const GraphImageSpec &, GraphHandle &);
 
-    // Finalizers (consume builder)
-    RenderTask &execute(std::function<void(GraphRunContext &)> func);
-    RenderTask &render(std::function<void(GraphRenderPassContext &)> func);
+    // Finalizer/build methods. A builder can finalize only once.
+    // Execute means the task runs the lambda without a render pass, e.g. for
+    // compute, copies, or blits.
+    RenderTask &execute(RenderTaskLambda);
+    // Render means it is a render pass task that runs the lambda with a RenderPassEncoder.
+    RenderTask &render(std::function<void(GraphRenderPassContext &)>);
 
    private:
-    struct AttachmentSpec {
+    struct Attachment {
       std::string name;
       GraphImageSpec spec;
-      GraphHandle *out_handle;
-      bool is_depth;
+      GraphHandle *output;
+      bool depth;
     };
-
-    RenderGraph *m_graph;
-    std::string m_name;
-    std::vector<GraphHandleUsage> m_reads;
-    std::vector<GraphHandleUsage> m_writes;
-    std::vector<AttachmentSpec> m_attachments;
-    bool m_finalized = false;
-
-    void applyDependencies(RenderTask &task);
+    GraphScope &scope;
+    std::string name;
+    std::vector<GraphHandleUsage> readsList, writesList;
+    std::vector<Attachment> attachments;
+    PrepareTaskLambda preparation;
+    bool finalized = false;
+    void apply(RenderTask &);
   };
-
-
-
-
 }  // namespace ren

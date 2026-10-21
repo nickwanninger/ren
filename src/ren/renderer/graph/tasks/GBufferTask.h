@@ -9,6 +9,7 @@
 namespace ren {
 
   class Material;
+  class RenderWorld;
 
   // Draws all renderables into the G-buffer. Each material supplies its own
   // PSO (a surface linked with ren/pass/deferred) and its parameter bytes.
@@ -26,7 +27,8 @@ namespace ren {
 
     GBufferTask(ren::RenderGraph &G);
 
-    void run(ren::GraphRenderPassContext &ctx) override;
+    void prepareFrame(PrepareContext &) override;
+    void run(ren::GraphRenderPassContext &ctx) const override;
     void inspect(void) override;
 
    private:
@@ -47,10 +49,7 @@ namespace ren {
       u32 materialByteOffset;
     };
 
-    // Scratch storage, kept between frames to keep the allocations.
-    std::vector<SortedDraw> sortedDraws;
-    std::vector<Batch> batches;
-    std::vector<u8> materialBytes;
+    ref<RenderWorld> preparedWorld;
 
     // Statistics of the last run, for the inspector.
     struct {
@@ -63,8 +62,8 @@ namespace ren {
 
 
   // TODO: figure out how to parameterize this with different cameras!
-  inline auto &addGBuffer(RenderGraph &G, ren::GraphHandle &albedo, ren::GraphHandle &normal,
-                          ren::GraphHandle &metallicRoughness, ren::GraphHandle &depth) {
+  inline auto &addGBuffer(GraphScope &G, ren::GraphHandle &albedo, ren::GraphHandle &normal, ren::GraphHandle &metallicRoughness,
+                          ren::GraphHandle &depth) {
     auto &pass = G.addTask<GBufferTask>("gbuffer");
 
     albedo = pass.out.albedo;

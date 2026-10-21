@@ -16,7 +16,7 @@ namespace ren {
     float threshold = 1.0f;
 
     BloomFilterTask(RenderGraph &graph, float scale, GraphHandle source, GraphHandle detail, bool upsample, bool prefilter);
-    void run(GraphRenderPassContext &ctx) override;
+    void run(GraphRenderPassContext &ctx) const override;
     void inspect() override;
   };
 
@@ -30,11 +30,11 @@ namespace ren {
     bool bypass = false;
 
     BloomCompositeTask(RenderGraph &graph, GraphHandle scene, GraphHandle bloom);
-    void run(GraphRenderPassContext &ctx) override;
+    void run(GraphRenderPassContext &ctx) const override;
     void inspect() override;
   };
 
   // Returns the final pass for controls, as addSSAO returns its SSAO task.
-  BloomCompositeTask &addBloom(RenderGraph &graph, GraphHandle scene, GraphHandle &output);
+  BloomCompositeTask &addBloom(GraphScope &graph, GraphHandle scene, GraphHandle &output);
 
 }  // namespace ren

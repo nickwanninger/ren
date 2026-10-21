@@ -83,6 +83,8 @@ class RaytraceViewport : public ren::EditorViewport {
   float exposure = 0.0f;
   BloomCompositeTask *bloom = nullptr;
   ref<Texture> skybox;
+  GraphHandle previousScene;
+  ref<RenderWorld> preparedWorld;
 
   void buildGraph() override {
     ren::MeshScene::load("assets/test/meshes/unit_cube.glb")->instantiate({});
@@ -104,8 +106,15 @@ class RaytraceViewport : public ren::EditorViewport {
 
     GraphHandle sceneColor;
     graph.pass("raytrace")
-        .createColorAttachment("sceneColor", {.relativeScale = glm::vec2(1.0f), .format = VK_FORMAT_R16G16B16A16_SFLOAT}, sceneColor)
+        .createColorAttachment("sceneColor", {.size = ImageSize::viewRelative(1.0f), .format = VK_FORMAT_R16G16B16A16_SFLOAT, .temporal = true},
+                               sceneColor)
+        .prepare([this](PrepareContext &ctx) {
+          preparedWorld = make<RenderWorld>();
+          preparedWorld->extractFromECS(ren::world());
+          ctx.retain(preparedWorld);
+        })
         .render([this](GraphRenderPassContext &ctx) { this->runRaytracer(ctx.encoder); });
+    previousScene = graph.graph().previous(sceneColor);
     bloom = &addBloom(graph, sceneColor, finalImage);
   }
 
@@ -116,8 +125,7 @@ class RaytraceViewport : public ren::EditorViewport {
 
 
     // construct the meshes from the scene.
-    ren::RenderWorld world;
-    world.extractFromECS(ren::world());
+    const auto &world = *preparedWorld;
 
     auto &mmb = ren::resource<ren::MegaMeshBuffer>();
 
@@ -312,8 +320,13 @@ class RaytraceWindow : public ren::Window {
     auto &renderer = ren::Renderer::get();
 
     m_viewport->drawWindow("Viewport A", m_deltaTime);
-    m_viewport->render(renderer);
-    m_viewport->resolveImGuiImage();
+    if (m_viewport->previousScene) {
+      ImGui::Begin("Previous raytrace result");
+      ImGui::Image(renderer.getGraphImages().request(m_viewport->previousScene), ImVec2(384, 216));
+      ImGui::End();
+    }
+    renderer.prepareGraph();
+    renderer.recordGraph();
 
     auto encoder = frame.getMainCommandEncoder();
     auto timestampTicket = encoder->beginTimestampQuery("FullScreenPass");

@@ -13,22 +13,22 @@ namespace ren {
   DepthPrepassTask::DepthPrepassTask(ren::RenderGraph &G)
       : ren::RenderPassTask(G) {
     auto scale = glm::vec2(1.0);
-    this->depthOut = addDepthAttachment("dpp_depth", {.relativeScale = scale});
-    this->normalOut = addColorAttachment("dpp_normal", {.relativeScale = scale, .format = VK_FORMAT_R16G16B16A16_SFLOAT});
+    this->depthOut = addDepthAttachment("dpp_depth", {.size = ImageSize::viewRelative(scale.x)});
+    this->normalOut = addColorAttachment("dpp_normal", {.size = ImageSize::viewRelative(scale.x), .format = VK_FORMAT_R16G16B16A16_SFLOAT});
 
     pso.program = ren::getShader("shaders/depth_pre_pass");
     pso.depthWrite = true;
     pso.cullMode = ren::CullMode::Back;
   }
 
-  void DepthPrepassTask::run(ren::GraphRenderPassContext &ctx) {
+  void DepthPrepassTask::run(ren::GraphRenderPassContext &ctx) const {
 #if 0
     auto &camera = ren::Camera::get();
 
     auto &megaMesh = ren::world().get_mut<ren::MegaMeshBuffer>();
     megaMesh.bind(ctx.cmd);
 
-    auto image = ctx.graph.getImage(depthOut);
+    auto image = ctx.resources.getImage(depthOut);
     auto projection = ren::Camera::projectionMatrix(image->getWidth(), image->getHeight());
 
     ren::MeshPushConstants pc;

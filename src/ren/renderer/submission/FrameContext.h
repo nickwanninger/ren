@@ -28,6 +28,8 @@ namespace ren {
     // Submit the recorded commands and keep the fence for waitForFence().
     void submitFrame(SubmissionQueue &queue, SubmissionInfo info);
 
+    void extendCompletion(SubmissionQueue &queue);
+
     // In [0, MAX_FRAMES_IN_FLIGHT).
     const u32 slotIndex;
 

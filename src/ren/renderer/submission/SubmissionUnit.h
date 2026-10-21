@@ -46,7 +46,12 @@ namespace ren {
 
 
     void releaseRetained() { retained.clear(); }
-    template<class T> void retain(ref<T> value) { if (value) retained.push_back(std::move(value)); }
+    template <class T>
+    void retain(ref<T> value) {
+      if (value) {
+        retained.push_back(std::move(value));
+      }
+    }
 
     ren::Arena &getArena(void) { return m_arena; }
     auto &getDescriptorAllocator(void) { return m_descriptorAllocator; }

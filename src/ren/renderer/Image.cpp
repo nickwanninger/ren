@@ -438,4 +438,13 @@ namespace ren {
     return *sampledSlot;
   }
 
+  void Image::releaseSampledIndex() {
+    std::lock_guard lock(sampledSlotMutex);
+    if (!sampledSlot) {
+      return;
+    }
+    Renderer::get().getImageDescriptorHeap().release(sampledSlot->value, shared_from_this());
+    sampledSlot.reset();
+  }
+
 }  // namespace ren

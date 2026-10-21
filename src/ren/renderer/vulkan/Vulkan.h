@@ -32,6 +32,9 @@ namespace ren {
   VulkanInstance &getVulkan(void);
   ref<VulkanInstance> getVulkanRef(void);
 
+  // True if a depth format also has a stencil component.
+  bool hasStencilComponent(VkFormat format);
+
 
   template <typename T>
   using VulkanResult = Result<T, VkResult>;

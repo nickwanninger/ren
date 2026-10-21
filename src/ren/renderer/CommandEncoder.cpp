@@ -222,8 +222,7 @@ namespace ren {
 
 
 
-  BoundGraphicsEncoder RenderPassEncoder::bindGraphics(
-      ren::PipelineStateObject &pso) {
+  BoundGraphicsEncoder RenderPassEncoder::bindGraphics(const ren::PipelineStateObject &pso) {
     auto &R = ren::Renderer::get();
 
     auto cachedPipeline = R.getPipelineCache().get(this->pass, pso);

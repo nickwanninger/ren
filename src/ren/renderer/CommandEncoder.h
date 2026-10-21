@@ -208,7 +208,7 @@ namespace ren {
     ~RenderPassEncoder() = default;
 
 
-    BoundGraphicsEncoder bindGraphics(ren::PipelineStateObject &pso);
+    BoundGraphicsEncoder bindGraphics(const ren::PipelineStateObject &pso);
 
     void bindImmediateMesh(std::span<ren::Vertex> vertices, std::span<u32> indices);
 

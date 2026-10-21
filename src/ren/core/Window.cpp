@@ -41,6 +41,21 @@ namespace ren {
       m_window = nullptr;
       throw std::runtime_error(fmt::format("SDL_Vulkan_CreateSurface failed: {}", SDL_GetError()));
     }
+
+
+#if __APPLE__
+    SDL_Event evt;
+    //
+    // Work around macos focus issue, possibly caused by "iTerm2"
+    //
+    while (SDL_PollEvent(&evt) != 0) {
+    }
+#endif
+
+    //
+    // Ensure the window is always in front.
+    //
+    SDL_RaiseWindow(m_window);
   }
 
 
@@ -198,7 +213,16 @@ namespace ren {
 
   void Window::render(FrameContext &frame) {
     m_imguiDrawn = false;
-    onRender(frame);
+    try {
+      onRender(frame);
+    } catch (const std::exception &error) {
+      ren::errln("Frame discarded: {}", error.what());
+      if (!m_imguiDrawn) {
+        ImGui::EndFrame();
+      }
+      Renderer::get().discardFrame(*this);
+      m_imguiDrawn = true;
+    }
 
     if (!m_imguiDrawn) {
       // Without this, the next ImGui::NewFrame() asserts.
@@ -209,6 +233,8 @@ namespace ren {
 
 
   void Window::onRender(FrameContext &frame) {
+    Renderer::get().prepareGraph();
+    Renderer::get().recordGraph();
     auto pass = frame.getMainCommandEncoder()->beginRenderPass(*Renderer::get().getDisplayPass(), getSwapchain().currentTarget());
     drawImGui(pass);
     pass.end();
@@ -222,8 +248,6 @@ namespace ren {
       return;
     }
     ImGui::Render();
-    ImGui::UpdatePlatformWindows();
-    ImGui::RenderPlatformWindowsDefault();
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), pass.buf());
     m_imguiDrawn = true;
   }

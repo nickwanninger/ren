@@ -69,6 +69,7 @@ endif()
 # Use Slang's provided CMake config
 list(APPEND CMAKE_PREFIX_PATH "${SLANG_CMAKE_DIR}")
 find_package(slang REQUIRED)
+set_property(TARGET slang::slang PROPERTY IMPORTED_GLOBAL TRUE)
 
 # Create an alias target for easier use
 add_library(slang INTERFACE)

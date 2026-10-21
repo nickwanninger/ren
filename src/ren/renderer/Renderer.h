@@ -15,6 +15,7 @@
 #include <ren/renderer/SamplerCache.h>
 #include <ren/renderer/FrameGlobals.h>
 #include <ren/renderer/DescriptorHeap.h>
+#include <ren/renderer/graph/ImGuiImages.h>
 
 namespace ren {
 
@@ -43,6 +44,12 @@ namespace ren {
     // End the current frame. This will submit the command buffer to the GPU and
     // present the swapchain image to the window.
     void endFrame(Window &window);
+    void prepareGraph();
+    void recordGraph();
+    void discardFrame(Window &);
+    void releaseCompletedFrames();
+    RenderGraph &getGraph() { return graph; }
+    ImGuiImages &getGraphImages() { return graphImages; }
 
     // Wait for the GPU to finish all commands before proceeding.
     // Avoid using this as much as you can!
@@ -129,6 +136,8 @@ namespace ren {
     inline auto getCurrentProgram() const { return getCurrentPSO().program; }
 
    private:
+    RenderGraph graph;
+    ImGuiImages graphImages{graph};
     ref<PipelineCache> pipelineCache;
     ref<ShaderCache> shaderCache;
     ref<RenderPass> currentPass = nullptr;

@@ -21,7 +21,8 @@ renderer: # $(BUILD_REQ)
 
 test:
 	@cmake -S . -B $(BUILD) -G ${GENERATOR} -DCMAKE_INSTALL_PREFIX=dist/ -DCMAKE_BUILD_TYPE=$(MODE) -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DBUILD_TESTING=ON
-	@cmake --build $(BUILD) --config $(MODE) --target ren-tests
+	@cmake --build $(BUILD) --config $(MODE)
+	@cmake --install $(BUILD) --config $(MODE)
 	@ctest --test-dir $(BUILD) --build-config $(MODE) --output-on-failure
 
 

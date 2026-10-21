@@ -224,10 +224,14 @@ different storage from the prior result. The graph manages history rotation;
 custom types create their own storage. Publish the new history on successful
 submission. A frame that does not select the producer leaves history unchanged.
 
-Reference counts prevent destruction, not premature overwrite. Reuse storage
-only when no retained history or unfinished submission needs it. Allocate new
-storage when no safe allocation is available. A fixed two-image toggle is not
-sufficient as a general reuse policy.
+Double-buffer temporal storage: alternate between the history and one other
+allocation of the same specification. Do not allocate new storage each frame.
+Work on the single graphics queue runs in submission order, and recorded
+transitions order the new write after earlier reads of that allocation, so an
+unfinished submission does not block reuse. Reference counts prevent
+destruction. A size/specification change drops the old pair; submissions
+retain it until they complete. Release bindless heap slots when storage is
+destroyed. Multiple queues require a different reuse policy.
 
 Use the raytrace sceneColor as the example. Display its previous result through
 ImGui. Do not add accumulation, TAA, or camera-motion invalidation logic.

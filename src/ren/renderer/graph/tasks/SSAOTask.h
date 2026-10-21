@@ -32,7 +32,7 @@ namespace ren {
 
     SSAOTask(ren::RenderGraph &G, float scale, GraphHandle depthHandle);
 
-    void run(ren::GraphRenderPassContext &ctx) override;
+    void run(ren::GraphRenderPassContext &ctx) const override;
 
     // inspect
     void inspect(void) override;
@@ -57,13 +57,12 @@ namespace ren {
     SSAOBlurTask(ren::RenderGraph &G, float scale, GraphHandle ssaoHandle, GraphHandle depthHandle,
                  GraphHandle normalHandle);
 
-    void run(ren::GraphRenderPassContext &ctx) override;
+    void run(ren::GraphRenderPassContext &ctx) const override;
     void inspect(void) override;
   };
 
 
-  inline auto &addSSAO(RenderGraph &G, ren::GraphHandle depthHandle, ren::GraphHandle normalHandle,
-                       ren::GraphHandle &ssaoOut) {
+  inline auto &addSSAO(GraphScope &G, ren::GraphHandle depthHandle, ren::GraphHandle normalHandle, ren::GraphHandle &ssaoOut) {
     // Half scale: full scale costs about 4 ms. The blur upsamples it.
     auto &ssao = G.addTask<SSAOTask>("ssao", 0.5f, depthHandle);
     auto &blur = G.addTask<SSAOBlurTask>("ssao_blur", 1.0f, ssao.out.ssao, depthHandle, normalHandle);

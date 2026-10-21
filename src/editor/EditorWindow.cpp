@@ -101,8 +101,8 @@ namespace editor {
     auto &renderer = ren::Renderer::get();
 
     m_viewport->drawWindow("Viewport A", m_deltaTime);
-    m_viewport->render(renderer);
-    m_viewport->resolveImGuiImage();
+    renderer.prepareGraph();
+    renderer.recordGraph();
 
     auto encoder = frame.getMainCommandEncoder();
     auto timestampTicket = encoder->beginTimestampQuery("FullScreenPass");

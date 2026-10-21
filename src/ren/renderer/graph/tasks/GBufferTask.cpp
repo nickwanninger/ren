@@ -40,22 +40,30 @@ namespace ren {
       : ren::RenderPassTask(G) {
     auto scale = glm::vec2(1.0f);
     // Location 0
-    this->out.albedo = addColorAttachment("gbufferAlbedo", {.relativeScale = scale, .format = VK_FORMAT_R16G16B16A16_SFLOAT});
+    this->out.albedo = addColorAttachment("gbufferAlbedo", {.size = ImageSize::viewRelative(scale.x), .format = VK_FORMAT_R16G16B16A16_SFLOAT});
     // Location 1
-    this->out.normal = addColorAttachment("gbufferNormal", {.relativeScale = scale, .format = VK_FORMAT_R16G16B16A16_SFLOAT});
+    this->out.normal = addColorAttachment("gbufferNormal", {.size = ImageSize::viewRelative(scale.x), .format = VK_FORMAT_R16G16B16A16_SFLOAT});
     // Location 2
-    this->out.metallicRoughness = addColorAttachment("gbufferMetallicRoughness", {.relativeScale = scale, .format = VK_FORMAT_R8G8B8A8_UNORM});
-    this->out.depth = addDepthAttachment("gbufferDepth", {.relativeScale = scale, .format = VK_FORMAT_D32_SFLOAT});
+    this->out.metallicRoughness =
+        addColorAttachment("gbufferMetallicRoughness", {.size = ImageSize::viewRelative(scale.x), .format = VK_FORMAT_R8G8B8A8_UNORM});
+    this->out.depth = addDepthAttachment("gbufferDepth", {.size = ImageSize::viewRelative(scale.x), .format = VK_FORMAT_D32_SFLOAT});
   }
 
 
-  void GBufferTask::run(ren::GraphRenderPassContext &ctx) {
-    stats = {};
+  void GBufferTask::prepareFrame(PrepareContext &ctx) {
+    RenderPassTask::prepareFrame(ctx);
+    preparedWorld = make<RenderWorld>();
+    preparedWorld->extractFromECS(ren::world());
+    ctx.retain(preparedWorld);
+  }
 
-    // The viewport sets the frame globals (view and projection) before the
-    // graph runs, so this task does not read the camera.
-    ren::RenderWorld world;
-    world.extractFromECS(ren::world());
+  void GBufferTask::run(ren::GraphRenderPassContext &ctx) const {
+    decltype(stats) stats{};
+    std::vector<SortedDraw> sortedDraws;
+    std::vector<Batch> batches;
+    std::vector<u8> materialBytes;
+
+    const auto &world = *preparedWorld;
 
     // Collect the draws. A material without a schema has no MaterialRoot, so
     // this pass cannot draw it.
@@ -165,9 +173,5 @@ namespace ren {
 
   void GBufferTask::inspect(void) {
     ImGui::Text("Draws: %u  Batches: %u  Materials: %u  Skipped: %u", stats.draws, stats.batches, stats.materials, stats.skipped);
-    graph().getResource(out.albedo)->inspect();
-    graph().getResource(out.normal)->inspect();
-    graph().getResource(out.metallicRoughness)->inspect();
-    graph().getResource(out.depth)->inspect();
   }
 }  // namespace ren

@@ -17,7 +17,7 @@ namespace ren {
 
   ShadowMapTask::ShadowMapTask(ren::RenderGraph &G, u32 resolution)
       : ren::RenderPassTask(G) {
-    out.shadow = addDepthAttachment("shadow_map", {.absoluteSize = glm::uvec2(resolution, resolution)});
+    out.shadow = addDepthAttachment("shadow_map", {.size = ImageSize::absolute(glm::uvec2(resolution, resolution))});
 
     pso.program = NULL; ren::getShader("shaders/shadow_map");
     pso.depthWrite = true;
@@ -25,14 +25,14 @@ namespace ren {
     pso.cullMode = ren::CullMode::Front;
   }
 
-  void ShadowMapTask::run(ren::GraphRenderPassContext &ctx) {
+  void ShadowMapTask::run(ren::GraphRenderPassContext &ctx) const {
 #if 0
     auto &viewCamera = ren::Camera::get();
 
     auto &megaMesh = ren::world().get_mut<ren::MegaMeshBuffer>();
     megaMesh.bind(ctx.cmd);
 
-    auto image = ctx.graph.getImage(out.shadow);
+    auto image = ctx.resources.getImage(out.shadow);
 
     ren::RenderWorld rw(viewCamera);
     rw.extractFromECS(ren::world());
@@ -88,6 +88,5 @@ namespace ren {
       sunDirection = glm::normalize(sunDirection);
     };
 
-    graph().getResource(out.shadow)->inspect();
   }
 }  // namespace ren

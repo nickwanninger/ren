@@ -56,6 +56,8 @@ namespace ren {
     // Lazily makes this view resident in the sampled-image heap. Index zero
     // is reserved for the invalid/debug image contract.
     SampledImageIndex sampledIndex();
+    // Return the bindless slot to the heap, which drops the heap's reference.
+    void releaseSampledIndex();
 
     inline bool isFramebuffer() const { return memory == VK_NULL_HANDLE; }
 
