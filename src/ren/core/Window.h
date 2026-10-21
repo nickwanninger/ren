@@ -45,7 +45,8 @@ namespace ren {
     Window(Window &&) = delete;
     Window &operator=(Window &&) = delete;
 
-    // Create the SDL window and its Vulkan surface.
+    // Create the SDL window and its Vulkan surface, then raise the window. On
+    // macOS, it then waits up to 200 ms for the window to get the focus.
     void initialize(ref<VulkanInstance> vulkan, const WindowDesc &desc);
     // Create the ImGui context and its SDL3 and Vulkan backends.
     void initializeUI(void);

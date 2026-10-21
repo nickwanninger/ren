@@ -19,6 +19,7 @@
 namespace ren {
 
   static ren::Flag<bool> vsyncFlag("vsync", true, "Enable VSync for the swapchain");
+  static ren::Flag<bool> focusPumpFlag("focus-pump", true, "On macOS, pump events after the startup raise until the window has the focus");
 
 
   void Window::initialize(ref<VulkanInstance> vulkan, const WindowDesc &desc) {
@@ -57,6 +58,23 @@ namespace ren {
     // Ensure the window is always in front.
     //
     SDL_RaiseWindow(m_window);
+
+#if __APPLE__
+    //
+    // The raise activates the app, but AppKit handles the activation only
+    // when it pumps events. If the startup work after this (for example a
+    // --load) delays the first pump, macOS can mark the app active while the
+    // window never gets the key focus, and clicks do not fix it. Pump events
+    // until the window has the focus. This usually takes about 50 ms.
+    //
+    if (focusPumpFlag.get()) {
+      const Uint64 deadline = SDL_GetTicksNS() + SDL_MS_TO_NS(200);
+      while (!hasFocus() && SDL_GetTicksNS() < deadline) {
+        SDL_PumpEvents();
+        SDL_Delay(1);
+      }
+    }
+#endif
   }
 
 
