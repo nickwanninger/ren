@@ -57,7 +57,11 @@ namespace ren {
 
 
     void withRenderPass(RenderPass &pass, RenderTarget &target, std::function<void(RenderPassEncoder &)> func);
-    RenderPassEncoder beginRenderPass(RenderPass &pass, RenderTarget &target);
+    // Begin a render pass. clearValues has one value for each attachment of
+    // the pass, in order; the value of an attachment that does not clear is
+    // ignored. Without clearValues, color clears to (0, 0, 0, 0) and depth to
+    // 1. Throws if clearValues has a different number of values.
+    RenderPassEncoder beginRenderPass(RenderPass &pass, RenderTarget &target, std::span<const VkClearValue> clearValues = {});
     // TODO:
     // ComputePassEncoder *beginComputePass();
 
@@ -220,7 +224,7 @@ namespace ren {
 
    protected:
     friend class CommandEncoder;
-    void begin();
+    void begin(std::span<const VkClearValue> clearValues);
 
    private:
     RenderPass &pass;

@@ -12,9 +12,9 @@ namespace ren {
     encoder.end();
   }
 
-  RenderPassEncoder CommandEncoder::beginRenderPass(RenderPass &pass, RenderTarget &target) {
+  RenderPassEncoder CommandEncoder::beginRenderPass(RenderPass &pass, RenderTarget &target, std::span<const VkClearValue> clearValues) {
     RenderPassEncoder encoder(*this, pass, target);
-    encoder.begin();
+    encoder.begin(clearValues);
     return encoder;
   }
 
@@ -180,7 +180,7 @@ namespace ren {
   }
 
 
-  void RenderPassEncoder::begin() {
+  void RenderPassEncoder::begin(std::span<const VkClearValue> requestedClears) {
     VkRenderPassBeginInfo renderPassInfo{};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     renderPassInfo.renderPass = pass.getHandle();
@@ -188,20 +188,29 @@ namespace ren {
     renderPassInfo.renderArea.offset = {0, 0};
     renderPassInfo.renderArea.extent = {target.getWidth(), target.getHeight()};
 
-    // TODO: allow renderpasses to configure clear values!
-    std::vector<VkClearValue> clearValues;
-    for (const auto &attachment : pass.getDescription().attachments) {
-      if (attachment.loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR) {
-        // If the attachment is a color attachment, clear it to white.
-        if (attachment.format != VK_FORMAT_D32_SFLOAT && attachment.format != VK_FORMAT_D24_UNORM_S8_UINT) {
-          clearValues.push_back({.color = {{0.0f, 0.0f, 0.0f, 0.0f}}});
+    const auto &attachments = pass.getDescription().attachments;
+    if (!requestedClears.empty() && requestedClears.size() != attachments.size()) {
+      throw std::runtime_error(fmt::format("Render pass {} has {} attachments, but {} clear values", pass.getDescription().name, attachments.size(),
+                                           requestedClears.size()));
+    }
+
+    std::vector<VkClearValue> clearValues(requestedClears.begin(), requestedClears.end());
+
+    // Without clear values from the caller, use the defaults.
+    if (clearValues.empty()) {
+      for (const auto &attachment : attachments) {
+        if (attachment.loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR) {
+          // If the attachment is a color attachment, clear it to white.
+          if (attachment.format != VK_FORMAT_D32_SFLOAT && attachment.format != VK_FORMAT_D24_UNORM_S8_UINT) {
+            clearValues.push_back({.color = {{0.0f, 0.0f, 0.0f, 0.0f}}});
+          } else {
+            // Otherwise, it's a depth attachment, clear it to 1.0f.
+            clearValues.push_back({.depthStencil = {1.0f, 0}});
+          }
         } else {
-          // Otherwise, it's a depth attachment, clear it to 1.0f.
-          clearValues.push_back({.depthStencil = {1.0f, 0}});
+          // If the attachment is not cleared, we don't need to specify a clear value.
+          clearValues.push_back({});
         }
-      } else {
-        // If the attachment is not cleared, we don't need to specify a clear value.
-        clearValues.push_back({});
       }
     }
 

@@ -17,10 +17,11 @@ namespace ren {
 
 
     // Make a new image and write it as an attachment of this pass. The task
-    // becomes the producer of the image. A depth attachment always uses the
-    // depth format of the device; the format in spec is ignored.
-    GraphHandle addColorAttachment(std::string_view name, const GraphImageSpec &spec);
-    GraphHandle addDepthAttachment(std::string_view name, const GraphImageSpec &spec);
+    // becomes the producer of the image. The pass clears the image to the
+    // clear value before it draws. A depth attachment always uses the depth
+    // format of the device; the format in spec is ignored.
+    GraphHandle addColorAttachment(std::string_view name, const GraphImageSpec &spec, glm::vec4 clearColor = glm::vec4(0.0f));
+    GraphHandle addDepthAttachment(std::string_view name, const GraphImageSpec &spec, float clearDepth = 1.0f);
 
     // Draw on top of the contents of an existing image, and return its new
     // version. The pass loads the old contents. Throws if a color update gets
@@ -51,7 +52,7 @@ namespace ren {
     // Add an attachment to the render pass description, with the layouts that
     // the graph barriers use.
     VkAttachmentDescription &describeAttachment(std::string_view name, VkFormat format, bool depth);
-    GraphHandle attachment(std::string_view name, const GraphImageSpec &spec, bool depth);
+    GraphHandle attachment(std::string_view name, const GraphImageSpec &spec, bool depth, VkClearValue clear);
     GraphHandle updateAttachment(std::string_view name, GraphHandle image, bool depth);
 
     RenderPass::Description desc;  // The attachments of the render pass, in declaration order.
@@ -60,5 +61,9 @@ namespace ren {
 
     // The name and handle of each attachment, in the same order as desc.
     std::vector<std::pair<std::string, GraphHandle>> attachments;
+
+    // The clear value of each attachment, in the same order as desc. An
+    // update loads its attachment, so its value is not used.
+    std::vector<VkClearValue> clearValues;
   };
 }  // namespace ren

@@ -73,14 +73,14 @@ namespace ren {
   }
 
 
-  TaskBuilder &TaskBuilder::createColorAttachment(std::string_view name, const GraphImageSpec &spec, GraphHandle &output) {
-    attachments.push_back({std::string(name), spec, &output, false});
+  TaskBuilder &TaskBuilder::createColorAttachment(std::string_view name, const GraphImageSpec &spec, GraphHandle &output, glm::vec4 clearColor) {
+    attachments.push_back({std::string(name), spec, &output, false, clearColor, 1.0f});
     return *this;
   }
 
 
-  TaskBuilder &TaskBuilder::createDepthAttachment(std::string_view name, const GraphImageSpec &spec, GraphHandle &output) {
-    attachments.push_back({std::string(name), spec, &output, true});
+  TaskBuilder &TaskBuilder::createDepthAttachment(std::string_view name, const GraphImageSpec &spec, GraphHandle &output, float clearDepth) {
+    attachments.push_back({std::string(name), spec, &output, true, glm::vec4(0.0f), clearDepth});
     return *this;
   }
 
@@ -125,8 +125,8 @@ namespace ren {
     // Construct the task in the scope with its attachments.
     auto &task = scope.addTask<LambdaPass>(name.c_str(), std::move(callback), std::move(preparation));
     for (auto &attachment : attachments) {
-      *attachment.output =
-          attachment.depth ? task.addDepthAttachment(attachment.name, attachment.spec) : task.addColorAttachment(attachment.name, attachment.spec);
+      *attachment.output = attachment.depth ? task.addDepthAttachment(attachment.name, attachment.spec, attachment.clearDepth)
+                                            : task.addColorAttachment(attachment.name, attachment.spec, attachment.clearColor);
     }
     apply(task);
     return task;

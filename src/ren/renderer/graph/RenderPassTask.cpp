@@ -16,24 +16,27 @@ namespace ren {
   }
 
 
-  GraphHandle RenderPassTask::attachment(std::string_view name, const GraphImageSpec &spec, bool depth) {
+  GraphHandle RenderPassTask::attachment(std::string_view name, const GraphImageSpec &spec, bool depth, VkClearValue clear) {
     auto access = depth ? GraphAccess::DepthTarget : GraphAccess::RenderTarget;
     auto handle = graph().createImage(name, spec, access);
     write(handle, access);
 
     attachments.emplace_back(name, handle);
+    clearValues.push_back(clear);
     describeAttachment(name, spec.format, depth);
     return handle;
   }
 
 
-  GraphHandle RenderPassTask::addColorAttachment(std::string_view name, const GraphImageSpec &spec) { return attachment(name, spec, false); }
+  GraphHandle RenderPassTask::addColorAttachment(std::string_view name, const GraphImageSpec &spec, glm::vec4 clearColor) {
+    return attachment(name, spec, false, {.color = {{clearColor.r, clearColor.g, clearColor.b, clearColor.a}}});
+  }
 
 
-  GraphHandle RenderPassTask::addDepthAttachment(std::string_view name, const GraphImageSpec &input) {
+  GraphHandle RenderPassTask::addDepthAttachment(std::string_view name, const GraphImageSpec &input, float clearDepth) {
     auto spec = input;
     spec.format = getVulkan().findDepthFormat();
-    return attachment(name, spec, true);
+    return attachment(name, spec, true, {.depthStencil = {clearDepth, 0}});
   }
 
 
@@ -45,6 +48,7 @@ namespace ren {
 
     auto output = updates(input, depth ? GraphAccess::DepthTarget : GraphAccess::RenderTarget);
     attachments.emplace_back(name, output);
+    clearValues.push_back({});
 
     // An update draws on top of the old contents, so the pass loads them.
     auto &description = describeAttachment(name, definition->spec.format, depth);
@@ -93,7 +97,7 @@ namespace ren {
   void RenderPassTask::run(RecordContext &ctx) const {
     auto ticket = ctx.encoder.beginTimestampQuery(name().c_str());
 
-    auto encoder = ctx.encoder.beginRenderPass(*pass, *target);
+    auto encoder = ctx.encoder.beginRenderPass(*pass, *target, clearValues);
     GraphRenderPassContext render{ctx.resources, ctx.view, encoder};
     run(render);
     encoder.end();

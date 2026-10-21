@@ -106,11 +106,12 @@ namespace ren {
     // should not change state.
     TaskBuilder &prepare(PrepareTaskLambda);
 
-    // Add color or depth attachments to a render pass. The output handle is
-    // written when render() is called, so it stays null until then. execute()
-    // throws if the builder has attachments.
-    TaskBuilder &createColorAttachment(std::string_view, const GraphImageSpec &, GraphHandle &);
-    TaskBuilder &createDepthAttachment(std::string_view, const GraphImageSpec &, GraphHandle &);
+    // Add color or depth attachments to a render pass. The pass clears each
+    // one to its clear value. The output handle is written when render() is
+    // called, so it stays null until then. execute() throws if the builder has
+    // attachments.
+    TaskBuilder &createColorAttachment(std::string_view, const GraphImageSpec &, GraphHandle &, glm::vec4 clearColor = glm::vec4(0.0f));
+    TaskBuilder &createDepthAttachment(std::string_view, const GraphImageSpec &, GraphHandle &, float clearDepth = 1.0f);
 
     // Finalizer/build methods. A builder can finalize only once.
     // Execute means the task runs the lambda without a render pass, e.g. for
@@ -125,6 +126,8 @@ namespace ren {
       GraphImageSpec spec;
       GraphHandle *output;
       bool depth;
+      glm::vec4 clearColor;  // For a color attachment.
+      float clearDepth;      // For a depth attachment.
     };
     GraphScope &scope;
     std::string name;
