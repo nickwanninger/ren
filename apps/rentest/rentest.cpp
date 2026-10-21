@@ -4,6 +4,8 @@
 #include <ren/core/Application.h>
 #include <ren/core/Flag.h>
 #include <ren/core/Logging.h>
+#include <ren/renderer/Image.h>
+#include <ren/renderer/vulkan/Vulkan.h>
 
 #include <fmt/color.h>
 
@@ -12,6 +14,7 @@
 static ren::Flag<std::string> testFilter("test", "*", "Run only the tests whose names match this glob (* and ?).");
 static ren::Flag<bool> listTests("list", false, "Print the names of the tests, then exit.");
 static ren::Flag<bool> interactiveFlag("interactive", false, "Keep each test open until a person gives a verdict.");
+static ren::Flag<bool> saveGoldenFlag("save-golden", false, "Write the final image of each test as its golden image.");
 
 
 // True if text matches pattern. '*' matches any run of characters, and '?'
@@ -43,18 +46,41 @@ static bool matchGlob(std::string_view pattern, std::string_view text) {
 }
 
 
+// The smallest window. The overlay needs this much room, and the window shows
+// a smaller render size larger, with the same aspect ratio.
+static const glm::uvec2 kMinWindowSize{1280, 720};
+
+
 // Run one test in a new Application. Exceptions from the Application fail the
 // test; they do not stop the run.
-static rentest::TestResult runTest(const rentest::TestInfo &info, size_t index, size_t count) {
+static rentest::TestResult runTest(const rentest::TestInfo &info, const rentest::RunSettings &settings, size_t index, size_t count) {
   rentest::TestResult result;
+  const u64 validationStart = ren::getValidationErrorCount();
+  const size_t imagesStart = ren::Image::allImages().size();
 
   try {
-    ren::Application app(info.name, info.config.size, ren::makeBox<rentest::TestWindow>(info, result, interactiveFlag.get(), index, count));
+    const glm::uvec2 windowSize = glm::max(info.config.size, kMinWindowSize);
+    ren::Application app(info.name, windowSize, ren::makeBox<rentest::TestWindow>(info, result, settings, index, count));
     ren::Application::RunOptions options;
     options.fixedDeltaTime = info.config.deltaTime;
     app.run(options);
   } catch (const std::exception &error) {
     result.failures.push_back(fmt::format("Application: {}", error.what()));
+  }
+
+  // Every image of the test must be destroyed with its Application. An image
+  // that lives on is a leak, or a cache that outlives the device.
+  const size_t imagesEnd = ren::Image::allImages().size();
+  if (imagesEnd > imagesStart) {
+    result.failures.push_back(fmt::format("{} image(s) still exist after the Application closed", imagesEnd - imagesStart));
+  }
+
+  // The window checks at the end of the test. Errors after that, e.g. in the
+  // interactive frames or at shutdown, are found here.
+  const u64 errors = ren::getValidationErrorCount() - validationStart;
+  if (errors > result.validationErrors) {
+    result.failures.push_back(fmt::format("{} Vulkan validation error(s) after the test finished. The last: {}", errors - result.validationErrors,
+                                          ren::getLastValidationError()));
   }
 
   return result;
@@ -78,10 +104,18 @@ static fmt::text_style verdictStyle(rentest::TestResult::Verdict verdict) {
 
 // The results go to stdout directly, not through ren::println(), so that the
 // color codes do not go into the log of the engine.
-static void printResult(const rentest::TestInfo &info, const rentest::TestResult &result) {
+static void printResult(const rentest::TestInfo &info, const rentest::TestResult &result, size_t nameWidth) {
   auto verdict = result.verdict();
   fmt::print(verdictStyle(verdict), "[{}]", rentest::verdictName(verdict));
-  fmt::print(" {}", info.name);
+  fmt::print(" {:<{}}", info.name, nameWidth);
+  if (result.golden) {
+    const auto &golden = *result.golden;
+    fmt::print("  golden: mean {:.6f}  max {:.3f}  ({} of {} pixels differ)", golden.meanError, golden.maxError, golden.differentPixels,
+               golden.pixelCount);
+  }
+  if (result.goldenSaved) {
+    fmt::print(fmt::emphasis::bold, "  golden saved");
+  }
   if (result.manual != rentest::TestResult::Verdict::None) {
     auto automatic = result.automatic();
     fmt::print(" (automatic: ");
@@ -147,13 +181,24 @@ int main(int argc, char **argv) {
   // A rerun runs the same test again and drops its last result.
   std::vector<std::pair<const rentest::TestInfo *, rentest::TestResult>> results;
   bool aborted = false;
+
+  rentest::RunSettings settings;
+  settings.interactive = interactiveFlag.get();
+  settings.saveGolden = saveGoldenFlag.get();
+
+  // The width of the name column, so that the golden numbers line up.
+  size_t nameWidth = 0;
+  for (auto *test : tests) {
+    nameWidth = std::max(nameWidth, test->name.size());
+  }
+
   for (size_t i = 0; i < tests.size();) {
-    auto result = runTest(*tests[i], i, tests.size());
+    auto result = runTest(*tests[i], settings, i, tests.size());
     if (result.rerun && !result.aborted) {
       continue;
     }
 
-    printResult(*tests[i], result);
+    printResult(*tests[i], result, nameWidth);
     results.emplace_back(tests[i], std::move(result));
     if (results.back().second.aborted) {
       aborted = true;

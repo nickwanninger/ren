@@ -9,7 +9,7 @@ namespace {
 
   // The smallest test: one fullscreen shader, with no scene.
   class ShaderUV : public rentest::RenderTest {
-    void onSetup(rentest::TestContext &ctx) override { ctx.makeViewport<rentest::ShaderViewport>("test"); }
+    void onSetup(rentest::TestContext &ctx) override { ctx.makeViewport<rentest::ShaderViewport>("tests//uv"); }
   };
 
 

@@ -1,6 +1,9 @@
 #include "RenderTest.h"
 
+#include <fmt/core.h>
+
 #include <algorithm>
+#include <cstdlib>
 
 namespace rentest {
 
@@ -28,6 +31,45 @@ namespace rentest {
         return "SKIP";
     }
     return "?";
+  }
+
+
+
+  // The pixel of an image that contains uv. uv = 1 is the last pixel, not one
+  // past it.
+  static glm::uvec2 pixelPosition(const PixelImage &image, glm::vec2 uv) {
+    const glm::uvec2 size(image.width, image.height);
+    return glm::min(glm::uvec2(glm::vec2(size) * uv), size - 1u);
+  }
+
+
+  void TestContext::checkPixel(std::string_view name, glm::vec2 uv, glm::u8vec4 expected, u8 tolerance) {
+    if (!finalImage) {
+      fail(fmt::format("{}: there is no final image to check", name));
+      return;
+    }
+
+    const glm::uvec2 position = pixelPosition(*finalImage, uv);
+    const glm::u8vec4 actual = pixel(uv);
+    for (int channel = 0; channel < 4; channel++) {
+      if (std::abs(int(actual[channel]) - int(expected[channel])) > tolerance) {
+        fail(fmt::format("{}: pixel ({}, {}) is ({}, {}, {}, {}), but the test expects ({}, {}, {}, {})", name, position.x, position.y, actual.r,
+                         actual.g, actual.b, actual.a, expected.r, expected.g, expected.b, expected.a));
+        return;
+      }
+    }
+  }
+
+
+  glm::u8vec4 TestContext::pixel(glm::vec2 uv) const {
+    if (!finalImage) {
+      throw std::runtime_error("There is no final image");
+    }
+
+    const glm::uvec2 position = pixelPosition(*finalImage, uv);
+    const size_t offset = (size_t(position.y) * finalImage->width + position.x) * 4;
+    const auto *data = &finalImage->pixels[offset];
+    return glm::u8vec4(data[0], data[1], data[2], data[3]);
   }
 
 
