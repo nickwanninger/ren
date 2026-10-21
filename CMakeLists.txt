@@ -148,4 +148,10 @@ if(BUILD_TESTING)
   add_test(NAME render-graph
     COMMAND ${CMAKE_INSTALL_PREFIX}/bin/ren-tests
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+
+  # This test takes over Window::onRender() and fails frames on purpose, so
+  # it does not fit the rentest hooks. It opens a window, like rentest.
+  add_test(NAME render-graph-vulkan
+    COMMAND ${CMAKE_INSTALL_PREFIX}/bin/ren-graph-vulkan-tests
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 endif()
