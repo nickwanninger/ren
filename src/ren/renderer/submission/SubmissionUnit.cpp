@@ -57,7 +57,9 @@ namespace ren {
 
   ref<CommandEncoder> SubmissionUnit::begin() {
     REN_PROFILE_FUNCTION();
+    VK_CHECK(vkResetCommandBuffer(m_vkCmd, 0));
     m_cmd->reset();
+    retained.clear();
     m_descriptorAllocator.reset();
     // The queries live in the arena, so read them back before clearing it.
     writeQueriesToTrace();

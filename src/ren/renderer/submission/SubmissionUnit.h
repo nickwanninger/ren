@@ -45,6 +45,9 @@ namespace ren {
     auto getMainCommandEncoder(void) { return m_cmd; }
 
 
+    void releaseRetained() { retained.clear(); }
+    template<class T> void retain(ref<T> value) { if (value) retained.push_back(std::move(value)); }
+
     ren::Arena &getArena(void) { return m_arena; }
     auto &getDescriptorAllocator(void) { return m_descriptorAllocator; }
     void setFrameGlobals(const FrameGlobals& globals) {
@@ -84,6 +87,7 @@ namespace ren {
     // them to the trace as spans on a "GPU" thread.
     void writeQueriesToTrace();
 
+    std::vector<ref<const void>> retained;
     VkCommandBuffer m_vkCmd;
     ref<CommandEncoder> m_cmd;
 
