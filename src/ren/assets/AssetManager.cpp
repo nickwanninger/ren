@@ -13,7 +13,7 @@ namespace ren {
   AssetManager::AssetManager()
       : store(source) {}
 
-  AssetManager::~AssetManager() { fmt::print("AssetManager destroyed.\n"); }
+  AssetManager::~AssetManager() {}
 
 
   void AssetManager::addFilesystemSource(const std::string_view &path) {

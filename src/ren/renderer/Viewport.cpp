@@ -46,7 +46,6 @@ namespace ren {
     forwardPSO.depthWrite = false;
 
     auto skybox = ren::Texture::load(skyBoxPath.get(), VK_FORMAT_R8G8B8A8_SRGB);
-    ren::println("Viewport: skybox texture {}", skybox->getName());
 
     // The sky texture is an LDR JPEG. The shader samples its values into a
     // SRGB target and uses FrameGlobals to orient the sky and grid.

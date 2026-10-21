@@ -109,7 +109,7 @@ namespace ren {
 
     switch (level) {
       case LogLevel::Debug:
-        fmt::print(fmt::emphasis::bold | fg(fmt::terminal_color::cyan), "[ DEBG ] ");
+        fmt::print(fmt::emphasis::faint, "[ DEBG ] ");
         break;
       case LogLevel::Info:
         // fmt::print(fmt::emphasis::bold | fg(fmt::terminal_color::green), "[ INFO ] ");
@@ -123,7 +123,12 @@ namespace ren {
       default: break;
     }
 
-    fmt::print("{}\n", message);
+
+    if (level == LogLevel::Debug) {
+      fmt::print(fmt::emphasis::faint, "{}\n", message);
+    } else {
+      fmt::print("{}\n", message);
+    }
 
     g_logMessageBytes += message.size() + sizeof(LogItem);
     g_logMessages.push_back(ren::makeBox<LogMessageItem>(level, std::move(message)));

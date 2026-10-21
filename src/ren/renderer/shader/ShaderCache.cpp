@@ -161,6 +161,8 @@ namespace ren {
   CompiledProgram ShaderCache::compile(const Desc& desc) {
     REN_PROFILE_SCOPE("CompileShader");
 
+    auto start = std::chrono::steady_clock::now();
+
     Slang::ComPtr<slang::IBlob> diagnosticsBlob;
 
     const auto& paths = desc.getModules();
@@ -272,6 +274,10 @@ namespace ren {
     }
 
     ftr_end("shader", compiled.path.c_str());
+
+    auto end = std::chrono::steady_clock::now();
+    auto duration = std::chrono::duration<f64, std::milli>(end -start).count();
+    ren::dbgln("Compiled '{}' in {:.2f} ms", compiled.path, duration);
 
     return compiled;
   }

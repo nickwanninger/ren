@@ -1,1 +1,2 @@
 add_subdirectory(raytracer)
+add_subdirectory(rentest)

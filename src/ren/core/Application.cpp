@@ -80,8 +80,7 @@ namespace ren {
   Application &Application::get(void) { return *g_application; }
   Application::Application(const std::string &app_name, glm::uvec2 window_size, Box<Window> window)
       : window(window ? std::move(window) : makeBox<Window>()) {
-
-    printf("%s\n", introGraphic);
+    // printf("%s\n", introGraphic);
 
     REN_PROFILE_SCOPE("BringupApplication");
     g_application = this;
@@ -243,7 +242,7 @@ namespace ren {
   // This function is the main loop of the application. It will run until the
   // application is closed, and will handle all events, updating the ECS world,
   // and rendering the scene (along with other fullscreen passes like ImGui.)
-  void Application::run() {
+  void Application::run(const RunOptions &options) {
     auto startTime = std::chrono::high_resolution_clock::now();
     auto lastTime = startTime;
     // The deadline of the next frame. It moves forward by a fixed period, so
@@ -251,7 +250,10 @@ namespace ren {
     auto nextFrame = std::chrono::steady_clock::now();
     SDL_Event e;
 
+    u64 framesThisRun = 0;
 
+    // start the main loop.
+    this->running = true;
     while (this->running) {
       // As soon as possible, grab the current time and compute the delta time since the last frame.
       const auto frameStart = std::chrono::high_resolution_clock::now();
@@ -259,6 +261,11 @@ namespace ren {
       auto deltaTime = std::chrono::duration<float, std::chrono::seconds::period>(frameStart - lastTime).count();
       this->timeSeconds = time;
       lastTime = frameStart;
+
+      if (options.fixedDeltaTime > 0.0f) {
+        deltaTime = options.fixedDeltaTime;
+        this->timeSeconds = framesThisRun * static_cast<double>(options.fixedDeltaTime);
+      }
 
       {
         REN_PROFILE_SCOPE("Frame");
@@ -335,6 +342,12 @@ namespace ren {
         {
           REN_PROFILE_SCOPE("End Frame");
           renderer->endFrame(*window);
+        }
+
+        framesThisRun++;
+        // Stop the app if we have reached the maximum number of frames to run.
+        if (options.maxFrames > 0 && framesThisRun >= options.maxFrames) {
+          this->running = false;
         }
       }
 

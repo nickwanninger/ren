@@ -51,7 +51,7 @@ namespace ren {
     }
     tinybvh::bvhvec4slice positions(positionData.data(), static_cast<u32>(positionData.size()));
 
-    auto start = std::chrono::steady_clock::now();
+    // auto start = std::chrono::steady_clock::now();
     tinybvh::BVH bvh;
     // SBVH build. Spatial splits put one triangle in more than one leaf when
     // that makes the child boxes overlap less.
@@ -67,9 +67,9 @@ namespace ren {
     bvh.SplitLeafs(kMaxLeafTriangles);
     REN_ASSERT(bvh.idxCount <= kMaxTriangleEntries);
 
-    auto buildMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
-    fmt::print("MeshBVH: {} triangles, {} entries, {} nodes, depth {}, SAH cost {:.2f}, {:.1f} ms\n",
-               indices.size() / 3, bvh.idxCount, bvh.usedNodes, maxDepth(bvh), bvh.SAHCost(), buildMs);
+    // auto buildMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+    // fmt::print("MeshBVH: {} triangles, {} entries, {} nodes, depth {}, SAH cost {:.2f}, {:.1f} ms\n",
+    //            indices.size() / 3, bvh.idxCount, bvh.usedNodes, maxDepth(bvh), bvh.SAHCost(), buildMs);
 
     // gpuBVH refers to bvh, so it must be destroyed first.
     tinybvh::BVH_GPU gpuBVH;

@@ -197,9 +197,6 @@ void ren::VulkanInstance::init_instance(void) {
 
   vkb::Instance vkb_inst = inst_ret.value();
 
-  fmt::print("Vulkan instance created with version: {}.{}.{}\n", VK_VERSION_MAJOR(vkb_inst.instance_version),
-             VK_VERSION_MINOR(vkb_inst.instance_version), VK_VERSION_PATCH(vkb_inst.instance_version));
-
   // grab the instance and store it away in the VulkanInstance class
   this->instance = vkb_inst.instance;
 
@@ -224,7 +221,7 @@ void ren::VulkanInstance::init_device(VkSurfaceKHR surface) {
   // requiredFeatures.fillModeNonSolid = VK_TRUE;
   requiredFeatures.shaderInt64 = true;
 
-  requiredFeatures.multiDrawIndirect = true;  // Batched vkCmdDrawIndexedIndirect
+  requiredFeatures.multiDrawIndirect = true;         // Batched vkCmdDrawIndexedIndirect
   requiredFeatures.fragmentStoresAndAtomics = true;  // Storage buffer writes from fragment shaders
 
   selector.set_required_features(requiredFeatures);
@@ -277,14 +274,10 @@ void ren::VulkanInstance::init_device(VkSurfaceKHR surface) {
   auto physicalDevice = physicalDeviceResult.value();
 
 
-  // Print the selected physical device information
-  ren::println("Selected physical device: {}", physicalDevice.name);
-  ren::println("Anisotropic Filtering: {}", physicalDevice.features.samplerAnisotropy ? "Enabled" : "Disabled");
-  ren::println("Fill Mode Non-Solid: {}", physicalDevice.features.fillModeNonSolid ? "Enabled" : "Disabled");
-  ren::println("Driver Version: {}", physicalDevice.properties.driverVersion);
-  ren::println("API Version: {}.{}.{}", VK_VERSION_MAJOR(physicalDevice.properties.apiVersion),
+
+
+  ren::println("{}, Vulkan {}.{}.{} ", physicalDevice.name, VK_VERSION_MAJOR(physicalDevice.properties.apiVersion),
                VK_VERSION_MINOR(physicalDevice.properties.apiVersion), VK_VERSION_PATCH(physicalDevice.properties.apiVersion));
-  ren::println("  Max Push Constant Size: {}", physicalDevice.properties.limits.maxPushConstantsSize);
   if (physicalDevice.properties.limits.maxPushConstantsSize < 128) {
     throw std::runtime_error("REN requires at least 128 bytes of Vulkan push constants");
   }
@@ -292,7 +285,7 @@ void ren::VulkanInstance::init_device(VkSurfaceKHR surface) {
   this->physical_device = physicalDevice.physical_device;
 
   // Optional: maps GPU timestamp queries onto the CPU clock of the profiler.
-  const char *calibratedTimestampsFn = nullptr;
+  const char* calibratedTimestampsFn = nullptr;
   if (physicalDevice.enable_extension_if_present(VK_KHR_CALIBRATED_TIMESTAMPS_EXTENSION_NAME)) {
     calibratedTimestampsFn = "vkGetCalibratedTimestampsKHR";
   } else if (physicalDevice.enable_extension_if_present(VK_EXT_CALIBRATED_TIMESTAMPS_EXTENSION_NAME)) {
@@ -304,10 +297,8 @@ void ren::VulkanInstance::init_device(VkSurfaceKHR surface) {
   this->device = vkbDevice.device;
 
   if (calibratedTimestampsFn != nullptr) {
-    this->getCalibratedTimestamps =
-        (PFN_vkGetCalibratedTimestampsKHR)vkGetDeviceProcAddr(this->device, calibratedTimestampsFn);
+    this->getCalibratedTimestamps = (PFN_vkGetCalibratedTimestampsKHR)vkGetDeviceProcAddr(this->device, calibratedTimestampsFn);
   }
-  ren::println("Calibrated Timestamps: {}", this->getCalibratedTimestamps ? "Enabled" : "Disabled");
 
 
 
@@ -365,12 +356,6 @@ void ren::VulkanInstance::init_device(VkSurfaceKHR surface) {
 
   VkPhysicalDeviceProperties props;
   vkGetPhysicalDeviceProperties(physicalDevice, &props);
-
-  fmt::print("Selected GPU: {} (type: {}, ID: {}, driver: {})\n", props.deviceName, static_cast<u32>(props.deviceType), props.deviceID,
-             props.driverVersion);
-  fmt::print("Max bound descriptor sets: {}\n", props.limits.maxBoundDescriptorSets);
-  fmt::print("Push constants size: {} bytes\n", props.limits.maxPushConstantsSize);
-
 }
 
 ren::VulkanInstance::~VulkanInstance() {
@@ -602,8 +587,6 @@ u32 ren::VulkanInstance::find_memory_type(u32 typeFilter, VkMemoryPropertyFlags 
 
   throw std::runtime_error("failed to find suitable memory type!");
 }
-
-
 
 
 

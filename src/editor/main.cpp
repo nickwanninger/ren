@@ -108,13 +108,7 @@ void testSaxpy(void) {
 #include <ren/assets/AssetStore.h>
 
 int main(int argc, char* argv[]) {
-  // ren::FilesystemAssetSource source("assets");
-  // source.mkdir("store");
-  // ren::AssetStore store(source);
 
-  // store.storeBlob("Hello", {{"name", "test.asset"}, {"type", "mesh"}, {"source", "test.glb"}}, "a-message");
-
-  // return 0;
   ren::parseFlags(argc, argv);
 
 
@@ -129,8 +123,6 @@ int main(int argc, char* argv[]) {
 
   ren::Application app("Editor", res, ren::makeBox<editor::EditorWindow>());
 
-
-
   if (loadArg.get() != "") {
     loadMeshIntoScene(loadArg.get().c_str(), scaleArg.get());
   }
@@ -138,23 +130,11 @@ int main(int argc, char* argv[]) {
   // loadMeshIntoScene("/Users/nick/dev/Models/sponza.glb");
   // loadMeshIntoScene("/Users/nick/dev/Models/thinker.glb", 1);
 
-  //ren::getAssetManager().importMesh("/Users/nick/dev/Models/sponza.glb");
-  // ren::getAssetManager().importMesh("assets/test/meshes/unit_cube.glb");
-
-
-  if (runSaxpyArg.get()) {
-    testSaxpy();
-    return 0;
-  }
-
-  ren::backgroundWork([&]() {
-    while (app.isRunning()) {
-      REN_PROFILE_SCOPE("Background work thread");
-      std::this_thread::sleep_for(std::chrono::milliseconds(250));
-    }
-  });
+  // ren::getAssetManager().importMesh("/Users/nick/dev/Models/sponza.glb");
+  //  ren::getAssetManager().importMesh("assets/test/meshes/unit_cube.glb");
 
   app.run();
+
 
 
   REN_PROFILE_END_SESSION();

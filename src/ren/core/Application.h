@@ -43,8 +43,8 @@ namespace ren {
     sol::state lua;
 
    public:
-
     bool isRunning() const { return running; }
+    void stop() { running = false; }
 
     ren::AssetManager &getAssetManager() { return world.get_mut<ren::AssetManager>(); }
 
@@ -59,7 +59,20 @@ namespace ren {
     Application(const std::string &app_name, glm::uvec2 window_size, Box<Window> window = nullptr);
     ~Application();
 
-    void run();
+
+    struct RunOptions {
+      u64 maxFrames = 0;
+      // If more than zero, each frame advances the time by this many seconds,
+      // and the wall clock is not used. Tests use it to render the same
+      // frames on each run.
+      float fixedDeltaTime = 0.0f;
+    };
+
+    inline void run(void) {
+      RunOptions options;
+      run(options);
+    }
+    void run(const RunOptions &options);
 
     static Application &get(void);
 
@@ -127,7 +140,9 @@ namespace ren {
   template <typename T>
   static inline T &ensureResource(void) {
     REN_DEPRECATION_WARNING();
-    if (hasResource<T>()) return resource<T>();
+    if (hasResource<T>()) {
+      return resource<T>();
+    }
 
     auto &world = ren::world();
     world.emplace<T>();
@@ -150,8 +165,8 @@ namespace ren {
 
 
 
-  template <typename WindowT, typename ...Args>
-  requires(std::is_base_of<ren::Window, WindowT>::value)
+  template <typename WindowT, typename... Args>
+    requires(std::is_base_of<ren::Window, WindowT>::value)
   inline auto run(std::string app_name, glm::uvec2 res, Args &&...args) {
     ren::Application app(app_name, res, ren::makeBox<WindowT>(std::forward<Args>(args)...));
     return app.run();
