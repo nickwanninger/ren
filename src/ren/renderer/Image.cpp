@@ -323,6 +323,93 @@ namespace ren {
     }
   }
 
+  // The size of one pixel in the buffer that readPixels() fills, or 0 for a
+  // format that it does not support.
+  static u32 readbackPixelBytes(VkFormat format) {
+    switch (format) {
+      case VK_FORMAT_R8G8B8A8_UNORM:
+      case VK_FORMAT_R8G8B8A8_SRGB:
+      case VK_FORMAT_B8G8R8A8_UNORM:
+      case VK_FORMAT_B8G8R8A8_SRGB:
+        return 4;
+      case VK_FORMAT_R16G16B16A16_SFLOAT:
+        return 8;
+      case VK_FORMAT_R32G32B32A32_SFLOAT:
+        return 16;
+      // A copy of the depth aspect gives one float for each pixel.
+      case VK_FORMAT_D32_SFLOAT:
+      case VK_FORMAT_D32_SFLOAT_S8_UINT:
+        return 4;
+      default:
+        return 0;
+    }
+  }
+
+
+  std::vector<u8> Image::readPixels(VkImageLayout current) const {
+    const auto format = imageCreateInfo.format;
+    const u32 pixelBytes = readbackPixelBytes(format);
+    if (pixelBytes == 0) {
+      throw std::invalid_argument(fmt::format("Image::readPixels does not support format {}: {}", (int)format, name));
+    }
+
+    // A layout change of a depth-stencil image includes both aspects, but the
+    // copy reads only the depth.
+    const bool depth = format == VK_FORMAT_D32_SFLOAT || format == VK_FORMAT_D32_SFLOAT_S8_UINT;
+    VkImageAspectFlags layoutAspects = VK_IMAGE_ASPECT_COLOR_BIT;
+    if (depth) {
+      layoutAspects = format == VK_FORMAT_D32_SFLOAT_S8_UINT ? VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT : VK_IMAGE_ASPECT_DEPTH_BIT;
+    }
+    const VkImageAspectFlags copyAspect = depth ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
+
+    const u32 width = imageCreateInfo.extent.width;
+    const u32 height = imageCreateInfo.extent.height;
+    const VkDeviceSize byteCount = VkDeviceSize(width) * height * pixelBytes;
+    BufferMemory staging(byteCount, VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+
+    // The caller does not say which stage last used the image, so the
+    // barriers wait for all commands.
+    VkImageMemoryBarrier barrier{
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT,
+        .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+        .oldLayout = current,
+        .newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = image,
+        .subresourceRange = {.aspectMask = layoutAspects, .baseMipLevel = 0, .levelCount = 1, .baseArrayLayer = 0, .layerCount = 1},
+    };
+
+    auto &vulkan = ren::getVulkan();
+    VkCommandBuffer cmd = vulkan.beginSingleTimeCommands();
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+    VkBufferImageCopy region{
+        .bufferOffset = 0,
+        .imageSubresource = {.aspectMask = copyAspect, .mipLevel = 0, .baseArrayLayer = 0, .layerCount = 1},
+        .imageOffset = {0, 0, 0},
+        .imageExtent = {width, height, 1},
+    };
+    vkCmdCopyImageToBuffer(cmd, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, staging.getHandle(), 1, &region);
+
+    // Return the image to its layout, so that the owner's record of the
+    // layout stays correct.
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    barrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    barrier.newLayout = current;
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+    vulkan.endSingleTimeCommands(cmd);
+
+
+    const u8 *pixels = staging.hostData<u8>();
+    return std::vector<u8>(pixels, pixels + byteCount);
+  }
+
+
   void Image::readPixelToBuffer(VkCommandBuffer cmd, glm::vec2 position, VkBuffer stagingBuffer, VkDeviceSize bufferOffset) {
     // Transition to transfer source
     VkImageMemoryBarrier barrier{

@@ -76,6 +76,14 @@ namespace ren {
     // etc. Only works for RGBA8 formats. Requires TRANSFER_SRC_BIT usage flag.
     void saveDebug(const std::string &outputDir = ".") const;
 
+    // Copy mip 0 to the CPU as tightly packed rows, and wait for the copy. The
+    // bytes keep the format of the image: RGBA8 and BGRA8 (4 bytes), RGBA16F (8
+    // bytes), RGBA32F (16 bytes), or the depth of D32 and D32S8 (4 bytes, a
+    // float). The image must be in the layout `current`, and it returns to
+    // that layout. Throws for other formats. Requires TRANSFER_SRC_BIT usage.
+    // This stalls the GPU, so use it only in tools and tests.
+    std::vector<u8> readPixels(VkImageLayout current) const;
+
     void readPixelToBuffer(VkCommandBuffer cmd, glm::vec2 position, VkBuffer stagingBuffer, VkDeviceSize bufferOffset);
 
    private:
