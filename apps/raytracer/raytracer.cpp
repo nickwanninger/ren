@@ -27,6 +27,8 @@ static ren::Flag<float> renderScale("render-scale", 0.25, "raytracing scale");
 static ren::Flag<std::string> skyBoxPath("skybox", "assets/hdri/sky.jpg", "Path to the skybox texture to use in the viewport.");
 static ren::Flag<std::string> scenePath("scene", "assets/test/meshes/simple_scene.glb", "Path to the scene mesh");
 static ren::Flag<float> scaleArg("scene-scale", 1.0f, "Uniform scale to apply to the loaded mesh");
+static ren::Flag<int> maxBouncesArg("max-bounces", 4, "Bounces after the primary ray. 0 traces only the primary ray and the sun at its hit");
+static ren::Flag<float> sunStrengthArg("sun-strength", 3.0f, "Sun irradiance on a surface that faces it. 0 disables the sun");
 
 
 
@@ -72,11 +74,49 @@ namespace shd {
   static_assert(offsetof(Mesh, vertexOffset) == 96);
   static_assert(offsetof(Mesh, bvhNodes) == 104);
 
+  // One emissive mesh, for next event estimation.
+  struct EmissiveLight {
+    // The rows of the affine model-to-world matrix.
+    glm::vec4 modelToWorld[3];
+    // The index of the mesh in the mesh buffer.
+    u32 instance;
+    u32 triangleCount;
+    // The sum of the selection weights of this light and the lights before it.
+    float cdf;
+    float _pad = 0.0f;
+  };
+  static_assert(sizeof(EmissiveLight) == 64);
+
 }  // namespace shd
 
 class RaytraceViewport : public ren::EditorViewport {
  public:
   PipelineStateObject rtPSO;
+
+  // Path tracing settings.
+  u32 maxBounces = 4;
+  u32 raysPerPixel = 1;
+  float sunStrength = 3.0f;
+  // Next event estimation toward emissive meshes, with MIS.
+  bool lightSampling = true;
+  bool randomizeSeed = true;
+  u32 randomSeed = 0;
+
+  // Progressive accumulation. sceneColor is temporal, and each frame adds its
+  // samples to the running average in the history of sceneColor.
+  bool accumulate = true;
+  // Frames already in the history. 0 starts a new average.
+  u32 accumulatedFrames = 0;
+  u32 frameSeed = 0;
+
+  // What the current average was rendered with. Any change resets it.
+  glm::mat4 lastView = glm::mat4(0.0f);
+  glm::mat4 lastProjection = glm::mat4(0.0f);
+  u32 lastMaxBounces = 0;
+  float lastSunStrength = 0.0f;
+  u32 lastDebugView = 0;
+  bool lastLightSampling = true;
+  std::vector<shd::Mesh> lastMeshes;
 
   u32 debugView = 0;
   u32 debugTestScale = 2000;
@@ -86,13 +126,35 @@ class RaytraceViewport : public ren::EditorViewport {
   GraphHandle previousScene;
   ref<RenderWorld> preparedWorld;
 
+  // The scene of this frame, from prepareScene().
+  std::vector<shd::Mesh> meshes;
+  // World-space box of each mesh, for the top-level BVH.
+  std::vector<ren::AABB> meshBoxes;
+  // The meshes with emission. The shader picks one in proportion to its
+  // weight, which is luminance times triangle count.
+  std::vector<shd::EmissiveLight> lights;
+  float lightWeightTotal = 0.0f;
+
+  // A camera that moves less than this per matrix element counts as still.
+  static constexpr float kStillEpsilon = 1e-4f;
+
+
+  static bool nearlyEqual(const glm::mat4 &a, const glm::mat4 &b) {
+    for (int c = 0; c < 4; c++) {
+      for (int r = 0; r < 4; r++) {
+        if (glm::abs(a[c][r] - b[c][r]) > kStillEpsilon) {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
+
   void buildGraph() override {
-    ren::MeshScene::load("assets/test/meshes/unit_cube.glb")->instantiate({});
-    auto e = ren::MeshScene::load(scenePath.get())->instantiate({});
-    e.get_mut<ren::comp::Transform>().scale = glm::vec3(scaleArg.get());
-
-
     this->renderScale = ::renderScale.get();
+    this->maxBounces = static_cast<u32>(std::max(maxBouncesArg.get(), 0));
+    this->sunStrength = sunStrengthArg.get();
 
 
     this->skybox = ren::Texture::load(skyBoxPath.get(), VK_FORMAT_R8G8B8A8_SRGB);
@@ -104,35 +166,38 @@ class RaytraceViewport : public ren::EditorViewport {
     rtPSO.depthTest = false;
     rtPSO.depthWrite = false;
 
+    // 32-bit floats keep the running average precise after many frames.
     GraphHandle sceneColor;
-    graph.pass("raytrace")
-        .createColorAttachment("sceneColor", {.size = ImageSize::viewRelative(1.0f), .format = VK_FORMAT_R16G16B16A16_SFLOAT, .temporal = true},
-                               sceneColor)
-        .prepare([this](PrepareContext &ctx) {
-          preparedWorld = make<RenderWorld>();
-          preparedWorld->extractFromECS(ren::world());
-          ctx.retain(preparedWorld);
-        })
-        .render([this](GraphRenderPassContext &ctx) { this->runRaytracer(ctx.encoder); });
+    auto &raytrace =
+        graph.pass("raytrace")
+            .createColorAttachment("sceneColor", {.size = ImageSize::viewRelative(1.0f), .format = VK_FORMAT_R32G32B32A32_SFLOAT, .temporal = true},
+                                   sceneColor)
+            .prepare([this](PrepareContext &ctx) {
+              preparedWorld = make<RenderWorld>();
+              preparedWorld->extractFromECS(ren::world());
+              ctx.retain(preparedWorld);
+              prepareScene();
+              prepareAccumulation(ctx);
+            })
+            .render([this](GraphRenderPassContext &ctx) { this->runRaytracer(ctx); });
+
+    // The pass reads the history of its own output, so the handle exists only
+    // after the pass.
     previousScene = graph.graph().previous(sceneColor);
+    raytrace.read(previousScene, GraphAccess::FragmentShaderRead);
     bloom = &addBloom(graph, sceneColor, finalImage);
   }
 
-  void runRaytracer(ren::RenderPassEncoder &encoder) {
-    auto shader = encoder.bindGraphics(rtPSO);
 
-    auto &arena = encoder.getArena();
-
-
-    // construct the meshes from the scene.
-    const auto &world = *preparedWorld;
+  // Make the shader meshes and the world-space boxes from the prepared world.
+  void prepareScene() {
+    meshes.clear();
+    meshBoxes.clear();
+    lights.clear();
+    lightWeightTotal = 0.0f;
 
     auto &mmb = ren::resource<ren::MegaMeshBuffer>();
-
-    std::vector<shd::Mesh> meshes;
-    // World-space box of each mesh, for the top-level BVH.
-    std::vector<ren::AABB> meshBoxes;
-    for (auto &r : world.renderables) {
+    for (auto &r : preparedWorld->renderables) {
       if (r.mesh->getBVH() == nullptr) {
         continue;
       }
@@ -152,6 +217,7 @@ class RaytraceViewport : public ren::EditorViewport {
       mesh.bvhNodes = r.mesh->getBVH()->getNodeAddress();
       mesh.bvhTriangles = r.mesh->getBVH()->getTriangleAddress();
       mesh.material.color = glm::vec4(1.0f);
+      mesh.material.smoothness = 0.1f;
       if (r.material) {
         if (const auto *schema = r.material->getSchema()) {
           const auto &data = r.material->getCpuMaterialData();
@@ -164,6 +230,13 @@ class RaytraceViewport : public ren::EditorViewport {
           for (const auto &field : schema->fields) {
             if (field.name == "baseColor") {
               readField(field, mesh.material.color);
+            } else if (field.name == "emissiveFactor") {
+              readField(field, mesh.material.emissionColor);
+              mesh.material.emissionColor.a = 1.0f;
+            } else if (field.name == "roughness") {
+              float roughness = 1.0f - mesh.material.smoothness;
+              readField(field, roughness);
+              mesh.material.smoothness = 1.0f - glm::clamp(roughness, 0.0f, 1.0f);
             } else if (field.name == "baseColorTexture" && field.byteSize == sizeof(u32) && field.byteOffset <= data.size() &&
                        sizeof(u32) <= data.size() - field.byteOffset) {
               std::memcpy(&mesh.material.albedoTexture, data.data() + field.byteOffset, sizeof(u32));
@@ -172,6 +245,25 @@ class RaytraceViewport : public ren::EditorViewport {
         }
       }
       meshes.push_back(mesh);
+
+      // The weight makes each triangle of a light equally likely, so the
+      // shader can find the probability of any point on a light from its
+      // mesh luminance and triangle area alone.
+      const glm::vec3 emission = glm::vec3(mesh.material.emissionColor) * mesh.material.emissionColor.a;
+      const float luminance = glm::dot(emission, glm::vec3(0.2126f, 0.7152f, 0.0722f));
+      const u32 triangleCount = entry.indexCount / 3;
+      if (luminance > 0.0f && triangleCount > 0) {
+        shd::EmissiveLight light = {};
+        const glm::mat4 modelToWorld = glm::transpose(r.transform);
+        for (int row = 0; row < 3; row++) {
+          light.modelToWorld[row] = modelToWorld[row];
+        }
+        light.instance = static_cast<u32>(meshes.size() - 1);
+        light.triangleCount = triangleCount;
+        lightWeightTotal += luminance * static_cast<float>(triangleCount);
+        light.cdf = lightWeightTotal;
+        lights.push_back(light);
+      }
 
       ren::AABB worldBox(glm::vec3(INFINITY), glm::vec3(-INFINITY));
       for (int corner = 0; corner < 8; corner++) {
@@ -182,6 +274,45 @@ class RaytraceViewport : public ren::EditorViewport {
       }
       meshBoxes.push_back(worldBox);
     }
+  }
+
+
+  // Decide if this frame continues the running average or starts a new one.
+  void prepareAccumulation(PrepareContext &ctx) {
+    const glm::mat4 &view = ctx.view->values.view;
+    const glm::mat4 &projection = ctx.view->values.projection;
+
+    // The graph drops the history on the first frame and after a size change.
+    const bool hasHistory = ctx.resources.storage(previousScene) != nullptr;
+    const bool cameraStill = nearlyEqual(view, lastView) && nearlyEqual(projection, lastProjection);
+    const bool settingsSame =
+        maxBounces == lastMaxBounces && sunStrength == lastSunStrength && debugView == lastDebugView && lightSampling == lastLightSampling;
+    // shd::Mesh has no implicit padding, so a byte compare finds any change
+    // to a transform or a material.
+    const bool sceneSame = meshes.size() == lastMeshes.size() &&
+                           (meshes.empty() || std::memcmp(meshes.data(), lastMeshes.data(), meshes.size() * sizeof(shd::Mesh)) == 0);
+
+    if (accumulate && hasHistory && cameraStill && settingsSame && sceneSame) {
+      accumulatedFrames++;
+    } else {
+      accumulatedFrames = 0;
+    }
+
+    lastView = view;
+    lastProjection = projection;
+    lastMaxBounces = maxBounces;
+    lastSunStrength = sunStrength;
+    lastDebugView = debugView;
+    lastLightSampling = lightSampling;
+    lastMeshes = meshes;
+    frameSeed = randomizeSeed ? static_cast<u32>(rand()) : randomSeed;
+  }
+
+
+  void runRaytracer(GraphRenderPassContext &ctx) {
+    auto shader = ctx.encoder.bindGraphics(rtPSO);
+    auto &arena = ctx.encoder.getArena();
+    auto &mmb = ren::resource<ren::MegaMeshBuffer>();
 
     auto *meshBuf = arena.push<StorageBuffer<shd::Mesh>>(meshes.size());
     meshBuf->copyFromHost(meshes.data(), meshes.size());
@@ -211,6 +342,25 @@ class RaytraceViewport : public ren::EditorViewport {
     root.set("sceneNodes", sceneNodes);
     root.set("sceneEntries", sceneEntries);
 
+    root.set("randomSeed", frameSeed);
+    root.set("maxBounces", maxBounces);
+    root.set("raysPerPixel", raysPerPixel);
+    root.set("sunStrength", sunStrength);
+    root.set("accumulatedFrames", accumulatedFrames);
+
+    u64 lightAddress = 0;
+    if (!lights.empty()) {
+      auto *lightBuf = arena.push<StorageBuffer<shd::EmissiveLight>>(lights.size());
+      lightBuf->copyFromHost(lights.data(), lights.size());
+      lightAddress = lightBuf->getGPUAddress();
+    }
+    root.set("lights", lightAddress);
+    root.set("numLights", static_cast<u32>(lights.size()));
+    root.set("lightWeightTotal", lightWeightTotal);
+    root.set("lightSampling", static_cast<u32>(lightSampling));
+    // The shader reads the history only when accumulatedFrames is not 0.
+    root.set("history", accumulatedFrames > 0 ? ctx.resources.texture(previousScene) : TextureHandle{});
+
 
     root.set("debugView", debugView);
     root.set("debugTestScale", debugTestScale);
@@ -223,8 +373,24 @@ class RaytraceViewport : public ren::EditorViewport {
 
   void inspect(void) {
     ImGui::Text("Raytracer viewport");
+    ImGui::SliderInt("Max Bounces", reinterpret_cast<int *>(&maxBounces), 0, 10);
+    ImGui::SliderInt("Rays Per Pixel", reinterpret_cast<int *>(&raysPerPixel), 1, 16);
+    ImGui::SliderFloat("Sun Strength", &sunStrength, 0.0f, 20.0f, "%.2f");
+    ImGui::Checkbox("Light Sampling", &lightSampling);
+    ImGui::SameLine();
+    ImGui::Text("(%zu emissive meshes)", lights.size());
+    ImGui::Checkbox("Randomize Seed", &randomizeSeed);
+    if (!randomizeSeed) {
+      ImGui::DragInt("Seed", reinterpret_cast<int *>(&randomSeed));
+    }
+
+    ImGui::Checkbox("Accumulate", &accumulate);
+    ImGui::SameLine();
     const auto size = getRenderSize();
-    ImGui::Text("Primary rays per frame: %zu", static_cast<size_t>(size.x) * size.y);
+    const u64 raysPerFrame = static_cast<u64>(raysPerPixel) * size.x * size.y;
+    const u64 accumulatedRays = static_cast<u64>(accumulatedFrames + 1) * raysPerFrame;
+    ImGui::Text("(%u frames, %.2fM rays)", accumulatedFrames + 1, accumulatedRays / 1e6f);
+    ImGui::Text("Primary rays per frame: %zu", static_cast<size_t>(raysPerFrame));
     ImGui::SliderFloat("Exposure (stops)", &exposure, -10.0f, 10.0f, "%.2f");
     if (bloom) {
       bloom->inspect();
@@ -247,6 +413,14 @@ class RaytraceViewport : public ren::EditorViewport {
 class RaytraceWindow : public ren::Window {
  public:
   void onInitialize(void) override {
+    // Load the scene before the first world.progress(). The viewport builds
+    // its graph in onRender, after progress(), and new entities have no world
+    // matrices until the next progress(). The first frame then sees every mesh
+    // at its local transform.
+    // ren::MeshScene::load("assets/test/meshes/unit_cube.glb")->instantiate({});
+    auto e = ren::MeshScene::load(scenePath.get())->instantiate({});
+    e.get_mut<ren::comp::Transform>().scale = glm::vec3(scaleArg.get());
+
     m_viewport = ren::makeBox<RaytraceViewport>();
     m_viewport->position = {0.0f, 1.5f, 4.5f};
     m_viewport->angles = {-0.08f, 0.0f, 0.0f};
