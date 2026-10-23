@@ -303,7 +303,7 @@ void ren::VulkanInstance::init_device(VkSurfaceKHR surface) {
 
 
 
-  ren::println("{}, Vulkan {}.{}.{} ", physicalDevice.name, VK_VERSION_MAJOR(physicalDevice.properties.apiVersion),
+  ren::println("Starting ren on {}, Vulkan {}.{}.{} ", physicalDevice.name, VK_VERSION_MAJOR(physicalDevice.properties.apiVersion),
                VK_VERSION_MINOR(physicalDevice.properties.apiVersion), VK_VERSION_PATCH(physicalDevice.properties.apiVersion));
   if (physicalDevice.properties.limits.maxPushConstantsSize < 128) {
     throw std::runtime_error("REN requires at least 128 bytes of Vulkan push constants");
