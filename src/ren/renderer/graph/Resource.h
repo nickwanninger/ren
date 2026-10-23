@@ -1,180 +1,123 @@
 #pragma once
-
 #include <ren/renderer/graph/Handle.h>
-#include <ren/renderer/graph/RunContext.h>
-#include <unordered_set>
-#include <ren/core/Option.h>
+#include <ren/types.h>
+#include <optional>
 
 namespace ren {
-  class RenderTask;  // Forward declaration
-  class RenderGraph; // Forward declaration
+  struct RecordContext;
+  struct CapturedView;
 
 
-  // Definitions for Graph Resources.
-  enum class GraphResourceType : u8 {
-    Image,   // Constructed with GraphImageSpec/createImage
-    Buffer,  // Not yet implemented. For GPU compute.
-  };
-
-
-  // When accessing a resource, what kind of access is performed. This is used
-  // to determine layout transitions and pipeline barriers required for the
-  // resource between tasks. For example, a resource written as a RenderTarget
-  // in one task, and read as a ShaderRead in another will require a layout
-  // transition and appropriate pipeline barriers.  This is a simplified model
-  // compared to real graphics APIs, and I'll expand it as needed, but basic
-  // functionality should be covered.
+  // How a task uses a resource. The graph makes barriers from these values
+  // (see barrierInfo() in ImageResource.cpp).
   enum class GraphAccess : u8 {
-    // The resource is written as a render target (color)
-    RenderTarget,
-    // The resource is written as a depth target
-    DepthTarget,
-
-    // The resource is read in a shader
-    VertexShaderRead,
-    FragmentShaderRead,
-    ComputeShaderRead,
-
-
-    // The resource is written in a compute shader
-    // Note: Writing in fragment or vertex shaders is not supported, as vulkan doesn't.
-    ComputeShaderWrite,
-    // This is here for completeness, but is not handled in the render graph
-    // scheduler, as it only supports RAW depdendencies at the moment, where
-    // there is one writer, and many readers. The readers are not expected to be
-    // ordered when executed, so a WAW or WAR dependency cannot be properly
-    // handled.  This would require more complex scheduling (likely involving
-    // something like aliased resources).
-    ComputeShaderReadWrite,
-
-    // Generic read in all shaders.
-    ShaderRead,
+    RenderTarget,            // Color attachment of a render pass. Reads and writes.
+    DepthTarget,             // Depth attachment of a render pass. Reads and writes.
+    VertexShaderRead,        // Sampled in a vertex shader.
+    FragmentShaderRead,      // Sampled in a fragment shader.
+    ComputeShaderRead,       // Read in a compute shader.
+    ComputeShaderWrite,      // Written in a compute shader. The old contents are not read.
+    ComputeShaderReadWrite,  // Read and written in a compute shader.
+    ShaderRead               // Sampled at a stage that is not known. Waits on all commands.
   };
 
 
-  // The specification for creating an image in the render graph.
+  // True if the access writes. A write waits for all earlier reads and writes.
+  inline bool graphWrites(GraphAccess access) {
+    return access == GraphAccess::RenderTarget || access == GraphAccess::DepthTarget || access == GraphAccess::ComputeShaderWrite ||
+           access == GraphAccess::ComputeShaderReadWrite;
+  }
+
+
+  // The size of a graph image: a fixed size in pixels, or a scale of the
+  // render size of the view.
+  struct ImageSize {
+    glm::uvec2 pixels{1};            // Used if scale is empty.
+    std::optional<glm::vec2> scale;  // Multiplied by the render size of the view.
+
+    static ImageSize absolute(glm::uvec2 pixels) { return {pixels, {}}; }
+    static ImageSize viewRelative(float scale) { return {glm::uvec2(1), glm::vec2(scale)}; }
+
+    // Return the size in pixels for this view. A view-relative size rounds
+    // down, and each dimension is at least one. Throws for a view-relative
+    // size without a view, or for a scale that is not positive.
+    glm::uvec2 resolve(const CapturedView *view) const;
+  };
+
+
+  // The description of a graph image.
   struct GraphImageSpec {
-    // Resolution should come from the swapchain size multiplied by this scale factor.
-    // If this value is 0, the size is absolute. (.width, .height)
-    Option<glm::vec2> relativeScale = None;
-
-    // Absolute width/height.
-    Option<glm::uvec2> absoluteSize = None;
-    VkFormat format = VK_FORMAT_B8G8R8A8_SRGB;
+    ImageSize size = ImageSize::viewRelative(1.0f);
+    VkFormat format = VK_FORMAT_B8G8R8A8_SRGB;  // Ignored for depth attachments.
+    bool temporal = false;                      // Keep the result of the last frame, for RenderGraph::previous().
   };
 
 
+  // One allocation of a resource, e.g. one Vulkan image. Each storage keeps
+  // its own access state, so barriers stay correct across frames.
+  struct GraphStorage {
+    virtual ~GraphStorage() = default;
 
+    // Record a barrier from the earlier accesses to the next access.
+    virtual void transition(RecordContext &, const std::vector<GraphAccess> &from, GraphAccess to) const = 0;
 
-  // An operand of a resource in the render graph.
-  // This represents a single location where a resource is used as an operand (read), and how it is
-  // used. Think about this like an llvm::Use (it's an argument, basically).
-  struct GraphOperand {
-    GraphHandle valueHandle;
-    GraphAccess access;
-    GraphResourceType resourceType;
-
-    GraphOperand(GraphHandle h, GraphAccess a, GraphResourceType type)
-        : valueHandle(h)
-        , access(a)
-        , resourceType(type) {}
-
-    std::string toString(void) const;
+    // The last write, or the reads since the last write. Only
+    // RenderGraph::submitted() changes it, so it shows only submitted work.
+    std::vector<GraphAccess> access;
   };
 
 
-
-
-  /**
-   * @brief The base class for all resources managed by the render graph.
-   *
-   * This class serves as a common interface for different types of resources
-   * (e.g., images, buffers) that are tracked and managed within the render graph.
-   * Each subclass is responsible for implementing resource-specific synchronization
-   * and barrier emission during schedule execution.
-   */
-  class GraphResource {
-   public:
+  // The definition of a resource in the graph, e.g. an image with a size and
+  // a format. Derive from it to add a new kind of resource. The graph decides
+  // when to reuse storage, and calls allocate() when it needs new storage.
+  struct GraphResource {
     virtual ~GraphResource() = default;
 
-    /**
-     * @brief Update the resource state when the graph state changes.
-     * Called when swapchain resizes or other graph-level events occur.
-     * @param G Reference to the render graph
-     * @return true if the resource was modified/rebuilt, false otherwise
-     */
-    virtual bool update(RenderGraph &G) = 0;
+    // Make new storage for this view.
+    virtual ref<GraphStorage> allocate(const CapturedView *view) const = 0;
 
-    /**
-     * @brief Emit synchronization barriers to transition resource access state.
-     * Called during schedule execution to record barriers into the command buffer.
-     * @param ctx Execution context containing command buffer and graph reference
-     * @param fromAccess The current access state of the resource
-     * @param toAccess The desired access state for the next operation
-     */
-    virtual void emitBarrier(GraphRunContext &ctx, GraphAccess fromAccess,
-                             GraphAccess toAccess) = 0;
+    // True if the storage can be used for this view, e.g. it has the correct size.
+    virtual bool compatible(const GraphStorage &, const CapturedView *view) const = 0;
 
-    /**
-     * @brief Display resource details in ImGui inspector.
-     * Each resource type implements its own inspection UI.
-     */
-    virtual void inspect() const = 0;
+    // TODO: Nothing calls this yet. Should the graph inspector show resources?
+    virtual void inspect() const {}
 
-    std::string name;           ///< Human-readable name of the resource
-    GraphResourceType type;     ///< The type of the resource (Image, Buffer, etc.)
-    GraphAccess initialAccess;  ///< The initial access state of the resource
-    std::vector<RenderTask*> writingTasks;   ///< Tasks that write to this resource, in declaration order
+    std::string name;
+    bool temporal = false;  // See GraphImageSpec::temporal.
 
-    std::unordered_set<RenderTask *> users;  ///< Tasks that read/use this resource
+   private:
+    // Only the graph changes these. See RenderGraph::assignStorage().
+    std::weak_ptr<void> registeredOwner;  // The identity of the graph that owns this resource.
+    ref<GraphStorage> current;            // The storage from the last frame where the producer ran.
+    ref<GraphStorage> history;            // The same storage, for a temporal resource.
+    std::vector<ref<GraphStorage>> pool;  // All storage that this resource owns. For a temporal resource: the history and one spare.
+    friend class RenderGraph;
   };
 
+
+  // One version of a resource: its contents after a specified task writes or
+  // updates it. A GraphHandle refers to one version. All versions of a
+  // resource use the same storage.
+  struct GraphVersion {
+    std::weak_ptr<void> owner;  // The identity of the graph.
+    ref<GraphResource> resource;
+    u64 id = 0;             // For error messages. A history handle has the ID of its version.
+    u64 producer = 0;       // The ID of the task that writes this version. Zero until a task writes it.
+    bool previous = false;  // True for a history handle from RenderGraph::previous().
+
+    // The version that this version updates, or null for the first version.
+    // The reference is strong, so a handle keeps the earlier versions alive.
+    ref<GraphVersion> prior;
+
+    // The update of this version, if there is one. The reference is weak, so
+    // the versions do not form a reference cycle.
+    std::weak_ptr<GraphVersion> successor;
+  };
+
+
+  // One input or output of a task: a handle and the access to it.
+  struct GraphHandleUsage {
+    GraphHandle handle;
+    GraphAccess access;
+  };
 }  // namespace ren
-
-
-
-/// ----------------------------------------- ///
-
-template <>
-struct fmt::formatter<ren::GraphResourceType> : fmt::formatter<std::string_view> {
-  static const char *toString(ren::GraphResourceType access) {
-#define CASE_ENUM_TO_STRING(e) \
-  case ren::GraphResourceType::e: return #e;
-    switch (access) {
-      CASE_ENUM_TO_STRING(Image);
-      CASE_ENUM_TO_STRING(Buffer);
-    }
-#undef CASE_ENUM_TO_STRING
-  }
-
-  auto format(ren::GraphResourceType access, fmt::format_context &ctx) const {
-    return fmt::formatter<std::string_view>::format(toString(access), ctx);
-  }
-};
-
-/// ----------------------------------------- ///
-
-template <>
-struct fmt::formatter<ren::GraphAccess> : fmt::formatter<std::string_view> {
-  static const char *toString(ren::GraphAccess access) {
-#define CASE_ENUM_TO_STRING(e) \
-  case ren::GraphAccess::e: return #e;
-    switch (access) {
-      CASE_ENUM_TO_STRING(RenderTarget);
-      CASE_ENUM_TO_STRING(DepthTarget);
-      CASE_ENUM_TO_STRING(FragmentShaderRead);
-      CASE_ENUM_TO_STRING(VertexShaderRead);
-      CASE_ENUM_TO_STRING(ComputeShaderRead);
-      CASE_ENUM_TO_STRING(ComputeShaderWrite);
-      CASE_ENUM_TO_STRING(ComputeShaderReadWrite);
-      CASE_ENUM_TO_STRING(ShaderRead);
-    }
-#undef CASE_ENUM_TO_STRING
-  }
-
-  auto format(ren::GraphAccess access, fmt::format_context &ctx) const {
-    return fmt::formatter<std::string_view>::format(toString(access), ctx);
-  }
-};
-
-/// ----------------------------------------- ///

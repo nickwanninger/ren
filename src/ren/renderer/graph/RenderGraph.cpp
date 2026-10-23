@@ -1,812 +1,700 @@
 #include <ren/renderer/graph/RenderGraph.h>
-#include <ren/renderer/graph/ImageResource.h>
-#include <ren/renderer/Swapchain.h>
-
+#include <ren/renderer/Renderer.h>
+#include <ren/core/Application.h>
 #include <imgui/imgui.h>
-#include <ImGuizmo/ImGuizmo.h>
-#include <ImGuizmo/GraphEditor.h>
-#include <imnodes/imnodes.h>
-
-#include <unordered_map>
+#include <algorithm>
 #include <unordered_set>
-#include <chrono>
-
 
 namespace ren {
+  ////////////////////////////////////////////////////////////////////////////
+  // Handles and resources
+  ////////////////////////////////////////////////////////////////////////////
 
-  // Implementation of RenderGraph would go here
 
-
-  //
-
-  std::string GraphOperand::toString(void) const {
-    return fmt::format("{} %{}", access, valueHandle);
-    // return fmt::format("%{}", valueHandle);
+  void RenderGraph::requireUpdate() const {
+    if (phase != Phase::Update) {
+      throw std::runtime_error("Graph mutation requires the update phase");
+    }
   }
 
 
+  const GraphVersion &RenderGraph::validate(GraphHandle handle) const {
+    if (!handle.version || handle.version->owner.lock() != identity) {
+      throw std::runtime_error("Invalid or foreign graph handle");
+    }
+    return *handle.version;
+  }
+
+
+  ref<GraphResource> RenderGraph::getResource(GraphHandle handle) const { return validate(handle).resource; }
+
+
+  GraphHandle RenderGraph::createResource(std::string_view name, ref<GraphResource> resource) {
+    requireUpdate();
+    if (!resource) {
+      throw std::runtime_error("Cannot create a null graph resource");
+    }
+    if (!resource->registeredOwner.expired()) {
+      throw std::runtime_error("Resource already belongs to a graph");
+    }
+
+    resource->registeredOwner = identity;
+    resource->name = name;
+
+    // The first version has no producer until a task writes it.
+    auto version = make<GraphVersion>();
+    version->owner = identity;
+    version->resource = std::move(resource);
+    version->id = nextVersion++;
+    return GraphHandle(version);
+  }
+
+
+  GraphHandle RenderGraph::createImage(std::string_view name, const GraphImageSpec &spec, GraphAccess initial) {
+    return createResource(name, make<ImageResource>(spec, initial));
+  }
+
+
+  GraphHandle RenderGraph::previous(GraphHandle handle) const {
+    const auto &value = validate(handle);
+    if (!value.resource->temporal) {
+      throw std::runtime_error("History requires an explicitly temporal resource: " + value.resource->name);
+    }
+    if (value.previous || (value.prior && !value.successor.expired())) {
+      throw std::runtime_error("Intermediate history snapshots are unsupported: " + value.resource->name);
+    }
+
+    // A history handle has the ID of its version, but resolves to the history storage.
+    auto history = make<GraphVersion>();
+    history->owner = identity;
+    history->resource = value.resource;
+    history->id = value.id;
+    history->previous = true;
+    return GraphHandle(history);
+  }
+
+
+
+  ////////////////////////////////////////////////////////////////////////////
+  // Tasks and their declarations
+  ////////////////////////////////////////////////////////////////////////////
+
+
+  RenderTask::RenderTask(RenderGraph &graph)
+      : owner(graph)
+      , id(graph.nextTask++) {
+    graph.requireUpdate();
+  }
+
+
+  void RenderGraph::requireDeclarable(const RenderTask &task) const {
+    requireUpdate();
+    if (task.sealed) {
+      throw std::runtime_error("Task dependencies are fixed; replace the task");
+    }
+    if (&task.owner != this) {
+      throw std::runtime_error("Foreign graph task");
+    }
+  }
+
+
+  void RenderGraph::declareRead(RenderTask &task, GraphHandle handle, GraphAccess access) {
+    requireDeclarable(task);
+    validate(handle);
+    if (graphWrites(access)) {
+      throw std::runtime_error("A read requires read access");
+    }
+
+    task.operands.push_back({handle, access});
+  }
+
+
+  void RenderGraph::declareWrite(RenderTask &task, GraphHandle handle, GraphAccess access) {
+    requireDeclarable(task);
+    validate(handle);
+    auto &value = *handle.version;
+    if (!graphWrites(access) || value.previous) {
+      throw std::runtime_error("Invalid graph write");
+    }
+    if (value.producer) {
+      throw std::runtime_error("Resource already has a producer; use updates(): " + value.resource->name);
+    }
+
+    value.producer = task.id;
+    task.results.push_back({handle, access});
+  }
+
+
+  GraphHandle RenderGraph::declareUpdate(RenderTask &task, GraphHandle handle, GraphAccess access) {
+    requireDeclarable(task);
+    const auto &old = validate(handle);
+    if (old.previous || !graphWrites(access)) {
+      throw std::runtime_error("Invalid graph update");
+    }
+
+    // A version can have only one update. A second update is a branch.
+    if (auto successor = old.successor.lock()) {
+      auto entry = producers.find(successor->producer);
+      auto first = entry == producers.end() ? nullptr : entry->second.lock();
+      throw std::runtime_error(
+          fmt::format("Branched update of '{}': '{}' and '{}'", old.resource->name, first ? first->name() : "expired task", task.name()));
+    }
+
+    auto next = make<GraphVersion>();
+    next->owner = identity;
+    next->resource = old.resource;
+    next->id = nextVersion++;
+    next->producer = task.id;
+    next->prior = handle.version;
+    handle.version->successor = next;
+
+    // The old version is an operand so that its producer is selected and runs first.
+    GraphHandle result(next);
+    task.operands.push_back({handle, GraphAccess::ShaderRead});
+    task.results.push_back({result, access});
+    return result;
+  }
 
 
   RenderTask &RenderTask::read(GraphHandle handle, GraphAccess access) {
-    m_graph.addRead(*this, handle, access);
-    GraphResourceType resourceType = m_graph.getResourceType(handle);
-    m_operands.push_back(GraphOperand(handle, access, resourceType));
+    owner.declareRead(*this, handle, access);
     return *this;
   }
+
 
   RenderTask &RenderTask::write(GraphHandle handle, GraphAccess access) {
-    m_graph.addWrite(*this, handle, access);
-    m_results.push_back(GraphHandleUsage{handle, access});
+    owner.declareWrite(*this, handle, access);
     return *this;
   }
 
 
-  std::string RenderTask::toString(void) const {
-    // print like an llvm SSA instruction
-    std::stringstream ss;
+  GraphHandle RenderTask::updates(GraphHandle handle, GraphAccess access) { return owner.declareUpdate(*this, handle, access); }
 
-    // Results (writes)
-    int ind = 0;
-    for (const auto &result : getResults()) {
-      if (ind++ > 0) {
-        ss << ", ";
-      }
-      ss << fmt::format("%{}", result.handle);
-    }
 
-    ss << " ← " << name() << "(";
+  void RenderTask::execute(RecordContext &ctx) {
+    REN_PROFILE_SCOPE(name().c_str());
 
-    // Operands (reads)
-    ind = 0;
-    for (const auto &operand : getOperands()) {
-      if (ind++ > 0) {
-        ss << ", ";
-      }
-      ss << operand.toString();
-    }
-
-    ss << ")";
-
-    return ss.str();
+    auto start = std::chrono::steady_clock::now();
+    run(ctx);
+    totalTimeNs += std::chrono::duration<double, std::nano>(std::chrono::steady_clock::now() - start).count();
+    ++numExecutions;
   }
 
 
-  RenderGraph::RenderGraph() {}
+
+  ////////////////////////////////////////////////////////////////////////////
+  // Selection
+  ////////////////////////////////////////////////////////////////////////////
 
 
-  bool RenderGraph::startFrame(glm::uvec2 newImageSize) {
-    // auto newImageSize = glm::uvec2(swapchainImage->getWidth(), swapchainImage->getHeight());
-
-    this->swapchainSize = newImageSize;  // update the stored size.
-
-    bool anyReallocated = false;
-    std::unordered_set<RenderTask *> needToPrepare;
-
-    // Update all resources with the new swapchain size.
-    // Each resource will decide whether it needs to rebuild based on its spec.
-    for (auto &[handle, resource] : resourceTable) {
-      if (resource->update(*this)) {
-        anyReallocated = true;
-        for (auto *userTask : resource->users) {
-          needToPrepare.insert(userTask);
-        }
-        // Re-prepare all writing tasks as well, in case they need to recreate things like framebuffers.
-        for (auto *writer : resource->writingTasks) {
-          needToPrepare.insert(writer);
-        }
-      }
+  void RenderGraph::enqueue(RenderTask &task) {
+    requireUpdate();
+    if (&task.owner != this) {
+      throw std::runtime_error("Cannot enqueue a foreign task");
     }
 
-    if (needToPrepare.size() > 0) {
-      getVulkan().waitForIdle();  // TEST
-      for (auto *task : needToPrepare) {
-        task->version++;
-        // Re-prepare tasks whose resources were reallocated
-        task->unprepare();
-        task->prepare();
-      }
+    auto registered = producers.find(task.id);
+    if (registered == producers.end() || registered->second.expired()) {
+      throw std::runtime_error("Task is not registered");
     }
-
-    return anyReallocated;
+    roots.push_back(registered->second.lock());
   }
 
-  GraphHandle RenderGraph::createImage(const std::string_view &name, const GraphImageSpec &spec, GraphAccess initialAccess) {
-    GraphHandle handle = nextHandle++;
-
-
-    if (spec.relativeScale.isNone() && spec.absoluteSize.isNone()) {
-      throw std::runtime_error("Invalid GraphImageSpec: must have non-zero scale or fixed size");
-    }
-
-    auto imageResource = make<ImageResource>(spec);
-    imageResource->name = std::string(name);
-    imageResource->initialAccess = initialAccess;
-
-    // Image allocation is deferred until startFrame() calls update()
-    resourceTable[handle] = imageResource;
-
-    return handle;
-  }
-
-  GraphHandle RenderGraph::addRead(RenderTask &task, GraphHandle handle, GraphAccess access) {
-    auto resource = resourceTable[handle];
-    resource->users.insert(&task);
-    return handle;
-  }
-
-  GraphHandle RenderGraph::addWrite(RenderTask &task, GraphHandle handle, GraphAccess access) {
-    auto resource = resourceTable[handle];
-    resource->writingTasks.push_back(&task);
-    return handle;
-  }
-
-
-  // Compute data dependencies based on operand/result relationships
-  void RenderGraph::computeDependencies(void) {
-    for (const auto &task : tasks) {
-      task->dependencies.clear();
-    }
-
-    for (const auto &[handle, resource] : resourceTable) {
-      auto &writers = resource->writingTasks;
-
-      // Chain writers: writer[i] depends on writer[i-1]
-      for (size_t i = 1; i < writers.size(); ++i) {
-        writers[i]->dependencies.insert(writers[i - 1]);
-      }
-
-      // Readers depend on last writer
-      if (!writers.empty()) {
-        RenderTask *lastWriter = writers.back();
-        for (auto *reader : resource->users) {
-          // Avoid self-dependency if task reads and writes
-          if (std::find(writers.begin(), writers.end(), reader) == writers.end()) {
-            reader->dependencies.insert(lastWriter);
-          }
-        }
-      }
-    }
-  }
-
-  void RenderGraph::reportCycle(const std::vector<RenderTask *> &path) {
-    std::stringstream ss;
-    ss << "Cycle detected in render graph:\n";
-    for (size_t i = 0; i < path.size(); ++i) {
-      ss << "  " << path[i]->name();
-      if (i + 1 < path.size()) {
-        ss << " → ";
-      }
-    }
-    throw std::runtime_error(ss.str());
-  }
-
-  void RenderGraph::detectAndReportCycle() {
-    enum Color { WHITE, GRAY, BLACK };
-    std::unordered_map<RenderTask *, Color> colors;
-    std::vector<RenderTask *> path;
-
-    std::function<bool(RenderTask *)> hasCycle = [&](RenderTask *task) -> bool {
-      colors[task] = GRAY;
-      path.push_back(task);
-
-      for (auto *dep : task->dependencies) {
-        if (colors[dep] == GRAY) {
-          // Back edge found - we have a cycle
-          path.push_back(dep);
-          reportCycle(path);
-          return true;
-        }
-        if (colors[dep] == WHITE && hasCycle(dep)) {
-          return true;
-        }
-      }
-
-      path.pop_back();
-      colors[task] = BLACK;
-      return false;
-    };
-
-    for (auto &task : tasks) {
-      colors[task.get()] = WHITE;
-    }
-
-    for (auto &task : tasks) {
-      if (colors[task.get()] == WHITE) {
-        if (hasCycle(task.get())) {
-          return;
-        }
-      }
-    }
-  }
-
-  // Topological sort: DFS to order tasks respecting dependencies
-  void RenderGraph::topologicalSort(RenderTask *task, std::vector<RenderTask *> &outOrder, std::unordered_set<RenderTask *> &visited) {
-    if (task == nullptr || visited.count(task)) {
-      return;
-    }
-    visited.insert(task);
-
-    // Visit all dependencies first (pre-order traversal)
-    for (auto *dep : task->dependencies) {
-      topologicalSort(dep, outOrder, visited);
-    }
-
-    // Add this task after its dependencies
-    outOrder.push_back(task);
-  }
 
   RenderSchedule RenderGraph::compile() {
-    REN_PROFILE_SCOPE("CompileRenderGraph");
+    // Select the roots and the producers of their inputs, transitively. A
+    // history read does not select its producer.
+    std::unordered_map<u64, ref<RenderTask>> selected;
+    std::vector<ref<RenderTask>> pending = roots;
+    for (size_t index = 0; index < pending.size(); ++index) {
+      auto task = pending[index];
+      if (!selected.emplace(task->id, task).second) {
+        continue;
+      }
 
-    // Step 1: Compute dependencies from operand/result relationships
-    computeDependencies();
+      for (const auto &input : task->operands) {
+        const auto &version = validate(input.handle);
+        if (version.previous) {
+          continue;
+        }
 
-    // Step 2: Find all root tasks (tasks with no dependencies)
-    std::vector<RenderTask *> rootTasks;
-    for (auto &task : tasks) {
-      if (task->dependencies.empty()) {
-        rootTasks.push_back(task.get());
+        auto producer = producers.find(version.producer);
+        auto source = producer == producers.end() ? nullptr : producer->second.lock();
+        if (!source) {
+          throw std::runtime_error(
+              fmt::format("Task '{}' needs missing producer for '{}' version {}", task->name(), version.resource->name, version.id));
+        }
+        pending.push_back(source);
       }
     }
 
-    if (rootTasks.empty()) {
-      // No roots means we have a cycle
-      detectAndReportCycle();
-      throw std::runtime_error("Cycle detected in render graph");
-    }
 
-    // Step 3: Topologically sort all tasks using Kahn's algorithm
-    std::vector<RenderTask *> orderedTasks;
-    std::unordered_map<RenderTask *, int> inDegree;
+    // Add the dependencies. A task depends on the producer of each input. An
+    // update also depends on the selected readers of the old version.
+    std::unordered_map<u64, std::unordered_set<u64>> dependencies;
+    for (const auto &[id, task] : selected) {
+      for (const auto &input : task->operands) {
+        const auto &version = validate(input.handle);
+        if (!version.previous) {
+          dependencies[id].insert(version.producer);
+        }
+      }
 
-    // Calculate in-degree for each task
-    for (auto &task : tasks) {
-      inDegree[task.get()] = task->dependencies.size();
-    }
+      for (const auto &output : task->results) {
+        const auto &version = validate(output.handle);
+        if (!version.prior) {
+          continue;
+        }
 
-    // Queue starts with all root tasks
-    std::vector<RenderTask *> queue = rootTasks;
-
-    // Process tasks in topological order
-    while (!queue.empty()) {
-      RenderTask *current = queue.back();
-      queue.pop_back();
-      orderedTasks.push_back(current);
-
-      // Find all tasks that depend on current task
-      for (auto &task : tasks) {
-        if (task->dependencies.count(current)) {
-          inDegree[task.get()]--;
-          if (inDegree[task.get()] == 0) {
-            queue.push_back(task.get());
+        // Selected readers of the old version finish before this update.
+        for (const auto &[readerID, reader] : selected) {
+          if (readerID == id) {
+            continue;
+          }
+          for (const auto &input : reader->operands) {
+            if (input.handle.version == version.prior) {
+              dependencies[id].insert(readerID);
+            }
           }
         }
       }
     }
 
-    // Sanity check: all tasks scheduled
-    if (orderedTasks.size() != tasks.size()) {
-      throw std::runtime_error(
-          fmt::format("Internal error: topological sort scheduled {} tasks but graph has {} tasks", orderedTasks.size(), tasks.size()));
-    }
 
-    // Step 4: Compute scheduling levels via DFS to determine parallelism
-    std::unordered_map<RenderTask *, int> taskLevels;
-    std::function<int(RenderTask *)> computeLevels = [&](RenderTask *task) -> int {
-      if (taskLevels.count(task)) {
-        return taskLevels[task];
-      }
-
-      int maxDepLevel = 0;
-      for (auto *dep : task->dependencies) {
-        maxDepLevel = std::max(maxDepLevel, computeLevels(dep));
-      }
-
-      int level = maxDepLevel + 1;
-      taskLevels[task] = level;
-      return level;
-    };
-
-    for (auto &task : tasks) {
-      computeLevels(task.get());
-    }
-
-    // Step 5: Sort tasks by level (ascending) so all tasks of the same level are grouped together.
-    // This allows executing all tasks of a level before moving to the next level.
-    std::sort(orderedTasks.begin(), orderedTasks.end(), [&taskLevels](RenderTask *a, RenderTask *b) {
-      int levelA = taskLevels.count(a) ? taskLevels[a] : 0;
-      int levelB = taskLevels.count(b) ? taskLevels[b] : 0;
-      return levelA < levelB;
-    });
-
-    // Step 6: Create schedule with level-sorted tasks, insert barriers, and assign levels
-    RenderSchedule schedule(*this);
-
-    // Track current access state of each resource (initialized from initialAccess)
-    std::unordered_map<GraphHandle, GraphAccess> resourceStates;
-    for (const auto &[handle, resource] : resourceTable) {
-      resourceStates[handle] = resource->initialAccess;
-    }
-
-    // Process tasks in order, inserting barriers as needed
-    for (auto *task : orderedTasks) {
-      // Check operands (reads): insert barriers if access state needs to change
-      for (const auto &operand : task->getOperands()) {
-        GraphAccess currentState = resourceStates[operand.valueHandle];
-        GraphAccess neededState = operand.access;
-
-        if (currentState != neededState) {
-          // Insert a barrier to transition the resource
-          auto *barrier = schedule.createBarrier(operand.valueHandle, currentState, neededState);
-          schedule.addTask(barrier);
-
-          // Update resource state after barrier
-          resourceStates[operand.valueHandle] = neededState;
+    // Order the tasks. Each pass adds the tasks whose dependencies are done,
+    // in registration order. A pass that adds no task means a cycle.
+    RenderSchedule result;
+    std::unordered_set<u64> done;
+    while (done.size() != selected.size()) {
+      bool progress = false;
+      for (const auto &entry : registry) {
+        auto task = entry.lock();
+        if (!task || !selected.contains(task->id) || done.contains(task->id)) {
+          continue;
         }
+
+        const auto &required = dependencies[task->id];
+        if (!std::all_of(required.begin(), required.end(), [&](u64 id) { return done.contains(id); })) {
+          continue;
+        }
+
+        result.tasks.push_back(task);
+        done.insert(task->id);
+        progress = true;
       }
 
-      // Add the actual task
-      schedule.addTask(task);
-
-      // Update resource states based on what this task writes (results)
-      for (const auto &result : task->getResults()) {
-        resourceStates[result.handle] = result.access;
-      }
-    }
-
-    // afterwards, add barriers to convert all resources into FragmentShaderRead for presentation
-    // TODO: this should only happen if we want to read them in the ImGui debug.
-    for (const auto &[handle, resource] : resourceTable) {
-      GraphAccess currentState = resourceStates[handle];
-      GraphAccess neededState = GraphAccess::ShaderRead;
-      if (currentState != neededState) {
-        auto *barrier = schedule.createBarrier(handle, currentState, neededState);
-        schedule.addTask(barrier);
-        resourceStates[handle] = neededState;
-      }
-    }
-
-
-    // Copy task levels into the schedule
-    schedule.taskLevels = taskLevels;
-
-
-    return schedule;
-  }
-
-  void RenderGraph::printDot() const {
-    ren::println("digraph RenderGraph {{");
-    ren::println("  rankdir=LR;");
-    ren::println("  node [shape=box];");
-    ren::println("");
-
-    // Print tasks
-    ren::println("  // Tasks");
-    for (const auto &task : tasks) {
-      ren::println("  \"{}\" [style=filled, fillcolor=lightblue];", task->name());
-    }
-    ren::println("");
-
-    // Print resources
-    ren::println("  // Resources");
-    for (const auto &[handle, resource] : resourceTable) {
-      ren::println("  \"res_{}\" [label=\"{}\", shape=ellipse];", handle, resource->name);
-    }
-    ren::println("");
-
-    // Print write edges (task -> resource)
-    ren::println("  // Write edges");
-    for (const auto &[handle, resource] : resourceTable) {
-      for (auto *writer : resource->writingTasks) {
-        ren::println("  \"{}\" -> \"res_{}\" [color=blue, label=\"W\"];", writer->name(), handle);
-      }
-    }
-    ren::println("");
-
-    // Print read edges (resource -> task)
-    ren::println("  // Read edges");
-    for (const auto &[handle, resource] : resourceTable) {
-      for (auto *reader : resource->users) {
-        ren::println("  \"res_{}\" -> \"{}\" [color=green, label=\"R\"];", handle, reader->name());
-      }
-    }
-    ren::println("");
-
-    // Print task dependencies
-    ren::println("  // Task dependencies");
-    for (const auto &task : tasks) {
-      for (auto *dep : task->dependencies) {
-        ren::println("  \"{}\" -> \"{}\" [color=red, style=dashed];", dep->name(), task->name());
+      if (!progress) {
+        std::string message = "Graph dependency cycle:";
+        for (const auto &[id, task] : selected) {
+          if (done.contains(id)) {
+            continue;
+          }
+          message += " " + task->name() + " [";
+          for (const auto &input : task->operands) {
+            message += validate(input.handle).resource->name + " ";
+          }
+          message += "]";
+        }
+        throw std::runtime_error(message);
       }
     }
 
-    ren::println("}}");
-  }
 
-  void RenderGraph::run(class Renderer &renderer) {
-    REN_PROFILE_SCOPE("RunRenderGraph");
-
-    auto scheduleStart = std::chrono::high_resolution_clock::now();
-    auto schedule = compile();
-    auto scheduleEnd = std::chrono::high_resolution_clock::now();
-
-#if 0
-    int currentLevel = 0;
-    for (const auto &task : schedule.getTasks()) {
-      if (schedule.getLevel(task) != currentLevel) {
-        currentLevel = schedule.getLevel(task);
-        ren::println("{:04d}:", currentLevel);
-      }
-      ren::println("  {}", task->toString());
+    // The dependencies of the selected tasks are now fixed.
+    for (auto &task : result.tasks) {
+      task->sealed = true;
     }
-#endif
-
-    auto runStart = std::chrono::high_resolution_clock::now();
-    // Execute the schedule with the provided renderer
-    auto &frame = ren::getFrameUnit();
-    GraphRunContext ctx(*this, renderer, *frame.getMainCommandEncoder());
-    ctx.cmd = frame.getMainCommandEncoder()->buf();
-    for (const auto &task : schedule.getTasks()) {
-      ctx.task = task;
-      task->execute(ctx);
-    }
-
-    this->compileTimeUs += std::chrono::duration_cast<std::chrono::microseconds>(scheduleEnd - scheduleStart).count();
-    this->numRuns++;
+    return result;
   }
 
 
-  void RenderGraph::inspect() {
-    ImGui::SetNextWindowSize(ImVec2(1200, 700), ImGuiCond_FirstUseEver);
-    ImGui::Begin("Render Graph Inspector");
 
-    // Static state for selected task and resource
-    static RenderTask *selectedTask = nullptr;
-    static GraphHandle selectedResource = nullGraphHandle;
-
-    // Draw tab bar
-    if (ImGui::BeginTabBar("InspectorTabs", ImGuiTabBarFlags_None)) {
-      if (ImGui::BeginTabItem("Schedule")) {
-        ImGui::Text("Render Graph Schedule");
-        ImGui::Separator();
-        auto start = std::chrono::high_resolution_clock::now();
-        auto sched = compile();
-        auto end = std::chrono::high_resolution_clock::now();
-        float compileTimeMs = std::chrono::duration<float, std::chrono::milliseconds::period>(end - start).count();
-        ImGui::Text("Compile Time: %.3f ms", compileTimeMs);
-        ImGui::Separator();
+  ////////////////////////////////////////////////////////////////////////////
+  // Preparation
+  ////////////////////////////////////////////////////////////////////////////
 
 
+  glm::uvec2 ImageSize::resolve(const CapturedView *view) const {
+    if (!scale) {
+      return glm::max(pixels, glm::uvec2(1));
+    }
 
-        int next_id = 0;
+    if (!view) {
+      throw std::runtime_error("View-relative image requires a ViewContext");
+    }
+    if (!std::isfinite(scale->x) || !std::isfinite(scale->y) || scale->x <= 0 || scale->y <= 0) {
+      throw std::runtime_error("Image scale must be finite and positive");
+    }
 
-        std::map<RenderTask *, int> taskIDs;
-        for (auto *task : sched.getTasks()) {
-          int level = sched.getLevel(task);
-          if (level == -1) continue;
+    // Round down, then clamp each dimension to one pixel.
+    return glm::max(glm::uvec2(glm::vec2(view->values.renderSize) * *scale), glm::uvec2(1));
+  }
 
-          taskIDs[task] = next_id++;
+
+  namespace {
+    // Copy the values of a view, and write its FrameGlobals into storage that
+    // the frame owns. Later changes to the ViewContext do not change this frame.
+    ref<CapturedView> capture(const ViewContext &view, Renderer *renderer, SubmissionUnit *submission) {
+      auto result = make<CapturedView>();
+      result->values = view;
+      result->values.renderSize = glm::max(view.renderSize, glm::uvec2(1));
+
+      glm::vec2 size(result->values.renderSize);
+      result->globals = FrameGlobals{
+          .time = renderer ? static_cast<float>(Application::get().timeSeconds) : 0.0f,
+          .deltaTime = renderer ? ren::deltaTime() : 0.0f,
+          .frameNumber = renderer ? static_cast<u32>(getVulkan().frame_number) : 0,
+          .renderSize = size,
+          .inverseRenderSize = 1.0f / size,
+          .viewMatrix = view.view,
+          .projMatrix = view.projection,
+      };
+
+      // Tests have no submission, so there is no GPU copy of the globals.
+      if (submission && renderer) {
+        auto *buffer = submission->getArena().push<UniformBuffer<FrameGlobals>>(1);
+        buffer->hostData()[0] = result->globals;
+
+        if (!submission->getDescriptorAllocator().allocate(&result->globalsSet, renderer->getFrameGlobalsAllocator().getLayout())) {
+          throw std::runtime_error("Cannot allocate captured globals descriptor");
         }
 
+        VkDescriptorBufferInfo info{.buffer = buffer->getHandle(), .offset = 0, .range = sizeof(FrameGlobals)};
+        VkWriteDescriptorSet write{.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                                   .dstSet = result->globalsSet,
+                                   .dstBinding = ShaderABI::frameBinding,
+                                   .descriptorCount = 1,
+                                   .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                                   .pBufferInfo = &info};
+        vkUpdateDescriptorSets(getVulkan().device, 1, &write, 0, nullptr);
+      }
+      return result;
+    }
+  }  // namespace
 
 
-        // Resources:
-        // ImGui::Text("Resources:");
-        // for (const auto &[handle, resource] : resourceTable) {
-        //   ImGui::Text("%%%-3u : %s", handle, resource->name.c_str());
-        // }
+  ref<GraphStorage> RenderGraph::assignStorage(GraphResource &definition, const CapturedView *view) {
+    // A resource that is not temporal keeps its storage while it stays compatible.
+    if (!definition.temporal && definition.current && definition.compatible(*definition.current, view)) {
+      return definition.current;
+    }
 
-        // Tasks:
-        for (const auto &task : sched.getTasks()) {
-          int level = sched.getLevel(task);
-          ImGui::Text("[%d] %s", level, task->toString().c_str());
+    // Temporal resources alternate between the history and one other allocation.
+    // Work on the single graphics queue runs in submission order, and the recorded
+    // transitions order this write after earlier reads of the same allocation.
+    // Submissions retain obsolete entries, for example after a resize, until they complete.
+    std::erase_if(definition.pool, [&](const auto &storage) { return !definition.compatible(*storage, view); });
+    for (auto &storage : definition.pool) {
+      if (storage != definition.history) {
+        return storage;
+      }
+    }
+
+    auto storage = definition.allocate(view);
+    if (!storage) {
+      throw std::runtime_error("Resource allocation returned null: " + definition.name);
+    }
+    definition.pool.push_back(storage);
+    return storage;
+  }
+
+
+  void RenderGraph::prepareFrame(Renderer *renderer, SubmissionUnit *unit) {
+    requireUpdate();
+    submission = unit;
+    phase = Phase::Select;
+
+    try {
+      schedule = compile();
+
+      // Capture each view once, before any task prepares.
+      for (auto &task : schedule.tasks) {
+        if (task->view && !views.contains(task->view.get())) {
+          views.emplace(task->view.get(), capture(*task->view, renderer, submission));
         }
-        ImGui::EndTabItem();
-
-        ImNodes::BeginNodeEditor();
-
-
-        ImVec2 location(0, 0);
-        auto &tasks = sched.getTasks();
-        int last_level = -100;  // magic number.
-        for (auto *task : sched.getTasks()) {
-          int id = taskIDs[task];
-          int level = sched.getLevel(task);
-          if (level == -1) continue;
-
-          ImNodes::BeginNode(id);
-          ImNodes::BeginNodeTitleBar();
-          ImGui::TextUnformatted(task->name().c_str());
-          ImNodes::EndNodeTitleBar();
-
-          ImGui::Text("Task: %d, Level: %d", id, level);
-
-          ImNodes::BeginInputAttribute(next_id++, ImNodesPinShape_Triangle);
-          ImGui::TextUnformatted("Input 1");
-          ImNodes::EndInputAttribute();
-
-          ImNodes::BeginInputAttribute(next_id++, ImNodesPinShape_TriangleFilled);
-          ImGui::TextUnformatted("Input 2");
-          ImNodes::EndInputAttribute();
-
-
-          ImNodes::BeginOutputAttribute(next_id++, ImNodesPinShape_Circle);
-          ImGui::TextUnformatted("Output 1");
-          ImNodes::EndOutputAttribute();
-          ImNodes::BeginOutputAttribute(next_id++, ImNodesPinShape_CircleFilled);
-          ImGui::TextUnformatted("Output 2");
-          ImNodes::EndOutputAttribute();
-
-
-          ImNodes::EndNode();
-
-          ImNodes::SnapNodeToGrid(id);
-
-          // ImNodes::SetNodeGridSpacePos(id, location);
-
-          if (level != last_level) {
-            location.x += 140;
-            location.y = 0;
-            last_level = level;
-          } else {
-            location.y += 220;
-          }
-        }
-        // ImNodes::MiniMap();
-        ImNodes::EndNodeEditor();
       }
 
 
-      // ==================== TASKS TAB ====================
-      if (ImGui::BeginTabItem("Tasks")) {
-        ImGui::BeginGroup();
-        {
-          // Left panel: Task list
-          ImGui::BeginChild("TaskListPanel", ImVec2(150, -ImGui::GetFrameHeightWithSpacing()), ImGuiChildFlags_Border);
-          {
-            // ImGui::Text("Tasks (%zu)", tasks.size());
-            // ImGui::Separator();
+      phase = Phase::Prepare;
 
-            for (const auto &task : tasks) {
-              RenderTask *taskPtr = task.get();
-              bool isSelected = (taskPtr == selectedTask);
-              ImGui::PushID(taskPtr);
-              if (ImGui::Selectable(task->name().c_str(), isSelected, ImGuiSelectableFlags_AllowDoubleClick)) {
-                selectedTask = taskPtr;
-              }
-              ImGui::PopID();
-            }
-          }
-          ImGui::EndChild();
+      // Inputs start with the storage of the last frame. The outputs of this
+      // frame replace it below.
+      for (auto &task : schedule.tasks) {
+        for (const auto &input : task->operands) {
+          auto definition = validate(input.handle).resource;
+          auto &mapping = mappings[definition.get()];
+          mapping.definition = definition;
+          mapping.current = definition->current;
+          mapping.previous = definition->history;
         }
-        ImGui::EndGroup();
-
-        ImGui::SameLine();
-
-        // Right panel: Task details
-        ImGui::BeginGroup();
-        {
-          ImGui::BeginChild("TaskDetailsPanel", ImVec2(0, -ImGui::GetFrameHeightWithSpacing()), ImGuiChildFlags_Border);
-          {
-            if (selectedTask) {
-              ImGui::Text("Task: %s (Version %d)", selectedTask->name().c_str(), selectedTask->version);
-              ImGui::Separator();
-              ImGui::Text("Average Execution Time: %.8f ms over %llu runs", selectedTask->averageTimeNs() / 1024.0f / 1024.0f,
-                          (u64)selectedTask->numExecutions);
-
-              // Operands (reads)
-              const auto &operands = selectedTask->getOperands();
-              if (!operands.empty()) {
-                if (ImGui::TreeNode("Operands (Reads)")) {
-                  for (const auto &op : operands) {
-                    const char *accessStr = fmt::formatter<GraphAccess>::toString(op.access);
-                    const char *typeStr = fmt::formatter<GraphResourceType>::toString(op.resourceType);
-                    ImGui::Text("%%%-3u : %s (type: %s)", op.valueHandle, accessStr, typeStr);
-
-                    // Show resource name if available
-                    auto it = resourceTable.find(op.valueHandle);
-                    if (it != resourceTable.end() && !it->second->name.empty()) {
-                      ImGui::SameLine();
-                      ImGui::TextDisabled("(%s)", it->second->name.c_str());
-                    }
-                  }
-                  ImGui::TreePop();
-                }
-              }
-
-              // Results (writes)
-              const auto &results = selectedTask->getResults();
-              if (!results.empty()) {
-                if (ImGui::TreeNode("Results (Writes)")) {
-                  for (const auto &result : results) {
-                    auto it = resourceTable.find(result.handle);
-                    if (it != resourceTable.end()) {
-                      ImGui::Text("%%%-3u : %s", result.handle, it->second->name.c_str());
-                      ImGui::SameLine();
-                      const char *accessStr = fmt::formatter<GraphAccess>::toString(result.access);
-                      ImGui::TextDisabled("(%s)", accessStr);
-                    } else {
-                      ImGui::Text("%%%-3u : <unknown>", result.handle);
-                    }
-                  }
-                  ImGui::TreePop();
-                }
-              }
-
-              // Dependencies
-              if (!selectedTask->dependencies.empty()) {
-                if (ImGui::TreeNode("Dependencies")) {
-                  for (auto depTask : selectedTask->dependencies) {
-                    ImGui::BulletText("%s", depTask->name().c_str());
-                  }
-                  ImGui::TreePop();
-                }
-              }
-
-              // Custom toString for task
-              ImGui::Separator();
-              ImGui::TextWrapped("SSA Form: %s", selectedTask->toString().c_str());
-
-              ImGui::Separator();
-
-              selectedTask->inspect();
-
-            } else {
-              ImGui::TextDisabled("(Select a task to view details)");
-            }
-          }
-          ImGui::EndChild();
-        }
-        ImGui::EndGroup();
-
-        ImGui::EndTabItem();
       }
 
-      // ==================== RESOURCES TAB ====================
-      if (ImGui::BeginTabItem("Resources")) {
-#if 0
-        ImGui::BeginGroup();
-        {
-          // Left panel: Resource list
-          ImGui::BeginChild("ResourceListPanel", ImVec2(150, -ImGui::GetFrameHeightWithSpacing()), ImGuiChildFlags_Border);
-          {
-            ImGui::Text("Resources (%zu)", resourceTable.size());
-            ImGui::Separator();
 
-            for (const auto &[handle, resource] : resourceTable) {
-              bool isSelected = (handle == selectedResource);
-              ImGui::PushID(handle);
-              if (ImGui::Selectable(resource->name.c_str(), isSelected)) {
-                selectedResource = handle;
-              }
-              ImGui::PopID();
-            }
+      // Assign storage to the outputs of each task, then prepare the task.
+      // Producers come first in the schedule, so the storage of each input is
+      // ready before its consumer prepares.
+      for (auto &task : schedule.tasks) {
+        const CapturedView *view = task->view ? views.at(task->view.get()).get() : nullptr;
+        for (const auto &output : task->results) {
+          const auto &version = validate(output.handle);
+          if (version.prior) {
+            continue;  // An update uses the storage of the version that it updates.
           }
-          ImGui::EndChild();
-        }
-        ImGui::EndGroup();
 
-        ImGui::SameLine();
+          auto definition = version.resource;
+          auto &mapping = mappings[definition.get()];
+          mapping.definition = definition;
 
-        // Right panel: Resource details
-        ImGui::BeginGroup();
-        {
-          ImGui::BeginChild("ResourceDetailsPanel", ImVec2(0, -ImGui::GetFrameHeightWithSpacing()), ImGuiChildFlags_Border);
-          {
-            if (selectedResource != nullGraphHandle) {
-              auto it = resourceTable.find(selectedResource);
-              if (it != resourceTable.end()) {
-                const auto &resource = it->second;
-                ImGui::Text("Resource Handle: %%%-3u", selectedResource);
-                ImGui::Text("Name: %s", resource->name.c_str());
-                const char *typeStr = fmt::formatter<GraphResourceType>::toString(resource->type);
-                const char *initialAccessStr = fmt::formatter<GraphAccess>::toString(resource->initialAccess);
-                ImGui::Text("Type: %s", typeStr);
-                ImGui::Text("Initial Access: %s", initialAccessStr);
-
-                // Delegate to resource-specific inspection
-                ImGui::Separator();
-                resource->inspect();
-
-                ImGui::Separator();
-                if (!resource->writingTasks.empty()) {
-                  if (ImGui::TreeNode("Written by:")) {
-                    for (auto *writer : resource->writingTasks) {
-                      ImGui::BulletText("%s", writer->name().c_str());
-                    }
-                    ImGui::TreePop();
-                  }
-                }
-
-                if (!resource->users.empty()) {
-                  if (ImGui::TreeNode("Used by:")) {
-                    for (auto userTask : resource->users) {
-                      ImGui::BulletText("%s", userTask->name().c_str());
-                    }
-                    ImGui::TreePop();
-                  }
-                }
-              }
-            } else {
-              ImGui::TextDisabled("(Select a resource to view details)");
-            }
+          // History of a different size is not valid.
+          mapping.previous = definition->history;
+          if (mapping.previous && !definition->compatible(*mapping.previous, view)) {
+            mapping.previous.reset();
           }
-          ImGui::EndChild();
+
+          mapping.current = assignStorage(*definition, view);
+          mapping.produced = true;
         }
-        ImGui::EndGroup();
-#endif
+
+        PrepareContext ctx{ResourceResolver(*this), view, renderer, submission};
+        task->prepareFrame(ctx);
+      }
 
 
-        if (resourceTable.empty()) {
-          ImGui::TextDisabled("(No resources)");
+      // The submission keeps everything that the frame uses until the GPU completes it.
+      if (submission) {
+        for (auto &task : schedule.tasks) {
+          submission->retain(task);
+        }
+        for (auto &[key, view] : views) {
+          submission->retain(view);
+        }
+        for (auto &[key, mapping] : mappings) {
+          submission->retain(mapping.current);
+          submission->retain(mapping.previous);
+        }
+      }
+
+      phase = Phase::Prepared;
+    } catch (...) {
+      discard();
+      throw;
+    }
+  }
+
+
+  ref<GraphStorage> RenderGraph::resolve(GraphHandle handle) const {
+    const auto &version = validate(handle);
+    if (phase == Phase::Update || phase == Phase::Select) {
+      throw std::runtime_error("Resource resolution requires graph preparation");
+    }
+
+    auto it = mappings.find(version.resource.get());
+    if (it != mappings.end()) {
+      return version.previous ? it->second.previous : it->second.current;
+    }
+
+    // A resource that is not in this frame keeps the storage of the last frame where it ran.
+    return version.previous ? version.resource->history : version.resource->current;
+  }
+
+
+  ref<GraphStorage> ResourceResolver::storage(GraphHandle handle) const { return source.resolve(handle); }
+
+
+  ImageRef ResourceResolver::getImage(GraphHandle handle) const {
+    auto value = storage(handle);
+    return value ? get<ImageStorage>(handle)->image : nullptr;
+  }
+
+
+  TextureHandle ResourceResolver::texture(GraphHandle handle) const { return get<ImageStorage>(handle)->textureHandle(); }
+
+
+  ref<ImageStorage> RenderGraph::displayImage(GraphHandle handle) {
+    if (phase != Phase::Prepared) {
+      throw std::runtime_error("Display lookup requires the prepared phase");
+    }
+
+    auto resource = get<ImageResource>(handle);
+    auto storage = resolve(handle);
+    if (!storage) {
+      if (validate(handle).previous) {
+        return nullptr;  // The history is not available.
+      }
+      throw std::runtime_error("Current image is unresolved: " + resource->name);
+    }
+
+    auto image = std::dynamic_pointer_cast<ImageStorage>(storage);
+    if (!image) {
+      throw std::runtime_error("Display resource is not image storage");
+    }
+
+    // The image changes to a shader-read layout at the end of the graph work.
+    external.push_back(image);
+    if (submission) {
+      submission->retain(image);
+    }
+    return image;
+  }
+
+
+
+  ////////////////////////////////////////////////////////////////////////////
+  // Barriers and recording
+  ////////////////////////////////////////////////////////////////////////////
+
+
+  void RenderGraph::appendAccess(ref<GraphStorage> storage, GraphAccess access) {
+    if (!storage) {
+      return;  // First or invalidated history.
+    }
+
+    // The access state starts from the state that the last submission saved.
+    auto [it, inserted] = pendingAccess.try_emplace(storage.get(), storage->access);
+    auto &from = it->second;
+    schedule.operations.push_back(ScheduledResourceTransition{storage, from, access});
+
+    // Keep every reader stage until the next write.
+    if (graphWrites(access) || std::any_of(from.begin(), from.end(), graphWrites)) {
+      from.clear();
+    }
+    if (std::find(from.begin(), from.end(), access) == from.end()) {
+      from.push_back(access);
+    }
+  }
+
+
+  const RenderSchedule &RenderGraph::compileTransitions() {
+    if (phase != Phase::Prepared) {
+      throw std::runtime_error("Transition compilation requires graph preparation");
+    }
+
+    try {
+      // Before each task, add a barrier for each input and output.
+      for (auto &task : schedule.tasks) {
+        for (const auto &input : task->operands) {
+          // An update consumes the prior contents through its write access, not a shader read.
+          bool updateInput = std::any_of(task->results.begin(), task->results.end(),
+                                         [&](const auto &output) { return validate(output.handle).prior == input.handle.version; });
+          if (!updateInput) {
+            appendAccess(resolve(input.handle), input.access);
+          }
+        }
+
+        for (const auto &output : task->results) {
+          appendAccess(resolve(output.handle), output.access);
+        }
+
+        schedule.operations.push_back(ScheduledRenderTask{task});
+      }
+
+      // After all tasks, images for displayImage() change to a shader-read layout.
+      for (auto &storage : external) {
+        appendAccess(storage, GraphAccess::ShaderRead);
+      }
+
+      phase = Phase::Compiled;
+      return schedule;
+    } catch (...) {
+      discard();
+      throw;
+    }
+  }
+
+
+  void RenderGraph::record() {
+    if (phase == Phase::Prepared) {
+      compileTransitions();
+    }
+    if (phase != Phase::Compiled) {
+      throw std::runtime_error("Recording requires compiled transitions");
+    }
+
+    try {
+      phase = Phase::Record;
+      auto &encoder = *getFrameUnit().getMainCommandEncoder();
+
+      for (auto &operation : schedule.operations) {
+        if (auto *transition = std::get_if<ScheduledResourceTransition>(&operation)) {
+          RecordContext ctx{ResourceResolver(*this), nullptr, encoder};
+          transition->storage->transition(ctx, transition->from, transition->to);
         } else {
-          if (ImGui::BeginTable("ResourceTable", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
-            ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
-            ImGui::TableSetupColumn("Handle", ImGuiTableColumnFlags_WidthStretch);
-            ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthStretch);
+          // Each task uses the captured FrameGlobals of its view.
+          auto task = std::get<ScheduledRenderTask>(operation).task;
+          auto view = task->view ? views.at(task->view.get()).get() : nullptr;
+          encoder.setFrameGlobals(view ? view->globalsSet : VK_NULL_HANDLE);
 
-            ImGui::TableHeadersRow();
-
-            for (const auto &[handle, resource] : resourceTable) {
-              ImGui::PushID((int)handle);
-              ImGui::TableNextRow();
-
-              // If hovering on the row
-              ImGui::TableNextColumn();
-              if (ImGui::Selectable(resource->name.c_str(), false, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap)) {
-                // Handle row click if needed
-              }
-
-              if (ImGui::IsItemHovered()) {
-                ImGui::BeginTooltip();
-                resource->inspect();
-                ImGui::EndTooltip();
-              }
-
-              ImGui::TableNextColumn();
-              ImGui::Text("%%%-3u", handle);
-
-              ImGui::TableNextColumn();
-              switch (resource->type) {
-                case GraphResourceType::Image:
-                  ImGui::Text("Image");
-                  break;
-                case GraphResourceType::Buffer:
-                  ImGui::Text("Buffer");
-                  break;
-                default:
-                  ImGui::Text("???");
-                  break;
-              }
-
-              ImGui::PopID();
-            }
-
-            ImGui::EndTable();
-          }
+          RecordContext ctx{ResourceResolver(*this), view, encoder};
+          task->execute(ctx);
         }
-
-
-
-        ImGui::EndTabItem();
       }
 
-
-      // Statistics tab.
-      if (ImGui::BeginTabItem("Statistics")) {
-        ImGui::Text("Runs: %llu", numRuns);
-        double avgCompileMs = numRuns > 0 ? (double)compileTimeUs / numRuns / 1000.0 : 0.0;
-        double avgRuntimeMs = numRuns > 0 ? (double)totalRuntimeUs / numRuns / 1000.0 : 0.0;
-        ImGui::Text("Average Compile Time: %.3f ms", avgCompileMs);
-        ImGui::Text("Average Runtime: %.3f ms", avgRuntimeMs);
-        ImGui::EndTabItem();
-      }
-
-      ImGui::EndTabBar();
+      // Later work on this encoder uses the default FrameGlobals of the frame.
+      encoder.setFrameGlobals(VK_NULL_HANDLE);
+      phase = Phase::Recorded;
+    } catch (...) {
+      discard();
+      throw;
     }
-    ImGui::End();
   }
 
 
 
+  ////////////////////////////////////////////////////////////////////////////
+  // End of frame
+  ////////////////////////////////////////////////////////////////////////////
+
+
+  void RenderGraph::submitted() {
+    // Nothing was recorded, e.g. the frame was discarded. Drop the work of
+    // this frame, and do not save state that no command produced.
+    if (phase != Phase::Recorded && phase != Phase::Compiled) {
+      if (!roots.empty()) {
+        ren::warnln("Enqueued graph work was not recorded in this frame");
+      }
+      lastOrder.clear();
+      discard();
+      return;
+    }
+
+    // The next frame starts its barriers from this access state.
+    for (auto &[storage, access] : pendingAccess) {
+      storage->access = access;
+    }
+
+    // The storage of each output becomes the current storage, and the history
+    // of a temporal resource.
+    for (auto &[key, mapping] : mappings) {
+      if (!mapping.produced) {
+        continue;
+      }
+
+      mapping.definition->current = mapping.current;
+      if (mapping.definition->temporal) {
+        mapping.definition->history = mapping.current;
+      }
+    }
+
+    lastOrder.assign(schedule.tasks.begin(), schedule.tasks.end());
+    discard();
+  }
+
+
+  void RenderGraph::discard() {
+    schedule = {};
+    roots.clear();
+    views.clear();
+    mappings.clear();
+    external.clear();
+    pendingAccess.clear();
+    submission = nullptr;
+    phase = Phase::Update;
+  }
+
+
+  void RenderGraph::beginFrame() {
+    requireUpdate();
+    std::erase_if(registry, [](const auto &entry) { return entry.expired(); });
+    std::erase_if(producers, [](const auto &entry) { return entry.second.expired(); });
+  }
 }  // namespace ren

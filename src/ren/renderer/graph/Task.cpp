@@ -1,159 +1,136 @@
-#include "Task.h"
-#include "RenderGraph.h"
-#include "RenderPassTask.h"
-
-#include <stdexcept>
+#include <ren/renderer/graph/RenderGraph.h>
+#include <ren/renderer/graph/RenderPassTask.h>
 
 namespace ren {
-
-  // LambdaRenderPassTask - defined here to avoid adding RenderPassTask.h dependency to RenderGraph.h
-  class LambdaRenderPassTask : public RenderPassTask {
-   public:
-    using Callback = std::function<void(GraphRenderPassContext &)>;
-
-    LambdaRenderPassTask(RenderGraph &graph, Callback func)
-        : RenderPassTask(graph)
-        , m_func(std::move(func)) {}
-
-    void run(GraphRenderPassContext &ctx) override { m_func(ctx); }
-
-   private:
-    Callback m_func;
-  };
+  namespace {
 
 
+    // A LambdaTask is a RenderTask that runs a lambda. Importantly it is not
+    // wrapped in a render pass, and should be used for compute.
+    class LambdaTask : public RenderTask {
+     public:
+      LambdaTask(RenderGraph &graph, RenderTaskLambda record, PrepareTaskLambda prepare)
+          : RenderTask(graph)
+          , record(std::move(record))
+          , preparation(std::move(prepare)) {}
+      void prepareFrame(PrepareContext &ctx) override {
+        if (preparation) {
+          preparation(ctx);
+        }
+      }
+      void run(RecordContext &ctx) const override { record(ctx); }
 
-  class LambdaComputePassTask : public RenderTask {
-   public:
-    using Callback = std::function<void(GraphRunContext &)>;
+     private:
+      RenderTaskLambda record;
+      PrepareTaskLambda preparation;
+    };
 
-    LambdaComputePassTask(RenderGraph &graph, Callback func)
-        : RenderTask(graph)
-        , m_func(std::move(func)) {}
+    // A LambdaPass is a render pass task, which runs a lambda in a render
+    // pass. (graphics)
+    class LambdaPass : public RenderPassTask {
+     public:
+      LambdaPass(RenderGraph &graph, std::function<void(GraphRenderPassContext &)> record, PrepareTaskLambda prepare)
+          : RenderPassTask(graph)
+          , record(std::move(record))
+          , preparation(std::move(prepare)) {}
+      void prepareFrame(PrepareContext &ctx) override {
+        RenderPassTask::prepareFrame(ctx);
+        if (preparation) {
+          preparation(ctx);
+        }
+      }
+      void run(GraphRenderPassContext &ctx) const override { record(ctx); }
 
-    void run(GraphRunContext &ctx) override { m_func(ctx); }
+     private:
+      std::function<void(GraphRenderPassContext &)> record;
+      PrepareTaskLambda preparation;
+    };
 
-   private:
-    Callback m_func;
-  };
 
-  // TaskBuilder implementation
+  }  // namespace
 
-  TaskBuilder::TaskBuilder(RenderGraph &graph, std::string name)
-      : m_graph(&graph)
-      , m_name(std::move(name))
-      , m_finalized(false) {}
+
+
+  TaskBuilder::TaskBuilder(GraphScope &scope, std::string name)
+      : scope(scope)
+      , name(std::move(name)) {}
 
   TaskBuilder &TaskBuilder::reads(GraphHandle handle, GraphAccess access) {
-    if (m_finalized) {
-      throw std::runtime_error("TaskBuilder already finalized");
-    }
-    m_reads.emplace_back(handle, access);
+    readsList.push_back({handle, access});
     return *this;
   }
 
-  TaskBuilder &TaskBuilder::reads(GraphHandleUsage resource) { return reads(resource.handle, resource.access); }
 
   TaskBuilder &TaskBuilder::writes(GraphHandle handle, GraphAccess access) {
-    if (m_finalized) {
-      throw std::runtime_error("TaskBuilder already finalized");
-    }
-    m_writes.emplace_back(handle, access);
+    writesList.push_back({handle, access});
     return *this;
   }
 
-  TaskBuilder &TaskBuilder::writes(GraphHandleUsage resource) { return writes(resource.handle, resource.access); }
 
-  TaskBuilder &TaskBuilder::createColorAttachment(const std::string_view &name, const GraphImageSpec &spec, GraphHandle &out_handle) {
-    if (m_finalized) {
-      throw std::runtime_error("TaskBuilder already finalized");
-    }
-
-    AttachmentSpec attachment;
-    attachment.name = std::string(name);
-    attachment.spec = spec;
-    attachment.out_handle = &out_handle;
-    attachment.is_depth = false;
-
-    m_attachments.push_back(std::move(attachment));
+  TaskBuilder &TaskBuilder::prepare(PrepareTaskLambda value) {
+    preparation = std::move(value);
     return *this;
   }
 
-  TaskBuilder &TaskBuilder::createDepthAttachment(const std::string_view &name, const GraphImageSpec &spec, GraphHandle &out_handle) {
-    if (m_finalized) {
-      throw std::runtime_error("TaskBuilder already finalized");
-    }
 
-    AttachmentSpec attachment;
-    attachment.name = std::string(name);
-    attachment.spec = spec;
-    attachment.out_handle = &out_handle;
-    attachment.is_depth = true;
-
-    m_attachments.push_back(std::move(attachment));
+  TaskBuilder &TaskBuilder::createColorAttachment(std::string_view name, const GraphImageSpec &spec, GraphHandle &output, glm::vec4 clearColor) {
+    attachments.push_back({std::string(name), spec, &output, false, clearColor, 1.0f});
     return *this;
   }
 
-  void TaskBuilder::applyDependencies(RenderTask &task) {
-    // Apply all read dependencies
-    for (const auto &read : m_reads) {
-      task.read(read.handle, read.access);
-    }
 
-    // Apply all write dependencies
-    for (const auto &write : m_writes) {
-      task.write(write.handle, write.access);
+  TaskBuilder &TaskBuilder::createDepthAttachment(std::string_view name, const GraphImageSpec &spec, GraphHandle &output, float clearDepth) {
+    attachments.push_back({std::string(name), spec, &output, true, glm::vec4(0.0f), clearDepth});
+    return *this;
+  }
+
+
+  void TaskBuilder::apply(RenderTask &task) {
+    for (const auto &input : readsList) {
+      task.read(input.handle, input.access);
+    }
+    for (const auto &output : writesList) {
+      task.write(output.handle, output.access);
     }
   }
 
-  RenderTask &TaskBuilder::execute(std::function<void(GraphRunContext &)> func) {
-    if (m_finalized) {
-      throw std::runtime_error("TaskBuilder already finalized");
+
+  RenderTask &TaskBuilder::execute(RenderTaskLambda callback) {
+
+    // We can only finalize once.
+    if (finalized) {
+      throw std::runtime_error("Task builder already finalized");
     }
-    m_finalized = true;
+    finalized = true;
 
-    if (!m_attachments.empty()) {
-      throw std::runtime_error(
-          "Cannot use createColorAttachment/createDepthAttachment with execute(). "
-          "Use render() for render pass tasks.");
+    // This is a compute task, and thus cannot have attachments
+    if (!attachments.empty()) {
+      throw std::runtime_error("Attachments require a render pass");
     }
 
-    auto &task = m_graph->addTask<LambdaComputePassTask>(m_name.c_str(), std::move(func));
-    applyDependencies(task);
-
+    // Construct the task.
+    auto &task = scope.addTask<LambdaTask>(name.c_str(), std::move(callback), std::move(preparation));
+    apply(task);
     return task;
   }
 
-  RenderTask &TaskBuilder::render(std::function<void(GraphRenderPassContext &)> func) {
-    if (m_finalized) {
-      throw std::runtime_error("TaskBuilder already finalized");
+
+  RenderTask &TaskBuilder::render(std::function<void(GraphRenderPassContext &)> callback) {
+    // Only finalize once
+    if (finalized) {
+      throw std::runtime_error("Task builder already finalized");
     }
-    m_finalized = true;
+    finalized = true;
 
-    // Create LambdaRenderPassTask
-    auto &task = m_graph->addTask<LambdaRenderPassTask>(m_name.c_str(), std::move(func));
-
-    // Create attachments BEFORE applying reads/writes
-    // Matches pattern in typed tasks where addColorAttachment() is called
-    // in constructor before manual read() calls
-    for (auto &attachment : m_attachments) {
-      GraphHandle handle;
-      if (attachment.is_depth) {
-        handle = task.addDepthAttachment(attachment.name, attachment.spec);
-      } else {
-        handle = task.addColorAttachment(attachment.name, attachment.spec);
-      }
-
-      // Write handle to caller's out-parameter
-      if (attachment.out_handle) {
-        *attachment.out_handle = handle;
-      }
+    // Construct the task in the scope with its attachments.
+    auto &task = scope.addTask<LambdaPass>(name.c_str(), std::move(callback), std::move(preparation));
+    for (auto &attachment : attachments) {
+      *attachment.output = attachment.depth ? task.addDepthAttachment(attachment.name, attachment.spec, attachment.clearDepth)
+                                            : task.addColorAttachment(attachment.name, attachment.spec, attachment.clearColor);
     }
-
-    // Apply additional reads/writes
-    applyDependencies(task);
-
+    apply(task);
     return task;
   }
+
 
 }  // namespace ren

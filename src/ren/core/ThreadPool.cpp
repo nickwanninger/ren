@@ -38,9 +38,17 @@ namespace ren {
 
     bool success = false;
     task = m_queue.pop(&success);
+    if (!success) {
+      task = nullptr;
+    }
+
+    // Then the tasks from outside the pool.
+    if (task == nullptr) {
+      task = m_pool->pop_injected();
+    }
 
     // If local queue empty, try to steal from others (FIFO)
-    if (!success || !task) {
+    if (task == nullptr) {
       task = m_pool->try_steal(this);
       if (task != nullptr) {
         // Stolen tasks are executed in FIFO order
@@ -49,6 +57,7 @@ namespace ren {
     }
 
     if (task) {
+      m_pool->m_pending.fetch_sub(1, std::memory_order_seq_cst);
       // Execute task
       // fmt::println("Executing task on worker {}", m_id);
       task->execute();
@@ -66,13 +75,11 @@ namespace ren {
   }
 
   void ThreadWorker::worker_loop() {
-    REN_PROFILE_SCOPE("ThreadWorker::loop");
-
     t_current_worker = this;
 
     while (!m_pool->is_shutdown()) {
       if (!schedule_one()) {
-        // std::this_thread::yield();
+        m_pool->wait_for_work();
       }
     }
   }
@@ -102,32 +109,63 @@ namespace ren {
   }
 
   ThreadPool::~ThreadPool() {
-    // Signal shutdown
-    m_shutdown.store(true, std::memory_order_relaxed);
+    // Signal shutdown. Set it under the mutex, so that a worker cannot miss
+    // the wake between its check and its wait.
+    {
+      std::lock_guard lock(m_mutex);
+      m_shutdown.store(true, std::memory_order_relaxed);
+    }
+    m_wake.notify_all();
 
     // Join all worker threads
     for (auto& worker : m_workers) {
       worker->join();
     }
+
+    for (auto* task : m_injected) {
+      delete task;
+    }
   }
 
   void ThreadPool::enqueue_task(ThreadPoolTask* task) {
-    u32 num_workers = static_cast<u32>(m_workers.size());
-    if (num_workers == 1) {
-      m_workers[0]->push(task);
-      return;
-    }
-    // Pick two random workers and choose the less loaded one
-    std::uniform_int_distribution<u32> dist(0, num_workers - 1);
-    u32 n = dist(t_rng);
-    u32 n_plus_1 = (n + 1) % num_workers;
+    m_pending.fetch_add(1, std::memory_order_seq_cst);
 
-    // Compare queue sizes and push to the less loaded worker
-    if (m_workers[n]->queue_size() <= m_workers[n_plus_1]->queue_size()) {
-      m_workers[n]->push(task);
+    // A worker of this pool pushes to its own deque. All other threads use
+    // the shared queue: ClDeque::push is not safe from a second thread.
+    ThreadWorker* worker = t_current_worker;
+    if (worker != nullptr && worker->get_pool() == this) {
+      worker->push(task);
     } else {
-      m_workers[n_plus_1]->push(task);
+      std::lock_guard lock(m_mutex);
+      m_injected.push_back(task);
     }
+
+    // m_pending and m_sleepers are both seq_cst, so either a sleeping worker
+    // sees the new task, or this thread sees the sleeper. The lock makes sure
+    // that the sleeper is in the wait before the notify.
+    if (m_sleepers.load(std::memory_order_seq_cst) > 0) {
+      { std::lock_guard lock(m_mutex); }
+      m_wake.notify_one();
+    }
+  }
+
+  ThreadPoolTask* ThreadPool::pop_injected() {
+    std::lock_guard lock(m_mutex);
+    if (m_injected.empty()) {
+      return nullptr;
+    }
+    auto* task = m_injected.front();
+    m_injected.pop_front();
+    return task;
+  }
+
+  void ThreadPool::wait_for_work() {
+    std::unique_lock lock(m_mutex);
+    m_sleepers.fetch_add(1, std::memory_order_seq_cst);
+    m_wake.wait(lock, [this] {
+      return m_pending.load(std::memory_order_seq_cst) > 0 || m_shutdown.load(std::memory_order_relaxed);
+    });
+    m_sleepers.fetch_sub(1, std::memory_order_seq_cst);
   }
 
   ThreadPoolTask* ThreadPool::try_steal(ThreadWorker* current_worker) {
@@ -136,12 +174,13 @@ namespace ren {
       return nullptr;
     }
 
-    // Try to steal from random workers
-    static std::uniform_int_distribution<u32> dist(0, num_workers - 2);
+    // Visit each other worker one time, from a random start.
+    u32 offset = static_cast<u32>(t_rng() % num_workers);
     for (u32 i = 0; i < num_workers; ++i) {
-      // Pick random victim (avoid self)
-      u32 offset = dist(t_rng);
-      u32 victim_idx = (current_worker->get_id() + 1 + offset) % num_workers;
+      u32 victim_idx = (offset + i) % num_workers;
+      if (victim_idx == current_worker->get_id()) {
+        continue;
+      }
 
       auto* task = m_workers[victim_idx]->steal();
       if (task) {
@@ -158,7 +197,7 @@ namespace ren {
     bool is_worker = (t_current_worker != nullptr);
     int initial_count = counter->load(std::memory_order_acquire);
 
-    ren::dbgln("wait_for_completion: initial count = {}, is_worker = {}", initial_count, is_worker);
+    // ren::dbgln("wait_for_completion: initial count = {}, is_worker = {}", initial_count, is_worker);
 
     while (counter->load(std::memory_order_acquire) > 0) {
       // If we're on a worker thread, help complete work to prevent deadlock
@@ -173,13 +212,18 @@ namespace ren {
       }
     }
 
-    ren::dbgln("wait_for_completion: complete");
+    // ren::dbgln("wait_for_completion: complete");
   }
 
 
   ThreadPool& getThreadPool() {
     static ThreadPool instance;
     return instance;
+  }
+
+
+  void backgroundWork(std::function<void(void)> fn) {
+    getThreadPool().enqueue(std::move(fn));
   }
 
 }  // namespace ren

@@ -4,6 +4,7 @@
 #include <ren/assets/Asset.h>
 #include <ren/renderer/shader/ShaderModule.h>
 #include <ren/assets/AssetSource.h>
+#include <ren/assets/AssetStore.h>
 #include <sol/sol.hpp>
 
 namespace ren {
@@ -54,6 +55,12 @@ namespace ren {
     void addFilesystemSource(const std::string_view &path);
     void addEmbeddedSource(void);
 
+    // Add the sources that all ren programs use: the embedded resources,
+    // then the asset directory `root`. The store is in `root`, because the
+    // embedded source is read-only. Note: this creates `<root>/store` if it
+    // does not exist.
+    void addDefaultSources(const std::string_view &root = "assets/");
+
     ref<Asset> getAsset(ren::AssetID assetID);
     ref<Asset> getAsset(const std::string_view &name);
 
@@ -73,12 +80,19 @@ namespace ren {
 
     void configureLua(sol::state &lua);
 
+    AssetStore &getStore() { return store; }
+
+
+    // Import a mesh from a file path. implemented in importers/mesh.cpp
+    void importMesh(const std::filesystem::path &path);
+
    protected:
     ref<Asset> load(const AssetInfo &info);
 
    private:
     // The source that assets are loaded from.
     ren::MultiAssetSource source;
+    ren::AssetStore store;
 
     std::map<ren::AssetID, AssetInfo> assetRegistry;
     std::map<ren::AssetID, ref<Asset>> loadedAssets;  // Cache of loaded assets

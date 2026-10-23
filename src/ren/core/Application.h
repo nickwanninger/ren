@@ -4,6 +4,7 @@
 #include <SDL3/SDL.h>
 #include <ren/renderer/RenderPass.h>
 #include <ren/renderer/Renderer.h>
+#include <ren/core/Window.h>
 #include <ren/core/Scene.h>
 #include <ren/core/Entity.h>
 #include <ren/assets/AssetManager.h>
@@ -28,8 +29,9 @@ namespace ren {
 
 
   class Application {
-    // The first important thing in an application is the SDL Window and the Vulkan instance.
-    SDL_Window *window = nullptr;
+    // The first important thing in an application is the window and the
+    // Vulkan instance.
+    Box<Window> window;
     ref<Renderer> renderer;
 
 
@@ -40,14 +42,9 @@ namespace ren {
 
     sol::state lua;
 
-    struct ImGuiState {
-      // TODO: move this elsewhere!
-      FramerateCounter framerateCounter;            // Framerate counter for ImGui
-      VkDescriptorPool imguiPool = VK_NULL_HANDLE;  // Descriptor pool for ImGui
-    };
-    void initImGui();
-
    public:
+    bool isRunning() const { return running; }
+    void stop() { running = false; }
 
     ren::AssetManager &getAssetManager() { return world.get_mut<ren::AssetManager>(); }
 
@@ -56,16 +53,32 @@ namespace ren {
     // We try to put everything in the world, so that we can use flecs systems to process basically
     // everything.
     flecs::world world;
-    Application(const std::string &app_name, glm::uvec2 window_size);
+    // `window` sets what the application shows. It must be constructed but
+    // not initialized; the Application initializes it. If it is null, the
+    // Application uses a plain Window.
+    Application(const std::string &app_name, glm::uvec2 window_size, Box<Window> window = nullptr);
     ~Application();
 
-    void run();
+
+    struct RunOptions {
+      u64 maxFrames = 0;
+      // If more than zero, each frame advances the time by this many seconds,
+      // and the wall clock is not used. Tests use it to render the same
+      // frames on each run.
+      float fixedDeltaTime = 0.0f;
+    };
+
+    inline void run(void) {
+      RunOptions options;
+      run(options);
+    }
+    void run(const RunOptions &options);
 
     static Application &get(void);
 
     auto &getLuaState(void) { return this->lua; }
 
-    SDL_Window *getWindow(void) const { return this->window; }
+    Window &getWindow(void) const { return *this->window; }
 
 
     void atExit(std::function<void(void)> func) { exitCallbacks.push_back(func); }
@@ -126,7 +139,10 @@ namespace ren {
 
   template <typename T>
   static inline T &ensureResource(void) {
-    if (hasResource<T>()) return resource<T>();
+    REN_DEPRECATION_WARNING();
+    if (hasResource<T>()) {
+      return resource<T>();
+    }
 
     auto &world = ren::world();
     world.emplace<T>();
@@ -146,4 +162,13 @@ namespace ren {
   }
 
   static inline auto evalLua(const std::string_view &code) { return ren::sol().script(code); }
+
+
+
+  template <typename WindowT, typename... Args>
+    requires(std::is_base_of<ren::Window, WindowT>::value)
+  inline auto run(std::string app_name, glm::uvec2 res, Args &&...args) {
+    ren::Application app(app_name, res, ren::makeBox<WindowT>(std::forward<Args>(args)...));
+    return app.run();
+  }
 }  // namespace ren

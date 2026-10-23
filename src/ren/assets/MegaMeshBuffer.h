@@ -2,6 +2,7 @@
 
 #include <ren/types.h>
 #include <ren/renderer/Buffer.h>
+#include <ren/renderer/CommandEncoder.h>
 #include <ren/assets/Vertex.h>
 
 namespace ren {
@@ -28,15 +29,17 @@ namespace ren {
 
     void dumpEntries(void);
 
-    inline void bind(VkCommandBuffer cmd) {
-      ren::bind(cmd, vertexBuffer);
-      ren::bind(cmd, indexBuffer);
+    inline void bind(CommandEncoder &cmd) {
+      ren::bind(cmd.buf(), vertexBuffer);
+      ren::bind(cmd.buf(), indexBuffer);
     }
 
     const auto &getEntry(MegaMeshHandle handle) const { return entries.at(handle); }
 
     auto &getIndexBuffer(void) { return indexBuffer; }
     auto &getVertexBuffer(void) { return vertexBuffer; }
+
+    auto getEntry(MegaMeshHandle handle) { return entries.at(handle); }
 
    private:
     MegaMeshHandle nextMeshHandle = 1;
