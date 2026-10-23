@@ -150,67 +150,13 @@ namespace ren {
     auto &am = ren::ensureResource<ren::AssetManager>();
     am.addDefaultSources();
 
-    // Configure the lua interpreter to pull from the asset manager.
-    am.configureLua(lua);
-
-    {
-      // Backup the old print, since we override it with our own.
-      lua_getglobal(L, "print");
-      lua_setglobal(L, "_old_print");
-
-
-      sol::state_view lua(L);
-      // Define our replacement print function
-      auto inspector_print = [](sol::variadic_args va, sol::this_state ts) {
-        std::ostringstream oss;
-        sol::state_view lua(ts);
-        sol::function tostring = lua["tostring"];
-
-        bool first = true;
-        for (auto v : va) {
-          if (!first) {
-            oss << " ";  // Separate with spaces (unlike lua, which is tabs)
-          }
-          first = false;
-
-          // Convert to string using Lua's tostring
-          sol::object s = tostring(v);
-          oss << s.as<std::string>();
-        }
-
-        std::string line = oss.str();
-        std::size_t beg = 0u;
-        for (std::size_t i = 0u; i < line.size(); ++i) {
-          if (line[i] == '\n') {
-            ren::println("{}", line.substr(beg, i - beg));
-            beg = i + 1u;
-          }
-        }
-        if (beg < line.size()) {
-          ren::println("{}", line.substr(beg, line.size() - beg));
-        }
-      };
-      lua.set_function("print", inspector_print);
-    }
 
     // Ensure we have a megamesh buffer. (TODO: move this somewhere non-global.)
     ren::ensureResource<ren::MegaMeshBuffer>();
 
     this->window->initializeUI();
-
-
     ren::AutoPlugin::registerPlugins(*this);
 
-
-    // This should kick it off.
-    auto bootstrap_result = lua.do_string("require 'ren.bootstrap'");
-    if (bootstrap_result.status() != sol::call_status::ok) {
-      throw std::runtime_error(fmt::format("Failed to run ren.bootstrap: {}", bootstrap_result.get<std::string>()));
-    }
-    auto result = lua.do_string("require 'init'");
-    if (result.status() != sol::call_status::ok) {
-      throw std::runtime_error(fmt::format("Failed to load init.lua: {}", result.get<std::string>()));
-    }
 
     // Last, so that the window's content sees a fully set up application.
     this->window->onInitialize();
