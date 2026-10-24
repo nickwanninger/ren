@@ -20,6 +20,8 @@ namespace ren {
                                           std::span<const u32> indices) {
     REN_PROFILE_FUNCTION();
 
+    std::scoped_lock lock(mutex);
+
     MegaMeshHandle handle = nextMeshHandle++;
     MegaMeshEntry entry;
     entry.meshID = handle;

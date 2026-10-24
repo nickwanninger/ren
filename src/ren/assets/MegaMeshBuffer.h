@@ -42,6 +42,7 @@ namespace ren {
     auto getEntry(MegaMeshHandle handle) { return entries.at(handle); }
 
    private:
+    std::mutex mutex;
     MegaMeshHandle nextMeshHandle = 1;
     std::unordered_map<MegaMeshHandle, MegaMeshEntry> entries;
 

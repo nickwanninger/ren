@@ -12,7 +12,7 @@
 
 
 static ren::Flag<bool> enableMipmaps(
-    "texture-mipmaps", false,
+    "texture-mipmaps", true,
     "Enable mipmap generation for loaded textures");
 
 

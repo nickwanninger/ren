@@ -31,195 +31,6 @@ std::string getPropertyTypeName(aiPropertyTypeInfo type) {
   }
 }
 
-json dumpAiMaterial(const aiMaterial *mat) {
-  json result = json::object();
-
-  result["numProperties"] = mat->mNumProperties;
-  json properties = json::object();
-
-  for (unsigned int i = 0; i < mat->mNumProperties; ++i) {
-    const aiMaterialProperty *prop = mat->mProperties[i];
-    std::string key = prop->mKey.C_Str();
-
-    json propData = json::object();
-    propData["type"] = getPropertyTypeName(prop->mType);
-    propData["index"] = prop->mIndex;
-    propData["dataLength"] = prop->mDataLength;
-
-    // Try to extract value based on type
-    json value;
-
-    if (prop->mType == aiPTI_Float) {
-      if (prop->mDataLength / sizeof(float) == 1) {
-        float f;
-        mat->Get(key.c_str(), aiTextureType_UNKNOWN, prop->mIndex, f);
-        value = f;
-      } else {
-        json floatArray = json::array();
-        float *data = reinterpret_cast<float *>(prop->mData);
-        for (unsigned int j = 0; j < prop->mDataLength / sizeof(float); ++j) {
-          floatArray.push_back(data[j]);
-        }
-        value = floatArray;
-      }
-    } else if (prop->mType == aiPTI_Integer) {
-      if (prop->mDataLength / sizeof(int) == 1) {
-        int i_val;
-        mat->Get(key.c_str(), aiTextureType_UNKNOWN, prop->mIndex, i_val);
-        value = i_val;
-      } else {
-        json intArray = json::array();
-        int *data = reinterpret_cast<int *>(prop->mData);
-        for (unsigned int j = 0; j < prop->mDataLength / sizeof(int); ++j) {
-          intArray.push_back(data[j]);
-        }
-        value = intArray;
-      }
-    } else if (prop->mType == aiPTI_String) {
-      aiString str;
-      mat->Get(key.c_str(), aiTextureType_UNKNOWN, prop->mIndex, str);
-      value = str.C_Str();
-    } else if (prop->mType == aiPTI_Buffer) {
-      // For binary data, just note it exists
-      value = "(binary data, " + std::to_string(prop->mDataLength) + " bytes)";
-    }
-
-    propData["value"] = value;
-    properties[key] = propData;
-  }
-
-  result["properties"] = properties;
-
-  // Also dump texture information by type
-  json textures = json::object();
-  const aiTextureType textureTypes[] = {aiTextureType_DIFFUSE,
-                                        aiTextureType_SPECULAR,
-                                        aiTextureType_AMBIENT,
-                                        aiTextureType_EMISSIVE,
-                                        aiTextureType_HEIGHT,
-                                        aiTextureType_NORMALS,
-                                        aiTextureType_SHININESS,
-                                        aiTextureType_OPACITY,
-                                        aiTextureType_DISPLACEMENT,
-                                        aiTextureType_LIGHTMAP,
-                                        aiTextureType_REFLECTION,
-                                        aiTextureType_BASE_COLOR,
-                                        aiTextureType_NORMAL_CAMERA,
-                                        aiTextureType_EMISSION_COLOR,
-                                        aiTextureType_METALNESS,
-                                        aiTextureType_DIFFUSE_ROUGHNESS,
-                                        aiTextureType_AMBIENT_OCCLUSION,
-                                        aiTextureType_UNKNOWN};
-
-  const std::string textureTypeNames[] = {"DIFFUSE",           "SPECULAR",          "AMBIENT",       "EMISSIVE",       "HEIGHT",
-                                          "NORMALS",           "SHININESS",         "OPACITY",       "DISPLACEMENT",   "LIGHTMAP",
-                                          "REFLECTION",        "BASE_COLOR",        "NORMAL_CAMERA", "EMISSION_COLOR", "METALNESS",
-                                          "DIFFUSE_ROUGHNESS", "AMBIENT_OCCLUSION", "UNKNOWN"};
-
-  for (size_t t = 0; t < 18; ++t) {
-    unsigned int count = mat->GetTextureCount(textureTypes[t]);
-    if (count > 0) {
-      json typeTextures = json::array();
-      for (unsigned int i = 0; i < count; ++i) {
-        aiString path;
-        aiTextureMapping mapping;
-        unsigned int uvIndex;
-        float blend;
-        aiTextureOp op;
-
-        if (mat->GetTexture(textureTypes[t], i, &path, &mapping, &uvIndex, &blend, &op) == AI_SUCCESS) {
-          json texInfo = json::object();
-          texInfo["path"] = path.C_Str();
-          texInfo["uvIndex"] = uvIndex;
-          texInfo["blend"] = blend;
-
-          // Map enum values to strings
-          std::string mappingStr = "UNKNOWN";
-          if (mapping == aiTextureMapping_UV) {
-            mappingStr = "UV";
-          } else if (mapping == aiTextureMapping_SPHERE) {
-            mappingStr = "SPHERE";
-          } else if (mapping == aiTextureMapping_CYLINDER) {
-            mappingStr = "CYLINDER";
-          } else if (mapping == aiTextureMapping_BOX) {
-            mappingStr = "BOX";
-          } else if (mapping == aiTextureMapping_PLANE) {
-            mappingStr = "PLANE";
-          }
-          texInfo["mapping"] = mappingStr;
-
-          std::string opStr = "ADD";
-          if (op == aiTextureOp_Multiply) {
-            opStr = "MULTIPLY";
-          } else if (op == aiTextureOp_Add) {
-            opStr = "ADD";
-          } else if (op == aiTextureOp_Subtract) {
-            opStr = "SUBTRACT";
-          } else if (op == aiTextureOp_Divide) {
-            opStr = "DIVIDE";
-          } else if (op == aiTextureOp_SmoothAdd) {
-            opStr = "SMOOTH_ADD";
-          } else if (op == aiTextureOp_SignedAdd) {
-            opStr = "SIGNED_ADD";
-          }
-          texInfo["operation"] = opStr;
-
-          typeTextures.push_back(texInfo);
-        }
-      }
-      textures[textureTypeNames[t]] = typeTextures;
-    }
-  }
-
-  result["textures"] = textures;
-
-  // Dump common material colors
-  json colors = json::object();
-
-  aiColor3D color;
-  if (mat->Get(AI_MATKEY_COLOR_DIFFUSE, color) == AI_SUCCESS) {
-    colors["diffuse"] = json::array({color.r, color.g, color.b});
-  }
-  if (mat->Get(AI_MATKEY_COLOR_SPECULAR, color) == AI_SUCCESS) {
-    colors["specular"] = json::array({color.r, color.g, color.b});
-  }
-  if (mat->Get(AI_MATKEY_COLOR_AMBIENT, color) == AI_SUCCESS) {
-    colors["ambient"] = json::array({color.r, color.g, color.b});
-  }
-  if (mat->Get(AI_MATKEY_COLOR_EMISSIVE, color) == AI_SUCCESS) {
-    colors["emissive"] = json::array({color.r, color.g, color.b});
-  }
-  if (mat->Get(AI_MATKEY_COLOR_TRANSPARENT, color) == AI_SUCCESS) {
-    colors["transparent"] = json::array({color.r, color.g, color.b});
-  }
-
-  result["colors"] = colors;
-
-  // Dump common scalar properties
-  json scalars = json::object();
-
-  float shininess;
-  if (mat->Get(AI_MATKEY_SHININESS, shininess) == AI_SUCCESS) {
-    scalars["shininess"] = shininess;
-  }
-
-  float opacity;
-  if (mat->Get(AI_MATKEY_OPACITY, opacity) == AI_SUCCESS) {
-    scalars["opacity"] = opacity;
-  }
-
-  int twoSided;
-  if (mat->Get(AI_MATKEY_TWOSIDED, twoSided) == AI_SUCCESS) {
-    scalars["twoSided"] = (bool)twoSided;
-  }
-
-  result["scalars"] = scalars;
-
-  return result;
-}
-
-
-
 
 namespace ren {
 
@@ -339,7 +150,7 @@ namespace ren {
     flags |= aiProcess_RemoveRedundantMaterials;  // Remove redundant materials
     // flags |= aiProcess_Debone; // DEBONE (temp)
     flags |= aiProcess_FindInstances;
-    const aiScene *scene = importer.ReadFile(filename.string(), flags);
+    const aiScene *scene = REN_PROFILE_EXPR("ReadFile", importer.ReadFile(filename.string(), flags));
     if (!scene || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE || !scene->mRootNode) {
       fmt::print("Error loading mesh scene: {}\n", importer.GetErrorString());
       return nullptr;
@@ -347,10 +158,11 @@ namespace ren {
 
 
     auto meshScene = make<MeshScene>();
-    meshScene->meshes.reserve(scene->mNumMeshes);
+    meshScene->meshes.resize(scene->mNumMeshes);  // Preallocate space for meshes
 
     // Iterate over all meshes in the scene.
-    for (unsigned int i = 0; i < scene->mNumMeshes; ++i) {
+    // for (unsigned int i = 0; i < scene->mNumMeshes; ++i) {
+    ren::parallel_for((int)scene->mNumMeshes, [&](int i) {
       REN_PROFILE_SCOPE("Read Assimp Mesh");
       const aiMesh *assimpMesh = scene->mMeshes[i];
 
@@ -409,8 +221,8 @@ namespace ren {
       // Create a mesh from the vertices and indices
       auto mesh = make<Mesh>(assimpMesh->mName.C_Str(), vertices, indices);
 
-      meshScene->meshes.push_back(mesh);
-    }
+      meshScene->meshes[i] = mesh;
+    });
 
 
     // load all the textures
@@ -451,6 +263,9 @@ namespace ren {
       ren::parallel_for((int)scene->mNumTextures, decodeOne);
     }
 
+
+
+    // Load the textures
     for (unsigned int i = 0; i < scene->mNumTextures; ++i) {
       REN_PROFILE_SCOPE("Load Assimp Texture");
       const aiTexture *assimpTexture = scene->mTextures[i];
@@ -565,7 +380,6 @@ namespace ren {
       int twoSided;
       if (assimpMaterial->Get(AI_MATKEY_TWOSIDED, twoSided) == AI_SUCCESS) {
         if (twoSided) {
-
           material->getPSO().cullMode = ren::CullMode::None;
         }
       }

@@ -60,7 +60,10 @@ namespace ren {
       m_pool->m_pending.fetch_sub(1, std::memory_order_seq_cst);
       // Execute task
       // fmt::println("Executing task on worker {}", m_id);
-      task->execute();
+      {
+        REN_PROFILE_SCOPE("task");
+        task->execute();
+      }
 
       // Decrement completion counter if present
       if (task->m_completion_counter) {
@@ -144,7 +147,9 @@ namespace ren {
     // sees the new task, or this thread sees the sleeper. The lock makes sure
     // that the sleeper is in the wait before the notify.
     if (m_sleepers.load(std::memory_order_seq_cst) > 0) {
-      { std::lock_guard lock(m_mutex); }
+      {
+        std::lock_guard lock(m_mutex);
+      }
       m_wake.notify_one();
     }
   }
@@ -162,9 +167,7 @@ namespace ren {
   void ThreadPool::wait_for_work() {
     std::unique_lock lock(m_mutex);
     m_sleepers.fetch_add(1, std::memory_order_seq_cst);
-    m_wake.wait(lock, [this] {
-      return m_pending.load(std::memory_order_seq_cst) > 0 || m_shutdown.load(std::memory_order_relaxed);
-    });
+    m_wake.wait(lock, [this] { return m_pending.load(std::memory_order_seq_cst) > 0 || m_shutdown.load(std::memory_order_relaxed); });
     m_sleepers.fetch_sub(1, std::memory_order_seq_cst);
   }
 
@@ -222,8 +225,6 @@ namespace ren {
   }
 
 
-  void backgroundWork(std::function<void(void)> fn) {
-    getThreadPool().enqueue(std::move(fn));
-  }
+  void backgroundWork(std::function<void(void)> fn) { getThreadPool().enqueue(std::move(fn)); }
 
 }  // namespace ren

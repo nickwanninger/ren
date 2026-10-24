@@ -88,31 +88,38 @@ namespace ren {
 
     void wait_for_completion(std::atomic<int>* counter);
 
-    // Parallel for loop: executes fn(i) for i in [0, count) in parallel
-    // Work is divided into chunks for better cache locality and lower overhead
+    // Parallel for loop: executes fn(i) for i in [0, count) in parallel.
+    // Each task pulls chunks of indices from a shared counter until no
+    // indices remain, so fast tasks take more of the work.
     template <typename Fn>
     void parallel_for(int count, Fn&& fn) {
       if (count <= 0) {
         return;
       }
 
-      u32 num_workers = get_num_workers();
-      int chunk_size = (count + num_workers - 1) / num_workers;
-      if (chunk_size < 1) {
-        chunk_size = 1;
-      }
+      constexpr int chunk_size = 1;
+      int num_chunks = (count + chunk_size - 1) / chunk_size;
+      // int num_tasks = std::min<int>(get_num_workers(), num_chunks);
+      int num_tasks = get_num_workers();
 
+      std::atomic<int> next_index{0};
       std::atomic<int> counter{0};
 
-      // The chunks hold fn by reference. This is safe because this function
-      // waits for all chunks before it returns.
-      for (int start = 0; start < count; start += chunk_size) {
-        int end = std::min(start + chunk_size, count);
-
+      // The tasks hold next_index and fn by reference. This is safe because
+      // this function waits for all tasks before it returns.
+      for (int t = 0; t < num_tasks; ++t) {
         enqueue(
-            [start, end, &fn]() {
-              for (int i = start; i < end; ++i) {
-                fn(i);
+            [count, &next_index, &fn]() {
+              while (true) {
+                int start = next_index.fetch_add(chunk_size, std::memory_order_relaxed);
+                if (start >= count) {
+                  break;
+                }
+
+                int end = std::min(start + chunk_size, count);
+                for (int i = start; i < end; ++i) {
+                  fn(i);
+                }
               }
             },
             &counter);
