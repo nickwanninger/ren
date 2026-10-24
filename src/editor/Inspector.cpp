@@ -26,16 +26,37 @@ namespace ren::editor {
     } else {
       auto comp = compId.entity();
 
-      // auto type = comp.type();
-      ImGui::Text("%s #%" PRIu64, compId.entity().path(".", "").c_str(), comp.raw_id());
-      const EcsComponent *comp_desc = comp.try_get<EcsComponent>();
-      // const void *comp_data = e.try_get(comp);
-      if (comp_desc) {
-        ImGui::SameLine();
-        ImGui::Text(" sz:%d al:%d", comp_desc->size, comp_desc->alignment);
+      // Components that did not go through ren_register_component have no
+      // fields to show, so show only the flecs name and layout.
+      auto *ref = comp.try_get<ComponentInfoRef>();
+      if (ref == nullptr) {
+        ImGui::TextDisabled("%s #%" PRIu64, path(comp).c_str(), comp.raw_id());
+        const EcsComponent *comp_desc = comp.try_get<EcsComponent>();
+        if (comp_desc) {
+          ImGui::SameLine();
+          ImGui::TextDisabled(" sz:%d al:%d", comp_desc->size, comp_desc->alignment);
+        }
+        return;
       }
 
-      // ImGui::Text("  Size: %lu bytes", comp_data.size);
+      const auto &info = *ref->info;
+      const char *label = info.name ? info.name : info.typeName;
+
+      // Two components can have fields with the same name, so give each
+      // component its own ImGui ID scope.
+      ImGui::PushID(static_cast<int>(comp.raw_id()));
+      if (ImGui::TreeNode(label)) {
+        // A tag has no data and returns null, but it also has no fields.
+        auto *data = static_cast<std::byte *>(e.try_get_mut(compId));
+        for (const auto &field : info.fields) {
+          // TODO: send a document command here instead, for undo and redo.
+          if (field.type->inspect(data + field.offset, field)) {
+            e.modified(compId);
+          }
+        }
+        ImGui::TreePop();
+      }
+      ImGui::PopID();
     }
   }
 
@@ -75,29 +96,31 @@ namespace ren::editor {
     }
 
     if (1) {
-      ren::system::onUpdate<EcsComponent>("ren::editor::ComponentInspector").run([](flecs::iter &it) {
+      ren::system::onUpdate("ren::editor::ComponentInspector").run([](flecs::iter &it) {
         REN_PROFILE_SCOPE("Editor Inspector");
         ImGui::Begin("Component Inspector");
 
 
         auto &comps = ren::getRegisteredComponents();
         for (const auto &comp : comps) {
-          ImGui::Text("Registered Component: %s", comp.typeName);
-          ImGui::Text("  Size: %" PRIu64 " bytes", comp.typeSize);
-          ImGui::Text("  Alignment: %" PRIu64 " bytes", comp.typeAlignment);
-        }
-
-        ImGui::Separator();
-
-        while (it.next()) {
-          auto comps = it.field<EcsComponent>(0);
-
-          for (auto i : it) {
-            ImGui::Text("Component: %s", it.entity(i).path().c_str());
-            ImGui::Text("  Size: %d bytes", comps[i].size);
-            ImGui::Text("  Alignment: %d bytes", comps[i].alignment);
+          ImGui::Text("%s   sz: %" PRIu64 ", align: %" PRIu64, comp.typeName, comp.typeSize, comp.typeAlignment);
+          for (const auto &field : comp.fields) {
+            ImGui::Text("  %s  offset: %u  size:%u", field.name.c_str(), field.offset, field.size);
           }
+          ImGui::Separator();
         }
+
+        // ImGui::Separator();
+
+        // while (it.next()) {
+        //   auto comps = it.field<EcsComponent>(0);
+
+        //   for (auto i : it) {
+        //     ImGui::Text("Component: %s", it.entity(i).path().c_str());
+        //     ImGui::Text("  Size: %d bytes", comps[i].size);
+        //     ImGui::Text("  Alignment: %d bytes", comps[i].alignment);
+        //   }
+        // }
 
 
         ImGui::End();

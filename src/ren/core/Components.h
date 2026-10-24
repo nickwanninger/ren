@@ -43,6 +43,12 @@ namespace ren {
           : name(name) {}
       Name(std::string&& name)
           : name(std::move(name)) {}
+
+
+      static void describe(ren::ComponentBuilder<Name>& b) {
+        b.name("Name");
+        b.field<&Name::name>("name");
+      }
     };
     ren_register_component(Name, .luaName = "NameComponent");
 
@@ -62,14 +68,20 @@ namespace ren {
 
       NLOHMANN_DEFINE_TYPE_INTRUSIVE(Transform, translation, rotation, scale);
 
+      static void describe(ren::ComponentBuilder<Transform>& b) {
+        b.name("Transform");
+        b.field<&Transform::translation>("translation");
+        b.field<&Transform::rotation>("rotation");
+        b.field<&Transform::scale>("scale");
+      }
+
       Transform() = default;
       Transform(const Transform&) = default;
       Transform(const glm::vec3& translation)
           : translation(translation) {}
 
       glm::mat4 getTransform() const {
-        return glm::translate(glm::mat4(1.0f), translation) *
-               glm::mat4_cast(glm::normalize(rotation)) * glm::scale(glm::mat4(1.0f), scale);
+        return glm::translate(glm::mat4(1.0f), translation) * glm::mat4_cast(glm::normalize(rotation)) * glm::scale(glm::mat4(1.0f), scale);
       }
     };
 
