@@ -137,6 +137,9 @@ namespace ren {
 
     ren::initPhases(ren::world());
 
+    // Static initialization registered the components before the world existed.
+    ren::bindRegisteredComponents(world);
+
     // Configure Lua by loading the standard libraries.
     luaL_openlibs(lua.lua_state());
 
