@@ -96,7 +96,6 @@ namespace ren {
 
 
   RenderTask &TaskBuilder::execute(RenderTaskLambda callback) {
-
     // We can only finalize once.
     if (finalized) {
       throw std::runtime_error("Task builder already finalized");
@@ -131,6 +130,31 @@ namespace ren {
     apply(task);
     return task;
   }
+
+
+  RenderTask &RenderTask::read(GraphHandle handle, GraphAccess access) {
+    owner.declareRead(*this, handle, access);
+    return *this;
+  }
+
+
+  RenderTask &RenderTask::write(GraphHandle handle, GraphAccess access) {
+    owner.declareWrite(*this, handle, access);
+    return *this;
+  }
+
+
+  GraphHandle RenderTask::updates(GraphHandle handle, GraphAccess access) { return owner.declareUpdate(*this, handle, access); }
+
+
+  void RenderTask::execute(RecordContext &ctx) {
+    auto start = std::chrono::steady_clock::now();
+    run(ctx);
+    totalTimeNs += std::chrono::duration<double, std::nano>(std::chrono::steady_clock::now() - start).count();
+    ++numExecutions;
+  }
+
+
 
 
 }  // namespace ren

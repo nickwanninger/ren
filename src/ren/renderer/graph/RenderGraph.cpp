@@ -156,30 +156,6 @@ namespace ren {
   }
 
 
-  RenderTask &RenderTask::read(GraphHandle handle, GraphAccess access) {
-    owner.declareRead(*this, handle, access);
-    return *this;
-  }
-
-
-  RenderTask &RenderTask::write(GraphHandle handle, GraphAccess access) {
-    owner.declareWrite(*this, handle, access);
-    return *this;
-  }
-
-
-  GraphHandle RenderTask::updates(GraphHandle handle, GraphAccess access) { return owner.declareUpdate(*this, handle, access); }
-
-
-  void RenderTask::execute(RecordContext &ctx) {
-    REN_PROFILE_SCOPE(name().c_str());
-
-    auto start = std::chrono::steady_clock::now();
-    run(ctx);
-    totalTimeNs += std::chrono::duration<double, std::nano>(std::chrono::steady_clock::now() - start).count();
-    ++numExecutions;
-  }
-
 
 
   ////////////////////////////////////////////////////////////////////////////
@@ -202,6 +178,7 @@ namespace ren {
 
 
   RenderSchedule RenderGraph::compile() {
+    REN_PROFILE_SCOPE("Graph Compile");
     // Select the roots and the producers of their inputs, transitively. A
     // history read does not select its producer.
     std::unordered_map<u64, ref<RenderTask>> selected;
@@ -400,6 +377,7 @@ namespace ren {
 
 
   void RenderGraph::prepareFrame(Renderer *renderer, SubmissionUnit *unit) {
+    REN_PROFILE_SCOPE("Graph Prepare");
     requireUpdate();
     submission = unit;
     phase = Phase::Select;
@@ -603,6 +581,8 @@ namespace ren {
 
 
   void RenderGraph::record() {
+    REN_PROFILE_SCOPE("RenderGraph::record");
+
     if (phase == Phase::Prepared) {
       compileTransitions();
     }
@@ -619,6 +599,7 @@ namespace ren {
           RecordContext ctx{ResourceResolver(*this), nullptr, encoder};
           transition->storage->transition(ctx, transition->from, transition->to);
         } else {
+          REN_PROFILE_SCOPE("RTexecute");
           // Each task uses the captured FrameGlobals of its view.
           auto task = std::get<ScheduledRenderTask>(operation).task;
           auto view = task->view ? views.at(task->view.get()).get() : nullptr;
