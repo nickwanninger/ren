@@ -3,7 +3,8 @@
 #include <imgui/imgui.h>
 #include <math.h>
 
-#include <ren/assets/materials/PBRMaterial.h>
+#include <ren/assets/Material.h>
+#include <ren/renderer/shader/ShaderCache.h>
 #include <assimp/GltfMaterial.h>
 
 #include <assimp/Importer.hpp>
@@ -29,195 +30,6 @@ std::string getPropertyTypeName(aiPropertyTypeInfo type) {
       return "unknown";
   }
 }
-
-json dumpAiMaterial(const aiMaterial *mat) {
-  json result = json::object();
-
-  result["numProperties"] = mat->mNumProperties;
-  json properties = json::object();
-
-  for (unsigned int i = 0; i < mat->mNumProperties; ++i) {
-    const aiMaterialProperty *prop = mat->mProperties[i];
-    std::string key = prop->mKey.C_Str();
-
-    json propData = json::object();
-    propData["type"] = getPropertyTypeName(prop->mType);
-    propData["index"] = prop->mIndex;
-    propData["dataLength"] = prop->mDataLength;
-
-    // Try to extract value based on type
-    json value;
-
-    if (prop->mType == aiPTI_Float) {
-      if (prop->mDataLength / sizeof(float) == 1) {
-        float f;
-        mat->Get(key.c_str(), aiTextureType_UNKNOWN, prop->mIndex, f);
-        value = f;
-      } else {
-        json floatArray = json::array();
-        float *data = reinterpret_cast<float *>(prop->mData);
-        for (unsigned int j = 0; j < prop->mDataLength / sizeof(float); ++j) {
-          floatArray.push_back(data[j]);
-        }
-        value = floatArray;
-      }
-    } else if (prop->mType == aiPTI_Integer) {
-      if (prop->mDataLength / sizeof(int) == 1) {
-        int i_val;
-        mat->Get(key.c_str(), aiTextureType_UNKNOWN, prop->mIndex, i_val);
-        value = i_val;
-      } else {
-        json intArray = json::array();
-        int *data = reinterpret_cast<int *>(prop->mData);
-        for (unsigned int j = 0; j < prop->mDataLength / sizeof(int); ++j) {
-          intArray.push_back(data[j]);
-        }
-        value = intArray;
-      }
-    } else if (prop->mType == aiPTI_String) {
-      aiString str;
-      mat->Get(key.c_str(), aiTextureType_UNKNOWN, prop->mIndex, str);
-      value = str.C_Str();
-    } else if (prop->mType == aiPTI_Buffer) {
-      // For binary data, just note it exists
-      value = "(binary data, " + std::to_string(prop->mDataLength) + " bytes)";
-    }
-
-    propData["value"] = value;
-    properties[key] = propData;
-  }
-
-  result["properties"] = properties;
-
-  // Also dump texture information by type
-  json textures = json::object();
-  const aiTextureType textureTypes[] = {aiTextureType_DIFFUSE,
-                                        aiTextureType_SPECULAR,
-                                        aiTextureType_AMBIENT,
-                                        aiTextureType_EMISSIVE,
-                                        aiTextureType_HEIGHT,
-                                        aiTextureType_NORMALS,
-                                        aiTextureType_SHININESS,
-                                        aiTextureType_OPACITY,
-                                        aiTextureType_DISPLACEMENT,
-                                        aiTextureType_LIGHTMAP,
-                                        aiTextureType_REFLECTION,
-                                        aiTextureType_BASE_COLOR,
-                                        aiTextureType_NORMAL_CAMERA,
-                                        aiTextureType_EMISSION_COLOR,
-                                        aiTextureType_METALNESS,
-                                        aiTextureType_DIFFUSE_ROUGHNESS,
-                                        aiTextureType_AMBIENT_OCCLUSION,
-                                        aiTextureType_UNKNOWN};
-
-  const std::string textureTypeNames[] = {"DIFFUSE",           "SPECULAR",          "AMBIENT",       "EMISSIVE",       "HEIGHT",
-                                          "NORMALS",           "SHININESS",         "OPACITY",       "DISPLACEMENT",   "LIGHTMAP",
-                                          "REFLECTION",        "BASE_COLOR",        "NORMAL_CAMERA", "EMISSION_COLOR", "METALNESS",
-                                          "DIFFUSE_ROUGHNESS", "AMBIENT_OCCLUSION", "UNKNOWN"};
-
-  for (size_t t = 0; t < 18; ++t) {
-    unsigned int count = mat->GetTextureCount(textureTypes[t]);
-    if (count > 0) {
-      json typeTextures = json::array();
-      for (unsigned int i = 0; i < count; ++i) {
-        aiString path;
-        aiTextureMapping mapping;
-        unsigned int uvIndex;
-        float blend;
-        aiTextureOp op;
-
-        if (mat->GetTexture(textureTypes[t], i, &path, &mapping, &uvIndex, &blend, &op) == AI_SUCCESS) {
-          json texInfo = json::object();
-          texInfo["path"] = path.C_Str();
-          texInfo["uvIndex"] = uvIndex;
-          texInfo["blend"] = blend;
-
-          // Map enum values to strings
-          std::string mappingStr = "UNKNOWN";
-          if (mapping == aiTextureMapping_UV) {
-            mappingStr = "UV";
-          } else if (mapping == aiTextureMapping_SPHERE) {
-            mappingStr = "SPHERE";
-          } else if (mapping == aiTextureMapping_CYLINDER) {
-            mappingStr = "CYLINDER";
-          } else if (mapping == aiTextureMapping_BOX) {
-            mappingStr = "BOX";
-          } else if (mapping == aiTextureMapping_PLANE) {
-            mappingStr = "PLANE";
-          }
-          texInfo["mapping"] = mappingStr;
-
-          std::string opStr = "ADD";
-          if (op == aiTextureOp_Multiply) {
-            opStr = "MULTIPLY";
-          } else if (op == aiTextureOp_Add) {
-            opStr = "ADD";
-          } else if (op == aiTextureOp_Subtract) {
-            opStr = "SUBTRACT";
-          } else if (op == aiTextureOp_Divide) {
-            opStr = "DIVIDE";
-          } else if (op == aiTextureOp_SmoothAdd) {
-            opStr = "SMOOTH_ADD";
-          } else if (op == aiTextureOp_SignedAdd) {
-            opStr = "SIGNED_ADD";
-          }
-          texInfo["operation"] = opStr;
-
-          typeTextures.push_back(texInfo);
-        }
-      }
-      textures[textureTypeNames[t]] = typeTextures;
-    }
-  }
-
-  result["textures"] = textures;
-
-  // Dump common material colors
-  json colors = json::object();
-
-  aiColor3D color;
-  if (mat->Get(AI_MATKEY_COLOR_DIFFUSE, color) == AI_SUCCESS) {
-    colors["diffuse"] = json::array({color.r, color.g, color.b});
-  }
-  if (mat->Get(AI_MATKEY_COLOR_SPECULAR, color) == AI_SUCCESS) {
-    colors["specular"] = json::array({color.r, color.g, color.b});
-  }
-  if (mat->Get(AI_MATKEY_COLOR_AMBIENT, color) == AI_SUCCESS) {
-    colors["ambient"] = json::array({color.r, color.g, color.b});
-  }
-  if (mat->Get(AI_MATKEY_COLOR_EMISSIVE, color) == AI_SUCCESS) {
-    colors["emissive"] = json::array({color.r, color.g, color.b});
-  }
-  if (mat->Get(AI_MATKEY_COLOR_TRANSPARENT, color) == AI_SUCCESS) {
-    colors["transparent"] = json::array({color.r, color.g, color.b});
-  }
-
-  result["colors"] = colors;
-
-  // Dump common scalar properties
-  json scalars = json::object();
-
-  float shininess;
-  if (mat->Get(AI_MATKEY_SHININESS, shininess) == AI_SUCCESS) {
-    scalars["shininess"] = shininess;
-  }
-
-  float opacity;
-  if (mat->Get(AI_MATKEY_OPACITY, opacity) == AI_SUCCESS) {
-    scalars["opacity"] = opacity;
-  }
-
-  int twoSided;
-  if (mat->Get(AI_MATKEY_TWOSIDED, twoSided) == AI_SUCCESS) {
-    scalars["twoSided"] = (bool)twoSided;
-  }
-
-  result["scalars"] = scalars;
-
-  return result;
-}
-
-
 
 
 namespace ren {
@@ -338,7 +150,7 @@ namespace ren {
     flags |= aiProcess_RemoveRedundantMaterials;  // Remove redundant materials
     // flags |= aiProcess_Debone; // DEBONE (temp)
     flags |= aiProcess_FindInstances;
-    const aiScene *scene = importer.ReadFile(filename.string(), flags);
+    const aiScene *scene = REN_PROFILE_EXPR("ReadFile", importer.ReadFile(filename.string(), flags));
     if (!scene || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE || !scene->mRootNode) {
       fmt::print("Error loading mesh scene: {}\n", importer.GetErrorString());
       return nullptr;
@@ -346,10 +158,11 @@ namespace ren {
 
 
     auto meshScene = make<MeshScene>();
-    meshScene->meshes.reserve(scene->mNumMeshes);
+    meshScene->meshes.resize(scene->mNumMeshes);  // Preallocate space for meshes
 
     // Iterate over all meshes in the scene.
-    for (unsigned int i = 0; i < scene->mNumMeshes; ++i) {
+    // for (unsigned int i = 0; i < scene->mNumMeshes; ++i) {
+    ren::parallel_for((int)scene->mNumMeshes, [&](int i) {
       REN_PROFILE_SCOPE("Read Assimp Mesh");
       const aiMesh *assimpMesh = scene->mMeshes[i];
 
@@ -408,8 +221,8 @@ namespace ren {
       // Create a mesh from the vertices and indices
       auto mesh = make<Mesh>(assimpMesh->mName.C_Str(), vertices, indices);
 
-      meshScene->meshes.push_back(mesh);
-    }
+      meshScene->meshes[i] = mesh;
+    });
 
 
     // load all the textures
@@ -420,15 +233,56 @@ namespace ren {
       meshScene->textures.push_back(nullptr);
     }
 
+    // Textures that hold data instead of color must not be sRGB decoded.
+    std::vector<bool> isDataTexture(scene->mNumTextures, false);
+    for (unsigned int m = 0; m < scene->mNumMaterials; ++m) {
+      for (aiTextureType type : {aiTextureType_NORMALS, aiTextureType_DIFFUSE_ROUGHNESS, aiTextureType_LIGHTMAP}) {
+        aiString path;
+        if (scene->mMaterials[m]->GetTexture(type, 0, &path) == aiReturn_SUCCESS && path.C_Str()[0] == '*') {
+          unsigned int index = (unsigned int)atoi(&path.C_Str()[1]);
+          if (index < isDataTexture.size()) {
+            isDataTexture[index] = true;
+          }
+        }
+      }
+    }
+
+    // Decode the embedded images on the thread pool. The decode is the slow
+    // part, and it does no Vulkan work. The Texture constructor submits to
+    // the queue, so this thread makes the textures after the decode.
+    std::vector<ren::Texture::DecodedImage> decoded(scene->mNumTextures);
+    {
+      REN_PROFILE_SCOPE("Decode Assimp Textures");
+      // An lvalue, so that parallel_for copies it into each chunk.
+      auto decodeOne = [&](int i) {
+        const aiTexture *assimpTexture = scene->mTextures[i];
+        if (assimpTexture->mHeight == 0) {
+          decoded[i] = ren::Texture::decode(assimpTexture->pcData, assimpTexture->mWidth);
+        }
+      };
+      ren::parallel_for((int)scene->mNumTextures, decodeOne);
+    }
+
+
+
+    // Load the textures
     for (unsigned int i = 0; i < scene->mNumTextures; ++i) {
       REN_PROFILE_SCOPE("Load Assimp Texture");
       const aiTexture *assimpTexture = scene->mTextures[i];
+      const VkFormat format = isDataTexture[i] ? VK_FORMAT_R8G8B8A8_UNORM : VK_FORMAT_R8G8B8A8_SRGB;
       ref<Texture> texture;
       if (assimpTexture->mHeight == 0) {
         std::string embeddedName = fmt::format("embedded_{}_{}", i, assimpTexture->mFilename.C_Str());
-        texture = ren::Texture::load(embeddedName, assimpTexture->pcData, assimpTexture->mWidth);
+        auto &image = decoded[i];
+        if (image) {
+          texture = ren::Texture::create(embeddedName, image.width, image.height, image.pixels.get(), format);
+        } else {
+          ren::warnln("Failed to decode embedded texture '{}'", embeddedName);
+        }
+        // Free the pixels now. The upload copied them to a staging buffer.
+        image = {};
       } else {
-        texture = ren::Texture::load(assimpTexture->mFilename.C_Str());
+        texture = ren::Texture::load(assimpTexture->mFilename.C_Str(), format);
       }
       meshScene->textures[i] = texture;
     }
@@ -453,7 +307,7 @@ namespace ren {
     for (unsigned int i = 0; i < scene->mNumMaterials; ++i) {
       REN_PROFILE_SCOPE("Read Assimp Material");
       const aiMaterial *assimpMaterial = scene->mMaterials[i];
-      auto material = make<ren::PBRMaterial>();
+      auto material = make<ren::Material>(ren::getShader("ren/core/pbr", "ren/pass/deferred"));
 
       // Set the material name
       aiString materialName;
@@ -463,33 +317,49 @@ namespace ren {
         material->setName(fmt::format("{}_mat{}", filenameWithoutExtension, i));
       }
 
+      // The material data starts as zeros. Set defaults, so that a key that
+      // the file does not have does not give a black or mirror-like material.
+      // The glTF importer always writes the factors, so these apply to other
+      // formats. Metallic is 0 here, not the glTF default of 1, because such
+      // files are mostly not metal.
+      material->setColor("baseColor", glm::vec4(1.0f));
+      material->setColor("emissiveFactor", glm::vec4(0.0f));
+      material->setFloat("metallic", 0.0f);
+      material->setFloat("roughness", 1.0f);
+      material->setFloat("occlusionStrength", 1.0f);
+      // material->getPSO().fillMode = ren::FillMode::Wireframe;
+
 
       float occlusionStrength = 1.0f;
       if (assimpMaterial->Get(AI_MATKEY_GLTF_TEXTURE_STRENGTH(aiTextureType_LIGHTMAP, 0), occlusionStrength) == aiReturn_SUCCESS) {
-        // Got occlusion strength
-        material->props.occlusionStrength = glm::clamp(occlusionStrength, 0.0f, 1.0f);
-        printf("Material %s occlusion strength: %f\n", material->getName().c_str(), material->props.occlusionStrength);
+        occlusionStrength = glm::clamp(occlusionStrength, 0.0f, 1.0f);
+        material->setFloat("occlusionStrength", occlusionStrength);
+        printf("Material %s occlusion strength: %f\n", material->getName().c_str(), occlusionStrength);
       };
       // Set the material properties
       aiColor4D color;
       if (assimpMaterial->Get(AI_MATKEY_COLOR_DIFFUSE, color) == aiReturn_SUCCESS) {
-        material->props.baseColorFactor = glm::vec4(color.r, color.g, color.b, color.a);
+        material->setColor("baseColor", glm::vec4(color.r, color.g, color.b, color.a));
       }
       // if (assimpMaterial->Get(AI_MATKEY_COLOR_SPECULAR, color) == aiReturn_SUCCESS) {
       //   material->props.specularColor = glm::vec4(color.r, color.g, color.b, 1.0f);
       // }
       if (assimpMaterial->Get(AI_MATKEY_COLOR_EMISSIVE, color) == aiReturn_SUCCESS) {
-        material->props.emissive = glm::vec4(color.r, color.g, color.b, color.a);
+        material->setColor("emissiveFactor", glm::vec4(color.r, color.g, color.b, color.a));
       }
 
       // metallic
-      if (assimpMaterial->Get(AI_MATKEY_METALLIC_FACTOR, material->props.metallicFactor) == aiReturn_SUCCESS) {
-        material->props.metallicFactor = glm::clamp(material->props.metallicFactor, 0.0f, 1.0f);
+      float metallicFactor;
+      if (assimpMaterial->Get(AI_MATKEY_METALLIC_FACTOR, metallicFactor) == aiReturn_SUCCESS) {
+        metallicFactor = glm::clamp(metallicFactor, 0.0f, 1.0f);
+        material->setFloat("metallic", metallicFactor);
       }
 
       // roughness
-      if (assimpMaterial->Get(AI_MATKEY_ROUGHNESS_FACTOR, material->props.roughnessFactor) == aiReturn_SUCCESS) {
-        material->props.roughnessFactor = glm::clamp(material->props.roughnessFactor, 0.0f, 1.0f);
+      float roughnessFactor;
+      if (assimpMaterial->Get(AI_MATKEY_ROUGHNESS_FACTOR, roughnessFactor) == aiReturn_SUCCESS) {
+        roughnessFactor = glm::clamp(roughnessFactor, 0.0f, 1.0f);
+        material->setFloat("roughness", roughnessFactor);
       }
 
       // textures
@@ -516,17 +386,20 @@ namespace ren {
 
 
       if (auto diffuseTexture = grabTexture(aiTextureType_DIFFUSE)) {
-        material->baseColorTexture = diffuseTexture;
+        material->setTexture("baseColorTexture", diffuseTexture);
       }
       if (auto metallicRoughnessTexture = grabTexture(aiTextureType_DIFFUSE_ROUGHNESS)) {
-        material->metallicRoughnessTexture = metallicRoughnessTexture;
+        material->setTexture("metallicRoughnessTexture", metallicRoughnessTexture);
       }
       if (auto normalTexture = grabTexture(aiTextureType_NORMALS)) {
-        material->normalTexture = normalTexture;
+        material->setTexture("normalTexture", normalTexture);
+      }
+      if (auto occlusionTexture = grabTexture(aiTextureType_LIGHTMAP)) {
+        material->setTexture("occlusionTexture", occlusionTexture);
       }
 
       if (auto emissiveTexture = grabTexture(aiTextureType_EMISSIVE)) {
-        material->emissiveTexture = emissiveTexture;
+        material->setTexture("emissiveTexture", emissiveTexture);
       }
 
 

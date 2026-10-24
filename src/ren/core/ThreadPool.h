@@ -1,6 +1,9 @@
 #pragma once
 
 #include <atomic>
+#include <condition_variable>
+#include <deque>
+#include <mutex>
 #include <thread>
 #include "ren/core/Logging.h"
 #include <ren/core/ClDeque.h>
@@ -38,12 +41,14 @@ namespace ren {
     ThreadWorker(ThreadPool* pool, u32 id);
     ~ThreadWorker();
 
-    // Push task to this worker's queue
+    // Push task to this worker's queue. Only the thread of this worker may
+    // call it (ClDeque allows one owner).
     void push(ThreadPoolTask* task);
 
     ThreadPoolTask* steal();
     void join();
     u32 get_id() const { return m_id; }
+    ThreadPool* get_pool() const { return m_pool; }
     int64_t queue_size() const { return m_queue.size(); }
 
     // Try to execute one task (from local queue or by stealing)
@@ -83,29 +88,38 @@ namespace ren {
 
     void wait_for_completion(std::atomic<int>* counter);
 
-    // Parallel for loop: executes fn(i) for i in [0, count) in parallel
-    // Work is divided into chunks for better cache locality and lower overhead
+    // Parallel for loop: executes fn(i) for i in [0, count) in parallel.
+    // Each task pulls chunks of indices from a shared counter until no
+    // indices remain, so fast tasks take more of the work.
     template <typename Fn>
     void parallel_for(int count, Fn&& fn) {
       if (count <= 0) {
         return;
       }
 
-      u32 num_workers = get_num_workers();
-      int chunk_size = (count + num_workers - 1) / num_workers;
-      if (chunk_size < 1) {
-        chunk_size = 1;
-      }
+      constexpr int chunk_size = 1;
+      int num_chunks = (count + chunk_size - 1) / chunk_size;
+      // int num_tasks = std::min<int>(get_num_workers(), num_chunks);
+      int num_tasks = get_num_workers();
 
+      std::atomic<int> next_index{0};
       std::atomic<int> counter{0};
 
-      for (int start = 0; start < count; start += chunk_size) {
-        int end = std::min(start + chunk_size, count);
-
+      // The tasks hold next_index and fn by reference. This is safe because
+      // this function waits for all tasks before it returns.
+      for (int t = 0; t < num_tasks; ++t) {
         enqueue(
-            [start, end, fn = std::forward<Fn>(fn)]() {
-              for (int i = start; i < end; ++i) {
-                fn(i);
+            [count, &next_index, &fn]() {
+              while (true) {
+                int start = next_index.fetch_add(chunk_size, std::memory_order_relaxed);
+                if (start >= count) {
+                  break;
+                }
+
+                int end = std::min(start + chunk_size, count);
+                for (int i = start; i < end; ++i) {
+                  fn(i);
+                }
               }
             },
             &counter);
@@ -121,8 +135,22 @@ namespace ren {
     friend class ThreadWorker;
     void enqueue_task(ThreadPoolTask* task);
     ThreadPoolTask* try_steal(ThreadWorker* current_worker);
+    ThreadPoolTask* pop_injected();
+    // Block the calling worker until a task is queued or the pool shuts down.
+    void wait_for_work();
+
     std::vector<Box<ThreadWorker>> m_workers;  // Each owns thread + queue
     std::atomic<bool> m_shutdown{false};
+
+    // Tasks from threads outside the pool. Only the owner may push to a
+    // worker's deque, so these go through this shared queue.
+    std::mutex m_mutex;
+    std::condition_variable m_wake;
+    std::deque<ThreadPoolTask*> m_injected;  // Guarded by m_mutex.
+    // Tasks that are queued and not yet started. Workers sleep when it is 0.
+    std::atomic<i64> m_pending{0};
+    // Workers that are in wait_for_work().
+    std::atomic<u32> m_sleepers{0};
   };
 
 
@@ -130,7 +158,11 @@ namespace ren {
 
   template <typename Fn>
   void parallel_for(int count, Fn&& fn) {
+    REN_PROFILE_SCOPE("parallel_for");
     getThreadPool().parallel_for(count, std::forward<Fn>(fn));
   }
+
+
+  void backgroundWork(std::function<void(void)> fn);
 
 }  // namespace ren

@@ -1,5 +1,8 @@
 
 #include <ren/core/Application.h>
+
+#include <algorithm>
+#include <cmath>
 #include <ren/core/AutoPlugin.h>
 
 #include <ren/renderer/pipelines/PipelineStateObject.h>
@@ -21,13 +24,14 @@
 #include <ren/renderer/Buffer.h>
 #include <ren/renderer/Descriptors.h>
 #include <ren/renderer/graph/RenderGraph.h>
+#include <ren/renderer/Viewport.h>
 #include <ren/renderer/graph/RenderPassTask.h>
 #include <ren/renderer/graph/tasks/DepthPrepassTask.h>
 #include <ren/renderer/graph/tasks/SSAOTask.h>
 #include <ren/renderer/graph/tasks/ShadowMapTask.h>
 #include <ren/renderer/graph/tasks/GBufferTask.h>
 #include <ren/renderer/Sampler.h>
-#include <ren/renderer/shader/ShaderProgram.h>
+#include <ren/renderer/shader/ShaderCache.h>
 
 #include <ren/core/ui/EditorUI.h>
 #include <ren/core/Watcher.h>
@@ -45,8 +49,10 @@
 
 #include <ren/core/Flag.h>
 #include <ren/renderer/shader/ShaderProgram.h>
-#include <ren/scripting/imgui_lua_inspector.hpp>
 #include <ren/core/Math.h>
+
+#include <chrono>
+#include <thread>
 
 extern "C" {
 #include <luajit.h>
@@ -57,14 +63,25 @@ extern "C" {
 #include <ren/core/NodeEditorTest.h>
 
 static ren::Flag<int> kMaxFPS("max-fps", 0, "Maximum framerate for the application, 0 = vsync or uncapped.");
-
+static ren::Flag<int> kIdleFPS("idle-fps", 15, "Maximum framerate when the application is idle, 0 = vsync or uncapped.");
+static ren::Flag<bool> kFullscreen("fullscreen", false, "Start the application in fullscreen mode.");
 static ren::Flag<bool> kHighDPI("high-dpi", true, "Enable high DPI support.");
+
+static const char *introGraphic =
+    "Welcome to\n"
+    "   \x1b[31m_ __\x1b[0m \x1b[32m___\x1b[0m \x1b[34m_ __\x1b[0m  \n"
+    "  \x1b[31m| '__/\x1b[0m \x1b[32m_ \\\x1b[0m \x1b[34m'_ \\\x1b[0m \n"
+    "  \x1b[31m| |\x1b[0m \x1b[32m|  __/\x1b[0m \x1b[34m| | |\x1b[0m\n"
+    "  \x1b[31m|_|\x1b[0m  \x1b[32m\\___|\x1b[0m\x1b[34m_| |_|\x1b[0m\n";
 
 static ren::Application *g_application = nullptr;
 namespace ren {
 
   Application &Application::get(void) { return *g_application; }
-  Application::Application(const std::string &app_name, glm::uvec2 window_size) {
+  Application::Application(const std::string &app_name, glm::uvec2 window_size, Box<Window> window)
+      : window(window ? std::move(window) : makeBox<Window>()) {
+    // printf("%s\n", introGraphic);
+
     REN_PROFILE_SCOPE("BringupApplication");
     g_application = this;
     // Initialize the SDL window
@@ -82,42 +99,46 @@ namespace ren {
     }
 
 
+    // The Vulkan instance comes first, because a window needs it to make its
+    // surface. The main window's surface then selects the device.
+    auto vulkan = make<VulkanInstance>();
+
     {
-      REN_PROFILE_SCOPE("SDL_CreateWindow");
-
-      auto flags = SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE;
+      WindowDesc desc;
+      desc.title = fmt::format("{} - Ren {}", app_name, REN_VERSION);
+      desc.size = window_size;
+      desc.flags = SDL_WINDOW_RESIZABLE;
       if (kHighDPI.get()) {
-        flags |= SDL_WINDOW_HIGH_PIXEL_DENSITY;
+        desc.flags |= SDL_WINDOW_HIGH_PIXEL_DENSITY;
       }
-
-      auto windowName = fmt::format("{} - Ren {}", app_name, REN_VERSION);
-      this->window = SDL_CreateWindow(windowName.c_str(), window_size.x, window_size.y, flags);
-      if (!this->window) {
-        ren::println("SDL_CreateWindow Error: {}", SDL_GetError());
-        throw std::runtime_error("Failed to create SDL window");
+      if (kFullscreen.get()) {
+        desc.flags |= SDL_WINDOW_FULLSCREEN;
       }
+      this->window->initialize(vulkan, desc);
     }
 
+    vulkan->selectDevice(this->window->getSurface());
 
-    // This initializes the Vulkan instance and all the necessary Vulkan objects.
     // TODO: make this a resource instead of a value on Application.
-    this->renderer = make<Renderer>(this->window);
+    this->renderer = make<Renderer>(vulkan);
+
+    // The swapchain allocates frame resources from the renderer, so it comes last.
+    this->window->rebuildSwapchain();
 
     world.set_threads(6);
-
-    if (kMaxFPS.get() > 0) {
-      world.set_target_fps(kMaxFPS.get());
-    }
 
     this->globalEventEntity = world.entity("ren::events");
 
     // Enable the flecs world rest api
     ren::world().set<flecs::Rest>({});
-    ren::world().import <flecs::stats>();
-    ren::world().import <flecs::timer>();
+    ren::world().import<flecs::stats>();
+    ren::world().import<flecs::timer>();
 
 
     ren::initPhases(ren::world());
+
+    // Static initialization registered the components before the world existed.
+    ren::bindRegisteredComponents(world);
 
     // Configure Lua by loading the standard libraries.
     luaL_openlibs(lua.lua_state());
@@ -130,37 +151,24 @@ namespace ren {
 
     // Create an asset manager. This part of the heirarchy will hold loaded assets.
     auto &am = ren::ensureResource<ren::AssetManager>();
-    am.addEmbeddedSource();
-    am.addFilesystemSource("assets/");
+    am.addDefaultSources();
 
-    // Configure the lua interpreter to pull from the asset manager.
-    am.configureLua(lua);
 
     // Ensure we have a megamesh buffer. (TODO: move this somewhere non-global.)
     ren::ensureResource<ren::MegaMeshBuffer>();
 
-    world.emplace<neko::luainspector>(ren::lua());
-
-    initImGui();
-
-
+    this->window->initializeUI();
     ren::AutoPlugin::registerPlugins(*this);
 
 
-    // This should kick it off.
-    auto bootstrap_result = lua.do_string("require 'ren.bootstrap'");
-    if (bootstrap_result.status() != sol::call_status::ok) {
-      throw std::runtime_error(fmt::format("Failed to run ren.bootstrap: {}", bootstrap_result.get<std::string>()));
-    }
-    auto result = lua.do_string("require 'init'");
-    if (result.status() != sol::call_status::ok) {
-      throw std::runtime_error(fmt::format("Failed to load init.lua: {}", result.get<std::string>()));
-    }
+    // Last, so that the window's content sees a fully set up application.
+    this->window->onInitialize();
   }
 
   Application::~Application() {
     REN_PROFILE_FUNCTION();
     this->renderer->waitForIdle();
+    this->renderer->releaseCompletedFrames();
     // Not quite sure when to tear down lua yet.
 
     // Call exit callbacks
@@ -168,422 +176,153 @@ namespace ren {
       func();
     }
 
-    {
-      REN_PROFILE_SCOPE("ImGuiLayer::shutdown");
+    // ECS-owned textures unregister their ImGui descriptors during teardown,
+    // so destroy them before the window shuts down ImGui.
+    world.reset();
 
-      auto &vulkan = ren::getVulkan();
-      auto &state = ren::resource<ren::Application::ImGuiState>();
-
-      vkDestroyDescriptorPool(vulkan.device, state.imguiPool, nullptr);
-      state.imguiPool = VK_NULL_HANDLE;
-
-      ImGui_ImplVulkan_Shutdown();
-      ImGui_ImplSDL3_Shutdown();
-      ImNodes::DestroyContext();
-      ImGui::DestroyContext();
-    }
-
-    // Nuke the renderer.
+    // Close the window (ImGui, swapchain, surface, SDL window), then nuke the renderer.
+    this->window.reset();
     this->renderer.reset();
-
-    // And finally, close the SDL window
-    SDL_DestroyWindow(this->window);
-    this->window = nullptr;
   }
 
 
 
 
-  void Application::run() {
+  // This function is the main loop of the application. It will run until the
+  // application is closed, and will handle all events, updating the ECS world,
+  // and rendering the scene (along with other fullscreen passes like ImGui.)
+  void Application::run(const RunOptions &options) {
     auto startTime = std::chrono::high_resolution_clock::now();
     auto lastTime = startTime;
+    // The deadline of the next frame. It moves forward by a fixed period, so
+    // oversleep in one frame does not make the next frame later.
+    auto nextFrame = std::chrono::steady_clock::now();
     SDL_Event e;
 
+    u64 framesThisRun = 0;
 
-    auto &vulkan = ren::getVulkan();
-    FramerateCounter framerateCounter;
-
-
-
-    ren::RenderGraph G;
-    ren::GraphHandle nullHandleOut;
-    ren::GraphHandle ssao;
-    ren::GraphHandle gbufferAlbedo, gbufferNormal, gbufferMaterial, gbufferDepth;
-    auto &gbp = ren::addGBuffer(G, gbufferAlbedo, gbufferNormal, gbufferMaterial, gbufferDepth);
-    ren::addSSAO(G, gbufferDepth, gbufferNormal, ssao);
-
-
-
-    G.pass("gizmo").execute([&](ren::GraphRunContext &ctx) {});
-
-
-    GraphHandle buzz;
-    G.pass("Fizbuzz").createColorAttachment("buzz", {.absoluteSize = glm::uvec2(512, 512)}, buzz).render([&](ren::GraphRenderPassContext &ctx) {});
-    // for (int i = 0; i < 128; i++) {
-    //   G.pass("gadget").execute([&](ren::GraphRunContext &ctx) { printf("Gadget pass %d\n", i); });
-    // }
-
-    ren::PipelineStateObject trianglePSO;
-    trianglePSO.debugName = "Test Triangle PSO";
-    trianglePSO.program = make<ShaderProgram>("./test");
-    trianglePSO.cullMode = ren::CullMode::None;
-    trianglePSO.hasVertexBinding = true;
-    trianglePSO.fillMode = ren::FillMode::Solid;
-
-
-
-    auto computeProgram = ren::make<ren::ShaderProgram>("test/compute");
-
-
-    float renderScaleTemp = 1.0f;
-
-    // TODO: Move me to a logical class, not here as static variables.
-    //       Maybe these should live in a WSI abstraction class?
-    static bool swapchainNeedsRebuild = false;
-    static bool isResizing = false;
-
-
-    SDL_RaiseWindow(this->window);
-
+    // start the main loop.
+    this->running = true;
     while (this->running) {
-      int eventsHandled = 0;
-
-      {
-        // REN_PROFILE_SCOPE("SDL Poll");
-        // Handle events on queue
-        while (SDL_PollEvent(&e) != 0) {
-          REN_PROFILE_SCOPE("SDL Dispatch");
-          eventsHandled++;
-
-
-          switch (e.type) {
-            case SDL_EVENT_WINDOW_RESIZED:
-            case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED: {
-              int width = e.window.data1;
-              int height = e.window.data2;
-              swapchainNeedsRebuild = true;
-              isResizing = true;
-              break;
-            }
-
-            case SDL_EVENT_WINDOW_EXPOSED: {
-              isResizing = false;
-              break;
-            }
-
-
-            case SDL_EVENT_QUIT: {
-              this->running = false;
-              break;
-            }
-            default: {
-              break;
-            }
-          }
-
-
-
-          if (ImGui_ImplSDL3_ProcessEvent(&e)) {
-            continue;
-          }
-        }
-
-        REN_PROFILE_COUNTER("SDL Events", eventsHandled);
-      }
-
-
-      REN_PROFILE_SCOPE("Frame");
-
-      // Handle swapchain rebuild if needed, and the state machine allows.
-      if (swapchainNeedsRebuild && !isResizing) {
-        REN_PROFILE_SCOPE("Rebuild Swapchain");
-        renderer->rebuildSwapchain();
-        swapchainNeedsRebuild = false;
-        continue;
-      }
-
-      // handle sdl 0 size window
-      int windowWidth, windowHeight;
-      SDL_GetWindowSize(getWindow(), &windowWidth, &windowHeight);
-      if (windowWidth == 0 || windowHeight == 0) {
-        ren::println("Window minimized, skipping frame");
-        SDL_Delay(100);
-        continue;
-      }
-
-
-      auto currentTime = std::chrono::high_resolution_clock::now();
-      float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
-      auto deltaTime = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - lastTime).count();
+      // As soon as possible, grab the current time and compute the delta time since the last frame.
+      const auto frameStart = std::chrono::high_resolution_clock::now();
+      float time = std::chrono::duration<float, std::chrono::seconds::period>(frameStart - startTime).count();
+      auto deltaTime = std::chrono::duration<float, std::chrono::seconds::period>(frameStart - lastTime).count();
       this->timeSeconds = time;
-      lastTime = currentTime;
+      lastTime = frameStart;
 
-      if (!running) {
-        break;
+      if (options.fixedDeltaTime > 0.0f) {
+        deltaTime = options.fixedDeltaTime;
+        this->timeSeconds = framesThisRun * static_cast<double>(options.fixedDeltaTime);
       }
-
-
-      renderer->beginFrame();
-      auto &frame = ren::getFrameUnit();
-
-      ren::Camera::get().update(deltaTime);
-
-      framerateCounter.addFrame(deltaTime);
-
-
 
       {
-        REN_PROFILE_SCOPE("ImGui New Frame");
-        ImGui_ImplVulkan_NewFrame();
-        ImGui_ImplSDL3_NewFrame();
+        REN_PROFILE_SCOPE("Frame");
+        {
+          REN_PROFILE_SCOPE("SDL Poll");
+          // Handle events on queue
+          while (SDL_PollEvent(&e) != 0) {
+            REN_PROFILE_SCOPE("SDL Dispatch");
 
-        ImGui::NewFrame();
-        ImGuizmo::BeginFrame();
-        ImGuizmo::SetDrawlist(ImGui::GetBackgroundDrawList(ImGui::GetMainViewport()));
+            window->handleEvent(e);
 
-        int windowWidth, windowHeight;
-        SDL_GetWindowSize(ren::Application::get().getWindow(), &windowWidth, &windowHeight);
-        ImGuizmo::SetRect(0.0f, 0.0f, windowWidth, windowHeight);
-
-
-        // Before rendering, lets create a dockspace
-        ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport(), ImGuiDockNodeFlags_PassthruCentralNode);
-      }
-
-
-
-      if (ImGui::BeginMainMenuBar()) {
-        if (ImGui::BeginMenu("View")) {
-          if (ImGui::MenuItem("ImGui Demo")) {
-            ren::logUI("ImGui Demo", [](auto &ctx) { ImGui::ShowDemoWindow(&ctx.opened); });
-          }
-          ImGui::EndMenu();
-        }
-
-
-        char buf[64];
-        snprintf(buf, sizeof(buf), "%4d FPS", (int)framerateCounter.getAverageFramerate());
-        if (ImGui::MenuItem(buf)) {
-          //
-        }
-
-        ImGui::EndMainMenuBar();
-      }
-
-      ImGui::Begin("Compute");
-      ImGui::Button("My Button");
-
-      if (ImGui::IsItemHovered()) {
-        ImGui::BeginTooltip();
-        computeProgram->inspect();
-        // // Customize the tooltip content here
-        // ImGui::Text("This is a custom tooltip!");
-        // ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "It can have color.");
-        // ImGui::TextWrapped("You can also add longer descriptions that wrap around a specified width.");
-        ImGui::EndTooltip();
-      }
-      ImGui::End();
-
-      ren::inspectLog();
-
-      if (1) {
-        REN_PROFILE_SCOPE("WorldProgress");
-        world.progress(deltaTime);
-
-        REN_PROFILE_SCOPE("LuaProgress");
-        // Update lua globals
-        lua.globals()["time"] = time;
-        lua.globals()["delta_time"] = deltaTime;
-        lua.globals()["fps"] = framerateCounter.getAverageFramerate();
-        lua.globals()["frame"] = vulkan.frame_number;
-        // Call the lua update function if it exists
-        sol::protected_function lua_update = lua["update"];
-        if (lua_update.valid()) {
-          sol::protected_function_result result = lua_update(deltaTime);
-          if (!result.valid()) {
-            sol::error err = result;
-            ren::println("Error running lua update: {}", err.what());
+            switch (e.type) {
+              case SDL_EVENT_QUIT: {
+                this->running = false;
+                break;
+              }
+              default: {
+                break;
+              }
+            }
           }
         }
-      }
 
 
-      // G.pass("GBuffer")
-      //     .writes(gbufferAlbedo, GraphAccess::RenderTarget)
-      //     .writes(gbufferNormal, GraphAccess::RenderTarget)
-      //     .writes(gbufferMaterial, GraphAccess::RenderTarget)
-      //     .writes(gbufferDepth, GraphAccess::DepthTarget)
-      //     .render([&](ren::GraphRenderPassContext &ctx) { gbp.execute(ctx); });
+        // Handle swapchain rebuild if needed, and the state machine allows.
+        if (window->needsRebuild()) {
+          window->rebuildSwapchain();
+          continue;
+        }
 
-#if 0
-      ren::RenderGraph G;
-      ren::GraphHandle hdr;
-
-      // G.pass makes a builder.
-      // You can chain reads/writes before calling render or compute to finalize it.
-      G.pass("lighting").reads(gbufferAlbedo, gbufferNormal, gbufferDepth, ssao).targets(hdr).render([&](ren::GraphRenderPassContext &ctx) {
-        REN_PROFILE_SCOPE("TestRenderPass");
-        auto &penc = ctx.encoder;
-        penc.bindPipeline(trianglePSO);
-
-        DrawArguments args;
-        args.vertexCount = 3;
-        args.instanceCount = 1;
-        penc.draw(args);
-      });
-
-      auto computeProgram = ...;
-      G.pass("SsaoUpscale").reads(ssaoHalf).writes(ssaoFull).compute([&](ren::GraphComputeContext &ctx) {
-        // bind!
-        enc.dispatch(computeProgram, 64, 64, 64);
-      });
-#endif
-
-
-      float width = (float)windowWidth;
-      float height = (float)windowHeight;
-      // targetHeight = height;
-      float targetHeight = height * renderScaleTemp;
-      float scale = targetHeight / height;
-      scale *= renderScaleTemp;
-      width *= scale;
-      height *= scale;
-      auto renderSize = glm::uvec2(width, height);
-      G.startFrame(renderSize);
-
-      try {
-        G.run(*renderer);
-      } catch (const std::exception &e) {
-        ren::println("✗ RenderPassTask execution failed: {}", e.what());
-      }
-
-      G.inspect();
-
-
-
-      auto enc = frame.getMainCommandEncoder();
-      auto penc = enc->beginRenderPass(*renderer->getDisplayPass(), *frame.renderTarget);
-      {
-        REN_PROFILE_SCOPE("FullScreenPass");
-        if (1) {
-          REN_PROFILE_SCOPE("RenderBackgroundTriangle");
-          auto start = std::chrono::high_resolution_clock::now();
-          ren::MeshBuilder b;
-
-          auto fb = b.beginFace();
-
-          // Add triangles to make a full screen quad
-          fb.vertex(glm::vec3(-1.0f, -1.0f, 0.0f), glm::vec3(0.0f), glm::vec2(0.0f, 0.0f));
-          fb.vertex(glm::vec3(1.0f, -1.0f, 0.0f), glm::vec3(0.0f), glm::vec2(1.0f, 0.0f));
-          fb.vertex(glm::vec3(1.0f, 1.0f, 0.0f), glm::vec3(0.0f), glm::vec2(1.0f, 1.0f));
-          fb.vertex(glm::vec3(-1.0f, 1.0f, 0.0f), glm::vec3(0.0f), glm::vec2(0.0f, 1.0f));
-
-          fb.end();
-
-          auto meshData = b.stampOut();
-
-
-          static struct {
-            float brightness = 1.0f;
-            float time = 0.0f;
-            float stride = 0.001f;
-            int index = 1;
-            int numDraws = 1;
-          } pc;
-
-          penc.bindImmediateMesh(meshData->vertices, meshData->indices);
-          penc.bindPipeline(trianglePSO);
-          pc.numDraws = 0;
-          pc.time = time;
-          DrawArguments args;
-          args.vertexCount = static_cast<u32>(meshData->indices.size());
-          args.instanceCount = 1;
-
-          pc.index = 0;
-          vkCmdPushConstants(penc.buf(), trianglePSO.program->getPipelineLayout(), VK_SHADER_STAGE_ALL, 0, sizeof(pc), &pc);
-          penc.drawIndexed(args);
-
-          auto end = std::chrono::high_resolution_clock::now();
-
-          float allocTime = std::chrono::duration<float, std::chrono::nanoseconds::period>(end - start).count();
+        if (!running) {
+          // TODO: cleanup!
+          break;
         }
 
 
         {
-          REN_PROFILE_SCOPE("RenderImGui");
-          ImGui::Render();
-          ImGui::UpdatePlatformWindows();
-          ImGui::RenderPlatformWindowsDefault();
-          ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), penc.buf());  // Gross leakage.
+          REN_PROFILE_SCOPE("Begin Frame");
+          renderer->beginFrame(*window);
+          window->beginFrame();
+        }
+
+
+        {
+          REN_PROFILE_SCOPE("Tick");
+          REN_PROFILE_COUNTER("delta_time", deltaTime * 1000.0f);
+
+          window->onUpdate(deltaTime);
+
+
+          if (1) {
+            REN_PROFILE_SCOPE("Lua");
+            // Update lua globals
+            lua.globals()["delta_time"] = deltaTime;
+            // Call the lua update function if it exists
+            sol::protected_function lua_update = lua["update"];
+            if (lua_update.valid()) {
+              sol::protected_function_result result = lua_update(deltaTime);
+              if (!result.valid()) {
+                sol::error err = result;
+                ren::println("Error running lua update: {}", err.what());
+              }
+            }
+          }
+        }
+
+
+
+        {
+          REN_PROFILE_SCOPE("render");
+          window->render(ren::getFrameUnit());
+        }
+
+        {
+          REN_PROFILE_SCOPE("End Frame");
+          renderer->endFrame(*window);
+        }
+
+        framesThisRun++;
+        // Stop the app if we have reached the maximum number of frames to run.
+        if (options.maxFrames > 0 && framesThisRun >= options.maxFrames) {
+          this->running = false;
         }
       }
 
-      penc.end();
 
-      // world.defer_end();
-      renderer->endFrame();
+      {
+        // FPS limiting at the end of frame (after submission) to reduce input latency.
+        // If the window is not focused, limit to 30 FPS to reduce CPU/GPU usage.
+        bool isFocused = window->hasFocus();
+        int maxFps = isFocused ? kMaxFPS.get() : std::min(kIdleFPS.get(), kMaxFPS.get());
+
+        if (maxFps > 0) {
+          const auto period = std::chrono::duration_cast<std::chrono::steady_clock::duration>(std::chrono::duration<double>(1.0 / maxFps));
+          nextFrame += period;
+          // If we are more than one period late (a hitch or a breakpoint), do
+          // not try to catch up with a burst of short frames.
+          const auto now = std::chrono::steady_clock::now();
+          if (nextFrame < now - period) {
+            nextFrame = now;
+          }
+          std::this_thread::sleep_until(nextFrame);
+        } else {
+          nextFrame = std::chrono::steady_clock::now();
+        }
+      }
     }
     renderer->waitForIdle();
-  }
-
-
-
-  void Application::initImGui() {
-    auto &vulkan = ren::getVulkan();
-    auto &state = ren::ensureResource<ren::Application::ImGuiState>();
-
-    VkDescriptorPoolSize pool_sizes[] = {
-        //
-        {VK_DESCRIPTOR_TYPE_SAMPLER, 1000},
-        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000},
-        {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1000},
-        {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1000},
-        {VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1000},
-        {VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 1000},
-        {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000},
-        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000},
-        {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1000},
-        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 1000},
-        {VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1000},
-    };
-
-    VkDescriptorPoolCreateInfo pool_info = {};
-    pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
-    pool_info.maxSets = 1000;
-    pool_info.poolSizeCount = 11;  // size of pool_sizes
-    pool_info.pPoolSizes = pool_sizes;
-
-    VK_CHECK(vkCreateDescriptorPool(vulkan.device, &pool_info, nullptr, &state.imguiPool));
-
-    // this initializes the core structures of imgui
-    ImGui::CreateContext();
-    ImNodes::CreateContext();
-
-    auto &io = ImGui::GetIO();
-    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;  //  | ImGuiConfigFlags_ViewportsEnable;
-
-    ImGui::StyleColorsDark();
-
-
-    // this initializes imgui for SDL
-    ImGui_ImplSDL3_InitForVulkan(getWindow());
-
-    // this initializes imgui for Vulkan
-    ImGui_ImplVulkan_InitInfo init_info = {};
-    init_info.Instance = vulkan.instance;
-    init_info.PhysicalDevice = vulkan.physical_device;
-    init_info.Device = vulkan.device;
-    init_info.Queue = vulkan.graphicsQueue->getHandle();
-    init_info.DescriptorPool = state.imguiPool;
-    init_info.MinImageCount = 3;
-    init_info.ImageCount = 3;
-    init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
-    init_info.RenderPass = Renderer::get().getDisplayPass()->getHandle();
-
-    ImGui_ImplVulkan_Init(&init_info);
-
-    ren::eui::configure();
   }
 
 

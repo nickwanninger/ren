@@ -8,36 +8,31 @@
 
 namespace ren {
 
+  // Screen-space ambient occlusion from the G-buffer depth. The
+  // shader (ren/core/ssao) is a fullscreen surface. It gets the view and
+  // projection from the frame globals and makes its sample kernel itself, so
+  // the parameters below are the whole push constant.
   class SSAOTask : public ren::RenderPassTask {
    public:
     ren::PipelineStateObject pso;
 
-    struct SSAOUniform {
-      glm::mat4 projection;
-      glm::mat4 inv_projection;
-      glm::mat4 normal_matrix;  // used to convert from world space normals to view space.
-      glm::vec4 samples[64];
-      glm::vec2 screen_size;
-      float radius = 1.0f;
-      float intensity = 1.0f;  // WARNING: artistic control! (BAD)
-      float bias = 0.025f;
-      int num_samples = 12;
-    };
-    SSAOUniform ssao;
-
-    ref<ren::Image> noiseTexture;
+    // The view-space radius of the sample hemisphere.
+    float radius = 0.5f;
+    // Depth bias against self-occlusion on flat surfaces.
+    float bias = 0.025f;
+    i32 sampleCount = 16;
 
     struct {
       GraphHandle ssao;
     } out;
 
     struct {
-      GraphHandle depth, normal;
+      GraphHandle depth;
     } in;
 
-    SSAOTask(ren::RenderGraph &G, float scale, GraphHandle depthHandle, GraphHandle normalHandle);
+    SSAOTask(ren::RenderGraph &G, float scale, GraphHandle depthHandle);
 
-    void run(ren::GraphRenderPassContext &ctx) override;
+    void run(ren::GraphRenderPassContext &ctx) const override;
 
     // inspect
     void inspect(void) override;
@@ -62,20 +57,17 @@ namespace ren {
     SSAOBlurTask(ren::RenderGraph &G, float scale, GraphHandle ssaoHandle, GraphHandle depthHandle,
                  GraphHandle normalHandle);
 
-    void run(ren::GraphRenderPassContext &ctx) override;
+    void run(ren::GraphRenderPassContext &ctx) const override;
+    void inspect(void) override;
   };
 
 
-  inline auto &addSSAO(RenderGraph &G, ren::GraphHandle depthHandle, ren::GraphHandle normalHandle,
-                       ren::GraphHandle &ssaoOut) {
-    auto &ssao = G.addTask<SSAOTask>("ssao", 0.5f, depthHandle, normalHandle);
+  inline auto &addSSAO(GraphScope &G, ren::GraphHandle depthHandle, ren::GraphHandle normalHandle, ren::GraphHandle &ssaoOut) {
+    // Half scale: full scale costs about 4 ms. The blur upsamples it.
+    auto &ssao = G.addTask<SSAOTask>("ssao", 0.5f, depthHandle);
     auto &blur = G.addTask<SSAOBlurTask>("ssao_blur", 1.0f, ssao.out.ssao, depthHandle, normalHandle);
-
-    // Output the blurred SSAO
     ssaoOut = blur.out.ssao_blurred;
-    // ssaoOut = ssao.out.ssao;
-
-    return ssao;  // TEMP
+    return ssao;
   }
 
 }  // namespace ren

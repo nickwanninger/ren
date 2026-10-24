@@ -25,7 +25,7 @@ namespace ren::eui {
   };
 
 
-  constexpr ImVec4 primaryColor = ImVec4(0.0f, 0.52f, 0.25f, 1.0f);
+  inline const ImVec4 primaryColor = Color(0x56759A);
 
   struct Style {
     std::optional<ImVec4> fg, bg;

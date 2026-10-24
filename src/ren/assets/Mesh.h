@@ -5,6 +5,7 @@
 #include <ren/assets/Vertex.h>
 #include <ren/core/UUID.h>
 #include <ren/assets/MegaMeshBuffer.h>
+#include <ren/assets/BVH.h>
 
 namespace ren {
 
@@ -51,6 +52,8 @@ namespace ren {
     u32 getIndexCount(void) const { return indexCount; }
     u32 getVertexCount(void) const { return vertexCount; }
     const AABB &getAABB(void) const { return aabb; }
+    // Null when the mesh has no BVH.
+    const MeshBVH *getBVH(void) const { return bvh.get(); }
 
 
     // TEMP:
@@ -63,6 +66,7 @@ namespace ren {
     u32 vertexCount = 0;
     u32 indexCount = 0;
     AABB aabb;  // Axis-aligned bounding box for the mesh.
+    Box<MeshBVH> bvh;
   };
 
   using MeshRef = ref<Mesh>;

@@ -5,6 +5,9 @@
 #include <ren/core/ComponentRegistration.h>
 
 #include <imgui/imgui.h>
+#include <cinttypes>
+
+
 
 
 namespace ren::editor {
@@ -23,25 +26,46 @@ namespace ren::editor {
     } else {
       auto comp = compId.entity();
 
-      // auto type = comp.type();
-      ImGui::Text("%s #%llu", compId.entity().path(".", "").c_str(), comp.raw_id());
-      const EcsComponent *comp_desc = comp.try_get<EcsComponent>();
-      // const void *comp_data = e.try_get(comp);
-      if (comp_desc) {
-        ImGui::SameLine();
-        ImGui::Text(" sz:%d al:%d", comp_desc->size, comp_desc->alignment);
+      // Components that did not go through ren_register_component have no
+      // fields to show, so show only the flecs name and layout.
+      auto *ref = comp.try_get<ComponentInfoRef>();
+      if (ref == nullptr) {
+        ImGui::TextDisabled("%s #%" PRIu64, path(comp).c_str(), comp.raw_id());
+        const EcsComponent *comp_desc = comp.try_get<EcsComponent>();
+        if (comp_desc) {
+          ImGui::SameLine();
+          ImGui::TextDisabled(" sz:%d al:%d", comp_desc->size, comp_desc->alignment);
+        }
+        return;
       }
 
-      // ImGui::Text("  Size: %lu bytes", comp_data.size);
+      const auto &info = *ref->info;
+      const char *label = info.name ? info.name : info.typeName;
+
+      // Two components can have fields with the same name, so give each
+      // component its own ImGui ID scope.
+      ImGui::PushID(static_cast<int>(comp.raw_id()));
+      if (ImGui::TreeNode(label)) {
+        // A tag has no data and returns null, but it also has no fields.
+        auto *data = static_cast<std::byte *>(e.try_get_mut(compId));
+        for (const auto &field : info.fields) {
+          // TODO: send a document command here instead, for undo and redo.
+          if (field.type->inspect(data + field.offset, field)) {
+            e.modified(compId);
+          }
+        }
+        ImGui::TreePop();
+      }
+      ImGui::PopID();
     }
   }
 
   static void drawEntityHeirarchy(Entity e) {
     char buf[64];
     if (e.name().length() > 0) {
-      snprintf(buf, sizeof(buf), "%s #%llu", e.name().c_str(), e.id());
+      snprintf(buf, sizeof(buf), "%s #%" PRIu64, e.name().c_str(), e.id());
     } else {
-      snprintf(buf, sizeof(buf), "Entity #%llu", e.id());
+      snprintf(buf, sizeof(buf), "Entity #%" PRIu64, e.id());
     }
     if (ImGui::TreeNode(buf)) {
       // iterate over the components and draw them.
@@ -55,7 +79,8 @@ namespace ren::editor {
   }
 
   static void inspectorPlugin(ren::Application &app) {
-    if (0)
+
+    if (1) {
       ren::system::onUpdate("ren::editor::EditorInspector").run([&](flecs::iter &it) {
         ImGui::Begin("Inspector");
 
@@ -68,38 +93,42 @@ namespace ren::editor {
 
         ImGui::End();
       });
+    }
 
-    if (0)
-      ren::system::onUpdate<EcsComponent>("ren::editor::ComponentInspector")
-          .run([](flecs::iter &it) {
-            ImGui::Begin("Component Inspector");
-
-
-            auto &comps = ren::getRegisteredComponents();
-            for (const auto &comp : comps) {
-              ImGui::Text("Registered Component: %s", comp.typeName);
-              ImGui::Text("  Size: %llu bytes", comp.typeSize);
-              ImGui::Text("  Alignment: %llu bytes", comp.typeAlignment);
-            }
-
-            ImGui::Separator();
-
-            while (it.next()) {
-              auto comps = it.field<EcsComponent>(0);
-
-              for (auto i : it) {
-                ImGui::Text("Component: %s", it.entity(i).path().c_str());
-                ImGui::Text("  Size: %d bytes", comps[i].size);
-                ImGui::Text("  Alignment: %d bytes", comps[i].alignment);
-              }
-            }
+    if (1) {
+      ren::system::onUpdate("ren::editor::ComponentInspector").run([](flecs::iter &it) {
+        REN_PROFILE_SCOPE("Editor Inspector");
+        ImGui::Begin("Component Inspector");
 
 
-            ImGui::End();
-          });
+        auto &comps = ren::getRegisteredComponents();
+        for (const auto &comp : comps) {
+          ImGui::Text("%s   sz: %" PRIu64 ", align: %" PRIu64, comp.typeName, comp.typeSize, comp.typeAlignment);
+          for (const auto &field : comp.fields) {
+            ImGui::Text("  %s  offset: %u  size:%u", field.name.c_str(), field.offset, field.size);
+          }
+          ImGui::Separator();
+        }
 
-    if (0)
-      ren::system::onUpdate<EcsComponent>("ren::editor::TextureInspector").run([](flecs::iter &it) {
+        // ImGui::Separator();
+
+        // while (it.next()) {
+        //   auto comps = it.field<EcsComponent>(0);
+
+        //   for (auto i : it) {
+        //     ImGui::Text("Component: %s", it.entity(i).path().c_str());
+        //     ImGui::Text("  Size: %d bytes", comps[i].size);
+        //     ImGui::Text("  Alignment: %d bytes", comps[i].alignment);
+        //   }
+        // }
+
+
+        ImGui::End();
+      });
+    }
+
+    if (1) {
+      ren::system::onUpdate("ren::editor::TextureInspector").run([](flecs::iter &it) {
         ImGui::Begin("Texture Inspector");
 
 
@@ -132,6 +161,7 @@ namespace ren::editor {
 
         ImGui::End();
       });
+    }
   }
 
   REN_PLUGIN("EditorInspector", inspectorPlugin);

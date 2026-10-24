@@ -5,21 +5,27 @@
 #include <ren/renderer/shader/ShaderReflection.h>
 
 #include <ren/core/Flag.h>
+#include <chrono>
 #include <ren/assets/MeshScene.hpp>
+#include <ren/core/ThreadPool.h>
 #include "ren/renderer/Buffer.h"
-#include "ren/renderer/shader/ShaderProgram.h"
+#include "ren/renderer/shader/ShaderCache.h"
 
 #include <ren/core/Systems.h>
 #include <ren/core/Components.h>
-#include <ren/renderer/shader/ParameterBinding.h>
 #include <ren/renderer/submission/SubmissionUnit.h>
 #include <ren/core/Result.h>
+
+#include "EditorWindow.h"
 
 
 using namespace ren;
 
-ren::Flag<std::string> loadArg("load", "assets/test/meshes/simple_scene.glb", "Path to a mesh to load at startup");
+ren::Flag<std::string> loadArg("load", "", "Path to a mesh to load at startup");
 ren::Flag<float> scaleArg("load-scale", 1.0f, "Uniform scale to apply to the loaded mesh");
+ren::Flag<bool> runSaxpyArg("run-saxpy", false, "Run the synchronous Slang/BDA SAXPY smoke test before opening the editor");
+ren::Flag<bool> runImageHeapArg("run-imageheap", false, "Run the bindless image heap smoke test before opening the editor");
+ren::Flag<bool> instrumentArg("instrument", false, "Enable instrumentation and profiling");
 
 
 void loadMeshIntoScene(const char* path, float scaleChange = 0.0f) {
@@ -40,8 +46,6 @@ void loadMeshIntoScene(const char* path, float scaleChange = 0.0f) {
 
 void testCalibration(void) {
   SubmissionUnit unit;
-
-
   for (int i = 0; i < 1000; i++) {
     auto cmd = unit.begin();
 
@@ -54,149 +58,85 @@ void testCalibration(void) {
 }
 
 void testSaxpy(void) {
-  using namespace ren;
-
-
   SubmissionUnit unit;
-
-  u64 length = 10000;
-
-
-  auto randomize = [](auto buffer, u64 length) {
-    auto* mapped = buffer->map();
-    for (u64 i = 0; i < length; i++) {
-      mapped[i] = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
-    }
-    buffer->unmap();
-  };
-
-  float a = 2.5f;
-  auto x = ren::make<ren::StorageBuffer<float>>(length);
-  auto y = ren::make<ren::StorageBuffer<float>>(length);
-  randomize(x, length);
-  randomize(y, length);
-
-  auto out = ren::make<ren::StorageBuffer<float>>(length);
-
-  auto program = ren::make<ren::ShaderProgram>("test/saxpy");
-
-
   for (int i = 0; i < 1000; i++) {
+    constexpr u32 length = 10;
+    float a = 2.5f;
+    auto x = TypedBuffer<float>(length, BufferDomain::Upload, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+    auto y = TypedBuffer<float>(length, BufferDomain::Upload, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+    auto out = TypedBuffer<float>(length, BufferDomain::Readback, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+
+    // {
+    //   REN_PROFILE_SCOPE("Randomize");
+    //   randomize(x, length);
+    //   randomize(y, length);
+    // }
+    REN_PROFILE_SCOPE("SAXPY");
+
+    auto program = ren::getShader("test/saxpy");
     auto cmd = unit.begin();
+    auto compute = cmd->bindCompute(program);
+    auto pushConstants = compute.root("pushConstants");
+    pushConstants.set("a", a)
+        .set("length", length)
+        .set("x", x.devicePointer<float>())
+        .set("y", y.devicePointer<float>())
+        .set("output", out.devicePointer<float>());
 
-    auto tik = cmd->beginTimestampQuery("SAXPY Compute");
-    ren::ShaderObject& obj = unit.createShaderObject(program);
-    auto blk = obj.block("params");
-    blk.field("a").set<float>(a);
-    blk.field("x").bind(x);
-    blk.field("y").bind(y);
-    blk.field("out").bind(out);
+    compute.dispatch({(length + 255) / 256, 1, 1});
+    compute.writeBarrier();
 
-    cmd->dispatchCompute(obj, {length / 1024 + 1, 1, 1});
-
-    cmd->endTimestampQuery(tik);
-
-    // now we submit the command buffer and wait for it to complete.
     auto f = unit.submitTo(*getVulkan().computeQueue);
-    f->awaitCompletion();
+    {
+      REN_PROFILE_SCOPE("Wait");
+      f->awaitCompletion();
+    }
   }
 
 
-  // Validate the result on the CPU
-  auto* mappedX = x->map();
-  auto* mappedY = y->map();
-  auto* mappedOut = out->map();
-  for (u64 i = 0; i < length; i++) {
-    // printf("i=%llu: %f * %f + %f = %f\n", i, a, mappedX[i], mappedY[i], mappedOut[i]);
-    float expected = a * mappedX[i] + mappedY[i];
-    REN_ASSERT(fabs(mappedOut[i] - expected) < 0.001f);
-  }
-  x->unmap();
-  y->unmap();
-  out->unmap();
+  // // Validate the result on the CPU
+  // auto *mappedX = x.hostData();
+  // auto *mappedY = y.hostData();
+  // auto *mappedOut = out.hostData();
+  // for (u32 i = 0; i < length; i++) {
+  //   float expected = a * mappedX[i] + mappedY[i];
+  //   REN_ASSERT(fabs(mappedOut[i] - expected) < 0.001f);
+  // }
 }
 
-// #include <ren/core/ThreadPool.h>
+
+#include <ren/assets/AssetStore.h>
 
 int main(int argc, char* argv[]) {
+
   ren::parseFlags(argc, argv);
 
-  REN_PROFILE_BEGIN_SESSION("profile", "profile.json");
+
+  if (instrumentArg.get()) {
+    REN_PROFILE_BEGIN("profile");
+  }
+
 
   glm::uvec2 res;
   res.x = 1920;
   res.y = 1080;
 
+  ren::Application app("Editor", res, ren::makeBox<editor::EditorWindow>());
 
-  ren::Application app("Editor", res);
-
-
-
-  testSaxpy();
-  // exit(0);
-
-#if 0
-
-  // --- Expected Compute Shader ---
-  auto program = ren::make<ren::ShaderProgram>("test/compute");
-
-  u64 length = 2560 * 1440;
-
-  u64 threadsInWokrgroup = 1000;
-  auto outputBuffer = ren::make<ren::StorageBuffer<float>>(length);
-
-  ren::SubmissionUnit unit;
-  auto start = std::chrono::high_resolution_clock::now();
-
-  long count = 1000;
-  for (long i = 0; i < count; i++) {
-    auto cmd = unit.begin();
-
-    ren::ShaderObject& obj = unit.createShaderObject(program);
-
-    float expectedValue = i;
-
-    auto blk = obj.block("test");
-    blk["value"].set<float>(expectedValue);
-    blk["outputBuffer"].bind(outputBuffer);
-
-    cmd->dispatchCompute(obj, {length / threadsInWokrgroup, 1, 1});
-
-    // now we submit the command buffer and wait for it to complete.
-    auto f = unit.submitTo(*getVulkan().computeQueue);
-    f->awaitCompletion();
-
-
-
-    // Read back the output buffer.
-    // auto* mapped = outputBuffer->map();
-    // for (u64 i = 0; i < length; i++) {
-    //   auto value = mapped[i];
-    //   REN_ASSERT(mapped[i] == expectedValue);
-    // }
-    // outputBuffer->unmap();
-
-
-    // yay!
-  }
-  auto end = std::chrono::high_resolution_clock::now();
-  auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
-  float average = duration / (float)count;
-  ren::println("average: {:.3f} ms, total: {:.3f} ms", average / 1000.0 / 1000.0, duration / 1000.0 / 1000.0);
-  // ---------------------------
-#endif
-  // exit(0);
-
-  if (loadArg.get() == "SPONZA") {
-    loadMeshIntoScene("/Users/nick/Downloads/main_sponza/NewSponza_Main_glTF_003.gltf", scaleArg.get());
-    loadMeshIntoScene("/Users/nick/Downloads/pkg_a_curtains/NewSponza_Curtains_glTF.gltf", scaleArg.get());
-    loadMeshIntoScene("/Users/nick/Downloads/pkg_b_ivy/NewSponza_IvyGrowth_glTF.gltf", scaleArg.get());
-  } else {
+  if (loadArg.get() != "") {
     loadMeshIntoScene(loadArg.get().c_str(), scaleArg.get());
   }
 
+  // loadMeshIntoScene("/Users/nick/dev/Models/sponza.glb");
+  // loadMeshIntoScene("/Users/nick/dev/Models/thinker.glb", 1);
+
+  // ren::getAssetManager().importMesh("/Users/nick/dev/Models/sponza.glb");
+  //  ren::getAssetManager().importMesh("assets/test/meshes/unit_cube.glb");
 
   app.run();
+
+
+
   REN_PROFILE_END_SESSION();
 
   return 0;

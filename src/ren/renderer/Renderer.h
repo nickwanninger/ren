@@ -6,14 +6,20 @@
 #include <ren/renderer/RenderPass.h>
 #include <ren/renderer/Image.h>
 #include <ren/renderer/Texture.h>
+#include <ren/renderer/Sampler.h>
 #include <ren/renderer/vulkan/Vulkan.h>
 #include <ren/renderer/RenderPassCache.h>
 #include <ren/renderer/pipelines/PipelineCache.h>
 #include <ren/renderer/pipelines/PipelineStateObject.h>
-#include <ren/renderer/shader/ShaderBinder.h>
-#include <SDL3/SDL.h>
+#include <ren/renderer/shader/ShaderCache.h>
+#include <ren/renderer/SamplerCache.h>
+#include <ren/renderer/FrameGlobals.h>
+#include <ren/renderer/DescriptorHeap.h>
+#include <ren/renderer/graph/ImGuiImages.h>
 
 namespace ren {
+
+  class Window;
 
   // This class attempts to provide a generic interface for rendering triangles in a 3D Scene.
   // We render to a renderTarget, which is a ren::Texture, and then have a separate pass which
@@ -22,7 +28,7 @@ namespace ren {
    public:
     // This is the public interface for the renderer
 
-    Renderer(SDL_Window *window);
+    Renderer(ref<VulkanInstance> vulkan);
     ~Renderer(void);
     // Non-copyable, non-movable
     Renderer(const Renderer &) = delete;
@@ -32,15 +38,29 @@ namespace ren {
 
 
 
-    // TODO: move all this to a swapchain wrapper class.
-    void rebuildSwapchain(void);
-
-    // Begin a new frame. This will drive the swapchain and prepare the frame data for drawing.
-    void beginFrame(void);
+    // Begin a new frame. This will drive the window's swapchain and prepare the
+    // frame data for drawing.
+    void beginFrame(Window &window);
     // End the current frame. This will submit the command buffer to the GPU and
-    // present the swapchain image to the screen.
+    // present the swapchain image to the window.
+    void endFrame(Window &window);
 
-    void endFrame(void);
+    // Prepare the graph for this frame. Call after the UI enqueues its work
+    // and requests its images.
+    void prepareGraph();
+
+    // Connect the requested ImGui images, then record the graph. Call before
+    // the window records its own passes.
+    void recordGraph();
+
+    // Drop the work of this frame after an error. The frame records only a
+    // clear pass, so endFrame() still submits and presents the acquired image.
+    void discardFrame(Window &);
+
+    // Wait for all frames, and release what they retain. Call at shutdown.
+    void releaseCompletedFrames();
+    RenderGraph &getGraph() { return graph; }
+    ImGuiImages &getGraphImages() { return graphImages; }
 
     // Wait for the GPU to finish all commands before proceeding.
     // Avoid using this as much as you can!
@@ -82,13 +102,20 @@ namespace ren {
       return *pipelineCache;
     }
 
+    // Every shader in the engine is compiled and owned here. Prefer the free
+    // function `ren::getShader("demo/cube")` over touching this directly.
+    inline auto &getShaderCache() {
+      if (shaderCache == nullptr) { shaderCache = make<ShaderCache>(); }
+      return *shaderCache;
+    }
+
     inline auto getDisplayPass() {
       if (displayPass == nullptr) {
         // If the display pass is not initialized, create it.
         auto &vk = ren::getVulkan();
         RenderPass::Description displayPassDesc;
         displayPassDesc.name = "Backbuffer Pass";
-        displayPassDesc.addColorAttachment("backbuffer", vk.swapchainFormat, VK_SAMPLE_COUNT_1_BIT);
+        displayPassDesc.addColorAttachment("backbuffer", vk.presentFormat, VK_SAMPLE_COUNT_1_BIT);
         displayPassDesc.addDepthAttachment("backbuffer_depth", VK_SAMPLE_COUNT_1_BIT);
         displayPass = renderPassCache.get(displayPassDesc);
       }
@@ -96,23 +123,18 @@ namespace ren {
     }
 
 
-    ShaderBinder startBinding(u32 set);
-
-
-    // TODO: move me to .cpp
     inline Sampler &getSampler(VkFilter filter = VK_FILTER_NEAREST) {
-      // Get or create a sampler with the given filter.
-      auto it = samplers.find(filter);
-      if (it != samplers.end()) {
-        return *it->second;
-      } else {
-        samplers.insert({filter, make<Sampler>(filter)});
-        return *samplers[filter];
-      }
+      SamplerDesc desc{.magFilter = filter, .minFilter = filter};
+      return *samplerCache->get(desc);
     }
 
 
-    const Swapchain &getSwapchain(void) const { return *swapchain; }
+    ImageDescriptorHeap &getImageDescriptorHeap() { return *imageHeap; }
+    SamplerDescriptorHeap &getSamplerDescriptorHeap() { return *samplerHeap; }
+    FrameGlobalsAllocator &getFrameGlobalsAllocator() {
+      return *frameGlobalsAllocator;
+    }
+    SamplerCache &getSamplerCache() { return *samplerCache; }
 
    private:
     inline const PipelineStateObject &getCurrentPSO() const {
@@ -125,17 +147,27 @@ namespace ren {
     inline auto getCurrentProgram() const { return getCurrentPSO().program; }
 
    private:
+    RenderGraph graph;
+    ImGuiImages graphImages{graph};
+    bool frameDiscarded = false;  // Set by discardFrame(). The frame has no ImGui draw data.
     ref<PipelineCache> pipelineCache;
+    ref<ShaderCache> shaderCache;
     ref<RenderPass> currentPass = nullptr;
     ref<CachedPipeline> currentPipeline = nullptr;
 
+
+
+    ref<ImageDescriptorHeap> imageHeap;
+    ref<SamplerDescriptorHeap> samplerHeap;
+
     VkCommandBuffer getCommandBuffer();
-    SDL_Window *window;
     ren::RenderPassCache renderPassCache;
     ref<VulkanInstance> vulkan = nullptr;
-    ref<Swapchain> swapchain = nullptr;
+    Box<FrameGlobalsAllocator> frameGlobalsAllocator;
+    ref<SamplerCache> samplerCache;
+    // One per frame in flight, used in turn.
+    std::vector<Box<FrameContext>> frames;
     ref<RenderPass> displayPass = nullptr;
 
-    std::unordered_map<VkFilter, ref<Sampler>> samplers;
   };
 }  // namespace ren

@@ -3,6 +3,7 @@ cmake_minimum_required(VERSION 3.20)
 project(ren CXX C)
 
 include(FetchContent)
+include(CTest)
 
 
 message(STATUS "C Compiler: ${CMAKE_C_COMPILER}")
@@ -37,7 +38,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Vulkan as a Graphics API
 message(STATUS "Vulkan SDK Set to: ${VULKAN_SDK}")
-find_package(Vulkan REQUIRED COMPONENTS shaderc_combined)
+find_package(Vulkan REQUIRED)
 message(STATUS "Vulkan include dirs: ${Vulkan_INCLUDE_DIRS}")
 include_directories(${Vulkan_INCLUDE_DIRS})
 
@@ -71,6 +72,12 @@ set(CMAKE_BUILD_WITH_INSTALL_RPATH ON)
 set(ASSIMP_BUILD_TESTS OFF)
 set(ASSIMP_BUILD_STATIC_LIB ON)
 set(BUILD_SHARED_LIBS OFF)
+# Static dependencies are linked into the shared ren library.
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+# Resolve zlib before Assimp's finder starts preferring static system archives,
+# which may not have been compiled with PIC.
+find_package(ZLIB REQUIRED)
+set(ZLIB_LIBRARIES ZLIB::ZLIB)
 
 # Disable the assimp formats we don't want.
 set(ASSIMP_BUILD_ALL_IMPORTERS_BY_DEFAULT OFF)
@@ -83,12 +90,68 @@ set(ASSIMP_BUILD_OBJ_IMPORTER ON)
 set(ASSIMP_INSTALL OFF)
 add_subdirectory(lib/assimp)
 
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  # Enable the large-file API used by Assimp's ZIP implementation.
+  set_property(SOURCE lib/assimp/contrib/zip/src/zip.c TARGET_DIRECTORY assimp
+    APPEND PROPERTY COMPILE_DEFINITIONS _LARGEFILE64_SOURCE)
+endif()
+
 # if on mac...
 if(APPLE)
   # add -Wno-unused-const-variable to assimp. I think the compiler is new enough
   target_compile_options(assimp PRIVATE -Wno-unused-const-variable)
 endif(APPLE)
+# configure CXX flags on gcc or msvc differently
+if(MSVC)
+    # I have no idea what to put here yet.
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+else()
+    # add -O3 in release
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-unused-function -Wno-unused-const-variable ")
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-unused-function -Wno-deprecated-volatile -Wno-unused-function -Wno-deprecated-literal-operator")
+endif()
 
+
+
+include_directories(${CMAKE_SOURCE_DIR}/lib)
+include_directories(${CMAKE_SOURCE_DIR}/lib/imgui) # hack to include imgui headers properly
+include_directories(${CMAKE_SOURCE_DIR}/lib/imgui/backends)
+include_directories(${CMAKE_SOURCE_DIR}/lib/fmt/include)
+include_directories(${CMAKE_SOURCE_DIR}/src)
+
+
+# Set RPATH for all executables to find shared libraries relative to executable location.
+# This must be set here (not in src/) so that apps/ also gets it.
+set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+if(APPLE)
+  list(APPEND CMAKE_INSTALL_RPATH "@loader_path/../lib/")
+elseif(UNIX)
+  list(APPEND CMAKE_INSTALL_RPATH "$ORIGIN/../lib/")
+endif()
 
 
 add_subdirectory(src)
+add_subdirectory(apps)
+
+if(BUILD_TESTING)
+  add_executable(ren-tests tests/render_graph.cpp)
+  target_link_libraries(ren-tests PRIVATE ren)
+
+  add_executable(ren-graph-vulkan-tests tests/render_graph_vulkan.cpp)
+  target_link_libraries(ren-graph-vulkan-tests PRIVATE ren)
+
+  install(TARGETS ren-tests ren-graph-vulkan-tests RUNTIME DESTINATION bin)
+
+  # Run the installed binaries from the source root, like the apps, so that
+  # the rpath finds dist/lib and assets/ resolves.
+  add_test(NAME render-graph
+    COMMAND ${CMAKE_INSTALL_PREFIX}/bin/ren-tests
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+
+  # This test takes over Window::onRender() and fails frames on purpose, so
+  # it does not fit the rentest hooks. It opens a window, like rentest.
+  add_test(NAME render-graph-vulkan
+    COMMAND ${CMAKE_INSTALL_PREFIX}/bin/ren-graph-vulkan-tests
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+endif()

@@ -26,13 +26,13 @@ namespace ren {
 
     ShadowMapTask(ren::RenderGraph &G, u32 resolution = 1024);
 
-    void run(ren::GraphRenderPassContext &ctx) override;
+    void run(ren::GraphRenderPassContext &ctx) const override;
 
     void inspect(void) override;
   };
 
 
-  inline void addShadowMap(RenderGraph &G, u32 resolution, ren::GraphHandle &shadow) {
+  inline void addShadowMap(GraphScope &G, u32 resolution, ren::GraphHandle &shadow) {
     auto &pass = G.addTask<ShadowMapTask>("shadow_map", resolution);
     shadow = pass.out.shadow;
   }
