@@ -10,14 +10,14 @@ namespace ren {
 
   static void globalizeChildrenPlugin(ren::Application &app) {
     app.world.system<const comp::Transform *, comp::Transform>("ren::core::ApplyParentTransforms")
-        .kind(flecs::PreStore) // Run before the store phase
-        .term_at(0)  // The first transform pointer is...
-        .parent()    // ... from the parent
-        .cascade()   // ... ordered top down
+        .kind(flecs::PreStore)  // Run before the store phase
+        .term_at(0)             // The first transform pointer is...
+        .parent()               // ... from the parent
+        .cascade()              // ... ordered top down
         .each([](const comp::Transform *parentTransform, comp::Transform &childTransform) {
+          REN_PROFILE_SCOPE("Globalize Children Plugin");
           if (parentTransform) {
-            childTransform.transformMatrix =
-                parentTransform->transformMatrix * childTransform.getTransform();
+            childTransform.transformMatrix = parentTransform->transformMatrix * childTransform.getTransform();
           } else {
             childTransform.transformMatrix = childTransform.getTransform();
           }
@@ -62,8 +62,10 @@ namespace ren {
 
     j["components"] = json::object();
 
-#define COMP(c) \
-  if (auto *comp = e.try_get<c>()) { j["components"][#c] = (json)(*comp); }
+#define COMP(c)                          \
+  if (auto *comp = e.try_get<c>()) {     \
+    j["components"][#c] = (json)(*comp); \
+  }
 #include <ren/core/Components.inc>
 
 
@@ -121,7 +123,9 @@ namespace ren {
     REN_PROFILE_FUNCTION();
 
     auto it = entities.find(uuid);
-    if (it != entities.end()) return it->second;
+    if (it != entities.end()) {
+      return it->second;
+    }
     return Entity();
   }
 
