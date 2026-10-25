@@ -2,6 +2,7 @@
 #include <miniz/miniz.h>
 #include <fstream>
 #include <chrono>
+#include <mutex>
 
 namespace ren {
 
@@ -56,6 +57,10 @@ namespace ren {
   }
 
 
+
+
+
+
   FilesystemAssetSource::FilesystemAssetSource(const std::filesystem::path& root)
       : m_root(root) {
     // Normalize the root (resolve symlinks, etc.) without
@@ -68,9 +73,14 @@ namespace ren {
       // exist) fall back to the original value.
       m_root = root;
     }
+
+    if (!std::filesystem::is_directory(m_root, ec)) {
+      return;
+    }
   }
 
 
+  FilesystemAssetSource::~FilesystemAssetSource() = default;
 
   bool FilesystemAssetSource::resolve(const std::string_view& name, std::filesystem::path& out) const {
     std::filesystem::path rel = std::filesystem::path(name).lexically_normal();

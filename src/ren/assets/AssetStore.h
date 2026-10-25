@@ -54,7 +54,7 @@ namespace ren {
   // files and removing any files that are not referenced by any asset
   // file.
 
-  static constexpr const char *ASSET_STORE_DIR = "store";
+  static constexpr const char *ASSET_STORE_DIR = ".cache/store";
 
   class AssetStore {
    public:

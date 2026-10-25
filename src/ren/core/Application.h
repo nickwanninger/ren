@@ -42,11 +42,13 @@ namespace ren {
 
     sol::state lua;
 
+    ren::AssetManager assets;
+
    public:
     bool isRunning() const { return running; }
     void stop() { running = false; }
 
-    ren::AssetManager &getAssetManager() { return world.get_mut<ren::AssetManager>(); }
+    ren::AssetManager &getAssetManager() { return assets; }
 
     double timeSeconds = 0.0f;
     // Arguably the most important part of the application is the ECS world.

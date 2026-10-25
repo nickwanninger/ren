@@ -205,7 +205,7 @@ namespace ren::eui {
       colors[i] = srgbToLinear(colors[i]);
     }
 
-    auto &am = ren::ensureResource<ren::AssetManager>();
+    auto &am = ren::Application::get().getAssetManager();
 
 
     loadRenFonts(am);

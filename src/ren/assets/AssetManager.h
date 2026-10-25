@@ -61,30 +61,19 @@ namespace ren {
     // does not exist.
     void addDefaultSources(const std::string_view &root = "assets/");
 
-    ref<Asset> getAsset(ren::AssetID assetID);
-    ref<Asset> getAsset(const std::string_view &name);
-
-    AssetID importAsset(const std::string_view &path, AssetType type);
-
-    // Given an asset's name, return the AssetID which identifies it.
-    static AssetID getID(const std::string_view &name);
-
-
+    // Handles the changes that the sources detected since the last call.
+    // Call this one time per frame, from the main thread.
+    void tick();
 
     // Load the bytes of some asset from the asset source. No Caching!
     bool load(const std::string_view &name, std::vector<u8> &out) { return source.load(name, out); }
 
-    // Load an asset by path and type. If the type is unknown, it will be inferred from the file extension.
-    ref<Asset> load(const std::string_view &path, AssetType type = AssetType::Unknown);
-
-
-    void configureLua(sol::state &lua);
-
     AssetStore &getStore() { return store; }
-
+    AssetSource &getSource(void) { return source; }
 
     // Import a mesh from a file path. implemented in importers/mesh.cpp
     void importMesh(const std::filesystem::path &path);
+
 
    protected:
     ref<Asset> load(const AssetInfo &info);

@@ -194,7 +194,7 @@ namespace ren {
    public:
     FilesystemAssetSource(const std::filesystem::path &root);
 
-    ~FilesystemAssetSource() override = default;
+    ~FilesystemAssetSource() override;
     bool load(const std::string_view &name, std::vector<u8> &out) override;
     bool store(const std::string_view &name, ren::ByteSpan data) override;
     bool stat(const std::string_view &name, AssetStat &out) override;

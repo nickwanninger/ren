@@ -66,6 +66,7 @@ static ren::Flag<int> kMaxFPS("max-fps", 0, "Maximum framerate for the applicati
 static ren::Flag<int> kIdleFPS("idle-fps", 15, "Maximum framerate when the application is idle, 0 = vsync or uncapped.");
 static ren::Flag<bool> kFullscreen("fullscreen", false, "Start the application in fullscreen mode.");
 static ren::Flag<bool> kHighDPI("high-dpi", true, "Enable high DPI support.");
+static ren::Flag<std::string> kAssetSources("assets", "assets", "Additional asset sources to load, in order. Can be a directory or a zip file.");
 
 static const char *introGraphic =
     "Welcome to\n"
@@ -149,9 +150,34 @@ namespace ren {
     }
 
 
-    // Create an asset manager. This part of the heirarchy will hold loaded assets.
-    auto &am = ren::ensureResource<ren::AssetManager>();
-    am.addDefaultSources();
+    assets.addDefaultSources(kAssetSources.get());
+
+
+
+    auto &source = assets.getSource();
+    auto start = std::chrono::high_resolution_clock::now();
+    u32 numAssets = 0;
+    source.enumerate([&](const std::string_view &name) {
+
+      if (name.ends_with(".meta")) {
+        return;
+      }
+
+
+      numAssets++;
+      if (!name.ends_with(".glb")) {
+        return;
+      }
+
+      // ren::println("Asset source contains: {}", name);
+      AssetStat st;
+      if (source.stat(name, st)) {
+        // ren::println("  type: {}, size: {}, mtime: {}", static_cast<int>(st.type), st.size, st.mtime);
+      }
+    });
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+    ren::println("Asset source enumeration of {} assets took {} ms", numAssets, duration);
 
 
     // Ensure we have a megamesh buffer. (TODO: move this somewhere non-global.)
