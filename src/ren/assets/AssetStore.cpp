@@ -63,6 +63,13 @@ namespace ren {
     return result;
   }
 
+  // Makes the key from the SHA-256 of data.blob followed by meta.json. `name`
+  // must already be legal. See AssetStore::hash.
+  static std::string keyFromInnerHash(SHA256 &inner, const std::string &name) {
+    std::string fingerprint = fmt::format("blob:sha256:{}:{}", inner.getHash(), name);
+    return fmt::format("{}-{}", foldedSha256(fingerprint.data(), fingerprint.size()), name);
+  }
+
   std::string AssetStore::hash(ByteSpan data, std::string_view metaJson, std::string_view namev) {
     REN_PROFILE_SCOPE("Hash");
     std::string name = legalizeName(namev);
@@ -70,8 +77,7 @@ namespace ren {
     SHA256 inner;
     inner.add(data.data, data.size);
     inner.add(metaJson.data(), metaJson.size());
-    std::string fingerprint = fmt::format("blob:sha256:{}:{}", inner.getHash(), name);
-    return fmt::format("{}-{}", foldedSha256(fingerprint.data(), fingerprint.size()), name);
+    return keyFromInnerHash(inner, name);
   }
 
 
@@ -82,15 +88,14 @@ namespace ren {
     }
     std::string_view name = key.substr(33);
 
-    std::vector<u8> data;
-    std::vector<u8> meta;
-    if (!source.load(fmt::format("{}/{}/data.blob", ASSET_STORE_DIR, key), data) ||
-        !source.load(fmt::format("{}/{}/meta.json", ASSET_STORE_DIR, key), meta)) {
+    // This is AssetStore::hash, but it streams the files instead of loading them.
+    SHA256 inner;
+    if (!source.updateSHA256(fmt::format("{}/{}/data.blob", ASSET_STORE_DIR, key), inner) ||
+        !source.updateSHA256(fmt::format("{}/{}/meta.json", ASSET_STORE_DIR, key), inner)) {
       return VerifyResult::Missing;
     }
 
-    std::string_view metaJson(reinterpret_cast<const char *>(meta.data()), meta.size());
-    return hash(ByteSpan(data), metaJson, name) == key ? VerifyResult::Ok : VerifyResult::Mismatch;
+    return keyFromInnerHash(inner, legalizeName(name)) == key ? VerifyResult::Ok : VerifyResult::Mismatch;
   }
 
 

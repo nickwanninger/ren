@@ -2,10 +2,10 @@
 
 #include <ren/types.h>
 #include <vector>
-#include <string>
-
+#include <string_view>
 #include <functional>
 #include <filesystem>
+#include <hash-library/sha256.h>
 
 namespace ren {
 
@@ -41,6 +41,80 @@ namespace ren {
 
 
   /**
+   * @brief How AssetSource::open opens a file.
+   *
+   * - `Read`: the file must exist.
+   * - `Write`: the file must exist, unless `Create` is also set. The contents
+   *   are kept, unless `Truncate` is also set.
+   * - `Create` and `Truncate` require `Write`.
+   *
+   * `Read | Write` opens one file for both. The usual flags to replace a file
+   * are `Write | Create | Truncate`.
+   */
+  enum class AssetOpenFlags : u8 {
+    None = 0,
+    Read = 1 << 0,
+    Write = 1 << 1,
+    Create = 1 << 2,    ///< Make the file if it does not exist.
+    Truncate = 1 << 3,  ///< Set the length of the file to 0 when it opens.
+  };
+  REN_FLAG_ENUM(AssetOpenFlags, u8)
+
+  /// @brief `true` if all bits of `bits` are set in `flags`.
+  inline bool hasFlags(AssetOpenFlags flags, AssetOpenFlags bits) { return (flags & bits) == bits; }
+
+
+  /**
+   * @class AssetFile
+   * @brief An open file from an AssetSource, for streaming access.
+   *
+   * The file has one cursor. `read` and `write` start at the cursor and move
+   * it. `seek` moves it to an absolute offset. A handle is not thread safe;
+   * each thread opens its own handle.
+   *
+   * The destructor closes the file. A caller that must know that its writes
+   * reached the source calls `flush` and examines the result.
+   */
+  class AssetFile {
+   public:
+    virtual ~AssetFile() = default;
+
+    /**
+     * @brief Reads up to `dst.size` bytes at the cursor.
+     * @return The number of bytes read. A short count means end of file or
+     *         an error. Use `error` to tell the two apart.
+     */
+    virtual u64 read(ByteSpan dst) = 0;
+
+    /**
+     * @brief Writes `src` at the cursor.
+     * @return The number of bytes written. A short count means an error. The
+     *         default returns 0, for a file that is not open for `Write`.
+     */
+    virtual u64 write(ByteSpan src) { return 0; }
+
+    /**
+     * @brief Moves the cursor to `offset` bytes from the start of the file.
+     *
+     * A file that is not open for `Write` cannot seek past the end.
+     */
+    virtual bool seek(u64 offset) = 0;
+
+    /// @brief The cursor, in bytes from the start of the file.
+    virtual u64 tell() const = 0;
+
+    /// @brief Gets the metadata of the open file.
+    virtual bool stat(AssetStat &out) = 0;
+
+    /// @brief Sends buffered writes to the source. The default returns `true`.
+    virtual bool flush() { return true; }
+
+    /// @brief `true` after a read or a write failed for a reason other than end of file.
+    virtual bool error() const = 0;
+  };
+
+
+  /**
    * @class AssetSource
    * @brief Generic byte‑stream loader for named resources.
    *
@@ -64,11 +138,13 @@ namespace ren {
    * name "" refers to the root of the source. A name must not be absolute
    * and must not go above the root with "..".
    *
-   * Only `load` is required. All other operations are optional, and the
-   * default implementation of each returns `false` ("not supported").
-   * A read-only source (embedded data, asset packs) implements `load`,
-   * `stat`, `list` and `enumerate`. A writable source also implements
-   * `store`, `mkdir`, `remove` and `rename`.
+   * Only `open` is required. `load` and `store` have default
+   * implementations that use `open`. A source overrides them only when it
+   * has a faster path. All other operations are optional, and the default
+   * implementation of each returns `false` ("not supported").
+   * A read-only source (embedded data, asset packs) implements `open` for
+   * `Read` only, `stat`, `list` and `enumerate`. A writable source also
+   * implements `open` for `Write`, `mkdir`, `remove` and `rename`.
    *
    */
   class AssetSource {
@@ -76,12 +152,22 @@ namespace ren {
     virtual ~AssetSource() = default;
 
     /**
+     * @brief Opens the file `name` for streaming access.
+     *
+     * The parent directory must exist for `Create`. Use `mkdir` to make it
+     * first. A read-only source returns `nullptr` for all flags except `Read`.
+     *
+     * @return The open file, or `nullptr` if the file cannot be opened with `flags`.
+     */
+    virtual ref<AssetFile> open(const std::string_view &name, AssetOpenFlags flags) = 0;
+
+    /**
      * @brief Loads the raw byte contents of an asset file identified by `name`
      * @param name  The logical name (path) of the asset to load.
      * @param out   The destination for the loaded data.
      * @return     `true` if the asset was loaded, `false` otherwise.
      */
-    virtual bool load(const std::string_view &name, std::vector<u8> &out) = 0;
+    virtual bool load(const std::string_view &name, std::vector<u8> &out);
 
     /**
      * @brief Writes `data` to the file `name`, and replaces the file if it exists.
@@ -90,9 +176,9 @@ namespace ren {
      *
      * @param name  The logical name (path) of the file to write.
      * @param data  The bytes to write.
-     * @return     `true` if all of the data was written, `false` otherwise.
+     * @return     `true` if all of the data was written and flushed, `false` otherwise.
      */
-    virtual bool store(const std::string_view &name, ren::ByteSpan data) { return false; }
+    virtual bool store(const std::string_view &name, ren::ByteSpan data);
 
 
     /**
@@ -184,6 +270,23 @@ namespace ren {
      *         or the derived class does not support enumeration).
      */
     virtual bool enumerate(std::function<void(const std::string_view &)> callback) { return false; }
+
+
+    /**
+     * @brief Updates a SHA256 hasher with the contents of the file `name`.
+     * 
+     * @param name   The name of the file to hash.
+     * @param hasher The SHA256 hasher to update.
+     * @param buffer A buffer to use for reading the file in chunks. The size of
+     *               the buffer determines the chunk size. It is recommended to
+     *               use a buffer of at least 64 KiB for performance.
+     * @returns `true` if the file was read and the hasher updated, `false` otherwise.
+     */
+    bool updateSHA256(const std::string_view &name, SHA256 &hasher, std::vector<u8> &buffer);
+    bool updateSHA256(const std::string_view &name, SHA256 &hasher) {
+      std::vector<u8> buffer(64 * 1024);
+      return updateSHA256(name, hasher, buffer);
+    }
   };
 
 
@@ -195,8 +298,7 @@ namespace ren {
     FilesystemAssetSource(const std::filesystem::path &root);
 
     ~FilesystemAssetSource() override;
-    bool load(const std::string_view &name, std::vector<u8> &out) override;
-    bool store(const std::string_view &name, ren::ByteSpan data) override;
+    ref<AssetFile> open(const std::string_view &name, AssetOpenFlags flags) override;
     bool stat(const std::string_view &name, AssetStat &out) override;
     bool list(const std::string_view &name, std::function<void(const AssetDirEntry &)> callback) override;
     bool mkdir(const std::string_view &name) override;
@@ -220,6 +322,9 @@ namespace ren {
    public:
     EmbeddedAssetSource() = default;
     ~EmbeddedAssetSource() override = default;
+    ref<AssetFile> open(const std::string_view &name, AssetOpenFlags flags) override;
+    // One inflate call into a buffer of known size is faster than the
+    // streaming path that the default `load` uses.
     bool load(const std::string_view &name, std::vector<u8> &out) override;
     bool stat(const std::string_view &name, AssetStat &out) override;
     bool enumerate(std::function<void(const std::string_view &)> callback) override;
@@ -259,8 +364,9 @@ namespace ren {
   class MultiAssetSource : public AssetSource {
    public:
     ~MultiAssetSource() override = default;
+    ref<AssetFile> open(const std::string_view &name, AssetOpenFlags flags) override;
+    // Forwards to the `load` of each child, so that a child keeps its fast path.
     bool load(const std::string_view &name, std::vector<u8> &out) override;
-    bool store(const std::string_view &name, ren::ByteSpan data) override;
     bool stat(const std::string_view &name, AssetStat &out) override;
     bool list(const std::string_view &name, std::function<void(const AssetDirEntry &)> callback) override;
     bool mkdir(const std::string_view &name) override;
