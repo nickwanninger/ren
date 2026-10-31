@@ -89,22 +89,15 @@ namespace authoring_sketch {
             candidate.at("a").get<float>(),
         };
 
-        const bool changed = ImGui::ColorEdit4("##value", rgba, ImGuiColorEditFlags_Float);
-        const bool active = ImGui::IsItemActive();
-        const bool finished = ImGui::IsItemDeactivated();
-        const bool canceled = (active || finished) && ImGui::IsKeyPressed(ImGuiKey_Escape);
-
-        candidate["r"] = rgba[0];
-        candidate["g"] = rgba[1];
-        candidate["b"] = rgba[2];
-        candidate["a"] = rgba[3];
-
-        context.submit(candidate, {
-                                      .changed = changed,
-                                      .active = active,
-                                      .finished = finished,
-                                      .canceled = canceled,
-                                  });
+        // ColorEdit4 draws several items and a picker popup; edit() treats them as one control.
+        context.edit([&] { return ImGui::ColorEdit4("##value", rgba, ImGuiColorEditFlags_Float); },
+                     [&] {
+                       candidate["r"] = rgba[0];
+                       candidate["g"] = rgba[1];
+                       candidate["b"] = rgba[2];
+                       candidate["a"] = rgba[3];
+                       return candidate;
+                     });
       }
     };
 

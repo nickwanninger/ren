@@ -226,12 +226,8 @@ namespace ren::obj {
       if (!draft.active || draft.revision != context.getRevision()) {
         draft.value = decodeValue(context.read());
       }
-      const bool changed = inspectPrimitive("##value", draft.value);
-      const bool active = ImGui::IsItemActive();
-      const bool finished = ImGui::IsItemDeactivated();
-      const bool canceled = (active || finished) && ImGui::IsKeyPressed(ImGuiKey_Escape);
-      context.submit(encodeValue(draft.value), {changed, active, finished, canceled});
-      draft.active = active;
+      const auto interaction = context.edit([&] { return inspectPrimitive("##value", draft.value); }, [&] { return encodeValue(draft.value); });
+      draft.active = interaction.active;
       draft.revision = context.getRevision();
     }
 

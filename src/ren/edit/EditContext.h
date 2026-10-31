@@ -1,5 +1,6 @@
 #pragma once
 
+#include <ren/edit/ImGuiEdit.h>
 #include <ren/edit/PropertyEditor.h>
 #include <any>
 #include <map>
@@ -50,6 +51,21 @@ namespace ren::edit {
     // Submits several child fields as one session update. Writes must stay inside
     // this context's subtree; validation and history treat the batch atomically.
     bool submitBatch(const std::vector<PropertyWrite>& candidates, EditInteraction interaction);
+
+    // Draws one control with `draw`, which returns true when it changed its
+    // value, then submits `candidate()` with the control's ImGui state. Several
+    // items drawn by `draw` act as one control. Returns the interaction, so the
+    // caller can keep a draft while the control is active.
+    template <typename Draw, typename Candidate>
+    EditInteraction edit(Draw&& draw, Candidate&& candidate) {
+      ImGui::BeginGroup();
+      const bool changed = draw();
+      ImGui::EndGroup();
+
+      const auto interaction = interactionFromLastItem(changed);
+      submit(candidate(), interaction);
+      return interaction;
+    }
 
     // Binds a nested field to another control within a custom editor.
     EditContext child(std::string field, std::uint64_t childWidget) const;
