@@ -1,6 +1,5 @@
 collect_sources(SOURCE_FILES "${CMAKE_CURRENT_SOURCE_DIR}")
 add_executable(assetman ${SOURCE_FILES})
-target_sources(assetman PRIVATE ${CMAKE_SOURCE_DIR}/lib/imgui/misc/cpp/imgui_stdlib.cpp)
 
 install(TARGETS assetman
   RUNTIME DESTINATION bin
