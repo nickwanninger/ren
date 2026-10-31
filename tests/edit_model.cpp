@@ -1,6 +1,6 @@
 #include <ren/core/Components.h>
 #include <ren/core/ComponentRegistration.h>
-#include <ren/edit/SceneEditor.h>
+#include <ren/edit/EditContext.h>
 #include <ren/obj/Types.h>
 #include <functional>
 #include <iostream>

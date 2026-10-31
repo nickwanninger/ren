@@ -5,7 +5,7 @@
 
 #include <imgui.h>
 #include <misc/cpp/imgui_stdlib.h>
-#include <ren/edit/SceneEditor.h>
+#include <ren/edit/EditContext.h>
 #include <flecs/flecs.h>
 
 namespace ren::obj {

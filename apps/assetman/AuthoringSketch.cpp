@@ -1,5 +1,5 @@
 #include "AuthoringSketch.h"
-#include <ren/edit/SceneEditor.h>
+#include <ren/edit/EditContext.h>
 #include <ren/obj/Types.h>
 
 #include <ren/types.h>
