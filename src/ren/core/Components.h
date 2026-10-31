@@ -125,11 +125,6 @@ namespace ren {
   };
   ren_register_component(ren::PositionComponent, .luaName = "PositionComponent");
 
-
-  ren_register_component(std::string, .luaName = "std_string");
-
-
-
   struct PointLightComponent {
     glm::vec3 color = glm::vec3(1.0f);
     float intensity = 1.0f;

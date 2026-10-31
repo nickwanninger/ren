@@ -126,7 +126,6 @@ namespace ren {
     // The swapchain allocates frame resources from the renderer, so it comes last.
     this->window->rebuildSwapchain();
 
-    world.set_threads(6);
 
     this->globalEventEntity = world.entity("ren::events");
 
@@ -151,34 +150,6 @@ namespace ren {
 
 
     assets.addDefaultSources(kAssetSources.get());
-
-
-
-    auto &source = assets.getSource();
-    auto start = std::chrono::high_resolution_clock::now();
-    u32 numAssets = 0;
-    source.enumerate([&](const std::string_view &name) {
-
-      if (name.ends_with(".meta")) {
-        return;
-      }
-
-
-      numAssets++;
-      if (!name.ends_with(".glb")) {
-        return;
-      }
-
-      // ren::println("Asset source contains: {}", name);
-      AssetStat st;
-      if (source.stat(name, st)) {
-        // ren::println("  type: {}, size: {}, mtime: {}", static_cast<int>(st.type), st.size, st.mtime);
-      }
-    });
-    auto end = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
-    ren::println("Asset source enumeration of {} assets took {} ms", numAssets, duration);
-
 
     // Ensure we have a megamesh buffer. (TODO: move this somewhere non-global.)
     ren::ensureResource<ren::MegaMeshBuffer>();

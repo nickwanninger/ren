@@ -65,8 +65,6 @@ namespace ren {
     return entity;
   }
 
-  Entity MeshScene::instantiate(ren::Scene &scene) { return instantiateNode(*this->rootNode, scene.getRoot()); }
-
   Entity MeshScene::instantiate(ren::Entity parent) { return instantiateNode(*this->rootNode, parent); }
 
 

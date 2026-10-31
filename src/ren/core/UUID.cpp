@@ -8,11 +8,37 @@ namespace ren {
   static std::uniform_int_distribution<uint64_t> s_UniformDistribution;
 
   UUID::UUID()
-      : m_UUID(s_UniformDistribution(s_Engine)) {}
+      : m_UUID(UUID::null) {}
 
   UUID::UUID(uint64_t uuid)
       : m_UUID(uuid) {
-    throw std::runtime_error("Created UUID from u64");
+  }
+
+
+  UUID UUID::generate() { return UUID(s_UniformDistribution(s_Engine)); }
+
+
+  Option<UUID> UUID::parse(std::string_view str) {
+    if (str == "null") {
+      return Some(UUID(UUID::null));
+    }
+    if (str.length() != 16) {
+      return None;
+    }
+    u64 value = 0;
+    for (char c : str) {
+      value <<= 4;
+      if (c >= '0' && c <= '9') {
+        value |= (c - '0');
+      } else if (c >= 'a' && c <= 'f') {
+        value |= (c - 'a' + 10);
+      } else if (c >= 'A' && c <= 'F') {
+        value |= (c - 'A' + 10);
+      } else {
+        return None;
+      }
+    }
+    return Some(UUID(value));
   }
 
 }  // namespace ren
