@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ren/edit/EditHistory.h>
+#include <ren/edit/PropertyEditor.h>
 #include <any>
 #include <map>
 #include <string>
@@ -38,7 +38,7 @@ namespace ren::edit {
   class EditContext {
    public:
     // Binds a field and widget within an inspector. Dependencies must outlive drawing.
-    EditContext(EditHistory& history, EditorStateStore& states, EditAddress address, std::uint64_t widget);
+    EditContext(PropertyEditor& properties, EditorStateStore& states, EditAddress address, std::uint64_t widget);
 
     // Returns the current authored value as an owned snapshot.
     nlohmann::json read() const;
@@ -74,7 +74,7 @@ namespace ren::edit {
       std::string error;
     };
 
-    EditHistory& history;
+    PropertyEditor& properties;
     EditorStateStore& states;
     EditAddress address;
     std::uint64_t widget;

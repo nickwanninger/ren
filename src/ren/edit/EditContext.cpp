@@ -11,14 +11,14 @@ namespace ren::edit {
   void EditorStateStore::clear() { values.clear(); }
 
 
-  EditContext::EditContext(EditHistory& history, EditorStateStore& states, EditAddress address, std::uint64_t widget)
-      : history(history)
+  EditContext::EditContext(PropertyEditor& properties, EditorStateStore& states, EditAddress address, std::uint64_t widget)
+      : properties(properties)
       , states(states)
       , address(std::move(address))
       , widget(widget) {}
 
 
-  nlohmann::json EditContext::read() const { return history.read(address); }
+  nlohmann::json EditContext::read() const { return properties.read(address); }
 
 
   bool EditContext::submit(const nlohmann::json& candidate, EditInteraction interaction) { return submitBatch({{address, candidate}}, interaction); }
@@ -26,6 +26,7 @@ namespace ren::edit {
 
   bool EditContext::submitBatch(const std::vector<PropertyWrite>& candidates, EditInteraction interaction) {
     auto& feedback = state<Feedback>();
+    auto& history = properties.getHistory();
     const auto revision = history.getRevision();
     history.touch(widget);
 
@@ -44,7 +45,7 @@ namespace ren::edit {
             throw std::runtime_error("Editor write escapes field: " + write.address.display());
           }
         }
-        history.update(widget, "Edit " + address.display(), candidates);
+        properties.update(widget, "Edit " + address.display(), candidates);
         feedback.error.clear();
       } catch (const std::exception& error) {
         feedback.error = error.what();
@@ -62,11 +63,11 @@ namespace ren::edit {
 
 
   EditContext EditContext::child(std::string field, std::uint64_t childWidget) const {
-    return EditContext(history, states, address / std::move(field), childWidget);
+    return EditContext(properties, states, address / std::move(field), childWidget);
   }
 
 
-  std::uint64_t EditContext::getRevision() const { return history.getRevision(); }
+  std::uint64_t EditContext::getRevision() const { return properties.getHistory().getRevision(); }
 
 
   const EditAddress& EditContext::getAddress() const { return address; }

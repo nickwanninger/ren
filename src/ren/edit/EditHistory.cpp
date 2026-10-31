@@ -1,22 +1,12 @@
 #include <ren/edit/EditHistory.h>
 
-#include <stdexcept>
+#include <utility>
 
 namespace ren::edit {
 
-  // Parent and child snapshots in one edit make replay order ambiguous. Keep
-  // custom editor batches at one field depth, or use independent sibling paths.
-  static bool overlaps(const EditAddress& first, const EditAddress& second) { return first.contains(second) || second.contains(first); }
-
-
-
   //=========================
-  // Edit sessions
+  // Open commands
   //=========================
-
-  EditHistory::EditHistory(PropertyDocument& document)
-      : document(document) {}
-
 
   void EditHistory::beginFrame() { ownerVisible = false; }
 
@@ -35,44 +25,12 @@ namespace ren::edit {
   }
 
 
-  void EditHistory::begin(std::uint64_t owner, std::string label) {
-    if (isOwner(owner)) {
-      touch(owner);
-      return;
-    }
-
+  Command& EditHistory::open(Box<Command> command, std::uint64_t owner) {
     commit();
-    pending = Edit{.label = std::move(label)};
+    pending = std::move(command);
     pendingOwner = owner;
     ownerVisible = true;
-  }
-
-
-  void EditHistory::update(std::uint64_t owner, const std::string& label, const std::vector<PropertyWrite>& writes) {
-    begin(owner, label);
-
-    // Capture snapshots before the document changes. Keep new records local until
-    // the entire batch succeeds, so a failed candidate leaves no partial record.
-    auto changes = pending->changes;
-    for (const auto& write : writes) {
-      bool known = false;
-      for (const auto& change : changes) {
-        if (change.address == write.address) {
-          known = true;
-        } else if (overlaps(change.address, write.address)) {
-          throw std::runtime_error("Overlapping edit paths: " + write.address.display());
-        }
-      }
-      if (!known) {
-        changes.push_back(FieldChange{.address = write.address, .before = document.read(write.address)});
-      }
-    }
-
-    document.apply(writes);
-    pending->changes = std::move(changes);
-    if (!writes.empty()) {
-      ++revision;
-    }
+    return *pending;
   }
 
 
@@ -81,22 +39,12 @@ namespace ren::edit {
       return;
     }
 
-    Edit result{.label = pending->label};
-    for (const auto& change : pending->changes) {
-      auto after = document.read(change.address);
-      if (change.before != after) {
-        result.changes.push_back(FieldChange{change.address, change.before, std::move(after)});
-      }
-    }
-
-    // Only effective edits discard redo. Canceling or returning to the starting
+    // Only effective commands discard redo. An edit that returns to its start
     // value therefore preserves the previous history branch.
-    if (!result.changes.empty()) {
-      entries.erase(entries.begin() + cursor, entries.end());
-      entries.push_back(std::move(result));
-      cursor = entries.size();
+    auto command = std::move(pending);
+    if (command->finish()) {
+      push(std::move(command));
     }
-    pending.reset();
   }
 
 
@@ -105,22 +53,40 @@ namespace ren::edit {
       return;
     }
 
-    std::vector<PropertyWrite> writes;
-    for (const auto& change : pending->changes) {
-      writes.push_back({change.address, change.before});
-    }
-    document.apply(writes);
-    if (!writes.empty()) {
-      ++revision;
-    }
-    pending.reset();
+    auto command = std::move(pending);
+    command->undo();
+    ++revision;
   }
 
 
-  void EditHistory::execute(std::string label, const std::vector<PropertyWrite>& writes) {
+  void EditHistory::markChanged() { ++revision; }
+
+
+
+
+  //=========================
+  // Complete commands
+  //=========================
+
+  void EditHistory::execute(Box<Command> command) {
     commit();
-    update(0, label, writes);
+    command->redo();
+    push(std::move(command));
+    ++revision;
+  }
+
+
+  void EditHistory::record(Box<Command> command) {
     commit();
+    push(std::move(command));
+    ++revision;
+  }
+
+
+  void EditHistory::push(Box<Command> command) {
+    entries.erase(entries.begin() + cursor, entries.end());
+    entries.push_back(std::move(command));
+    cursor = entries.size();
   }
 
 
@@ -139,11 +105,7 @@ namespace ren::edit {
       return false;
     }
 
-    std::vector<PropertyWrite> writes;
-    for (const auto& change : entries[cursor - 1].changes) {
-      writes.push_back({change.address, change.before});
-    }
-    document.apply(writes);
+    entries[cursor - 1]->undo();
     --cursor;
     ++revision;
     return true;
@@ -159,30 +121,26 @@ namespace ren::edit {
       return false;
     }
 
-    std::vector<PropertyWrite> writes;
-    for (const auto& change : entries[cursor].changes) {
-      writes.push_back({change.address, change.after});
-    }
-    document.apply(writes);
+    entries[cursor]->redo();
     ++cursor;
     ++revision;
     return true;
   }
 
 
-  nlohmann::json EditHistory::read(const EditAddress& address) const { return document.read(address); }
+  Command* EditHistory::getOpen() const { return pending.get(); }
 
 
-  bool EditHistory::isOwner(std::uint64_t owner) const { return pending.has_value() && pendingOwner == owner; }
+  bool EditHistory::isOwner(std::uint64_t owner) const { return pending && pendingOwner == owner; }
 
 
-  bool EditHistory::isActive() const { return pending.has_value(); }
+  bool EditHistory::isOpen() const { return pending != nullptr; }
 
 
-  bool EditHistory::canUndo() const { return pending.has_value() || cursor > 0; }
+  bool EditHistory::canUndo() const { return pending || cursor > 0; }
 
 
-  bool EditHistory::canRedo() const { return pending.has_value() || cursor < entries.size(); }
+  bool EditHistory::canRedo() const { return pending || cursor < entries.size(); }
 
 
   std::size_t EditHistory::getCursor() const { return cursor; }
@@ -191,6 +149,6 @@ namespace ren::edit {
   std::uint64_t EditHistory::getRevision() const { return revision; }
 
 
-  const std::vector<Edit>& EditHistory::getEntries() const { return entries; }
+  const std::vector<Box<Command>>& EditHistory::getEntries() const { return entries; }
 
 }  // namespace ren::edit
