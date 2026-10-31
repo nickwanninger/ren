@@ -474,8 +474,6 @@ namespace authoring_sketch {
   void draw() {
     static Sketch sketch;
     static NativeFloat native;
-    sketch.history.beginFrame();
-    native.history.beginFrame();
     const auto previousRevision = sketch.history.getRevision();
 
     ImGui::TextWrapped("Edit nested values, load JSON, and bake an in-memory component.");

@@ -476,21 +476,24 @@ namespace {
   }
 
 
-  // Rule: if a widget stops drawing during its session (the user switches tabs
-  // or collapses a tree node), endFrame() commits the session. The widget can
-  // never send its own "finished" event, so without this the session stays open.
+  // Rule: if a widget stops drawing during its session (the user selects
+  // another node, or switches tabs), endFrame() commits the session. The widget
+  // can never send its own "finished" event, so without this the session stays open.
   void testHiddenOwnerCommitsAtEndOfFrame() {
     PropertyFixture f;
-    f.properties.update(1, "Edit a", {{a, 4}});
 
-    // Frame 1: widget 1 draws and calls touch(1), so the session stays open.
-    f.history.beginFrame();
+    // Frame 1: widget 1 opens the session. open() counts as drawn, so the
+    // session survives this frame's endFrame().
+    f.properties.update(1, "Edit a", {{a, 4}});
+    f.history.endFrame();
+    verify(f.history.isOpen(), "A session must survive the frame that opened it");
+
+    // Frame 2: widget 1 draws and calls touch(1), so the session stays open.
     f.history.touch(1);
     f.history.endFrame();
     verify(f.history.isOpen(), "A visible owner must keep its session");
 
-    // Frame 2: widget 1 does not draw, so endFrame() commits its session.
-    f.history.beginFrame();
+    // Frame 3: widget 1 does not draw, so endFrame() commits its session.
     f.history.endFrame();
     verify(!f.history.isOpen() && f.history.getEntries().size() == 1, "A hidden owner must commit at the end of the frame");
   }

@@ -8,13 +8,14 @@ namespace ren::edit {
   // Open commands
   //=========================
 
-  void EditHistory::beginFrame() { ownerVisible = false; }
-
-
   void EditHistory::endFrame() {
     if (pending && !ownerVisible) {
       commit();
     }
+
+    // Reset for the next frame. open() sets the flag again, so a command opened
+    // during this frame survives this frame's endFrame().
+    ownerVisible = false;
   }
 
 
