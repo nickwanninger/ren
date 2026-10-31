@@ -1,2 +1,3 @@
 add_subdirectory(raytracer)
 add_subdirectory(rentest)
+add_subdirectory(assetman)
