@@ -111,6 +111,9 @@ namespace ren {
 
     /// @brief `true` after a read or a write failed for a reason other than end of file.
     virtual bool error() const = 0;
+
+
+    Option<std::string> readAllText();
   };
 
 
@@ -274,7 +277,7 @@ namespace ren {
 
     /**
      * @brief Updates a SHA256 hasher with the contents of the file `name`.
-     * 
+     *
      * @param name   The name of the file to hash.
      * @param hasher The SHA256 hasher to update.
      * @param buffer A buffer to use for reading the file in chunks. The size of
@@ -382,9 +385,7 @@ namespace ren {
 
     inline void addEmbeddedSource() { addStore<ren::EmbeddedAssetSource>(); }
 
-    inline void addFilesystem(const std::string_view &path) {
-      addStore<ren::FilesystemAssetSource>(path);
-    }
+    inline void addFilesystem(const std::string_view &path) { addStore<ren::FilesystemAssetSource>(path); }
 
    private:
     std::vector<std::shared_ptr<AssetSource>> stores;

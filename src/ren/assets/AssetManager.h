@@ -9,14 +9,6 @@
 
 namespace ren {
 
-  struct AssetInfo {
-    AssetID id;                  // The ID of the asset.
-    std::filesystem::path path;  // The path to the asset file.
-    AssetType type;              // The type of the asset.
-  };
-
-
-
   // An AssetHandle is a typed wrapper around a u64 integer, which abstracts the
   // resolution of an asset of a given type. Whenever an asset is needed, it can
   // be resolved, but should not be maintained beyond that, to allow the asset
@@ -33,20 +25,8 @@ namespace ren {
 
 
 
-  class AssetManagerBase {
-   public:
-    virtual ~AssetManagerBase() = default;
-
-    // The core of the asset manager interface is the ability to resolve an
-    // asset by its UUID.  If an asset hasn't been used after a period of time,
-    // it gets unloaded from memory automatically. Each asset can have its own timeout.
-  };
-
-
-
-
-  // AssetManager is an interface for managing assets in the engine.
-  // It's mostly used to retrieve assets by their UUIDs.
+  // The AssetManager is responsible for managing asset importing and retrieval.
+  // 
   class AssetManager {
    public:
     AssetManager();
@@ -68,23 +48,25 @@ namespace ren {
     // Load the bytes of some asset from the asset source. No Caching!
     bool load(const std::string_view &name, std::vector<u8> &out) { return source.load(name, out); }
 
+
     AssetStore &getStore() { return store; }
     AssetSource &getSource(void) { return source; }
 
+
+    // Scan the asset sources for new assets, and import them.
+    void scanForImports(void);
+
+    // Import an asset from a file path. This will do the import action,
+    // give it an asset id, and write the sidecar.
+    Option<AssetID> import(const std::filesystem::path &path);
+
     // Import a mesh from a file path. implemented in importers/mesh.cpp
     void importMesh(const std::filesystem::path &path);
-
-
-   protected:
-    ref<Asset> load(const AssetInfo &info);
 
    private:
     // The source that assets are loaded from.
     ren::MultiAssetSource source;
     ren::AssetStore store;
-
-    std::map<ren::AssetID, AssetInfo> assetRegistry;
-    std::map<ren::AssetID, ref<Asset>> loadedAssets;  // Cache of loaded assets
   };
 
   AssetManager &getAssetManager();

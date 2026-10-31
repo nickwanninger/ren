@@ -179,6 +179,24 @@ namespace ren {
   }
 
 
+  Option<std::string> AssetFile::readAllText() {
+    // Pretty simple. allocate a string that is big enough and read into it.
+    AssetStat st;
+    if (!stat(st)) {
+      return None;
+    }
+
+    std::string text;
+    text.resize(static_cast<size_t>(st.size));
+
+    u64 count = read(ByteSpan(reinterpret_cast<u8*>(text.data()), text.size()));
+    if (count != st.size) {
+      return None;
+    }
+
+    return text;
+  }
+
 
   // An open file of a FilesystemAssetSource.
   //
@@ -845,6 +863,7 @@ namespace ren {
 
 
   bool EmbeddedAssetSource::enumerate(std::function<void(const std::string_view&)> callback) {
+    return false;
     bool enumerated = false;
     for (const auto& res : getEmbeddedResources()) {
       callback(std::string_view{res.name});
