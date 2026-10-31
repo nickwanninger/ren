@@ -404,20 +404,10 @@ namespace authoring_sketch {
       // it. An edit over many frames becomes one entry; Escape restores the value.
       editValue(native.history, "Value", native.value, [](float& value) { return ImGui::DragFloat("Value", &value, 0.01f); });
 
-      // Three separate items in one callback act as one control. An edit on any
-      // axis records the whole vector, and Escape restores all three axes.
-      editValue(native.history, "Position", native.position, [](glm::vec3& position) {
-        bool changed = false;
-        for (int i = 0; i < 3; ++i) {
-          ImGui::PushID(i);
-          ImGui::SetNextItemWidth(80.0f);
-          changed |= ImGui::DragFloat("##axis", &position[i], 0.01f);
-          ImGui::SameLine();
-          ImGui::PopID();
-        }
-        ImGui::TextUnformatted("Position");
-        return changed;
-      });
+      // Without a lambda, editValue() draws the default eui::Inspect widget. For a
+      // vector, that is one drag field per axis, and the axes act as one control:
+      // an edit on any axis records the whole vector.
+      editValue(native.history, "Position", native.position);
 
       ImGui::Separator();
       ImGui::Text("%zu applied / %zu recorded%s", native.history.getCursor(), native.history.getEntries().size(),

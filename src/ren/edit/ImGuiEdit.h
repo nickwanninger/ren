@@ -2,6 +2,7 @@
 
 #include <ren/types.h>
 #include <ren/edit/EditHistory.h>
+#include <ren/core/ui/ValueWidgets.h>
 #include <imgui.h>
 #include <string>
 
@@ -38,6 +39,13 @@ namespace ren::edit {
 
     ImGui::PopID();
     return changed;
+  }
+
+
+  // Draws the default eui::Inspect widget for `value` and records its edits.
+  template <typename T>
+  bool editValue(EditHistory& history, const char* label, T& value) {
+    return editValue(history, label, value, [label](T& candidate) { return eui::Inspect(label, candidate); });
   }
 
 }  // namespace ren::edit
