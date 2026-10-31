@@ -86,9 +86,29 @@ namespace ren::edit {
 
   void EditHistory::push(Box<Command> command) {
     entries.erase(entries.begin() + cursor, entries.end());
+    entryIDs.erase(entryIDs.begin() + cursor, entryIDs.end());
     entries.push_back(std::move(command));
+    entryIDs.push_back(nextEntryID++);
     cursor = entries.size();
   }
+
+
+
+
+  //=========================
+  // Save marker
+  //=========================
+
+  void EditHistory::markSaved() {
+    commit();
+    savedID = getCurrentID();
+  }
+
+
+  bool EditHistory::isDirty() const { return pending || getCurrentID() != savedID; }
+
+
+  std::uint64_t EditHistory::getCurrentID() const { return cursor == 0 ? 0 : entryIDs[cursor - 1]; }
 
 
 

@@ -253,6 +253,103 @@ namespace {
 
 
   //=========================
+  // Save marker
+  //=========================
+  //
+  // A document is dirty when its data differs from the saved file. The history
+  // cannot compare data, so it compares entries: markSaved() remembers which
+  // entry was current, and isDirty() checks if another entry is current now.
+  // Each recorded entry gets a new ID, so an entry that replaces an undone
+  // entry never looks like the saved one, even at the same cursor position.
+
+  // Makes one recorded entry that sets the float to `to`.
+  void setTo(edit::EditHistory &history, float &value, float to) {
+    const float from = value;
+    history.execute(makeBox<edit::LambdaAction>("Set float", [&value, to] { value = to; }, [&value, from] { value = from; }));
+  }
+
+
+  // Rule: a new history is clean, an edit makes it dirty, and a save makes it clean.
+  void testSaveMarksClean() {
+    float value = 0.0f;
+    edit::EditHistory history;
+    verify(!history.isDirty(), "A new history must be clean");
+
+    setTo(history, value, 1.0f);
+    verify(history.isDirty(), "An edit must make the history dirty");
+
+    history.markSaved();
+    verify(!history.isDirty(), "A save must make the history clean");
+  }
+
+
+  // Rule: undo and redo move away from and back to the saved entry.
+  void testUndoPastSaveIsDirty() {
+    float value = 0.0f;
+    edit::EditHistory history;
+    setTo(history, value, 1.0f);
+    history.markSaved();
+
+    // The data on disk is 1. Undo gives 0, so the history is dirty.
+    history.undo();
+    verify(history.isDirty(), "Undo past the save must make the history dirty");
+
+    // Redo gives 1 again, the same as the file.
+    history.redo();
+    verify(!history.isDirty(), "Redo back to the saved entry must make the history clean");
+  }
+
+
+  // Rule: an entry that replaces the saved entry is dirty, even when the
+  // cursor is at the same position as at the save. A cursor index cannot tell
+  // these apart; an entry ID can.
+  void testReplacedSavedEntryIsDirty() {
+    float value = 0.0f;
+    edit::EditHistory history;
+
+    // Entries: [1, 2], saved at cursor 2. Undo goes to cursor 1.
+    setTo(history, value, 1.0f);
+    setTo(history, value, 2.0f);
+    history.markSaved();
+    history.undo();
+
+    // A new edit replaces entry 2. The cursor is 2 again, but the value is 3, not 2.
+    setTo(history, value, 3.0f);
+    verify(history.getCursor() == 2, "The new entry must be at the saved cursor position");
+    verify(history.isDirty(), "An entry that replaces the saved entry must be dirty");
+  }
+
+
+  // Rule: an open command has changed the data, so the history is dirty.
+  // markSaved() commits it first, because the file then holds its result.
+  void testOpenCommandIsDirty() {
+    float value = 1.0f;
+    edit::EditHistory history;
+
+    editFrame(history, value, {.changed = true, .active = true}, 2.0f);
+    verify(history.isDirty(), "An open command must make the history dirty");
+
+    history.markSaved();
+    verify(!history.isOpen() && history.getEntries().size() == 1, "markSaved() must commit the open command");
+    verify(!history.isDirty(), "The history must be clean after the save");
+  }
+
+
+  // Rule: an edit that changes nothing does not make the history dirty.
+  void testUnchangedEditStaysClean() {
+    float value = 1.0f;
+    edit::EditHistory history;
+    history.markSaved();
+
+    // An edit away from 1 and back, then release. finish() drops the command.
+    editFrame(history, value, {.changed = true, .active = true}, 4.0f);
+    editFrame(history, value, {.changed = true, .finished = true}, 1.0f);
+    verify(!history.isDirty(), "A dropped command must not make the history dirty");
+  }
+
+
+
+  //=========================
   // Property editing
   //=========================
   //
@@ -512,6 +609,12 @@ int main() {
   testOpenCommandCommits();
   testOpenCommandCancels();
   testUnchangedOpenCommandIsDropped();
+
+  testSaveMarksClean();
+  testUndoPastSaveIsDirty();
+  testReplacedSavedEntryIsDirty();
+  testOpenCommandIsDirty();
+  testUnchangedEditStaysClean();
 
   testSessionMakesOneEntry();
   testUnchangedSessionKeepsRedo();

@@ -131,11 +131,27 @@ namespace ren::edit {
     // Returns recorded entries for display. Callers cannot change them.
     const std::vector<Box<Command>>& getEntries() const;
 
+    // Commits the open command, then remembers the current entry as the one
+    // that matches the saved file. Call it after the document is written.
+    void markSaved();
+
+    // Reports whether the data differs from the last markSaved(): a different
+    // entry is current, or a command is open. A new history is clean.
+    bool isDirty() const;
+
    private:
-    // Discards the redo branch and appends one entry.
+    // Discards the redo branch and appends one entry with a new ID.
     void push(Box<Command> command);
 
+    // Returns the ID of the last applied entry, or 0 at the start of the list.
+    std::uint64_t getCurrentID() const;
+
+    // `entryIDs[i]` identifies `entries[i]`. IDs start at 1 and never repeat,
+    // so an entry that replaces an undone entry gets a different ID.
     std::vector<Box<Command>> entries;
+    std::vector<std::uint64_t> entryIDs;
+    std::uint64_t nextEntryID = 1;
+    std::uint64_t savedID = 0;
     std::size_t cursor = 0;
     Box<Command> pending;
     std::uint64_t pendingOwner = 0;
