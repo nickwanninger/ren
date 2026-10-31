@@ -6,6 +6,7 @@
 #include <map>
 #include <string>
 #include <tuple>
+#include <type_traits>
 #include <typeindex>
 
 namespace ren::edit {
@@ -54,8 +55,9 @@ namespace ren::edit {
 
     // Draws one control with `draw`, which returns true when it changed its
     // value, then submits `candidate()` with the control's ImGui state. Several
-    // items drawn by `draw` act as one control. Returns the interaction, so the
-    // caller can keep a draft while the control is active.
+    // items drawn by `draw` act as one control. `candidate` returns either one
+    // JSON value for this address or a batch of writes inside it. Returns the
+    // interaction, so the caller can keep a draft while the control is active.
     template <typename Draw, typename Candidate>
     EditInteraction edit(Draw&& draw, Candidate&& candidate) {
       ImGui::BeginGroup();
@@ -63,7 +65,12 @@ namespace ren::edit {
       ImGui::EndGroup();
 
       const auto interaction = interactionFromLastItem(changed);
-      submit(candidate(), interaction);
+      auto result = candidate();
+      if constexpr (std::is_same_v<decltype(result), std::vector<PropertyWrite>>) {
+        submitBatch(result, interaction);
+      } else {
+        submit(result, interaction);
+      }
       return interaction;
     }
 

@@ -5,6 +5,7 @@
 
 #include <imgui.h>
 #include <misc/cpp/imgui_stdlib.h>
+#include <ren/core/ui/ValueWidgets.h>
 #include <ren/edit/EditContext.h>
 #include <flecs/flecs.h>
 
@@ -453,18 +454,7 @@ namespace ren::obj {
     }
 
 
-    bool inspectPrimitive(const char* label, T& value) const override {
-      if constexpr (std::is_same_v<T, bool>) {
-        return ImGui::Checkbox(label, &value);
-      } else if constexpr (std::is_same_v<T, std::string>) {
-        return ImGui::InputText(label, &value);
-      } else if constexpr (std::is_floating_point_v<T>) {
-        return ImGui::DragScalar(label, getDataType(), &value, 0.1f);
-      } else {
-        return ImGui::DragScalar(label, getDataType(), &value, 0.1f);
-        return ImGui::InputScalar(label, getDataType(), &value);
-      }
-    }
+    bool inspectPrimitive(const char* label, T& value) const override { return eui::Inspect(label, value); }
 
 
     // Names describe the scalar width rather than a compiler-specific spelling.
@@ -482,23 +472,6 @@ namespace ren::obj {
         return "int";
       } else {
         return fmt::format("{}{}", std::is_signed_v<T> ? "i" : "u", sizeof(T) * 8);
-      }
-    }
-
-
-    static constexpr ImGuiDataType getDataType() {
-      if constexpr (std::is_same_v<T, float>) {
-        return ImGuiDataType_Float;
-      } else if constexpr (std::is_same_v<T, double>) {
-        return ImGuiDataType_Double;
-      } else if constexpr (sizeof(T) == 1) {
-        return std::is_signed_v<T> ? ImGuiDataType_S8 : ImGuiDataType_U8;
-      } else if constexpr (sizeof(T) == 2) {
-        return std::is_signed_v<T> ? ImGuiDataType_S16 : ImGuiDataType_U16;
-      } else if constexpr (sizeof(T) == 4) {
-        return std::is_signed_v<T> ? ImGuiDataType_S32 : ImGuiDataType_U32;
-      } else {
-        return std::is_signed_v<T> ? ImGuiDataType_S64 : ImGuiDataType_U64;
       }
     }
 
@@ -547,31 +520,32 @@ namespace ren::obj {
   // Core types
   // ==================================
 
-  // Draws only vector controls. The parent owns its label; each coordinate uses
-  // the ordinary scalar editor and its own addressed session and draft state.
+  // Draws all components as one control. The parent owns its label. Each
+  // component is still its own write at its own address, so an edit of X
+  // records only x: JsonDiffAction drops the unchanged components at commit.
   template <int N, typename T>
   struct VectorEditor final : ren::edit::Editor {
     static_assert(N >= 1 && N <= 4);
 
     void draw(ren::edit::EditContext& context) const override {
-      const auto& style = ImGui::GetStyle();
-      const float groupWidth = (ImGui::CalcItemWidth() - ((float)N - 1.0f) * style.ItemSpacing.x) / (float)N;
-      const char* fields[] = {"x", "y", "z", "w"};
-      const char* labels[] = {"X", "Y", "Z", "W"};
-      for (size_t i = 0; i < N; ++i) {
-        if (i != 0) {
-          ImGui::SameLine();
-        }
-        ImGui::PushID(fields[i]);
-        ImGui::AlignTextToFramePadding();
-        ImGui::TextUnformatted(labels[i]);
-        ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);
-        const float width = groupWidth - ImGui::CalcTextSize(labels[i]).x - style.ItemInnerSpacing.x;
-        ImGui::SetNextItemWidth(std::max(1.0f, width));
-        auto child = context.child(fields[i], ImGui::GetID("##value"));
-        getType<T>().getEditor()->draw(child);
-        ImGui::PopID();
+      static const char* fields[] = {"x", "y", "z", "w"};
+
+      // Each frame applies its change to the document, so the document always
+      // holds the value that the control shows.
+      const auto current = context.read();
+      glm::vec<N, T, glm::defaultp> value;
+      for (int i = 0; i < N; ++i) {
+        value[i] = current.at(fields[i]).template get<T>();
       }
+
+      context.edit([&] { return eui::Drag("##value", value); },
+                   [&] {
+                     std::vector<ren::edit::PropertyWrite> writes;
+                     for (int i = 0; i < N; ++i) {
+                       writes.push_back({context.getAddress() / fields[i], value[i]});
+                     }
+                     return writes;
+                   });
     }
   };
 

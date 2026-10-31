@@ -372,6 +372,9 @@ namespace authoring_sketch {
     struct NativeFloat {
       float value = 1.0f;
       glm::vec3 position{0.0f};
+      float opacity = 1.0f;
+      glm::vec3 tint{1.0f};
+      bool visible = true;
       EditHistory history;
     };
 
@@ -408,6 +411,11 @@ namespace authoring_sketch {
       // vector, that is one drag field per axis, and the axes act as one control:
       // an edit on any axis records the whole vector.
       editValue(native.history, "Position", native.position);
+
+      // Sliders keep values between their bounds; a vector uses the same bounds per component.
+      editValue(native.history, "Opacity", native.opacity, [](float& value) { return ren::eui::Slide("Opacity", value, 0.0f, 1.0f); });
+      editValue(native.history, "Visible", native.visible);
+      editValue(native.history, "Tint", native.tint, [](glm::vec3& value) { return ren::eui::Slide("Tint", value, 0.0f, 1.0f); });
 
       ImGui::Separator();
       ImGui::Text("%zu applied / %zu recorded%s", native.history.getCursor(), native.history.getEntries().size(),
