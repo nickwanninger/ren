@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := renderer
-.PHONY: clean compile_debug test
+.PHONY: clean compile_debug test dbg
 MAKEFLAGS += --no-print-directory
 
 
@@ -31,7 +31,7 @@ clean:
 
 
 
-compile_debug:
+dbg:
 	@mkdir -p build
 	@cmake -S . -B build -G ${GENERATOR} -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 	@ninja -C build
