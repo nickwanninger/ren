@@ -204,7 +204,7 @@ namespace authoring_sketch {
           : root(root) {}
 
 
-      json read(const FieldAddress& address) const override { return resolve(root, address).serialize(); }
+      json read(const EditAddress& address) const override { return resolve(root, address).serialize(); }
 
 
       void apply(const std::vector<PropertyWrite>& writes) override {
@@ -221,13 +221,11 @@ namespace authoring_sketch {
       }
 
 
-      Value& resolve(Value& value, const FieldAddress& address) const {
-        if (address.root != "component") {
-          throw std::runtime_error("Unknown component root: " + address.display());
-        }
-
+      // The empty address is the whole component. Each segment names a field or
+      // a sequence index below it.
+      Value& resolve(Value& value, const EditAddress& address) const {
         Value* current = &value;
-        for (const auto& segment : address.fields) {
+        for (const auto& segment : address.parts()) {
           try {
             current = &current->findChild(segment);
           } catch (const std::exception&) {
@@ -248,7 +246,7 @@ namespace authoring_sketch {
     // All rows share the same columns. Tree indentation affects labels only;
     // nested fields retain the same control width and horizontal position.
     // Addresses survive document replacement during editor callbacks.
-    void inspectValueRows(const char* label, const Type& type, EditHistory& history, EditorStateStore& states, const FieldAddress& address,
+    void inspectValueRows(const char* label, const Type& type, EditHistory& history, EditorStateStore& states, const EditAddress& address,
                           bool customEditors, bool* removeElement = nullptr) {
       ImGui::PushID(address.key().c_str());
       ImGui::TableNextRow();
@@ -297,7 +295,7 @@ namespace authoring_sketch {
             const auto index = std::to_string(i);
             const auto elementLabel = "Element " + index;
             bool removeThis = false;
-            inspectValueRows(elementLabel.c_str(), sequenceType.elementType, history, states, address.child(index), customEditors, &removeThis);
+            inspectValueRows(elementLabel.c_str(), sequenceType.elementType, history, states, address / index, customEditors, &removeThis);
             if (removeThis) {
               remove = i;
             }
@@ -323,7 +321,7 @@ namespace authoring_sketch {
         }
       } else if (expanded) {
         for (const auto& field : type.fields) {
-          inspectValueRows(field->friendlyName.c_str(), *field->type, history, states, address.child(field->name), customEditors);
+          inspectValueRows(field->friendlyName.c_str(), *field->type, history, states, address / field->name, customEditors);
         }
       }
 
@@ -337,7 +335,7 @@ namespace authoring_sketch {
 
     // A single table keeps controls aligned across foldouts. Compact padding
     // preserves the normal control height while reducing gaps between rows.
-    void inspectValue(const char* label, const Type& type, EditHistory& history, EditorStateStore& states, const FieldAddress& address,
+    void inspectValue(const char* label, const Type& type, EditHistory& history, EditorStateStore& states, const EditAddress& address,
                       bool customEditors) {
       ImGui::PushID(address.key().c_str());
       ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(4.0f, 1.0f));
@@ -424,7 +422,7 @@ namespace authoring_sketch {
     ImGui::EndDisabled();
     ImGui::SameLine();
     if (ImGui::Button("Reset values")) {
-      sketch.history.execute("Reset component", {{FieldAddress{}, sketch.defaults.serialize()}});
+      sketch.history.execute("Reset component", {{EditAddress{}, sketch.defaults.serialize()}});
       sketch.error.clear();
       sketch.status = "Values reset. Serialize to update the JSON text.";
     }
@@ -433,7 +431,7 @@ namespace authoring_sketch {
       if (ImGui::BeginTabItem("Inspector")) {
         // Reserve footer space so validation errors remain visible below the editor.
         ImGui::BeginChild("Editable component", ImVec2(0, -60));
-        inspectValue("ExampleComponent", *sketch.value.type, sketch.history, sketch.editorStates, FieldAddress{}, sketch.customEditors);
+        inspectValue("ExampleComponent", *sketch.value.type, sketch.history, sketch.editorStates, EditAddress{}, sketch.customEditors);
         ImGui::EndChild();
         ImGui::EndTabItem();
       }
@@ -448,7 +446,7 @@ namespace authoring_sketch {
           try {
             // Use defaults, rather than the current edits, as the load baseline.
             auto loaded = sketch.defaults.deserialize(json::parse(sketch.document), "ExampleComponent");
-            sketch.history.execute("Load JSON", {{FieldAddress{}, loaded.serialize()}});
+            sketch.history.execute("Load JSON", {{EditAddress{}, loaded.serialize()}});
             sketch.error.clear();
             sketch.status = "Loaded JSON. Missing fields use component defaults.";
           } catch (const std::exception& error) {
@@ -488,7 +486,7 @@ namespace authoring_sketch {
           EditorStateStore states;
           ImGui::BeginChild("Native component", ImVec2(0, -60));
           ImGui::BeginDisabled();
-          inspectValue("Native ExampleComponent", *snapshot.type, history, states, FieldAddress{}, sketch.customEditors);
+          inspectValue("Native ExampleComponent", *snapshot.type, history, states, EditAddress{}, sketch.customEditors);
           ImGui::EndDisabled();
           ImGui::EndChild();
         }

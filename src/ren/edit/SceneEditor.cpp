@@ -6,23 +6,31 @@
 namespace ren::edit {
 
   //=========================
-  // Field addresses
+  // Edit addresses
   //=========================
 
-  FieldAddress FieldAddress::child(std::string name) const {
-    FieldAddress result = *this;
-    result.fields.push_back(std::move(name));
+  EditAddress EditAddress::operator/(std::string segment) const {
+    EditAddress result = *this;
+    result.segments.push_back(std::move(segment));
     return result;
   }
 
 
-  std::string FieldAddress::key() const { return nlohmann::json::array({root, fields}).dump(); }
+  bool EditAddress::contains(const EditAddress& other) const {
+    return other.segments.size() >= segments.size() && std::equal(segments.begin(), segments.end(), other.segments.begin());
+  }
 
 
-  std::string FieldAddress::display() const {
-    std::string result = root;
-    for (const auto& field : fields) {
-      result += "." + field;
+  std::string EditAddress::key() const { return nlohmann::json(segments).dump(); }
+
+
+  std::string EditAddress::display() const {
+    std::string result;
+    for (size_t i = 0; i < segments.size(); ++i) {
+      if (i != 0) {
+        result += "/";
+      }
+      result += segments[i];
     }
     return result;
   }
@@ -30,10 +38,7 @@ namespace ren::edit {
 
   // Parent and child snapshots in one edit make replay order ambiguous. Keep
   // custom editor batches at one field depth, or use independent sibling paths.
-  static bool overlaps(const FieldAddress& first, const FieldAddress& second) {
-    const auto count = std::min(first.fields.size(), second.fields.size());
-    return first.root == second.root && std::equal(first.fields.begin(), first.fields.begin() + count, second.fields.begin());
-  }
+  static bool overlaps(const EditAddress& first, const EditAddress& second) { return first.contains(second) || second.contains(first); }
 
 
 
@@ -198,7 +203,7 @@ namespace ren::edit {
   }
 
 
-  nlohmann::json EditHistory::read(const FieldAddress& address) const { return document.read(address); }
+  nlohmann::json EditHistory::read(const EditAddress& address) const { return document.read(address); }
 
 
   bool EditHistory::isOwner(std::uint64_t owner) const { return pending.has_value() && pendingOwner == owner; }
@@ -231,7 +236,7 @@ namespace ren::edit {
   void EditorStateStore::clear() { values.clear(); }
 
 
-  EditContext::EditContext(EditHistory& history, EditorStateStore& states, FieldAddress address, std::uint64_t widget)
+  EditContext::EditContext(EditHistory& history, EditorStateStore& states, EditAddress address, std::uint64_t widget)
       : history(history)
       , states(states)
       , address(std::move(address))
@@ -260,7 +265,7 @@ namespace ren::edit {
     if (interaction.changed) {
       try {
         for (const auto& write : candidates) {
-          if (write.address.fields.size() < address.fields.size() || !overlaps(address, write.address)) {
+          if (!address.contains(write.address)) {
             throw std::runtime_error("Editor write escapes field: " + write.address.display());
           }
         }
@@ -282,14 +287,14 @@ namespace ren::edit {
 
 
   EditContext EditContext::child(std::string field, std::uint64_t childWidget) const {
-    return EditContext(history, states, address.child(std::move(field)), childWidget);
+    return EditContext(history, states, address / std::move(field), childWidget);
   }
 
 
   std::uint64_t EditContext::getRevision() const { return history.getRevision(); }
 
 
-  const FieldAddress& EditContext::getAddress() const { return address; }
+  const EditAddress& EditContext::getAddress() const { return address; }
 
 
   const std::string& EditContext::getError() const { return state<Feedback>().error; }

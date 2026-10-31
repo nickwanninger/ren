@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <map>
 #include <optional>
+#include <span>
 #include <string>
 #include <tuple>
 #include <typeindex>
@@ -13,14 +14,20 @@
 
 namespace ren::edit {
 
-  // Addresses a component root and its nested fields within one document.
-  // Paths store segments, so punctuation in a field name stays unambiguous.
-  struct FieldAddress {
-    std::string root = "component";
-    std::vector<std::string> fields;
-
+  // Addresses one value in a document as a list of path segments. Each document
+  // decides what its segments mean; the empty address is the document root.
+  // `/` appends one segment and never splits it, so a field named "a.b" or "a/b"
+  // stays one segment.
+  class EditAddress {
+   public:
     // Returns a child address without retaining a pointer into document data.
-    FieldAddress child(std::string name) const;
+    EditAddress operator/(std::string segment) const;
+
+    // Returns the segments in order, starting at the document root.
+    std::span<const std::string> parts() const { return segments; }
+
+    // Reports whether `other` is this address or an address inside it.
+    bool contains(const EditAddress& other) const;
 
     // Returns an unambiguous key for transient editor state.
     std::string key() const;
@@ -28,14 +35,17 @@ namespace ren::edit {
     // Returns a readable path for history labels and errors.
     std::string display() const;
 
-    // Compares the root and every field segment.
-    bool operator==(const FieldAddress& other) const = default;
+    // Compares every segment.
+    bool operator==(const EditAddress& other) const = default;
+
+   private:
+    std::vector<std::string> segments;
   };
 
 
   // Supplies a candidate value at one address. Documents validate candidates.
   struct PropertyWrite {
-    FieldAddress address;
+    EditAddress address;
     nlohmann::json value;
   };
 
@@ -48,7 +58,7 @@ namespace ren::edit {
     virtual ~PropertyDocument() = default;
 
     // Returns an owned snapshot. Missing roots or fields throw with their address.
-    virtual nlohmann::json read(const FieldAddress& address) const = 0;
+    virtual nlohmann::json read(const EditAddress& address) const = 0;
 
     // Applies a batch atomically. Invalid data throws and leaves the model intact.
     virtual void apply(const std::vector<PropertyWrite>& writes) = 0;
@@ -57,7 +67,7 @@ namespace ren::edit {
 
   // Stores original and final field snapshots. Fields within an edit cannot overlap.
   struct FieldChange {
-    FieldAddress address;
+    EditAddress address;
     nlohmann::json before;
     nlohmann::json after;
   };
@@ -113,7 +123,7 @@ namespace ren::edit {
     bool redo();
 
     // Returns an owned value snapshot for an editor.
-    nlohmann::json read(const FieldAddress& address) const;
+    nlohmann::json read(const EditAddress& address) const;
 
     // Identifies the owner of the active session, if one exists.
     bool isOwner(std::uint64_t owner) const;
@@ -155,7 +165,7 @@ namespace ren::edit {
     // Returns persistent state for this editor instance. State must be copyable
     // and default constructible because std::any owns it.
     template <typename T>
-    T& get(const FieldAddress& address, std::uint64_t widget) {
+    T& get(const EditAddress& address, std::uint64_t widget) {
       auto& value = values[{address.key(), widget, std::type_index(typeid(T))}];
       if (!value.has_value()) {
         value = T{};
@@ -186,7 +196,7 @@ namespace ren::edit {
   class EditContext {
    public:
     // Binds a field and widget within an inspector. Dependencies must outlive drawing.
-    EditContext(EditHistory& history, EditorStateStore& states, FieldAddress address, std::uint64_t widget);
+    EditContext(EditHistory& history, EditorStateStore& states, EditAddress address, std::uint64_t widget);
 
     // Returns the current authored value as an owned snapshot.
     nlohmann::json read() const;
@@ -212,7 +222,7 @@ namespace ren::edit {
     std::uint64_t getRevision() const;
 
     // Returns the bound address for custom editors that submit a child batch.
-    const FieldAddress& getAddress() const;
+    const EditAddress& getAddress() const;
 
     // Returns the last candidate error for this editor, or an empty string.
     const std::string& getError() const;
@@ -224,7 +234,7 @@ namespace ren::edit {
 
     EditHistory& history;
     EditorStateStore& states;
-    FieldAddress address;
+    EditAddress address;
     std::uint64_t widget;
   };
 

@@ -75,19 +75,50 @@ namespace {
 
 
   //=========================
+  // Edit addresses
+  //=========================
+
+  // Rule: `/` adds exactly one segment. A dot or slash inside a field name does
+  // not split it, so the key of ["a.b"] differs from the key of ["a", "b"].
+  void testAddressSegmentsDoNotSplit() {
+    const auto dotted = edit::EditAddress() / "a.b";
+    const auto nested = edit::EditAddress() / "a" / "b";
+
+    verify(dotted.parts().size() == 1 && nested.parts().size() == 2, "`/` must add one segment");
+    verify(dotted.key() != nested.key(), "Keys must keep segment boundaries");
+    verify(!(dotted == nested), "Addresses with different segments must differ");
+    verify(nested.display() == "a/b", "display() must join segments with /");
+  }
+
+
+  // Rule: an address contains itself and every address below it, and nothing else.
+  // Sessions use this to reject overlapping writes and writes outside an editor.
+  void testAddressContains() {
+    const auto v = edit::EditAddress() / "v";
+
+    verify(v.contains(v), "An address must contain itself");
+    verify(v.contains(v / "x"), "An address must contain its children");
+    verify(!(v / "x").contains(v), "A child must not contain its parent");
+    verify(!v.contains(edit::EditAddress() / "vx"), "A sibling with a longer name must not be contained");
+    verify(edit::EditAddress().contains(v), "The root must contain every address");
+  }
+
+
+
+  //=========================
   // Edit history
   //=========================
 
-  // Stores plain JSON. Each address field is an object key below the root.
+  // Stores plain JSON. Each address segment is an object key below the root.
   // A write of the string "invalid" fails, so tests can check atomic batches.
   struct JsonDocument final : edit::PropertyDocument {
     nlohmann::json data = {{"a", 1}, {"b", 2}, {"v", {{"x", 0}, {"y", 0}}}};
 
 
-    nlohmann::json read(const edit::FieldAddress &address) const override {
+    nlohmann::json read(const edit::EditAddress &address) const override {
       const auto *node = &data;
-      for (const auto &field : address.fields) {
-        node = &node->at(field);
+      for (const auto &segment : address.parts()) {
+        node = &node->at(segment);
       }
       return *node;
     }
@@ -100,8 +131,8 @@ namespace {
           throw std::runtime_error("Invalid value at " + write.address.display());
         }
         auto *node = &candidate;
-        for (const auto &field : write.address.fields) {
-          node = &node->at(field);
+        for (const auto &segment : write.address.parts()) {
+          node = &node->at(segment);
         }
         *node = write.value;
       }
@@ -110,7 +141,13 @@ namespace {
   };
 
 
-  edit::FieldAddress at(std::vector<std::string> fields) { return edit::FieldAddress{.fields = std::move(fields)}; }
+  edit::EditAddress at(std::vector<std::string> segments) {
+    edit::EditAddress address;
+    for (auto &segment : segments) {
+      address = address / std::move(segment);
+    }
+    return address;
+  }
 
 
   void testSessionMakesOneEntry() {
@@ -236,6 +273,9 @@ namespace {
 int main() {
   testRegistrationUsesObjTypes();
   testTransformRoundTrip();
+
+  testAddressSegmentsDoNotSplit();
+  testAddressContains();
 
   testSessionMakesOneEntry();
   testUnchangedSessionKeepsRedo();
