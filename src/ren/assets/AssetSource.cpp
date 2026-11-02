@@ -105,6 +105,27 @@ namespace ren {
   }
 
 
+  Option<json> AssetSource::loadJSON(const std::string_view& name) {
+    std::vector<u8> data;
+    if (!load(name, data)) {
+      return None;
+    }
+
+    try {
+      // 1. data      -> The source string
+      // 2. nullptr   -> No callback function
+      // 3. true      -> Throw exceptions on errors
+      // 4. true      -> IGNORE COMMENTS
+      // 5. true      -> IGNORE TRAILING COMMAS
+      auto j = json::parse(data, nullptr, true, true, true);
+
+      return j;
+    } catch (const json::parse_error&) {
+      return None;
+    }
+  }
+
+
 
 
   FilesystemAssetSource::FilesystemAssetSource(const std::filesystem::path& root)

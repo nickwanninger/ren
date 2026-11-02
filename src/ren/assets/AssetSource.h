@@ -290,6 +290,18 @@ namespace ren {
       std::vector<u8> buffer(64 * 1024);
       return updateSHA256(name, hasher, buffer);
     }
+
+
+    /**
+     * @brief Reads a file for its json value.
+     * 
+     * This exists mostly for convenience and avoids having to write the same
+     * boilerplate code over and over again.
+     *
+     * @param name The name of the file to read.
+     * @return The json value of the file, or an empty json object if the file is not found or is not valid json.
+     */
+    Option<json> loadJSON(const std::string_view &name);
   };
 
 
