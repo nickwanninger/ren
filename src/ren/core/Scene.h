@@ -55,19 +55,15 @@ namespace ren {
     glm::vec3 translation;
     glm::quat rotation;
     glm::vec3 scale;
-
   };
 
   // Represents a type of a field in a component.
-  class EntityComponentFieldType {
-
-  };
+  class EntityComponentFieldType {};
 
   // A field is a value of a field of a component. It has a type,
   // and can critically be serialized, deserialized, and baked into
   // a runtime component.
   class EntityComponentFieldBase {
-
     // Serialize the field into a json object.
     virtual void serialize(json &j) = 0;
     // Deserialize the field from a json object.
@@ -99,19 +95,36 @@ namespace ren {
   // A scene entity is a node in the scene graph. It is the authoring/serialized
   // representation of a node in the scene. The Ren RUNTIME representation of a
   // node is a flecs entity with all the same components as the scene node.
-  class SceneEntity {
+  class SceneNode {
    public:
+    UUID id;
     std::string name;
 
-    // The components of this node.
+    weak_ref<SceneNode> parent;            // Optional parent node.
+    std::vector<ref<SceneNode>> children;  // Child nodes.
   };
+
 
   // A scene is a collection of entities with components that can be rendered.
   class Scene {
    public:
+    // The version of the scene format.
+    static constexpr u32 version = 1;
     // Construct the scene using some entity as a root
     Scene();
 
+    // Load the scene from a serialized json object.
+    // There are a lot of ways this can fail, so it throws (icky) exceptions on
+    // failure. You've been warned!
+    void load(json &j);
+
+    // Clear the scene of all nodes.
+    void clear();
+    json serialize(void) const;
+
    protected:
+    UUID id;                               // The ID of the scene. (.id field from json)
+    std::vector<ref<SceneNode>> roots;     // The root nodes of the scene. (.nodes field from json)
+    std::map<UUID, ref<SceneNode>> nodes;  // The ndoes in teh scene
   };
 }  // namespace ren
