@@ -1,6 +1,8 @@
 #define IMGUI_DEFINE_MATH_OPERATORS
 #include <ren/core/ui/EditorUI.h>
 
+#include <cstdarg>
+
 #include <imgui/imgui.h>
 #include <imgui/imgui_internal.h>
 #include <imnodes/imnodes.h>
@@ -9,6 +11,11 @@
 namespace ren::eui {
 
   static ImFont *iconFont = nullptr;
+  static ImFont *defaultFont = nullptr;
+  static ImFont *monoFont = nullptr;
+
+
+  ImFont *detail::getMonoFont() { return monoFont; }
 
 
   bool ExtendedButton(const char *label, const char *icon, const Style &buttonStyle, ImVec2 size_arg) {
@@ -165,6 +172,26 @@ namespace ren::eui {
     ImGui::Dummy(ImGui::CalcTextSize(text));
   }
 
+  void Text(const char *fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    ImGui::TextV(fmt, args);
+    va_end(args);
+  }
+
+
+  void TextMono(const char *fmt, ...) {
+    ImGui::PushFont(monoFont);
+
+    va_list args;
+    va_start(args, fmt);
+    ImGui::TextV(fmt, args);
+    va_end(args);
+
+    ImGui::PopFont();
+  }
+
+
   void loadRenFonts(ren::AssetManager &am) {
     auto &io = ImGui::GetIO();
     auto loadAndMergeFont = [&](const char *path, float size, bool merge) -> ImFont * {
@@ -184,9 +211,10 @@ namespace ren::eui {
       return nullptr;
     };
 
-    // loadAndMergeFont("fonts/MapleMono-Medium.ttf", 11.0, false);
-    loadAndMergeFont("fonts/Inter-Regular.ttf", 13.0, false);
+    monoFont = loadAndMergeFont("fonts/MapleMono-Medium.ttf", 11.0, false);
+    defaultFont = loadAndMergeFont("fonts/Inter-Regular.ttf", 13.0, false);
     iconFont = loadAndMergeFont("fonts/lucide.ttf", 10.0, false);
+    io.FontDefault = defaultFont;
   }
 
 

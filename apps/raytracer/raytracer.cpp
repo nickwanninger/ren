@@ -6,6 +6,8 @@
 
 #include <ren/core/Flag.h>
 #include <ren/assets/MeshScene.hpp>
+#include "ren/core/ui/Widgets.h"
+#include "ren/core/ui/EditorUI.h"
 #include "ren/renderer/RenderWorld.h"
 #include <ren/core/ThreadPool.h>
 #include <ren/misc/resource_usage.h>
@@ -364,48 +366,51 @@ class RaytraceViewport : public ren::EditorViewport {
 
     root.set("debugView", debugView);
     root.set("debugTestScale", debugTestScale);
-    bloom->exposure = exposure;
     bloom->bypass = debugView != 0;
 
     shader.drawFullscreenTriangle();
   }
 
 
-  void inspect(void) {
-    ImGui::Text("Raytracer viewport");
-    ImGui::SliderInt("Max Bounces", reinterpret_cast<int *>(&maxBounces), 0, 10);
-    ImGui::SliderInt("Rays Per Pixel", reinterpret_cast<int *>(&raysPerPixel), 1, 16);
-    ImGui::SliderFloat("Sun Strength", &sunStrength, 0.0f, 20.0f, "%.2f");
-    ImGui::Checkbox("Light Sampling", &lightSampling);
-    ImGui::SameLine();
-    ImGui::Text("(%zu emissive meshes)", lights.size());
-    ImGui::Checkbox("Randomize Seed", &randomizeSeed);
-    if (!randomizeSeed) {
-      ImGui::DragInt("Seed", reinterpret_cast<int *>(&randomSeed));
-    }
+  void inspect(ren::eui::Ui &ui) {
+    ui.group("Raytracer Settings", [&](ren::eui::Ui &ui) {
+      ui.slide("Max Bounces", maxBounces, {.min = 0, .max = 10});
+      ui.slide("Rays Per Pixel", raysPerPixel, {.min = 1, .max = 16});
+      ui.slide("Sun Strength", sunStrength, {.min = 0.0f, .max = 20.0f});
+    });
 
-    ImGui::Checkbox("Accumulate", &accumulate);
-    ImGui::SameLine();
-    const auto size = getRenderSize();
-    const u64 raysPerFrame = static_cast<u64>(raysPerPixel) * size.x * size.y;
-    const u64 accumulatedRays = static_cast<u64>(accumulatedFrames + 1) * raysPerFrame;
-    ImGui::Text("(%u frames, %.2fM rays)", accumulatedFrames + 1, accumulatedRays / 1e6f);
-    ImGui::Text("Primary rays per frame: %zu", static_cast<size_t>(raysPerFrame));
-    ImGui::SliderFloat("Exposure (stops)", &exposure, -10.0f, 10.0f, "%.2f");
+    ui.inspect("Accumulate", accumulate);
+    ui.inspect("Light Sampling", lightSampling);
+    ui.text("(%zu emissive meshes)", lights.size());
+
+    bool fixedSeed = !randomizeSeed;
+    ui.group("Seed", &fixedSeed, [&](ren::eui::Ui &ui) { ui.drag("Seed", randomSeed, {.step = 1}); });
+    randomizeSeed = !fixedSeed;
+
+    ui.content([&](ren::eui::Ui &ui) {
+      const auto size = getRenderSize();
+      const u64 raysPerFrame = static_cast<u64>(raysPerPixel) * size.x * size.y;
+      const u64 accumulatedRays = static_cast<u64>(accumulatedFrames + 1) * raysPerFrame;
+      ui.text("(%u frames, %.2fM rays)", accumulatedFrames + 1, accumulatedRays / 1e6f);
+      ui.text("Primary rays per frame: %zu", static_cast<size_t>(raysPerFrame));
+    });
     if (bloom) {
-      bloom->inspect();
+      bloom->inspect(ui);
     }
-    ImGui::SeparatorText("Debug Views");
-
-    ImGui::SliderInt("Debug View", reinterpret_cast<int *>(&debugView), 0, 2);
-    if (debugView != 0) {
-      if (debugView == 1) {
-        ImGui::Text("Debug View: Triangle Tests");
-      } else if (debugView == 2) {
-        ImGui::Text("Debug View: Bounds Tests");
+    ui.separator("Debug Views");
+    ui.group("Raytracer Debug", [&](ren::eui::Ui &ui) {
+      ui.slide("Debug View", debugView, {.min = 0, .max = 2});
+      if (debugView != 0) {
+        ui.content([&](ren::eui::Ui &ui) {
+          if (debugView == 1) {
+            ui.text("Debug View: Triangle Tests");
+          } else if (debugView == 2) {
+            ui.text("Debug View: BVH Node Tests");
+          }
+        });
+        ui.drag("Debug Test Scale", debugTestScale, {.step = 1});
       }
-      ImGui::DragInt("Debug Test Scale", reinterpret_cast<int *>(&debugTestScale), 1, 10000);
-    }
+    });
   }
 };
 
@@ -475,12 +480,12 @@ class RaytraceWindow : public ren::Window {
       snprintf(buf, sizeof(buf), "%4d FPS DT=%.3f   |   VRAM: %.2f/%.2f MB (%7.1f%%)   |   Host: %.2f MB",
                (int)m_framerateCounter.getAverageFramerate(), dt, vramUsage / 1024.0 / 1024.0, vramBudget / 1024.0 / 1024.0,
                (vramUsage * 100.0) / vramBudget, hostAnonymous / 1024.0 / 1024.0);
-      ImGui::Text("%s", buf);
+      ren::eui::draw([&](ren::eui::Ui &ui) { ui.textMono("%s", buf); });
     }
 
 
     ImGui::Separator();
-    m_viewport->inspect();
+    ren::eui::valueTable("Raytracer Viewport", [&](ren::eui::Ui &ui) { m_viewport->inspect(ui); });
     ImGui::End();
 
     // The ECS systems calculate the world matrix of each transform.
@@ -494,11 +499,11 @@ class RaytraceWindow : public ren::Window {
     auto &renderer = ren::Renderer::get();
 
     m_viewport->drawWindow("Viewport A", m_deltaTime);
-    if (m_viewport->previousScene) {
-      ImGui::Begin("Previous raytrace result");
-      ImGui::Image(renderer.getGraphImages().request(m_viewport->previousScene), ImVec2(384, 216));
-      ImGui::End();
-    }
+    // if (m_viewport->previousScene) {
+    //   ImGui::Begin("Previous raytrace result");
+    //   ImGui::Image(renderer.getGraphImages().request(m_viewport->previousScene), ImVec2(384, 216));
+    //   ImGui::End();
+    // }
     renderer.prepareGraph();
     renderer.recordGraph();
 

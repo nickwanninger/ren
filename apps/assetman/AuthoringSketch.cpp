@@ -70,7 +70,7 @@ namespace authoring_sketch {
       }
 
 
-      bool inspectPrimitive(const char* label, T& value) const final { return ImGui::InputText(label, &value.id); }
+      bool inspectPrimitive(ren::eui::Ui& ui, const char* label, T& value) const final { return ui.inspect(label, value.id); }
     };
 
 
@@ -80,7 +80,7 @@ namespace authoring_sketch {
     };
 
     struct ColorEditor final : Editor {
-      void draw(EditContext& context) const override {
+      void draw(ren::eui::Ui& ui, EditContext& context) const override {
         auto candidate = context.read();
         float rgba[] = {
             candidate.at("r").get<float>(),
@@ -90,7 +90,7 @@ namespace authoring_sketch {
         };
 
         // ColorEdit4 draws several items and a picker popup; edit() treats them as one control.
-        context.edit([&] { return ImGui::ColorEdit4("##value", rgba, ImGuiColorEditFlags_Float); },
+        context.edit([&] { return ui.imgui([&] { return ImGui::ColorEdit4("##value", rgba, ImGuiColorEditFlags_Float); }); },
                      [&] {
                        candidate["r"] = rgba[0];
                        candidate["g"] = rgba[1];
@@ -240,8 +240,8 @@ namespace authoring_sketch {
     // All rows share the same columns. Tree indentation affects labels only;
     // nested fields retain the same control width and horizontal position.
     // Addresses survive document replacement during editor callbacks.
-    void inspectValueRows(const char* label, const Type& type, PropertyEditor& properties, EditorStateStore& states, const EditAddress& address,
-                          bool customEditors, bool* removeElement = nullptr) {
+    void inspectValueRows(ren::eui::Ui& ui, const char* label, const Type& type, PropertyEditor& properties, EditorStateStore& states,
+                          const EditAddress& address, bool customEditors, bool* removeElement = nullptr) {
       ImGui::PushID(address.key().c_str());
       ImGui::TableNextRow();
       ImGui::TableSetColumnIndex(0);
@@ -262,7 +262,7 @@ namespace authoring_sketch {
       if (control) {
         ImGui::SetNextItemWidth(-1.0f);
         EditContext context(properties, states, address, ImGui::GetID("##value"));
-        editor->draw(context);
+        editor->draw(ui, context);
         if (!context.getError().empty()) {
           ImGui::TextWrapped("%s", context.getError().c_str());
         }
@@ -289,7 +289,7 @@ namespace authoring_sketch {
             const auto index = std::to_string(i);
             const auto elementLabel = "Element " + index;
             bool removeThis = false;
-            inspectValueRows(elementLabel.c_str(), sequenceType.elementType, properties, states, address / index, customEditors, &removeThis);
+            inspectValueRows(ui, elementLabel.c_str(), sequenceType.elementType, properties, states, address / index, customEditors, &removeThis);
             if (removeThis) {
               remove = i;
             }
@@ -315,7 +315,7 @@ namespace authoring_sketch {
         }
       } else if (expanded) {
         for (const auto& field : type.fields) {
-          inspectValueRows(field->friendlyName.c_str(), *field->type, properties, states, address / field->name, customEditors);
+          inspectValueRows(ui, field->friendlyName.c_str(), *field->type, properties, states, address / field->name, customEditors);
         }
       }
 
@@ -329,8 +329,8 @@ namespace authoring_sketch {
 
     // A single table keeps controls aligned across foldouts. Compact padding
     // preserves the normal control height while reducing gaps between rows.
-    void inspectValue(const char* label, const Type& type, PropertyEditor& properties, EditorStateStore& states, const EditAddress& address,
-                      bool customEditors) {
+    void inspectValue(ren::eui::Ui& ui, const char* label, const Type& type, PropertyEditor& properties, EditorStateStore& states,
+                      const EditAddress& address, bool customEditors) {
       ImGui::PushID(address.key().c_str());
       ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(4.0f, 1.0f));
       ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4.0f, 2.0f));
@@ -341,7 +341,7 @@ namespace authoring_sketch {
         ImGui::TableSetupColumn("Field", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_IndentEnable, 0.38f);
         ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_IndentDisable, 0.62f);
         ImGui::TableSetupColumn("Action", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_IndentDisable, ImGui::GetFrameHeight());
-        inspectValueRows(label, type, properties, states, address, customEditors);
+        inspectValueRows(ui, label, type, properties, states, address, customEditors);
         ImGui::EndTable();
       }
       ImGui::PopStyleVar(4);
@@ -380,7 +380,7 @@ namespace authoring_sketch {
 
 
     // Draws the whole edit loop for one value: read, draw, report flags, apply.
-    void drawNativeFloat(NativeFloat& native) {
+    void drawNativeFloat(ren::eui::Ui& ui, NativeFloat& native) {
       ImGui::TextWrapped("Drives EditHistory directly. Drag a value or Ctrl+click and type, and press Escape during an edit to cancel it.");
 
       ImGui::BeginDisabled(!native.history.canUndo());
@@ -405,17 +405,21 @@ namespace authoring_sketch {
 
       // editValue() passes a copy to the lambda and reads the ImGui state after
       // it. An edit over many frames becomes one entry; Escape restores the value.
-      editValue(native.history, "Value", native.value, [](float& value) { return ImGui::DragFloat("Value", &value, 0.01f); });
+      ui.valueTable("Native values", [&](ren::eui::Ui& ui) {
+        editValue(ui, native.history, "Value", native.value, [](ren::eui::Ui& ui, float& value) { return ui.drag("Value", value, {.step = 0.01f}); });
 
-      // Without a lambda, editValue() draws the default eui::Inspect widget. For a
-      // vector, that is one drag field per axis, and the axes act as one control:
-      // an edit on any axis records the whole vector.
-      editValue(native.history, "Position", native.position);
+        // Without a lambda, editValue() draws the default Ui::inspect widget. For a
+        // vector, that is one drag field per axis, and the axes act as one control:
+        // an edit on any axis records the whole vector.
+        editValue(ui, native.history, "Position", native.position);
 
-      // Sliders keep values between their bounds; a vector uses the same bounds per component.
-      editValue(native.history, "Opacity", native.opacity, [](float& value) { return ren::eui::Slide("Opacity", value, 0.0f, 1.0f); });
-      editValue(native.history, "Visible", native.visible);
-      editValue(native.history, "Tint", native.tint, [](glm::vec3& value) { return ren::eui::Slide("Tint", value, 0.0f, 1.0f); });
+        // Sliders keep values between their bounds; a vector uses the same bounds per component.
+        editValue(ui, native.history, "Opacity", native.opacity,
+                  [](ren::eui::Ui& ui, float& value) { return ui.slide("Opacity", value, {.min = 0.0f, .max = 1.0f}); });
+        editValue(ui, native.history, "Visible", native.visible);
+        editValue(ui, native.history, "Tint", native.tint,
+                  [](ren::eui::Ui& ui, glm::vec3& value) { return ui.slide("Tint", value, {.min = 0.0f, .max = 1.0f}); });
+      });
 
       ImGui::Separator();
       ImGui::Text("%zu applied / %zu recorded%s", native.history.getCursor(), native.history.getEntries().size(),
@@ -462,7 +466,7 @@ namespace authoring_sketch {
 
   // Uses one persistent session. Inspector edits affect its tree immediately;
   // JSON loading and baking replace their results only after validation succeeds.
-  void draw() {
+  void draw(ren::eui::Ui& ui) {
     static Sketch sketch;
     static NativeFloat native;
     const auto previousRevision = sketch.history.getRevision();
@@ -487,15 +491,17 @@ namespace authoring_sketch {
       sketch.status = "Values reset. Serialize to update the JSON text.";
     }
 
-    if (ren::eui::BeginTabBar("Authoring views")) {
-      if (ImGui::BeginTabItem("Inspector")) {
+    ui.tabBar("Authoring views", [&](ren::eui::Ui& ui) {
+      ui.tab("Inspector", [&](ren::eui::Ui& ui) {
         // Reserve footer space so validation errors remain visible below the editor.
-        ImGui::BeginChild("Editable component", ImVec2(0, -60));
-        inspectValue("ExampleComponent", *sketch.value.type, sketch.properties, sketch.editorStates, EditAddress{}, sketch.customEditors);
-        ImGui::EndChild();
-        ImGui::EndTabItem();
-      }
-      if (ImGui::BeginTabItem("JSON")) {
+        ui.child(
+            "Editable component",
+            [&](ren::eui::Ui& ui) {
+              inspectValue(ui, "ExampleComponent", *sketch.value.type, sketch.properties, sketch.editorStates, EditAddress{}, sketch.customEditors);
+            },
+            ImVec2(0, -60));
+      });
+      ui.tab("JSON", [&](ren::eui::Ui& ui) {
         if (ImGui::Button("Serialize")) {
           sketch.document = sketch.value.serialize().dump(2);
           sketch.error.clear();
@@ -519,9 +525,8 @@ namespace authoring_sketch {
         }
         ImGui::TextWrapped("JSON changes take effect when you select Deserialize.");
         ImGui::InputTextMultiline("##Document", &sketch.document, ImVec2(-1, 230));
-        ImGui::EndTabItem();
-      }
-      if (ImGui::BeginTabItem("Baked component")) {
+      });
+      ui.tab("Baked component", [&](ren::eui::Ui& ui) {
         if (ImGui::Button("Bake")) {
           try {
             // Editors permit incomplete reference text. Use the JSON decoder to
@@ -545,25 +550,23 @@ namespace authoring_sketch {
           EditHistory history;
           PropertyEditor properties(model, history);
           EditorStateStore states;
-          ImGui::BeginChild("Native component", ImVec2(0, -60));
-          ImGui::BeginDisabled();
-          inspectValue("Native ExampleComponent", *snapshot.type, properties, states, EditAddress{}, sketch.customEditors);
-          ImGui::EndDisabled();
-          ImGui::EndChild();
+          ui.child(
+              "Native component",
+              [&](ren::eui::Ui& ui) {
+                ImGui::BeginDisabled();
+                inspectValue(ui, "Native ExampleComponent", *snapshot.type, properties, states, EditAddress{}, sketch.customEditors);
+                ImGui::EndDisabled();
+              },
+              ImVec2(0, -60));
         }
-        ImGui::EndTabItem();
-      }
-      if (ImGui::BeginTabItem("Schema")) {
+      });
+      ui.tab("Schema", [&](ren::eui::Ui& ui) {
         ImGui::BeginChild("Schema fields", ImVec2(0, -60));
         drawSchema(getType<ExampleComponent>(), "ExampleComponent");
         ImGui::EndChild();
-        ImGui::EndTabItem();
-      }
-      if (ImGui::BeginTabItem("Native float")) {
-        drawNativeFloat(native);
-        ImGui::EndTabItem();
-      }
-      if (ImGui::BeginTabItem("History")) {
+      });
+      ui.tab("Native float", [&](ren::eui::Ui& ui) { drawNativeFloat(ui, native); });
+      ui.tab("History", [&](ren::eui::Ui& ui) {
         ImGui::Text("%zu applied / %zu recorded%s", sketch.history.getCursor(), sketch.history.getEntries().size(),
                     sketch.history.isOpen() ? " (editing)" : "");
         ImGui::BeginChild("Edit history", ImVec2(0, -60));
@@ -582,10 +585,8 @@ namespace authoring_sketch {
           ImGui::PopID();
         }
         ImGui::EndChild();
-        ImGui::EndTabItem();
-      }
-      ImGui::EndTabBar();
-    }
+      });
+    });
 
     // Switching tabs or hiding a custom editor finishes its active interaction.
     sketch.history.endFrame();

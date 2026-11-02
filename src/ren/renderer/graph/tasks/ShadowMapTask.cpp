@@ -1,3 +1,4 @@
+#include <ren/core/ui/Widgets.h>
 #include "ShadowMapTask.h"
 #include <ren/core/Application.h>
 #include <ren/renderer/shader/ShaderCache.h>
@@ -80,13 +81,12 @@ namespace ren {
 #endif
   }
 
-  void ShadowMapTask::inspect(void) {
-    ImGui::SliderFloat("Shadow Map Ortho Size", &shadowMapOrthoSize, 1.0f, 100.0f);
-    ImGui::SliderFloat("Near Plane", &nearPlane, 0.01f, 10.0f);
-    ImGui::SliderFloat("Far Plane", &farPlane, 10.0f, 100.0f);
-    if (ImGui::SliderFloat3("Sun Direction", &sunDirection.x, -1.0f, 1.0f)) {
+  void ShadowMapTask::inspect(eui::Ui &ui) {
+    ui.slide("Shadow Map Ortho Size", shadowMapOrthoSize, {.min = 1.0f, .max = 100.0f});
+    ui.slide("Near Plane", nearPlane, {.min = 0.01f, .max = 10.0f});
+    ui.slide("Far Plane", farPlane, {.min = 10.0f, .max = 100.0f});
+    if (ui.slide("Sun Direction", sunDirection, {.min = -1.0f, .max = 1.0f})) {
       sunDirection = glm::normalize(sunDirection);
     };
-
   }
 }  // namespace ren

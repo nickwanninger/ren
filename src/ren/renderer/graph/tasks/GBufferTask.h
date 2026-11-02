@@ -29,7 +29,7 @@ namespace ren {
 
     void prepareFrame(PrepareContext &) override;
     void run(ren::GraphRenderPassContext &ctx) const override;
-    void inspect(void) override;
+    void inspect(eui::Ui &ui) override;
 
    private:
     // One renderable that passed the checks, with its sort key.

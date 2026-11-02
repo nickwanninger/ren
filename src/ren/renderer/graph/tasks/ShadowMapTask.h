@@ -28,7 +28,7 @@ namespace ren {
 
     void run(ren::GraphRenderPassContext &ctx) const override;
 
-    void inspect(void) override;
+    void inspect(eui::Ui &ui) override;
   };
 
 

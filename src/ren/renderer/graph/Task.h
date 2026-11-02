@@ -1,4 +1,5 @@
 #pragma once
+#include <ren/core/ui/Widgets.h>
 #include <ren/renderer/graph/RunContext.h>
 #include <functional>
 
@@ -30,7 +31,7 @@ namespace ren {
     virtual void run(RecordContext &) const = 0;
 
     // Show the settings of the task in ImGui.
-    virtual void inspect() {}
+    virtual void inspect(eui::Ui &ui) {}
 
 
     const std::string &name() const { return taskName; }

@@ -1,3 +1,4 @@
+#include <ren/core/ui/Widgets.h>
 #include <ren/renderer/Viewport.h>
 
 #include <ren/renderer/Renderer.h>
@@ -208,13 +209,13 @@ namespace ren {
             overlayContent();
           }
 
-          // ImGui::SliderInt("raysPerPixel", &raysPerPixel, 1, 64);
-          // ImGui::DragFloat("focusDistance", &focusDistance, 0.1f, 0.1f, 100.0f);
-          // ImGui::DragFloat("lensRadius", &lensRadius, 0.01f, 0.0f, 1.0f);
-          ImGui::DragFloat("renderScale", &renderScale, 0.01f, 0.01f, 1.0f);
-          ImGui::DragFloat("ssaoContrast", &ssaoContrast, 0.01f, 0.1f, 10.0f);
-          ImGui::SliderFloat("moveSpeed", &moveSpeed, 1.0f, 128.0f);
-          ImGui::SliderFloat("Fov", &fovDegrees, 1.0f, 179.0f);
+          eui::valueTable("Viewport controls", [&](eui::Ui &ui) {
+            ui.slide("Render Scale", renderScale, {.min = 0.01f, .max = 1.0f});
+            ui.drag("SSAO Contrast", ssaoContrast, {.min = 0.1f, .max = 10.0f, .step = 0.01f});
+
+            ui.slide("Move Speed", moveSpeed, {.min = 1.0f, .max = 128.0f});
+            ui.slide("FOV", fovDegrees, {.min = 1.0f, .max = 179.0f});
+          });
         }
       }
       ImGui::EndChild();

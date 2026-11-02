@@ -3,6 +3,7 @@
 #include <span>
 #include <string>
 #include <vector>
+#include <concepts>
 
 namespace ren::edit {
 
@@ -12,6 +13,11 @@ namespace ren::edit {
   // stays one segment.
   class EditAddress {
    public:
+    template <typename... Segments>
+      requires(std::convertible_to<Segments, std::string> && ...)
+    EditAddress(Segments&&... segments)
+        : segments{std::string(std::forward<Segments>(segments))...} {}
+
     // Returns a child address without retaining a pointer into document data.
     EditAddress operator/(std::string segment) const;
 

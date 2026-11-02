@@ -113,7 +113,7 @@ namespace ren::edit {
     virtual ~Editor() = default;
 
     // Draws the control contents and reports interaction events through the context.
-    virtual void draw(EditContext& context) const = 0;
+    virtual void draw(eui::Ui& ui, EditContext& context) const = 0;
   };
 
 }  // namespace ren::edit

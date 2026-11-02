@@ -35,7 +35,7 @@ namespace ren {
     void run(ren::GraphRenderPassContext &ctx) const override;
 
     // inspect
-    void inspect(void) override;
+    void inspect(eui::Ui &ui) override;
   };
 
 
@@ -58,7 +58,7 @@ namespace ren {
                  GraphHandle normalHandle);
 
     void run(ren::GraphRenderPassContext &ctx) const override;
-    void inspect(void) override;
+    void inspect(eui::Ui &ui) override;
   };
 
 

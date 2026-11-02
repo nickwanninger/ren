@@ -1,3 +1,4 @@
+#include <ren/core/ui/Widgets.h>
 #include "SSAOTask.h"
 #include <ren/core/Application.h>
 #include <ren/renderer/shader/ShaderCache.h>
@@ -50,11 +51,11 @@ namespace ren {
     shader.drawFullscreenTriangle();
   }
 
-  void SSAOTask::inspect(void) {
-    ImGui::DragFloat("Radius", &radius, 0.01f, 0.01f, 10.0f);
-    ImGui::DragFloat("Bias", &bias, 0.001f, 0.0f, 1.0f);
-    ImGui::SliderInt("Samples", &sampleCount, 1, 64);
-    ImGui::Separator();
+  void SSAOTask::inspect(eui::Ui &ui) {
+    ui.drag("Radius", radius, {.min = 0.01f, .max = 10.0f, .step = 0.01f});
+    ui.drag("Bias", bias, {.min = 0.0f, .max = 1.0f, .step = 0.001f});
+    ui.slide("Samples", sampleCount, {.min = 1, .max = 64});
+    ui.separator();
   }
 
 
@@ -100,6 +101,6 @@ namespace ren {
     shader.drawFullscreenTriangle();
   }
 
-  void SSAOBlurTask::inspect(void) {}
+  void SSAOBlurTask::inspect(eui::Ui &ui) {}
 
 }  // namespace ren

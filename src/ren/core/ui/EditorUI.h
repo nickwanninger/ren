@@ -15,6 +15,11 @@
 
 namespace ren::eui {
 
+  namespace detail {
+    // Returns the editor's monospace font, or null before configuration.
+    ImFont *getMonoFont();
+  }  // namespace detail
+
 
   static constexpr const char *__x = ICON_SAVE;
 
@@ -63,6 +68,12 @@ namespace ren::eui {
   inline bool IconButton(const char *icon) { return eui::ExtendedButton(nullptr, icon, {}); }
 
   void ShadowedText(const char *text);
+
+  // Draw printf-style text with the current font.
+  void Text(const char *fmt, ...) IM_FMTARGS(1);
+
+  // Draw printf-style text with the monospace font, then restore the current font.
+  void TextMono(const char *fmt, ...) IM_FMTARGS(1);
 
   // Same as ImGui::BeginTabBar, but draws the tab strip background so that the tabs look like docked tabs.
   // Call ImGui::EndTabBar when it returns true.

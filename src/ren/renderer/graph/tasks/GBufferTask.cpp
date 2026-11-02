@@ -1,3 +1,4 @@
+#include <ren/core/ui/Widgets.h>
 #include "GBufferTask.h"
 #include <ren/renderer/RenderWorld.h>
 #include <ren/core/Application.h>
@@ -171,7 +172,7 @@ namespace ren {
   }
 
 
-  void GBufferTask::inspect(void) {
-    ImGui::Text("Draws: %u  Batches: %u  Materials: %u  Skipped: %u", stats.draws, stats.batches, stats.materials, stats.skipped);
+  void GBufferTask::inspect(eui::Ui &ui) {
+    ui.text("Draws: %u  Batches: %u  Materials: %u  Skipped: %u", stats.draws, stats.batches, stats.materials, stats.skipped);
   }
 }  // namespace ren

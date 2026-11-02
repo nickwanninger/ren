@@ -5,7 +5,7 @@
 
 #include <imgui.h>
 #include <misc/cpp/imgui_stdlib.h>
-#include <ren/core/ui/ValueWidgets.h>
+#include <ren/core/ui/Widgets.h>
 #include <ren/edit/EditContext.h>
 #include <flecs/flecs.h>
 
@@ -222,12 +222,12 @@ namespace ren::obj {
 
     // Drafts can contain incomplete reference text while the document retains
     // valid data. External writes invalidate the draft through its revision.
-    void draw(ren::edit::EditContext& context) const final {
+    void draw(eui::Ui& ui, ren::edit::EditContext& context) const final {
       auto& draft = context.state<Draft>();
       if (!draft.active || draft.revision != context.getRevision()) {
         draft.value = decodeValue(context.read());
       }
-      const auto interaction = context.edit([&] { return inspectPrimitive("##value", draft.value); }, [&] { return encodeValue(draft.value); });
+      const auto interaction = context.edit([&] { return inspectPrimitive(ui, "##value", draft.value); }, [&] { return encodeValue(draft.value); });
       draft.active = interaction.active;
       draft.revision = context.getRevision();
     }
@@ -235,7 +235,7 @@ namespace ren::obj {
 
     virtual json encodeValue(const T& value) const = 0;
     virtual T decodeValue(const json& document) const = 0;
-    virtual bool inspectPrimitive(const char* label, T& value) const = 0;
+    virtual bool inspectPrimitive(eui::Ui& ui, const char* label, T& value) const = 0;
 
     struct Draft {
       T value{};
@@ -454,7 +454,7 @@ namespace ren::obj {
     }
 
 
-    bool inspectPrimitive(const char* label, T& value) const override { return eui::Inspect(label, value); }
+    bool inspectPrimitive(eui::Ui& ui, const char* label, T& value) const override { return ui.inspect(label, value); }
 
 
     // Names describe the scalar width rather than a compiler-specific spelling.
@@ -527,7 +527,7 @@ namespace ren::obj {
   struct VectorEditor final : ren::edit::Editor {
     static_assert(N >= 1 && N <= 4);
 
-    void draw(ren::edit::EditContext& context) const override {
+    void draw(eui::Ui& ui, ren::edit::EditContext& context) const override {
       static const char* fields[] = {"x", "y", "z", "w"};
 
       // Each frame applies its change to the document, so the document always
@@ -538,7 +538,7 @@ namespace ren::obj {
         value[i] = current.at(fields[i]).template get<T>();
       }
 
-      context.edit([&] { return eui::Drag("##value", value); },
+      context.edit([&] { return ui.drag("##value", value); },
                    [&] {
                      std::vector<ren::edit::PropertyWrite> writes;
                      for (int i = 0; i < N; ++i) {

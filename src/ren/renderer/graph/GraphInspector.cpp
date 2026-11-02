@@ -2,6 +2,7 @@
 #include <ren/renderer/Renderer.h>
 #include <imgui/imgui.h>
 #include <unordered_set>
+#include <ren/core/ui/Widgets.h>
 
 namespace ren {
   namespace {
@@ -125,7 +126,7 @@ namespace ren {
 
 
     ImGui::SeparatorText("Settings");
-    task.inspect();
+    eui::valueTable("Task settings", [&](eui::Ui &ui) { task.inspect(ui); });
 
 
     // The images that the task writes. An update writes the storage of the

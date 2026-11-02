@@ -13,11 +13,11 @@ namespace ren {
     GraphHandle source, detail, output;
     bool upsample;
     bool prefilter;
-    float threshold = 1.0f;
+    float threshold = 0.25f;
 
     BloomFilterTask(RenderGraph &graph, float scale, GraphHandle source, GraphHandle detail, bool upsample, bool prefilter);
     void run(GraphRenderPassContext &ctx) const override;
-    void inspect() override;
+    void inspect(eui::Ui &ui) override;
   };
 
   class BloomCompositeTask : public RenderPassTask {
@@ -25,13 +25,13 @@ namespace ren {
     PipelineStateObject pso;
     GraphHandle scene, bloom, output;
     BloomFilterTask *prefilter = nullptr;
-    float strength = 0.1f;
+    float strength = 0.5f;
     float exposure = 0.0f;
     bool bypass = false;
 
     BloomCompositeTask(RenderGraph &graph, GraphHandle scene, GraphHandle bloom);
     void run(GraphRenderPassContext &ctx) const override;
-    void inspect() override;
+    void inspect(eui::Ui &ui) override;
   };
 
   // Returns the final pass for controls, as addSSAO returns its SSAO task.

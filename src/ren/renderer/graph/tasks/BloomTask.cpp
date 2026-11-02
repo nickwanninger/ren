@@ -1,6 +1,7 @@
 #include "BloomTask.h"
 #include <ren/renderer/graph/ImageResource.h>
 #include <ren/renderer/shader/ShaderCache.h>
+#include <ren/core/ui/Widgets.h>
 #include <ren/renderer/Renderer.h>
 #include <imgui/imgui.h>
 #include <array>
@@ -58,7 +59,7 @@ namespace ren {
     shader.drawFullscreenTriangle();
   }
 
-  void BloomFilterTask::inspect() {}
+  void BloomFilterTask::inspect(eui::Ui &ui) {}
 
   BloomCompositeTask::BloomCompositeTask(RenderGraph &graph, GraphHandle scene, GraphHandle bloom)
       : RenderPassTask(graph)
@@ -84,11 +85,10 @@ namespace ren {
     shader.drawFullscreenTriangle();
   }
 
-  void BloomCompositeTask::inspect() {
-    ImGui::SliderFloat("Bloom strength", &strength, 0.0f, 1.0f, "%.3f");
-    if (prefilter) {
-      ImGui::SliderFloat("Bloom threshold", &prefilter->threshold, 0.0f, 10.0f, "%.2f");
-    }
+  void BloomCompositeTask::inspect(eui::Ui &ui) {
+    ui.slide("Exposure (stops)", exposure, {.min = -10.0f, .max = 10.0f});
+    ui.slide("Bloom strength", strength, {.min = 0.0f, .max = 1.0f});
+    ui.slide("Bloom threshold", prefilter->threshold, {.min = 0.0f, .max = 1.0f});
   }
 
   BloomCompositeTask &addBloom(GraphScope &graph, GraphHandle scene, GraphHandle &output) {
