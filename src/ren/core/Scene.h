@@ -2,129 +2,124 @@
 
 
 #include <ren/core/UUID.h>
-#include <ren/core/ComponentRegistration.h>
+#include <ren/core/Option.h>
+#include <ren/obj/Types.h>
+#include <map>
 
 namespace ren {
 
 
 
-  // A component is pretty much always required to be small, trivial, and
-  // copyable to the best of our ability. Also, in the C++ side of the engine,
-  // components must be registered with the engine so they can be used in the
-  // ECS, and they all feature a describe() method which helps the engine
-  // understand how the componoent should be serialized and deserialized. As
-  // part of this, the component registers its fields and their types, so the
-  // engine can extract them and manipulate them. This is a bit of a pain right
-  // now but when we integrate a C# game scripting layer, it gets much easier.
-  //
-  // So the fields are more than just a way to serialize/deserialize, they are
-  // also a way to express how to author the component. For example, a Transform
-  // component has a position, rotation, and scale. When authoring a Scene, the
-  // engine can use this field information to allocate SceneComponents on a
-  // node, and then the engine can display the fields for that SceneComponent in
-  // the editor. The component can then be baked out into a runtime component
-  // which flecs understands using the deserialization.  Therefore, we need to
-  // come up with a way to express these fields in a way that can be efficiently
-  // authored, serialized, and deserialized.
-  //
-  // I woud like for a scene node gets serialized as the following json structure:
+  // Nodes store components by their registered schema names. Each typed value
+  // owns component data and shares its type descriptor. Component descriptors
+  // define the JSON format; the scene only stores identity and hierarchy:
   // {
   //   "components": {
   //     "Name": { "name": "floor" },
   //     "Transform": {
-  //       "translation": ["vec3", [0, 0, 0]],
-  //       "rotation":    ["quat", [0, 0, 0, 1]],
-  //       "scale":       ["vec3", [1, 1, 1]],
+  //       "translation": { "x": 0, "y": 0, "z": 0 },
+  //       "rotation":    { "x": 0, "y": 0, "z": 0, "w": 1 },
+  //       "scale":       { "x": 1, "y": 1, "z": 1 }
   //     },
   //     "Mesh": { "key": "<mesh-store-key>" },
   //     "Material": { "key": "<material-store-key>" }
   //   },
   //   "children": []
   // }
-  //
-  // I think, a SceneComponent (authoring component) should basically just have
-  // an array of abstract Field types, which come from template specialization,
-  // in the ComponentRegistration setup. Each type (glm::vec3, etc) has a
-  // corresponding subclassed SceneComponentField type generated that points to
-  // the type that can serialize/deserialize, but the SceneComponentField can
-  // contain a value of the type. Thus, it can be edited in a UI, and then
-  // serialized/deserialized.
 
 
-  struct Transform {
-    glm::vec3 translation;
-    glm::quat rotation;
-    glm::vec3 scale;
-  };
-
-  // Represents a type of a field in a component.
-  class EntityComponentFieldType {};
-
-  // A field is a value of a field of a component. It has a type,
-  // and can critically be serialized, deserialized, and baked into
-  // a runtime component.
-  class EntityComponentFieldBase {
-    // Serialize the field into a json object.
-    virtual void serialize(json &j) = 0;
-    // Deserialize the field from a json object.
-    virtual void deserialize(const json &j) = 0;
-
-    // Bake the field into a runtime component. This is called when
-    // the scene is writing out to the runtime representation. `dst`
-    // is a pointer to the field in the Component on an Entity.
-    virtual void bake(void *dst) = 0;
-    // Inspect the field in a UI.
-    virtual bool inspect(void) = 0;
-  };
-
-
-  template <typename T>
-  class EntityComponentField : public EntityComponentFieldBase {
+  // Keeps authored data and its initial JSON together. Components without a
+  // schema retain only JSON. Generated components capture their initial values.
+  class SceneComponent {
    public:
-    T value;
+    // Holds editable data when the component schema is available.
+    Option<obj::Value> value = None;
+    // Captures loaded or generated data. Later edits do not change this snapshot.
+    json originalJson;
+
+    // Writes current typed data, or the source payload without an available schema.
+    json serialize(void) const;
   };
 
 
+  class Scene;
 
-
-  // The document representation of a Component, which in the runtime is a flecs
-  // component, but here is stored as a representation for authoring,
-  // serialization, and deserialization.
-  class SceneComponent {};
-
-  // A scene entity is a node in the scene graph. It is the authoring/serialized
-  // representation of a node in the scene. The Ren RUNTIME representation of a
-  // node is a flecs entity with all the same components as the scene node.
+  // Owns authored components and ordered children. The parent is derived during
+  // loading and does not own the node. Loaded nodes contain Name and Transform.
   class SceneNode {
    public:
-    UUID id;
-    std::string name;
+    // Constructs an empty node that belongs to `s`.
+    SceneNode(Scene &s)
+        : scene(s) {}
 
-    weak_ref<SceneNode> parent;            // Optional parent node.
-    std::vector<ref<SceneNode>> children;  // Child nodes.
+    // Refers to the owning scene. The editor uses it later to construct children.
+    Scene &scene;
+    // Identifies this node within the scene file.
+    UUID id;
+
+    // Stores components by schema name, including those without available schemas.
+    std::map<std::string, SceneComponent> components;
+
+    // Refers to the parent, or is empty for a root.
+    weak_ref<SceneNode> parent;
+    // Preserves the order from the scene file.
+    std::vector<ref<SceneNode>> children;
+
+    // Returns a native snapshot. Throws if the component or its typed value is absent.
+    // Change the snapshot and call set() to store a programmatic edit.
+    template <typename T>
+    T get() const {
+      const auto &name = obj::getType<T>().name;
+      const auto component = components.find(name);
+      if (component == components.end()) {
+        throw std::runtime_error("Missing component on node " + id.to_string() + ": " + name);
+      }
+      if (component->second.value.isNone()) {
+        throw std::runtime_error("Component has no typed value on node " + id.to_string() + ": " + name);
+      }
+      return component->second.value.unwrap().template bake<T>();
+    }
+
+
+    // Adds or replaces authored data without editor history. Existing source JSON
+    // stays intact; a new component captures its initial serialized values.
+    template <typename T>
+    void set(const T &native) {
+      auto value = obj::readNative(native);
+      const auto &name = value.type->name;
+      const auto component = components.find(name);
+      if (component != components.end()) {
+        component->second.value = std::move(value);
+        return;
+      }
+
+      auto originalJson = value.serialize();
+      components.emplace(name, SceneComponent{.value = std::move(value), .originalJson = std::move(originalJson)});
+    }
   };
 
 
-  // A scene is a collection of entities with components that can be rendered.
+  // Owns an authoring hierarchy and indexes nodes by file-local ID.
+  // Loading and saving do not create ECS entities or resolve asset references.
   class Scene {
    public:
     // The version of the scene format.
     static constexpr u32 version = 1;
-    // Construct the scene using some entity as a root
+    // Constructs an empty scene with a new ID.
     Scene();
 
-    // Load the scene from a serialized json object.
-    // There are a lot of ways this can fail, so it throws (icky) exceptions on
-    // failure. You've been warned!
-    void load(json &j);
+    // Replaces the scene after validating all nodes, components and relationships.
+    // Invalid input throws and leaves the current scene intact.
+    void load(const json &j);
 
-    // Clear the scene of all nodes.
+    // Removes all nodes and roots while retaining the scene ID.
     void clear();
+    // Writes components and ordered ID lists. Parent links are not serialized.
     json serialize(void) const;
 
    protected:
-    UUID id;                               // The ID of the scene. (.id field from json)
-    std::vector<ref<SceneNode>> roots;     // The root nodes of the scene. (.nodes field from json)
-    std::map<UUID, ref<SceneNode>> nodes;  // The ndoes in teh scene
+    UUID id;
+    std::vector<ref<SceneNode>> roots;
+    std::map<UUID, ref<SceneNode>> nodes;
   };
 }  // namespace ren
