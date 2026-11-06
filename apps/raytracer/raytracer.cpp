@@ -29,7 +29,7 @@ static ren::Flag<float> renderScale("render-scale", 0.25, "raytracing scale");
 static ren::Flag<std::string> skyBoxPath("skybox", "assets/hdri/sky.jpg", "Path to the skybox texture to use in the viewport.");
 static ren::Flag<std::string> scenePath("scene", "assets/test/meshes/simple_scene.glb", "Path to the scene mesh");
 static ren::Flag<float> scaleArg("scene-scale", 1.0f, "Uniform scale to apply to the loaded mesh");
-static ren::Flag<int> maxBouncesArg("max-bounces", 4, "Bounces after the primary ray. 0 traces only the primary ray and the sun at its hit");
+static ren::Flag<int> maxBouncesArg("max-bounces", 2, "Bounces after the primary ray. 0 traces only the primary ray and the sun at its hit");
 static ren::Flag<float> sunStrengthArg("sun-strength", 3.0f, "Sun irradiance on a surface that faces it. 0 disables the sun");
 
 
@@ -110,6 +110,7 @@ class RaytraceViewport : public ren::EditorViewport {
   // Frames already in the history. 0 starts a new average.
   u32 accumulatedFrames = 0;
   u32 frameSeed = 0;
+  bool cameraMoving = false;
 
   // What the current average was rendered with. Any change resets it.
   glm::mat4 lastView = glm::mat4(0.0f);
@@ -122,7 +123,6 @@ class RaytraceViewport : public ren::EditorViewport {
 
   u32 debugView = 0;
   u32 debugTestScale = 2000;
-  float exposure = 0.0f;
   BloomCompositeTask *bloom = nullptr;
   ref<Texture> skybox;
   GraphHandle previousScene;
@@ -219,7 +219,7 @@ class RaytraceViewport : public ren::EditorViewport {
       mesh.bvhNodes = r.mesh->getBVH()->getNodeAddress();
       mesh.bvhTriangles = r.mesh->getBVH()->getTriangleAddress();
       mesh.material.color = glm::vec4(1.0f);
-      mesh.material.smoothness = 0.1f;
+      // mesh.material.smoothness = 0.1f;
       if (r.material) {
         if (const auto *schema = r.material->getSchema()) {
           const auto &data = r.material->getCpuMaterialData();
@@ -287,6 +287,8 @@ class RaytraceViewport : public ren::EditorViewport {
     // The graph drops the history on the first frame and after a size change.
     const bool hasHistory = ctx.resources.storage(previousScene) != nullptr;
     const bool cameraStill = nearlyEqual(view, lastView) && nearlyEqual(projection, lastProjection);
+    const bool cameraWasMoving = cameraMoving;
+    cameraMoving = !cameraStill;
     const bool settingsSame =
         maxBounces == lastMaxBounces && sunStrength == lastSunStrength && debugView == lastDebugView && lightSampling == lastLightSampling;
     // shd::Mesh has no implicit padding, so a byte compare finds any change
@@ -294,7 +296,8 @@ class RaytraceViewport : public ren::EditorViewport {
     const bool sceneSame = meshes.size() == lastMeshes.size() &&
                            (meshes.empty() || std::memcmp(meshes.data(), lastMeshes.data(), meshes.size() * sizeof(shd::Mesh)) == 0);
 
-    if (accumulate && hasHistory && cameraStill && settingsSame && sceneSame) {
+    // Restart at full quality when camera motion stops.
+    if (accumulate && hasHistory && cameraStill && !cameraWasMoving && settingsSame && sceneSame) {
       accumulatedFrames++;
     } else {
       accumulatedFrames = 0;
@@ -345,8 +348,8 @@ class RaytraceViewport : public ren::EditorViewport {
     root.set("sceneEntries", sceneEntries);
 
     root.set("randomSeed", frameSeed);
-    root.set("maxBounces", maxBounces);
-    root.set("raysPerPixel", raysPerPixel);
+    root.set("maxBounces", cameraMoving ? 1u : maxBounces);
+    root.set("raysPerPixel", cameraMoving ? 1u : raysPerPixel);
     root.set("sunStrength", sunStrength);
     root.set("accumulatedFrames", accumulatedFrames);
 
