@@ -101,11 +101,6 @@ namespace ren {
     VkDescriptorSet imguiTextureID = VK_NULL_HANDLE;
   };
 
-  using TextureRef = ref<Texture>;
-
-
-
-
   class TextureBuilder : public ren::ImageBuilder {
    public:
     using ren::ImageBuilder::ImageBuilder;
