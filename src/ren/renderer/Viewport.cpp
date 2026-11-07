@@ -169,7 +169,16 @@ namespace ren {
     // Update the viewport's graph. buildGraph() can set renderScale, so build
     // the graph before the size uses it.
     ensureGraphBuilt();
-    update(dt, glm::uvec2(extent.x * renderScale, extent.y * renderScale));
+
+    // ImGui sizes are in window points. The window's viewport gives the
+    // pixels per point (2 on a Retina display), so the render target matches
+    // the real pixel count. A window on a different monitor gets that
+    // monitor's scale. ImGui sets the scale only on secondary platform
+    // windows; the main viewport keeps 0 and uses io.DisplayFramebufferScale.
+    // This is the same fallback that ImGui uses for its draw data.
+    const ImVec2 viewportScale = ImGui::GetWindowViewport()->FramebufferScale;
+    const ImVec2 dpiScale = viewportScale.x != 0.0f ? viewportScale : io.DisplayFramebufferScale;
+    update(dt, glm::uvec2(extent.x * dpiScale.x * renderScale, extent.y * dpiScale.y * renderScale));
 
     // Draw the rendered image at the top-left. The image is filled in later
     // this frame, during the render phase.

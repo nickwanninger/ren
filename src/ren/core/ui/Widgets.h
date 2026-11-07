@@ -83,6 +83,172 @@ namespace ren::eui {
   };
 
 
+  //=========================
+  // Blocks
+  //=========================
+
+  // Visual depth of an editor block. Raised blocks are controls that you press
+  // or drag. Lowered blocks hold text that you type.
+  enum class BlockKind {
+    Raised,
+    Lowered,
+  };
+
+
+  // Colors and sizes for editor blocks. Each color is an ImGui style slot, so blocks follow the
+  // current theme (see applyTheme()).
+  struct BlockStyle {
+    ImGuiCol raised = ImGuiCol_Button;
+    ImGuiCol raisedHovered = ImGuiCol_ButtonHovered;
+    ImGuiCol raisedActive = ImGuiCol_ButtonActive;
+    // The step arrow zones of a hovered drag block. They are darker than the hovered block.
+    ImGuiCol arrowZone = ImGuiCol_Button;
+    ImGuiCol lowered = ImGuiCol_FrameBg;
+    ImGuiCol loweredHovered = ImGuiCol_FrameBgHovered;
+    ImGuiCol loweredActive = ImGuiCol_FrameBgActive;
+    // A dark line under each block that makes it look like it sits above the panel.
+    ImGuiCol backdrop = ImGuiCol_Border;
+    // The slider and progress fill that shows the value.
+    ImGuiCol fill = ImGuiCol_SliderGrabActive;
+
+    float rounding = 4.0f;
+    // Distance from the bottom edge of a block to the center of its backdrop line.
+    float backdropOffset = 1.5f;
+    // Space between blocks that join into one group, such as vector rows.
+    float joinSpacing = 2.0f;
+    // Width of the step arrow zone at each end of a drag block.
+    float arrowWidth = 13.0f;
+    // Space between a block edge and its text.
+    float textPadding = 8.0f;
+  };
+
+
+  // Return the block style that all block widgets use.
+  const BlockStyle& getBlockStyle();
+
+
+  // Draw a block background in [min, max] without adding an item. `corners`
+  // takes ImDrawFlags_RoundCorners* flags, so blocks in a group can join.
+  void drawBlock(ImDrawList* drawList, ImVec2 min, ImVec2 max, BlockKind kind, bool hovered, bool active,
+                 ImDrawFlags corners = ImDrawFlags_RoundCornersAll);
+
+
+  // Controls one block() item.
+  struct BlockOptions {
+    BlockKind kind = BlockKind::Raised;
+    // Zero uses the item width and frame height, like ImGui::Button.
+    ImVec2 size = ImVec2(0, 0);
+    // Horizontal text position: 0 is left, 0.5 is center, 1 is right.
+    float textAlign = 0.5f;
+    ImGuiCol textColor = ImGuiCol_Text;
+    ImDrawFlags corners = ImDrawFlags_RoundCornersAll;
+  };
+
+
+  // Draw a block as one ImGui item, with the text of `label` before any "##".
+  // Return true when the user clicks it.
+  bool block(const char* label, const BlockOptions& options = {});
+
+
+  // Draw a raised drag field with the label on the left and the value on the right.
+  // A click on an end arrow steps the value. Ctrl+click or double click types a value.
+  // This follows ImGui::DragScalar, and takes the same arguments.
+  bool dragBlock(const char* label, ImGuiDataType dataType, void* data, float speed, const void* min = nullptr, const void* max = nullptr,
+                 const char* format = nullptr, ImGuiSliderFlags flags = ImGuiSliderFlags_None, ImDrawFlags corners = ImDrawFlags_RoundCornersAll);
+
+
+  // Draw a raised slider. A fill from the left edge shows the value, with the label on the
+  // left and the value on the right. A click sets the value; Ctrl+click types a value.
+  // This follows ImGui::SliderScalar, and takes the same arguments.
+  bool sliderBlock(const char* label, ImGuiDataType dataType, void* data, const void* min, const void* max, const char* format = nullptr,
+                   ImGuiSliderFlags flags = ImGuiSliderFlags_None, ImDrawFlags corners = ImDrawFlags_RoundCornersAll);
+
+
+  // Draw a lowered progress bar for `fraction` in [0, 1], with `text` in the center. Null text shows a percentage.
+  // Zero size uses the item width and frame height.
+  void progressBlock(float fraction, const char* text = nullptr, ImVec2 size = ImVec2(0, 0));
+
+
+  namespace detail {
+    // Draw `count` joined blocks side by side in the item width. `drawBlock(i, corners)` draws
+    // block i with the item width set. The group makes the blocks act as one item.
+    template <typename DrawBlock>
+    bool blockRow(const char* id, int count, DrawBlock&& drawBlock) {
+      // SetNextItemWidth() applies only to the next item, so split the width once for all blocks.
+      const float spacing = getBlockStyle().joinSpacing;
+      const float width = std::max(1.0f, (ImGui::CalcItemWidth() - spacing * (float)(count - 1)) / (float)count);
+
+      bool changed = false;
+      ImGui::PushID(id);
+      ImGui::BeginGroup();
+      for (int i = 0; i < count; ++i) {
+        // Only the outer corners of the group are round.
+        ImDrawFlags corners = ImDrawFlags_RoundCornersNone;
+        if (count == 1) {
+          corners = ImDrawFlags_RoundCornersAll;
+        } else if (i == 0) {
+          corners = ImDrawFlags_RoundCornersLeft;
+        } else if (i == count - 1) {
+          corners = ImDrawFlags_RoundCornersRight;
+        }
+
+        if (i != 0) {
+          ImGui::SameLine(0.0f, spacing);
+        }
+        ImGui::PushID(i);
+        ImGui::SetNextItemWidth(width);
+        changed |= drawBlock(i, corners);
+        ImGui::PopID();
+      }
+      ImGui::EndGroup();
+      ImGui::PopID();
+
+      return changed;
+    }
+
+
+    inline const char* componentLabels[] = {"X", "Y", "Z", "W"};
+  }  // namespace detail
+
+
+  // Draw a drag block for a number, or one joined block per vector component (X, Y, Z, W)
+  // side by side in the item width. `id` identifies the field and is not shown.
+  template <typename T>
+    requires(NumberTraits<T>::isNumber || NumberTraits<T>::isVector)
+  bool dragBlock(const char* id, T& value, const DragOptions<typename NumberTraits<T>::Component>& options = {}) {
+    using Component = typename NumberTraits<T>::Component;
+    const auto* min = options.min ? &*options.min : nullptr;
+    const auto* max = options.max ? &*options.max : nullptr;
+
+    if constexpr (NumberTraits<T>::isNumber) {
+      return dragBlock(id, dataTypeOf<T>(), &value, options.step, min, max, options.format, options.flags);
+    } else {
+      return detail::blockRow(id, T::length(), [&](int i, ImDrawFlags corners) {
+        return dragBlock(detail::componentLabels[i], dataTypeOf<Component>(), &value[i], options.step, min, max, options.format, options.flags,
+                         corners);
+      });
+    }
+  }
+
+
+  // Draw a slider block for a number, or one joined slider per vector component (X, Y, Z, W)
+  // side by side in the item width. All components share the bounds.
+  template <typename T>
+    requires(NumberTraits<T>::isNumber || NumberTraits<T>::isVector)
+  bool sliderBlock(const char* id, T& value, const SlideOptions<typename NumberTraits<T>::Component>& options) {
+    using Component = typename NumberTraits<T>::Component;
+
+    if constexpr (NumberTraits<T>::isNumber) {
+      return sliderBlock(id, dataTypeOf<T>(), &value, &options.min, &options.max, options.format, options.flags);
+    } else {
+      return detail::blockRow(id, T::length(), [&](int i, ImDrawFlags corners) {
+        return sliderBlock(detail::componentLabels[i], dataTypeOf<Component>(), &value[i], &options.min, &options.max, options.format, options.flags,
+                           corners);
+      });
+    }
+  }
+
+
   namespace detail {
     // Restores an ImGui scope on return or exception.
     template <typename Finish>
@@ -97,48 +263,6 @@ namespace ren::eui {
      private:
       Finish finish;
     };
-
-
-    // Draws one labeled field per component (X, Y, Z, W) in the current item
-    // width, with `drawComponent` for each field. The components act as one
-    // control inside a group. Like ImGui widgets, it shows the text of `id`
-    // before any "##" after the fields.
-    template <int N, typename T, typename DrawComponent>
-    bool vectorRow(const char* id, glm::vec<N, T, glm::defaultp>& value, DrawComponent&& drawComponent) {
-      static_assert(N >= 1 && N <= 4);
-      static const char* labels[] = {"X", "Y", "Z", "W"};
-
-      const auto& style = ImGui::GetStyle();
-      const float groupWidth = (ImGui::CalcItemWidth() - ((float)N - 1.0f) * style.ItemSpacing.x) / (float)N;
-
-      bool changed = false;
-      ImGui::PushID(id);
-      ImGui::BeginGroup();
-      for (int i = 0; i < N; ++i) {
-        if (i != 0) {
-          ImGui::SameLine();
-        }
-        ImGui::PushID(i);
-        ImGui::AlignTextToFramePadding();
-        ImGui::TextUnformatted(labels[i]);
-        ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);
-        const float width = groupWidth - ImGui::CalcTextSize(labels[i]).x - style.ItemInnerSpacing.x;
-        ImGui::SetNextItemWidth(std::max(1.0f, width));
-        changed |= drawComponent(value[i]);
-        ImGui::PopID();
-      }
-
-      const auto label = std::string_view(id).substr(0, std::string_view(id).find("##"));
-      if (!label.empty()) {
-        ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);
-        ImGui::AlignTextToFramePadding();
-        ImGui::TextUnformatted(label.data(), label.data() + label.size());
-      }
-      ImGui::EndGroup();
-      ImGui::PopID();
-
-      return changed;
-    }
 
 
     // Draw the switch for the last submitted item. Height controls its visual size.
@@ -161,29 +285,6 @@ namespace ren::eui {
       drawList->AddRectFilled(position, ImVec2(position.x + width, position.y + height), ImGui::GetColorU32(track), radius);
       const float knobX = position.x + radius + knob * (width - 2.0f * radius);
       drawList->AddCircleFilled(ImVec2(knobX, position.y + radius), radius - 2.0f, ImGui::GetColorU32(ImGuiCol_CheckMark));
-    }
-
-
-    // Draw scalar and vector contents without adding a value row.
-    template <typename T>
-    bool dragValue(const char* id, T& value, const DragOptions<typename NumberTraits<T>::Component>& options) {
-      if constexpr (NumberTraits<T>::isNumber) {
-        return ImGui::DragScalar(id, dataTypeOf<T>(), &value, options.step, options.min ? &*options.min : nullptr,
-                                 options.max ? &*options.max : nullptr, options.format, options.flags);
-      } else {
-        return vectorRow(id, value, [&](auto& component) { return dragValue("##component", component, options); });
-      }
-    }
-
-
-    // Draw scalar and vector slider contents without adding a value row.
-    template <typename T>
-    bool slideValue(const char* id, T& value, const SlideOptions<typename NumberTraits<T>::Component>& options) {
-      if constexpr (NumberTraits<T>::isNumber) {
-        return ImGui::SliderScalar(id, dataTypeOf<T>(), &value, &options.min, &options.max, options.format, options.flags);
-      } else {
-        return vectorRow(id, value, [&](auto& component) { return slideValue("##component", component, options); });
-      }
     }
 
 
@@ -280,18 +381,18 @@ namespace ren::eui {
 
     // Value fields
 
-    // Draw a drag field, with one control per vector component. Step controls drag speed.
+    // Draw a drag block. A vector gets one joined row per component. Step controls drag speed.
     template <typename T>
     bool drag(const char* label, T& value, const DragOptions<typename NumberTraits<T>::Component>& options = {}) {
       static_assert(NumberTraits<T>::isNumber || NumberTraits<T>::isVector);
-      return field(label, [&](const char* id) { return detail::dragValue(id, value, options); });
+      return field(label, [&](const char* id) { return dragBlock(id, value, options); });
     }
 
     // Draw a slider with shared bounds for all vector components.
     template <typename T>
     bool slide(const char* label, T& value, const SlideOptions<typename NumberTraits<T>::Component>& options) {
       static_assert(NumberTraits<T>::isNumber || NumberTraits<T>::isVector);
-      return field(label, [&](const char* id) { return detail::slideValue(id, value, options); });
+      return field(label, [&](const char* id) { return sliderBlock(id, value, options); });
     }
 
     // Draw an animated switch. Return true when the value changes.

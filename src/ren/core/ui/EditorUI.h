@@ -90,7 +90,8 @@ namespace ren::eui {
     u32 textDisabled = 0x808080;
 
     // Panels
-    u32 windowBg = 0x151515;
+    // u32 windowBg = 0x151515;
+    u32 windowBg = 0x333333;
     u32 popupBg = 0x2D2D2D;
     u32 border = 0x1A1A1A;
 
