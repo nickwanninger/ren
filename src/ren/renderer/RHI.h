@@ -100,11 +100,6 @@ namespace ren::rhi {
     std::vector<ref<ShaderModule>> stages;
   };
 
-  // A shader object represents an instance of a shader program with specific
-  // bindings. These are used to bind resources to the GPU for rendering or
-  // compute. They aren't meant to stick around for long periods of time.
-  class ShaderObject {};
-
   // Maps to VkCommandBuffer
   class CommandBuffer {};
 

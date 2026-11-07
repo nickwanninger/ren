@@ -1,101 +1,107 @@
 #include <ren/renderer/graph/RenderPassTask.h>
 #include <ren/renderer/graph/RenderGraph.h>
-#include <ren/renderer/graph/ImageResource.h>
 #include <ren/renderer/Renderer.h>
-#include "ren/renderer/graph/RunContext.h"
 
 namespace ren {
 
-  RenderPassTask::RenderPassTask(RenderGraph &graph)
-      : RenderTask(graph)
-      , pass(nullptr)
-      , target(nullptr) {}
 
-  GraphHandle RenderPassTask::addColorAttachment(const std::string_view &name, const GraphImageSpec &spec) {
-    RenderGraph &graph = this->graph();
-    GraphHandle handle = graph.createImage(name, spec, GraphAccess::RenderTarget);
-    this->write(handle, GraphAccess::RenderTarget);
+  VkAttachmentDescription &RenderPassTask::describeAttachment(std::string_view name, VkFormat format, bool depth) {
+    auto &description = depth ? desc.addDepthAttachment(name) : desc.addColorAttachment(name, format);
 
-    // Store the attachment handle for later construction of RenderTarget
-    this->attachmentHandles.emplace_back(std::string(name), handle);
+    // The graph moves each attachment to this layout before the pass (see
+    // ImageStorage::transition()), so the pass does not change the layout.
+    description.initialLayout = description.finalLayout =
+        depth ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    return description;
+  }
 
-    // Update the render pass description for VkRenderPass creation
-    this->desc.addColorAttachment(name, spec.format);
+
+  GraphHandle RenderPassTask::attachment(std::string_view name, const GraphImageSpec &spec, bool depth, VkClearValue clear) {
+    auto access = depth ? GraphAccess::DepthTarget : GraphAccess::RenderTarget;
+    auto handle = graph().createImage(name, spec, access);
+    write(handle, access);
+
+    attachments.emplace_back(name, handle);
+    clearValues.push_back(clear);
+    describeAttachment(name, spec.format, depth);
     return handle;
   }
 
-  GraphHandle RenderPassTask::addDepthAttachment(const std::string_view &name, const GraphImageSpec &uspec) {
-    GraphImageSpec spec = uspec;  // Copy to allow format modification
 
-    RenderGraph &graph = this->graph();
+  GraphHandle RenderPassTask::addColorAttachment(std::string_view name, const GraphImageSpec &spec, glm::vec4 clearColor) {
+    return attachment(name, spec, false, {.color = {{clearColor.r, clearColor.g, clearColor.b, clearColor.a}}});
+  }
+
+
+  GraphHandle RenderPassTask::addDepthAttachment(std::string_view name, const GraphImageSpec &input, float clearDepth) {
+    auto spec = input;
     spec.format = getVulkan().findDepthFormat();
-    GraphHandle handle = graph.createImage(name, spec, GraphAccess::DepthTarget);
-    this->write(handle, GraphAccess::DepthTarget);
-
-    // Store the attachment handle for later construction of RenderTarget
-    this->attachmentHandles.emplace_back(std::string(name), handle);
-
-    // Update the render pass description for VkRenderPass creation
-    this->desc.addDepthAttachment(name);
-    return handle;
+    return attachment(name, spec, true, {.depthStencil = {clearDepth, 0}});
   }
 
-  void RenderPassTask::prepare() {
-    REN_PROFILE_FUNCTION();
 
-    // Step 1: Get or create the cached VkRenderPass from the description
-    // This uses hash-based deduplication, so multiple tasks with identical
-    // attachments share the same VkRenderPass (zero-cost abstraction).
-
-    // Step 2: Build RenderTargetDescription from graph image resources
-    // We iterate through our stored attachment handles and fetch the actual
-    // Image objects from the render graph.
-    RenderTargetDescription targetDesc;
-
-    for (const auto &[name, handle] : this->attachmentHandles) {
-      // Get the image resource from the graph
-      ren::ImageRef image = graph().getImage(handle);
-
-      // Find the write access for this attachment from this task's results
-      GraphAccess writeAccess = GraphAccess::RenderTarget;  // Default
-      for (const auto &result : getResults()) {
-        if (result.handle == handle) {
-          writeAccess = result.access;
-          break;
-        }
-      }
-
-      RenderTargetAttachmentType attachmentType =
-          (writeAccess == GraphAccess::DepthTarget) ? RenderTargetAttachmentTypeDepth : RenderTargetAttachmentTypeColor;
-
-      // Add attachment to the description
-      targetDesc.attachments.push_back(RenderTargetAttachment(attachmentType, image, image->getFormat(), name));
+  GraphHandle RenderPassTask::updateAttachment(std::string_view name, GraphHandle input, bool depth) {
+    auto definition = graph().get<ImageResource>(input);
+    if ((definition->initialAccess == GraphAccess::DepthTarget) != depth) {
+      throw std::runtime_error("Attachment update type does not match: " + std::string(name));
     }
 
-    Renderer &renderer = Renderer::get();
-    this->pass = renderer.getRenderPassCache().get(desc);
-    // Step 3: Create the RenderTarget
-    // The RenderTarget stores attachments and manages VkFramebuffer caching
-    // (framebuffers are cached per RenderPass UUID for efficiency).
+    auto output = updates(input, depth ? GraphAccess::DepthTarget : GraphAccess::RenderTarget);
+    attachments.emplace_back(name, output);
+    clearValues.push_back({});
+
+    // An update draws on top of the old contents, so the pass loads them.
+    auto &description = describeAttachment(name, definition->spec.format, depth);
+    description.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+    return output;
+  }
+
+
+  GraphHandle RenderPassTask::updateColorAttachment(std::string_view name, GraphHandle image) { return updateAttachment(name, image, false); }
+
+
+  GraphHandle RenderPassTask::updateDepthAttachment(std::string_view name, GraphHandle image) { return updateAttachment(name, image, true); }
+
+
+  void RenderPassTask::prepareFrame(PrepareContext &ctx) {
+    // Describe the framebuffer with the storage of this frame. All attachments
+    // must have the same size.
+    RenderTargetDescription targetDesc;
+    glm::uvec2 size{};
+    for (auto &[attachmentName, handle] : attachments) {
+      auto storage = ctx.resources.get<ImageStorage>(handle);
+      auto image = storage->image;
+
+      glm::uvec2 dimensions(image->getWidth(), image->getHeight());
+      if (size != glm::uvec2(0) && size != dimensions) {
+        throw std::runtime_error("Framebuffer attachment sizes do not match: " + name());
+      }
+      size = dimensions;
+
+      auto type = storage->depth ? RenderTargetAttachmentTypeDepth : RenderTargetAttachmentTypeColor;
+      targetDesc.attachments.emplace_back(type, image, image->getFormat(), attachmentName);
+    }
+
+    // The storage can change between frames, for example after a resize, so
+    // the framebuffer is made again each frame.
+    // TODO: Should we keep the framebuffer while the storage stays the same?
+    pass = ctx.renderer->getRenderPassCache().get(desc);
     target = make<RenderTarget>(targetDesc);
+
+    // The frame keeps the pass and the framebuffer until the GPU completes it.
+    ctx.retain(pass);
+    ctx.retain(target);
   }
 
-  void RenderPassTask::unprepare() {
-    // Release the render pass and target references.
-    // The RenderPass is cached globally and may be reused by other tasks,
-    // so we just release our reference. The target is task-local and will
-    // be rebuilt in the next prepare() if needed.
-    pass.reset();
-    target.reset();
-  }
 
-  void RenderPassTask::run(GraphRunContext &ctx) {
-    auto timestampTicket = ctx.encoder.beginTimestampQuery(this->name().c_str());
-    auto rpe = ctx.encoder.beginRenderPass(*pass, *target);
-    GraphRenderPassContext rctx(ctx.graph, ctx.renderer, rpe);
-    this->run(rctx);
-    rpe.end();
-    ctx.encoder.endTimestampQuery(timestampTicket);
-  }
+  void RenderPassTask::run(RecordContext &ctx) const {
+    auto ticket = ctx.encoder.beginTimestampQuery(name().c_str());
 
+    auto encoder = ctx.encoder.beginRenderPass(*pass, *target, clearValues);
+    GraphRenderPassContext render{ctx.resources, ctx.view, encoder};
+    run(render);
+    encoder.end();
+
+    ctx.encoder.endTimestampQuery(ticket);
+  }
 }  // namespace ren

@@ -3,13 +3,14 @@
 
 #include <ren/types.h>
 #include <ren/misc/json_serialize.h>
+#include <ren/core/UUID.h>
 
 namespace ren {
 
 
   // An AssetID is just an integer.
   // The value comes from the issuing global asset manager.
-  using AssetID = u64;
+  using AssetID = UUID;
 
   enum class AssetType {
     Texture,

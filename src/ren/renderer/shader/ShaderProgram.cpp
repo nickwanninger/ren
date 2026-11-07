@@ -1,296 +1,38 @@
 #include <ren/renderer/shader/ShaderProgram.h>
 #include <ren/renderer/shader/ShaderReflection.h>
 #include <ren/renderer/Swapchain.h>
-#include <slang-com-ptr.h>
-#include <slang.h>
 #include <unistd.h>
-#include <algorithm>
-#include "ren/renderer/shader/ParameterBinding.h"
+#include <ren/renderer/Renderer.h>
+#include <ren/renderer/FrameGlobals.h>
 #include <ren/assets/AssetManager.h>
 #include <fmt/format.h>
 #include <ren/misc/DeprecationLogger.h>
 #include <imgui/imgui.h>
 #include <ren/core/ui/EditorUI.h>
 #include <ren/core/Bundle.h>
-#include <ren/core/Flag.h>
-#include <ren/renderer/shader/SlangFileSystem.h>
+#include <fstream>
 
 
 namespace ren {
-
-  ShaderProgram::ShaderProgram(const std::string& slangPath) {
-    ren::println("-- Slang --");
-    this->compileFromSlangPath(slangPath);
-
-    // Reflect the spirv to compare with the slang reflection.
-    // ren::println("-- Spirv --");
-    // ShaderReflection spirvReflection;
-    // for (auto& shader : shaders) {
-    //   spirvReflection.parseFromSpirv(reinterpret_cast<const u8*>(shader->getCode().data()), shader->getCode().size() * sizeof(u32));
-    // }
-
-    // ren::println("Slang Reflection: {}", this->reflection->toJson().dump(2));
-  }
-
-  ShaderProgram::ShaderProgram(const std::string& vertexPath, const std::string& fragmentPath)
-      : vertexShaderPath(vertexPath)
-      , fragmentShaderPath(fragmentPath) {
-    REN_DEPRECATION_WARNING();
-    shaders.push_back(ren::getAsset<VertexShader>(vertexPath));
-    shaders.push_back(ren::getAsset<FragmentShader>(fragmentPath));
-
-
-    reflectShaders();
-    bakeLayouts();
-  }
-
-
-  ShaderProgram::~ShaderProgram() {
-    auto& vulkan = getVulkan();
-
-
-
-    // Delete the pipeline layout.
-    if (pipelineLayout != VK_NULL_HANDLE) {
-      vkDestroyPipelineLayout(vulkan.device, pipelineLayout, nullptr);
-      pipelineLayout = VK_NULL_HANDLE;
+  namespace {
+    bool isGlobalABIBinding(u32 set, u32 binding, VkDescriptorType type) {
+      return
+          (set == ShaderABI::frameSet &&
+           binding == ShaderABI::frameBinding &&
+           type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER) ||
+          (set == ShaderABI::sampledImageSet &&
+           binding == ShaderABI::sampledImageBinding &&
+           type == VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE) ||
+          (set == ShaderABI::samplerSet &&
+           binding == ShaderABI::samplerBinding &&
+           type == VK_DESCRIPTOR_TYPE_SAMPLER);
     }
+  }  // namespace
 
-
-    // delete all the set layouts
-    for (auto& setLayout : setLayouts) {
-      if (setLayout != VK_NULL_HANDLE) {
-        vkDestroyDescriptorSetLayout(vulkan.device, setLayout, nullptr);
-        setLayout = VK_NULL_HANDLE;
-      }
-    }
-  }
-
-
-
-  static Slang::ComPtr<slang::IGlobalSession> globalSession;
-
-  static ren::Flag<int> kSlangOptLevel("slang-opt-level", 2, "Optimization level for Slang compiler (0=None, 1=Default, 2=Maximum)");
-
-  // Helper to check diagnostics
-  static void checkSlangDiagnostics(slang::IBlob* diagnosticsBlob) {
-    if (diagnosticsBlob && diagnosticsBlob->getBufferSize() > 0) {
-      const char* msg = (const char*)diagnosticsBlob->getBufferPointer();
-      throw std::runtime_error(std::string("Slang compilation error: ") + msg);
-    }
-  }
-
-  // Helper to convert Slang stage to Vulkan stage
-  static VkShaderStageFlagBits slangStageToVulkan(SlangStage stage) {
-    switch (stage) {
-      case SLANG_STAGE_VERTEX:
-        return VK_SHADER_STAGE_VERTEX_BIT;
-      case SLANG_STAGE_FRAGMENT:
-        return VK_SHADER_STAGE_FRAGMENT_BIT;
-      case SLANG_STAGE_COMPUTE:
-        return VK_SHADER_STAGE_COMPUTE_BIT;
-      case SLANG_STAGE_GEOMETRY:
-        return VK_SHADER_STAGE_GEOMETRY_BIT;
-      case SLANG_STAGE_HULL:
-        return VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
-      case SLANG_STAGE_DOMAIN:
-        return VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
-      default:
-        throw std::runtime_error("Unsupported shader stage");
-    }
-  }
-
-  void ShaderProgram::compileFromSlangPath(const std::string& slangFilePath) {
-    Slang::ComPtr<slang::IBlob> diagnosticsBlob;
-    Slang::ComPtr<slang::IModule> module;
-
-    // First, we need to make sure the global session exists.
-    if (globalSession.get() == nullptr) {
-      REN_PROFILE_SCOPE("CreateGlobalSession");
-      if (SLANG_FAILED(slang::createGlobalSession(globalSession.writeRef()))) {
-        throw std::runtime_error("Failed to create Slang global session");
-      }
-    }
-
-
-
-    // now, create our local session.
-    {
-      REN_PROFILE_SCOPE("CreateLocalSession");
-
-
-      slang::SessionDesc sessionDesc = {};
-      slang::TargetDesc targetDesc = {};
-      targetDesc.format = SLANG_SPIRV;
-      targetDesc.profile = globalSession->findProfile("spirv_1_5");
-
-      // Enable Vulkan reflection to get parameter information
-      slang::CompilerOptionEntry reflectionOption = {};
-      reflectionOption.name = slang::CompilerOptionName::VulkanEmitReflection;
-      reflectionOption.value.kind = slang::CompilerOptionValueKind::Int;
-      reflectionOption.value.intValue0 = 1;
-
-      // Enable optimization
-      slang::CompilerOptionEntry optimizationOption = {};
-      optimizationOption.name = slang::CompilerOptionName::Optimization;
-      optimizationOption.value.kind = slang::CompilerOptionValueKind::Int;
-      optimizationOption.value.intValue0 = kSlangOptLevel;  // 0=None, 1=Default, 2=Maximum
-
-
-
-      std::vector<slang::CompilerOptionEntry> compilerOptions;
-      compilerOptions.push_back(reflectionOption);
-      compilerOptions.push_back(optimizationOption);
-
-      {
-        slang::CompilerOptionEntry opt = {};
-        opt.name = slang::CompilerOptionName::VulkanEmitReflection;
-        opt.value.kind = slang::CompilerOptionValueKind::Int;
-        opt.value.intValue0 = 1;
-        compilerOptions.push_back(opt);
-      }
-
-
-      {
-        slang::CompilerOptionEntry opt = {};
-        opt.name = slang::CompilerOptionName::MatrixLayoutColumn;
-        opt.value.kind = slang::CompilerOptionValueKind::Int;
-        opt.value.intValue0 = 1;
-        compilerOptions.push_back(opt);
-      }
-
-
-      targetDesc.compilerOptionEntries = compilerOptions.data();
-      targetDesc.compilerOptionEntryCount = static_cast<SlangInt>(compilerOptions.size());
-
-      sessionDesc.targets = &targetDesc;
-      sessionDesc.targetCount = 1;
-
-      static SlangFileSystem fileSystem;
-      sessionDesc.fileSystem = &fileSystem;
-
-      const char* searchPaths[] = {"shaders"};
-      sessionDesc.searchPaths = searchPaths;
-      sessionDesc.searchPathCount = 1;
-
-      if (SLANG_FAILED(globalSession->createSession(sessionDesc, this->session.writeRef()))) {
-        throw std::runtime_error("Failed to create Slang session");
-      }
-    }
-
-
-    // Load the module from the filepath.
-    {
-      REN_PROFILE_SCOPE("LoadSlangModule");
-      module = this->session->loadModule(slangFilePath.c_str(), diagnosticsBlob.writeRef());
-      if (!module) {
-        checkSlangDiagnostics(diagnosticsBlob);
-        throw std::runtime_error("Failed to load Slang module");
-      }
-    }
-
-
-
-
-    // Get the entry point count.
-    SlangInt32 entryPointCount = module->getDefinedEntryPointCount();
-    if (entryPointCount == 0) {
-      throw std::runtime_error("No entry points found in shader source");
-    }
-
-
-    std::vector<slang::IComponentType*> allComponents;
-    allComponents.push_back(module);
-
-    for (SlangInt32 i = 0; i < entryPointCount; ++i) {
-      REN_PROFILE_SCOPE("CompileSlangEntryPoint");
-      Slang::ComPtr<slang::IEntryPoint> entryPoint;
-
-      {
-        REN_PROFILE_SCOPE("GetDefinedEntryPoint");
-        if (SLANG_FAILED(module->getDefinedEntryPoint(i, entryPoint.writeRef()))) {
-          throw std::runtime_error("Failed to get entry point");
-        }
-      }
-
-      // 6. Compose the program (module + entry point)
-      // std::array<slang::IComponentType*, 2> componentTypes = {module, entryPoint};
-      allComponents.push_back(entryPoint);
-    }
-
-
-
-    // Link the modules.
-    {
-      Slang::ComPtr<slang::IComponentType> unlinkedProgram;
-      if (SLANG_FAILED(this->session->createCompositeComponentType(allComponents.data(), allComponents.size(), unlinkedProgram.writeRef()))) {
-        checkSlangDiagnostics(diagnosticsBlob);
-        throw std::runtime_error("Failed to create composite program");
-      }
-
-
-      if (SLANG_FAILED(unlinkedProgram->link(this->program.writeRef(), diagnosticsBlob.writeRef()))) {
-        checkSlangDiagnostics(diagnosticsBlob);
-        throw std::runtime_error("Failed to link program");
-      }
-    }
-
-
-    for (SlangInt32 i = 0; i < entryPointCount; ++i) {
-      // 8. Get compiled SPIR-V code
-      Slang::ComPtr<slang::IBlob> spirvCode;
-
-      {
-        REN_PROFILE_SCOPE("GetEntryPointCode");
-        if (SLANG_FAILED(this->program->getEntryPointCode(i,  // entry point index (we only have one in this composed program)
-                                                          0,  // target index
-                                                          spirvCode.writeRef(), diagnosticsBlob.writeRef()))) {
-          checkSlangDiagnostics(diagnosticsBlob);
-          throw std::runtime_error("Failed to get entry point code");
-        }
-
-
-        const u8* spirvBytes = (const u8*)spirvCode->getBufferPointer();
-        size_t spirvSize = spirvCode->getBufferSize();
-        std::vector<u8> spirv;
-        spirv.assign(spirvBytes, spirvBytes + spirvSize);
-
-
-        auto* ep = this->program->getLayout()->getEntryPointByIndex(i);
-        SlangStage slangStage = ep->getStage();
-        VkShaderStageFlagBits vulkanStage = slangStageToVulkan(slangStage);
-
-        const char* name = "unknown";
-        if (auto epName = ep->getName()) {
-          name = epName;
-        }
-
-        auto mod = make<ShaderModule>(name, spirv, vulkanStage);
-        shaders.push_back(mod);
-      }
-    }
-
-    this->reflection = make<ren::ShaderReflection>();
-    this->reflection->parseFromSlang(this->program->getLayout());
-
-
-    for (const auto& node : reflection->getRoot()->members) {
-      if (node->type.type != ShaderReflection::Type::PushConstant) {
-        continue;
-      }
-
-      auto pcLoc = node->location;
-      if (!pcLoc.byteOffset || !pcLoc.byteSize) {
-        ren::errln("Push constant block missing byte offset/size, skipping...");
-        continue;
-      }
-      VkPushConstantRange range{};
-      range.offset = *pcLoc.byteOffset;
-      range.size = *pcLoc.byteSize;
-      range.stageFlags = VK_SHADER_STAGE_ALL;
-      range.stageFlags = VK_SHADER_STAGE_ALL;  // TODO: get from reflection somehow?
-      pushConstantRanges.push_back(range);
-    }
+  ShaderProgram::ShaderProgram(CompiledProgram&& compiled)
+      : shaderPath(std::move(compiled.path))
+      , reflection(std::move(compiled.reflection)) {
+    createModules(compiled.entryPoints);
 
     for (auto& r : this->reflection->bindings) {
       ShaderBinding b = {
@@ -298,203 +40,91 @@ namespace ren {
           .set = r.set,
           .binding = r.index,
           .count = r.count,
-          .type = ShaderReflection::BindingType::toVkDescriptorType(r.type.type),
+          .type = r.type.toVkDescriptorType(),
           .stages = VK_SHADER_STAGE_ALL,  // TODO!!!
       };
       this->bindings.push_back(b);
     }
 
-    this->bakeLayouts();
+    validateAgainstABI();
+    bakeLayouts();
+  }
+
+  ShaderProgram::~ShaderProgram() {
+    auto& vulkan = getVulkan();
+
+    // Delete the pipeline layout.
+    if (pipelineLayout != VK_NULL_HANDLE) {
+      vkDestroyPipelineLayout(vulkan.device, pipelineLayout, nullptr);
+      pipelineLayout = VK_NULL_HANDLE;
+    }
+
+    // Descriptor set layouts are owned by Renderer.
   }
 
 
-  void ShaderProgram::reflectShaders() {
-    // TODO: use ren::ShaderRefleciton
-    for (auto& shader : shaders) {
-      reflectShader(shader->getCode(), shader->getStage());
+  void ShaderProgram::createModules(const std::vector<CompiledEntryPoint>& entryPoints) {
+    shaders.reserve(entryPoints.size());
+    for (const auto& ep : entryPoints) {
+      shaders.push_back(make<ShaderModule>(ep.name, ep.spirv, ep.stage));
     }
-
-    // Merge and deduplicate bindings
-    // mergeDescriptorBindings();
   }
 
 
-  void ShaderProgram::reflectShader(const std::vector<u32>& spirv, VkShaderStageFlagBits stage) {
-    SpvReflectShaderModule module;
-    SpvReflectResult result = spvReflectCreateShaderModule(spirv.size() * sizeof(u32), (u32*)spirv.data(), &module);
-
-    if (result != SPV_REFLECT_RESULT_SUCCESS) {
-      throw std::runtime_error("Failed to create SPIRV reflection module");
-    }
-
-    // Get descriptor bindings
-    uint32_t bindingCount = 0;
-    result = spvReflectEnumerateDescriptorBindings(&module, &bindingCount, nullptr);
-    if (result != SPV_REFLECT_RESULT_SUCCESS) {
-      spvReflectDestroyShaderModule(&module);
-      throw std::runtime_error("Failed to enumerate descriptor bindings");
-    }
-
-    std::vector<SpvReflectDescriptorBinding*> reflectionBindings(bindingCount);
-    result = spvReflectEnumerateDescriptorBindings(&module, &bindingCount, reflectionBindings.data());
-    if (result != SPV_REFLECT_RESULT_SUCCESS) {
-      spvReflectDestroyShaderModule(&module);
-      throw std::runtime_error("Failed to get descriptor reflectionBindings");
-    }
-
-    for (const auto* binding : reflectionBindings) {
-      ShaderBinding desc;
-      desc.set = binding->set;
-      desc.binding = binding->binding;
-      desc.type = static_cast<VkDescriptorType>(binding->descriptor_type);
-      // If reflection reports 0 (runtime array), use 1 for layout creation; actual arraying handled
-      // by user
-      desc.count = binding->count == 0 ? 16384u : binding->count;
-      desc.stages = stage;
-      // Some compilers may emit null/empty names; synthesize a stable name in that case
-      if (binding->name && binding->name[0] != '\0') {
-        desc.name = binding->name;
-      } else {
-        desc.name = fmt::format("set{}_binding{}", desc.set, desc.binding);
-      }
-
-      bindings.push_back(desc);
-    }
-
-    // Generate push constant ranges
-    for (uint32_t i = 0; i < module.push_constant_block_count; ++i) {
-      const SpvReflectBlockVariable* pushConstantBlock = &module.push_constant_blocks[i];
-      VkPushConstantRange range{};
-      range.offset = pushConstantBlock->offset;
-      range.size = pushConstantBlock->size;
-      range.stageFlags = stage;
-      pushConstantRanges.push_back(range);
-    }
-
-    spvReflectDestroyShaderModule(&module);
-  }
-
-  void ShaderProgram::mergeDescriptorBindings() {
-    // Merge by (set,binding), combine stages, validate consistency
-    struct Key {
-      u32 set;
-      u32 binding;
-      bool operator==(const Key& o) const { return set == o.set && binding == o.binding; }
-    };
-    struct KeyHash {
-      size_t operator()(const Key& k) const { return (size_t(k.set) << 16) ^ k.binding; }
-    };
-
-    std::unordered_map<Key, ShaderBinding, KeyHash> mergedMap;
-    for (const auto& b : bindings) {
-      Key k{b.set, b.binding};
-      auto it = mergedMap.find(k);
-      if (it == mergedMap.end()) {
-        mergedMap.emplace(k, b);
-      } else {
-        auto& m = it->second;
-        // Validate descriptor type and count are consistent across stages
-        if (m.type != b.type) {
-          throw std::runtime_error(
-              fmt::format("Descriptor type mismatch for set {} binding {} across stages ({} vs {})", m.set, m.binding, (int)m.type, (int)b.type));
-        }
-        if (m.count != b.count) {
-          // Take the max to be conservative
-          m.count = std::max(m.count, b.count);
-        }
-        // Merge stage flags
-        m.stages |= b.stages;
-        // Prefer a non-empty, longer name if they differ
-        if (m.name != b.name) {
-          if (m.name.empty() || b.name.size() > m.name.size()) {
-            m.name = b.name;
-          }
-        }
+  void ShaderProgram::validateAgainstABI(void) const {
+    for (const auto& binding : bindings) {
+      if (!isGlobalABIBinding(binding.set, binding.binding, binding.type)) {
+        throw std::runtime_error(fmt::format(
+            "Shader '{}' declares descriptor set {} binding {} outside REN's global ABI; "
+            "pass per-shader data through push constants, descriptor handles, or buffer addresses",
+            shaderPath, binding.set, binding.binding));
       }
     }
 
-    // Rebuild sorted list for stable ordering (by set then binding); allow sparse sets
-    std::vector<ShaderBinding> out;
-    out.reserve(mergedMap.size());
-    for (auto& [k, v] : mergedMap) {
-      out.push_back(v);
+    // Slang reflection intentionally omits its synthesized descriptor heaps.
+    // Validate the emitted modules too, so the actual Vulkan ABI is enforced.
+    ShaderReflection physicalReflection;
+    for (const auto& shader : shaders) {
+      physicalReflection.parseFromSpirv(
+          reinterpret_cast<const u8*>(shader->getCode().data()),
+          shader->getCode().size() * sizeof(u32));
     }
-    std::sort(out.begin(), out.end(), [](const ShaderBinding& a, const ShaderBinding& b) {
-      if (a.set != b.set) {
-        return a.set < b.set;
+    for (const auto& binding : physicalReflection.bindings) {
+      if (!isGlobalABIBinding(
+              binding.set, binding.index,
+              binding.type.toVkDescriptorType())) {
+        throw std::runtime_error(fmt::format(
+            "Shader '{}' emitted descriptor set {} binding {} outside REN's global ABI",
+            shaderPath, binding.set, binding.index));
       }
-      return a.binding < b.binding;
-    });
-    bindings = std::move(out);
+    }
   }
-
-
 
 
   void ShaderProgram::bakeLayouts() {
     auto& vulkan = getVulkan();
+    auto& renderer = Renderer::get();
+    setLayouts = {
+        renderer.getFrameGlobalsAllocator().getLayout(),
+        renderer.getImageDescriptorHeap().getLayout(),
+        renderer.getSamplerDescriptorHeap().getLayout(),
+    };
+    pushConstantRanges = {{
+        .stageFlags = VK_SHADER_STAGE_ALL,
+        .offset = 0,
+        .size = ShaderABI::pushConstantBytes,
+    }};
 
-
-    // using our bindings, we can create a pipeline layout.
-
-    // Group bindings by set number
-    std::map<u32, std::vector<VkDescriptorSetLayoutBinding>> setBindings;
-
-
-    u32 maxSet = 0;
-
-    for (const auto& binding : bindings) {
-      VkDescriptorSetLayoutBinding layoutBinding{};
-      layoutBinding.binding = binding.binding;
-      layoutBinding.descriptorType = binding.type;
-      layoutBinding.descriptorCount = binding.count;
-      layoutBinding.stageFlags = binding.stages;
-      layoutBinding.pImmutableSamplers = nullptr;
-
-      // ren::println("Binding: set {} binding {} type={} count={} stages=0x{:X}", binding.set, binding.binding, static_cast<int>(binding.type),
-      //              binding.count, binding.stages);
-
-      if (binding.set > maxSet) {
-        maxSet = binding.set;
-      }
-
-      setBindings[binding.set].push_back(layoutBinding);
-    }
-
-    // Create descriptor set layouts
-    setLayouts.clear();
-
-    if (!setBindings.empty()) {
-      // Size to max set index + 1 so sparse sets are indexed directly; holes remain VK_NULL_HANDLE
-      setLayouts.assign(maxSet + 1, VK_NULL_HANDLE);
-      for (const auto& [setIndex, bindings] : setBindings) {
-        VkDescriptorSetLayoutCreateInfo layoutInfo{};
-        layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        layoutInfo.flags = 0;  // VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
-        layoutInfo.bindingCount = static_cast<u32>(bindings.size());
-        layoutInfo.pBindings = bindings.data();
-
-        vkCreateDescriptorSetLayout(vulkan.device, &layoutInfo, nullptr, &setLayouts[setIndex]);
-      }
-    }
-
-
-    // Create pipeline layout
-    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
-    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutInfo.setLayoutCount = static_cast<u32>(setLayouts.size());
-    pipelineLayoutInfo.pSetLayouts = setLayouts.empty() ? nullptr : setLayouts.data();
-
-    if (pushConstantRanges.empty()) {
-      pipelineLayoutInfo.pushConstantRangeCount = 0;
-      pipelineLayoutInfo.pPushConstantRanges = nullptr;
-    } else {
-      pipelineLayoutInfo.pushConstantRangeCount = static_cast<u32>(pushConstantRanges.size());
-      pipelineLayoutInfo.pPushConstantRanges = pushConstantRanges.data();
-    }
-    vkCreatePipelineLayout(vulkan.device, &pipelineLayoutInfo, nullptr, &this->pipelineLayout);
+    VkPipelineLayoutCreateInfo pipelineLayoutInfo{
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .setLayoutCount = static_cast<u32>(setLayouts.size()),
+        .pSetLayouts = setLayouts.data(),
+        .pushConstantRangeCount = 1,
+        .pPushConstantRanges = pushConstantRanges.data(),
+    };
+    VK_CHECK(vkCreatePipelineLayout(
+        vulkan.device, &pipelineLayoutInfo, nullptr, &pipelineLayout));
   }
-
   const ShaderBinding* ShaderProgram::getBinding(const std::string_view& name) const {
     // TODO: as we grow, we need a faster lookup mechanism!
     for (const auto& binding : bindings) {
@@ -558,7 +188,7 @@ namespace ren {
           // if `system` is defined, call spirv-dis on it
           system(fmt::format("spirv-dis {}", dumpPath).c_str());
           system(fmt::format("spirv-reflect {}", dumpPath).c_str());
-          unlink(dumpPath.c_str());
+          // unlink(dumpPath.c_str());
           ren::ShaderReflection refl;
           refl.parseFromSpirv(reinterpret_cast<const u8*>(module->getCode().data()), module->getCode().size() * sizeof(u32));
           // ren::println("Reflection:\n{}", refl.getRoot()->toJson().dump(2));
@@ -655,7 +285,7 @@ namespace ren {
     j["reflection"] = reflection->toJson();
 
 
-    ren::BundleBuilder bundle;
+    ren::Bundle bundle;
 
     // write the shader programs to disk as spirv.
     auto shadersJson = json::array();
@@ -665,7 +295,7 @@ namespace ren {
       js["stage"] = shader->getStage();
 
       auto& code = shader->getCode();
-      auto blobIndex = bundle.attachBlob(code);
+      auto blobIndex = bundle.attachBlob(shader->getFilename(), code);
       js["blob"] = blobIndex;
 
       shadersJson.push_back(js);

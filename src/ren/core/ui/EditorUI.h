@@ -15,6 +15,11 @@
 
 namespace ren::eui {
 
+  namespace detail {
+    // Returns the editor's monospace font, or null before configuration.
+    ImFont *getMonoFont();
+  }  // namespace detail
+
 
   static constexpr const char *__x = ICON_SAVE;
 
@@ -25,7 +30,7 @@ namespace ren::eui {
   };
 
 
-  constexpr ImVec4 primaryColor = ImVec4(0.0f, 0.52f, 0.25f, 1.0f);
+  inline const ImVec4 primaryColor = Color(0x56759A);
 
   struct Style {
     std::optional<ImVec4> fg, bg;
@@ -64,8 +69,64 @@ namespace ren::eui {
 
   void ShadowedText(const char *text);
 
+  // Draw printf-style text with the current font.
+  void Text(const char *fmt, ...) IM_FMTARGS(1);
+
+  // Draw printf-style text with the monospace font, then restore the current font.
+  void TextMono(const char *fmt, ...) IM_FMTARGS(1);
+
+  // Same as ImGui::BeginTabBar, but draws the tab strip background so that the tabs look like docked tabs.
+  // Call ImGui::EndTabBar when it returns true.
+  bool BeginTabBar(const char *id, ImGuiTabBarFlags flags = 0);
 
 
+
+
+  // Editor color palette as sRGB hex values. The defaults approximate the Unity dark theme.
+  // applyTheme() maps these fields onto the ImGui style colors.
+  struct Theme {
+    // Text
+    u32 text = 0xD2D2D2;
+    u32 textDisabled = 0x808080;
+
+    // Panels
+    // u32 windowBg = 0x151515;
+    u32 windowBg = 0x333333;
+    u32 popupBg = 0x2D2D2D;
+    u32 border = 0x1A1A1A;
+
+    // Tabs. The selected tab uses windowBg.
+    u32 tabBarBg = 0x101010;
+    u32 tabHovered = 0x303030;
+    float tabOverlineSize = 2.0f;
+
+    // Input fields, checkboxes, and drag fields
+    u32 inputBg = 0x080808;
+    u32 inputBgHovered = 0x2E2E2E;
+    u32 inputBgActive = 0x232323;
+
+    // Buttons and dropdowns
+    u32 button = 0x585858;
+    u32 buttonHovered = 0x676767;
+    u32 buttonActive = 0x464646;
+
+    // Collapsing headers and tree nodes
+    u32 header = 0x3E3E3E;
+    u32 headerHovered = 0x474747;
+
+    // Focus, selection, and highlights
+    u32 accent = 0x3A79BB;
+    u32 selection = 0x2C5D87;
+
+    u32 scrollbarGrab = 0x5F5F5F;
+    u32 scrollbarGrabHovered = 0x6E6E6E;
+
+    float rounding = 3.0f;
+  };
+
+
+  // Write the theme into the current ImGui style. You can call it again at runtime to change the theme.
+  void applyTheme(const Theme &theme);
 
   // Configure the look of ImGui for the ren editor.
   void configure();

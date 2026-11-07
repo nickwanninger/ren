@@ -1,8 +1,34 @@
 # ren
 
+REN is currently pivoting to a native Vulkan 1.3, runtime-Slang, bindless
+renderer. The fixed shader ABI, graphics/compute examples, and deferred work
+are documented in [docs/slang-bindless-renderer.md](docs/slang-bindless-renderer.md).
 
+Build and run:
 
-## Ubuntu Deps
+```bash
+make MODE=Release -j8
+dist/bin/editor
+```
+
+REN prefers a discrete GPU that supports the required Vulkan features and
+presentation. It falls back to another compatible GPU if needed. Startup logs
+show the selected device under `Selected physical device`.
+
+Use `dist/bin/editor --no-vsync --max-fps 0` to remove the application frame
+limit and request `IMMEDIATE` presentation. If the surface does not support
+`IMMEDIATE`, REN tries `MAILBOX`, then `FIFO`.
+`MAILBOX` replaces pending frames but still synchronizes display updates
+with the monitor refresh.
+
+Run the headless test suite and the GPU compute smoke test:
+
+```bash
+make test
+dist/bin/editor --run-saxpy
+```
+
+## Ubuntu dependencies
 ```bash
 sudo apt install libvulkan-dev libfmt-dev libspirv-dev glslang-tools spirv-headers
 ```

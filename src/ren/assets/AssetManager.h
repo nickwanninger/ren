@@ -4,17 +4,10 @@
 #include <ren/assets/Asset.h>
 #include <ren/renderer/shader/ShaderModule.h>
 #include <ren/assets/AssetSource.h>
+#include <ren/assets/AssetStore.h>
 #include <sol/sol.hpp>
 
 namespace ren {
-
-  struct AssetInfo {
-    AssetID id;                  // The ID of the asset.
-    std::filesystem::path path;  // The path to the asset file.
-    AssetType type;              // The type of the asset.
-  };
-
-
 
   // An AssetHandle is a typed wrapper around a u64 integer, which abstracts the
   // resolution of an asset of a given type. Whenever an asset is needed, it can
@@ -32,20 +25,8 @@ namespace ren {
 
 
 
-  class AssetManagerBase {
-   public:
-    virtual ~AssetManagerBase() = default;
-
-    // The core of the asset manager interface is the ability to resolve an
-    // asset by its UUID.  If an asset hasn't been used after a period of time,
-    // it gets unloaded from memory automatically. Each asset can have its own timeout.
-  };
-
-
-
-
-  // AssetManager is an interface for managing assets in the engine.
-  // It's mostly used to retrieve assets by their UUIDs.
+  // The AssetManager is responsible for managing asset importing and retrieval.
+  // 
   class AssetManager {
    public:
     AssetManager();
@@ -54,34 +35,38 @@ namespace ren {
     void addFilesystemSource(const std::string_view &path);
     void addEmbeddedSource(void);
 
-    ref<Asset> getAsset(ren::AssetID assetID);
-    ref<Asset> getAsset(const std::string_view &name);
+    // Add the sources that all ren programs use: the embedded resources,
+    // then the asset directory `root`. The store is in `root`, because the
+    // embedded source is read-only. Note: this creates `<root>/store` if it
+    // does not exist.
+    void addDefaultSources(const std::string_view &root = "assets/");
 
-    AssetID importAsset(const std::string_view &path, AssetType type);
-
-    // Given an asset's name, return the AssetID which identifies it.
-    static AssetID getID(const std::string_view &name);
-
-
+    // Handles the changes that the sources detected since the last call.
+    // Call this one time per frame, from the main thread.
+    void tick();
 
     // Load the bytes of some asset from the asset source. No Caching!
     bool load(const std::string_view &name, std::vector<u8> &out) { return source.load(name, out); }
 
-    // Load an asset by path and type. If the type is unknown, it will be inferred from the file extension.
-    ref<Asset> load(const std::string_view &path, AssetType type = AssetType::Unknown);
+
+    AssetStore &getStore() { return store; }
+    AssetSource &getSource(void) { return source; }
 
 
-    void configureLua(sol::state &lua);
+    // Scan the asset sources for new assets, and import them.
+    void scanForImports(void);
 
-   protected:
-    ref<Asset> load(const AssetInfo &info);
+    // Import an asset from a file path. This will do the import action,
+    // give it an asset id, and write the sidecar.
+    Option<AssetID> import(const std::filesystem::path &path);
+
+    // Import a mesh from a file path. implemented in importers/mesh.cpp
+    void importMesh(const std::filesystem::path &path);
 
    private:
     // The source that assets are loaded from.
     ren::MultiAssetSource source;
-
-    std::map<ren::AssetID, AssetInfo> assetRegistry;
-    std::map<ren::AssetID, ref<Asset>> loadedAssets;  // Cache of loaded assets
+    ren::AssetStore store;
   };
 
   AssetManager &getAssetManager();

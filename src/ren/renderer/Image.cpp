@@ -1,4 +1,5 @@
 #include <ren/renderer/Image.h>
+#include <ren/renderer/Renderer.h>
 #include <ren/renderer/vulkan/Vulkan.h>
 #include <ren/renderer/Buffer.h>
 #include <cmath>
@@ -9,15 +10,13 @@ namespace ren {
   static std::unordered_set<Image *> s_images;
   std::unordered_set<Image *> Image::allImages(void) { return s_images; }
 
-  Image::Image(const std::string &name, VkImage image, VkImageView imageView, VmaAllocation memory,
-               VkImageCreateInfo &createInfo)
+  Image::Image(const std::string &name, VkImage image, VkImageView imageView, VmaAllocation memory, VkImageCreateInfo &createInfo)
       : name(name)
       , image(image)
       , imageView(imageView)
       , memory(memory)
       , imageCreateInfo(createInfo) {
-    assert(image != VK_NULL_HANDLE && imageView != VK_NULL_HANDLE &&
-           "Image resources must be valid. Check the Vulkan instance and image creation.");
+    assert(image != VK_NULL_HANDLE && imageView != VK_NULL_HANDLE && "Image resources must be valid. Check the Vulkan instance and image creation.");
     s_images.insert(this);
   }
 
@@ -27,7 +26,9 @@ namespace ren {
 
     // If an Image has no memory, it means it is managed elsewhere and we should not actually
     // destroy it here. (e.g., swapchain images)
-    if (this->memory == VK_NULL_HANDLE) { return; }
+    if (this->memory == VK_NULL_HANDLE) {
+      return;
+    }
 
 
     if (image != VK_NULL_HANDLE) {
@@ -39,13 +40,38 @@ namespace ren {
 
 
 
-  Image::Ref Image::create(const std::string &name, VkImage image, VkImageView imageView,
-                           VmaAllocation memory, VkImageCreateInfo &createInfo) {
+  Image::Ref Image::create(const std::string &name, VkImage image, VkImageView imageView, VmaAllocation memory, VkImageCreateInfo &createInfo) {
     return make<Image>(name, image, imageView, memory, createInfo);
   }
 
-  u32 Image::calculateMipLevels(u32 width, u32 height) {
-    return static_cast<u32>(std::floor(std::log2(std::max(width, height)))) + 1;
+  u32 Image::calculateMipLevels(u32 width, u32 height) { return static_cast<u32>(std::floor(std::log2(std::max(width, height)))) + 1; }
+
+  void Image::uploadPixels(u8 *pixels) {
+    REN_PROFILE_FUNCTION();
+
+    auto &vulkan = ren::getVulkan();
+
+
+    VkDeviceSize imageSize = getWidth() * getHeight() * 4;
+    ren::BufferMemory stagingBuffer(imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                              VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+    if (pixels != nullptr) {
+      stagingBuffer.copyFromHost(pixels, imageSize);
+    }
+
+    auto image = getImage();
+    auto format = getFormat();
+
+    vulkan.transitionImageLayout(image, format, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+
+    vulkan.copyBufferToImage(stagingBuffer.getHandle(), image, static_cast<uint32_t>(getWidth()), static_cast<uint32_t>(getHeight()));
+
+    if (this->getMipLevels() > 1) {
+      this->generateMipmaps();
+    } else {
+      vulkan.transitionImageLayout(getImage(), this->getFormat(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    }
   }
 
   void Image::generateMipmaps(VkCommandBuffer cmd) {
@@ -56,8 +82,7 @@ namespace ren {
 
     // Check that image has TRANSFER_SRC usage flag
     if (!(imageCreateInfo.usage & VK_IMAGE_USAGE_TRANSFER_SRC_BIT)) {
-      throw std::invalid_argument(
-          "Image must have VK_IMAGE_USAGE_TRANSFER_SRC_BIT usage flag for mipmap generation");
+      throw std::invalid_argument("Image must have VK_IMAGE_USAGE_TRANSFER_SRC_BIT usage flag for mipmap generation");
     }
 
     auto &vulkan = ren::getVulkan();
@@ -91,8 +116,7 @@ namespace ren {
         barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
         barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
 
-        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0,
-                             nullptr, 0, nullptr, 1, &barrier);
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
       }
 
       // Transition destination mip (i) to TRANSFER_DST_OPTIMAL
@@ -112,8 +136,7 @@ namespace ren {
         barrier.srcAccessMask = 0;
         barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
 
-        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0,
-                             nullptr, 0, nullptr, 1, &barrier);
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
       }
 
       // Calculate size for next mip level
@@ -137,17 +160,17 @@ namespace ren {
 
 
       VkFilter filter = VK_FILTER_LINEAR;
-      vkCmdBlitImage(cmd, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, image,
-                     VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, filter);
+      vkCmdBlitImage(cmd, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, filter);
 
       mipWidth = nextMipWidth;
       mipHeight = nextMipHeight;
     }
 
     // Transition all mip levels to SHADER_READ_ONLY_OPTIMAL at the end
-    // Mip level 0 is in TRANSFER_SRC_OPTIMAL, all others are in TRANSFER_DST_OPTIMAL
+    // Mip levels 0..N-2 are in TRANSFER_SRC_OPTIMAL (each was a blit source),
+    // the last level is in TRANSFER_DST_OPTIMAL (only a blit destination)
 
-    // Transition mip level 0 (which was used as source)
+    // Transition mip levels 0..N-2 (which were used as sources)
     {
       VkImageMemoryBarrier barrier{};
       barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -158,18 +181,17 @@ namespace ren {
       barrier.image = image;
       barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
       barrier.subresourceRange.baseMipLevel = 0;
-      barrier.subresourceRange.levelCount = 1;
+      barrier.subresourceRange.levelCount = imageCreateInfo.mipLevels - 1;
       barrier.subresourceRange.baseArrayLayer = 0;
       barrier.subresourceRange.layerCount = 1;
       barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
       barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
 
-      vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0,
-                           nullptr, 0, nullptr, 1, &barrier);
+      vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
     }
 
-    // Transition mip levels 1+ (which are in TRANSFER_DST_OPTIMAL)
-    if (imageCreateInfo.mipLevels > 1) {
+    // Transition the last mip level (which is in TRANSFER_DST_OPTIMAL)
+    {
       VkImageMemoryBarrier barrier{};
       barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
       barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
@@ -178,15 +200,14 @@ namespace ren {
       barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
       barrier.image = image;
       barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-      barrier.subresourceRange.baseMipLevel = 1;
-      barrier.subresourceRange.levelCount = imageCreateInfo.mipLevels - 1;
+      barrier.subresourceRange.baseMipLevel = imageCreateInfo.mipLevels - 1;
+      barrier.subresourceRange.levelCount = 1;
       barrier.subresourceRange.baseArrayLayer = 0;
       barrier.subresourceRange.layerCount = 1;
       barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
       barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
 
-      vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0,
-                           nullptr, 0, nullptr, 1, &barrier);
+      vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
     }
 
     // Submit and cleanup if we created the command buffer
@@ -216,10 +237,7 @@ namespace ren {
       VkDeviceSize bufferSize = mipWidth * mipHeight * 4;
 
       // Create staging buffer
-      Buffer stagingBuffer(
-          bufferSize,
-          VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+      BufferMemory stagingBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
       // Transition mip level to TRANSFER_SRC_OPTIMAL
       {
@@ -238,8 +256,7 @@ namespace ren {
         barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
         barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
 
-        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0,
-                             nullptr, 0, nullptr, 1, &barrier);
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
       }
 
       // Copy image to buffer
@@ -253,8 +270,7 @@ namespace ren {
         region.imageOffset = {0, 0, 0};
         region.imageExtent = {mipWidth, mipHeight, 1};
 
-        vkCmdCopyImageToBuffer(cmd, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, stagingBuffer.getHandle(), 1,
-                               &region);
+        vkCmdCopyImageToBuffer(cmd, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, stagingBuffer.getHandle(), 1, &region);
       }
 
       // Transition mip level back to SHADER_READ_ONLY_OPTIMAL
@@ -274,19 +290,17 @@ namespace ren {
         barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
         barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
 
-        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0,
-                             nullptr, 0, nullptr, 1, &barrier);
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
       }
 
       // Submit and wait for copy to complete before reading buffer
       vulkan.endSingleTimeCommands(cmd);
 
       // Now read the data from the staging buffer
-      const u8 *pixels = reinterpret_cast<const u8 *>(stagingBuffer.map());
+      const u8 *pixels = stagingBuffer.hostData<u8>();
 
       // Build filename
-      std::string filename =
-          (std::filesystem::path(outputDir) / (name + "_mip" + std::to_string(mipLevel) + ".png")).string();
+      std::string filename = (std::filesystem::path(outputDir) / (name + "_mip" + std::to_string(mipLevel) + ".png")).string();
 
       // Write PNG
       int result = stbi_write_png(filename.c_str(), mipWidth, mipHeight, 4, pixels,
@@ -297,9 +311,6 @@ namespace ren {
       }
 
       ren::println("Saved mipmap level {} to {}", mipLevel, filename);
-
-      // Unmap memory
-      stagingBuffer.unmap();
 
       // Prepare for next iteration (create new command buffer)
       if (mipLevel < imageCreateInfo.mipLevels - 1) {
@@ -312,8 +323,94 @@ namespace ren {
     }
   }
 
-  void Image::readPixelToBuffer(VkCommandBuffer cmd, glm::vec2 position, VkBuffer stagingBuffer,
-                                VkDeviceSize bufferOffset) {
+  // The size of one pixel in the buffer that readPixels() fills, or 0 for a
+  // format that it does not support.
+  static u32 readbackPixelBytes(VkFormat format) {
+    switch (format) {
+      case VK_FORMAT_R8G8B8A8_UNORM:
+      case VK_FORMAT_R8G8B8A8_SRGB:
+      case VK_FORMAT_B8G8R8A8_UNORM:
+      case VK_FORMAT_B8G8R8A8_SRGB:
+        return 4;
+      case VK_FORMAT_R16G16B16A16_SFLOAT:
+        return 8;
+      case VK_FORMAT_R32G32B32A32_SFLOAT:
+        return 16;
+      // A copy of the depth aspect gives one float for each pixel.
+      case VK_FORMAT_D32_SFLOAT:
+      case VK_FORMAT_D32_SFLOAT_S8_UINT:
+        return 4;
+      default:
+        return 0;
+    }
+  }
+
+
+  std::vector<u8> Image::readPixels(VkImageLayout current) const {
+    const auto format = imageCreateInfo.format;
+    const u32 pixelBytes = readbackPixelBytes(format);
+    if (pixelBytes == 0) {
+      throw std::invalid_argument(fmt::format("Image::readPixels does not support format {}: {}", (int)format, name));
+    }
+
+    // A layout change of a depth-stencil image includes both aspects, but the
+    // copy reads only the depth.
+    const bool depth = format == VK_FORMAT_D32_SFLOAT || format == VK_FORMAT_D32_SFLOAT_S8_UINT;
+    VkImageAspectFlags layoutAspects = VK_IMAGE_ASPECT_COLOR_BIT;
+    if (depth) {
+      layoutAspects = format == VK_FORMAT_D32_SFLOAT_S8_UINT ? VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT : VK_IMAGE_ASPECT_DEPTH_BIT;
+    }
+    const VkImageAspectFlags copyAspect = depth ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
+
+    const u32 width = imageCreateInfo.extent.width;
+    const u32 height = imageCreateInfo.extent.height;
+    const VkDeviceSize byteCount = VkDeviceSize(width) * height * pixelBytes;
+    BufferMemory staging(byteCount, VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+
+    // The caller does not say which stage last used the image, so the
+    // barriers wait for all commands.
+    VkImageMemoryBarrier barrier{
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT,
+        .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+        .oldLayout = current,
+        .newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = image,
+        .subresourceRange = {.aspectMask = layoutAspects, .baseMipLevel = 0, .levelCount = 1, .baseArrayLayer = 0, .layerCount = 1},
+    };
+
+    auto &vulkan = ren::getVulkan();
+    VkCommandBuffer cmd = vulkan.beginSingleTimeCommands();
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+    VkBufferImageCopy region{
+        .bufferOffset = 0,
+        .imageSubresource = {.aspectMask = copyAspect, .mipLevel = 0, .baseArrayLayer = 0, .layerCount = 1},
+        .imageOffset = {0, 0, 0},
+        .imageExtent = {width, height, 1},
+    };
+    vkCmdCopyImageToBuffer(cmd, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, staging.getHandle(), 1, &region);
+
+    // Return the image to its layout, so that the owner's record of the
+    // layout stays correct.
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    barrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    barrier.newLayout = current;
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+    vulkan.endSingleTimeCommands(cmd);
+
+
+    const u8 *pixels = staging.hostData<u8>();
+    return std::vector<u8>(pixels, pixels + byteCount);
+  }
+
+
+  void Image::readPixelToBuffer(VkCommandBuffer cmd, glm::vec2 position, VkBuffer stagingBuffer, VkDeviceSize bufferOffset) {
     // Transition to transfer source
     VkImageMemoryBarrier barrier{
         .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
@@ -333,8 +430,7 @@ namespace ren {
                 .layerCount = 1,
             },
     };
-    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
-                         0, 0, nullptr, 0, nullptr, 1, &barrier);
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
 
     // Convert normalized coords to pixel coords
     uint32_t pixelX = (uint32_t)(position.x * getWidth());
@@ -354,15 +450,13 @@ namespace ren {
         .imageOffset = {(int32_t)pixelX, (int32_t)pixelY, 0},
         .imageExtent = {1, 1, 1},
     };
-    vkCmdCopyImageToBuffer(cmd, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, stagingBuffer, 1,
-                           &region);
+    vkCmdCopyImageToBuffer(cmd, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, stagingBuffer, 1, &region);
 
     // Transition back to original layout
     barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
     barrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
     std::swap(barrier.oldLayout, barrier.newLayout);
-    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-                         0, 0, nullptr, 0, nullptr, 1, &barrier);
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
   }
 
 
@@ -375,14 +469,14 @@ namespace ren {
     imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     imageInfo.imageType = VK_IMAGE_TYPE_2D;
     imageInfo.format = format;
-    imageInfo.extent.width = 0;   // Set later
-    imageInfo.extent.height = 0;  // Set later
+    imageInfo.extent.width = 1;   // Set later
+    imageInfo.extent.height = 1;  // Set later
     imageInfo.extent.depth = 1;   // sane default
     imageInfo.mipLevels = 1;
     imageInfo.arrayLayers = 1;
     imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
     imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
-    imageInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    imageInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
     imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
@@ -419,6 +513,25 @@ namespace ren {
 
 
     return Image::create(name, image, imageView, memory, imageInfo);
+  }
+
+  SampledImageIndex Image::sampledIndex() {
+    std::lock_guard lock(sampledSlotMutex);
+    if (!sampledSlot) {
+      sampledSlot.emplace(SampledImageIndex{
+          Renderer::get().getImageDescriptorHeap().allocate(
+              shared_from_this()).unwrap()});
+    }
+    return *sampledSlot;
+  }
+
+  void Image::releaseSampledIndex() {
+    std::lock_guard lock(sampledSlotMutex);
+    if (!sampledSlot) {
+      return;
+    }
+    Renderer::get().getImageDescriptorHeap().release(sampledSlot->value, shared_from_this());
+    sampledSlot.reset();
   }
 
 }  // namespace ren

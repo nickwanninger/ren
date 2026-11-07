@@ -14,6 +14,7 @@ set(IMGUI_SOURCES
    ${IMGUI_DIR}/imgui_draw.cpp
    ${IMGUI_DIR}/imgui_tables.cpp
    ${IMGUI_DIR}/imgui_widgets.cpp
+   ${IMGUI_DIR}/misc/cpp/imgui_stdlib.cpp
 
     ${IMNODES_DIR}/imnodes.cpp
    
@@ -22,14 +23,19 @@ set(IMGUI_SOURCES
 )
 
 
+file(GLOB MESHOPTIMIZER_SOURCES ${CMAKE_SOURCE_DIR}/lib/meshoptimizer/*.cpp)
+
+
 add_library(ren SHARED
   ${SOURCE_FILES}
+  ${MESHOPTIMIZER_SOURCES}
 
   ${CMAKE_SOURCE_DIR}/lib/spirv_reflect/spirv_reflect.c
   ${CMAKE_SOURCE_DIR}/lib/spirv_reflect/common.cpp
   ${CMAKE_SOURCE_DIR}/lib/spirv_reflect/output_stream.cpp
   ${CMAKE_SOURCE_DIR}/lib/vkb/VkBootstrap.cpp
   ${CMAKE_SOURCE_DIR}/lib/stb/stb_image.c
+  ${CMAKE_SOURCE_DIR}/lib/hash-library/sha256.cpp
 
 
   # Imguizmo
@@ -75,7 +81,6 @@ target_link_libraries(ren PUBLIC
   PkgConfig::LuaJIT
   assimp
   Vulkan::Vulkan # Vulkan SDK
-  Vulkan::shaderc_combined
 )
 
 # if not on windows, link libm

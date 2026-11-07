@@ -4,7 +4,8 @@
 #include <ren/renderer/submission/SubmissionQueue.h>
 #include <ren/core/Arena.h>
 #include <ren/renderer/Descriptors.h>
-#include <ren/renderer/shader/ParameterBinding.h>
+#include <ren/renderer/Buffer.h>
+#include <ren/renderer/FrameGlobals.h>
 
 namespace ren {
 
@@ -29,6 +30,7 @@ namespace ren {
   class SubmissionUnit {
    public:
     SubmissionUnit();
+    virtual ~SubmissionUnit();
 
 
     // Prepare the submission unit for a new 'frame' of work.
@@ -43,10 +45,22 @@ namespace ren {
     auto getMainCommandEncoder(void) { return m_cmd; }
 
 
+    void releaseRetained() { retained.clear(); }
+    template <class T>
+    void retain(ref<T> value) {
+      if (value) {
+        retained.push_back(std::move(value));
+      }
+    }
+
     ren::Arena &getArena(void) { return m_arena; }
     auto &getDescriptorAllocator(void) { return m_descriptorAllocator; }
-
-    ShaderObject &createShaderObject(ref<ShaderProgram> &program);
+    void setFrameGlobals(const FrameGlobals& globals) {
+      m_frameGlobals.set(globals);
+    }
+    VkDescriptorSet getFrameGlobalsSet() const {
+      return m_frameGlobals.getSet();
+    }
 
    protected:
     friend class CommandEncoder;
@@ -74,16 +88,24 @@ namespace ren {
 
 
    private:
+    // Read back the timestamp queries of the previous submission and write
+    // them to the trace as spans on a "GPU" thread.
+    void writeQueriesToTrace();
+
+    std::vector<ref<const void>> retained;
     VkCommandBuffer m_vkCmd;
     ref<CommandEncoder> m_cmd;
 
 
     DescriptorAllocator m_descriptorAllocator;
+    FrameGlobalsBinding m_frameGlobals;
     ren::Arena m_arena{0xFFFF, true};  // 64KB initial size, growable
-
-
     VkQueryPool m_timestampQueryPool;
     Query *m_queries = nullptr;
+    // Spans the full command buffer, from begin() to submitTo().
+    Query *m_submissionQuery = nullptr;
+    // The flow from the CPU submit to m_submissionQuery. 0 if not submitted.
+    u64 m_submitFlowId = 0;
     u32 nextQueryIndex = 0;
     float timestampPeriod;
   };

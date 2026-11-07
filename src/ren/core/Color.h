@@ -38,7 +38,7 @@ namespace ren {
         , b(b)
         , a(a) {}
 
-    // Convert to ImVec4 in sRGB space (for ImGui)
+    // Return linear RGBA values for the sRGB render target.
     operator ImVec4() const { return ImVec4(r, g, b, a); }
 
    private:
