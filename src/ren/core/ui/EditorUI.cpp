@@ -7,7 +7,10 @@
 #include <imgui/imgui_internal.h>
 #include <imnodes/imnodes.h>
 #include <ren/core/Application.h>
+#include <ren/core/Flag.h>
 
+
+static ren::Flag<int> kFontSize("font-size", 14, "Font size base in the editor ui.");
 namespace ren::eui {
 
   static ImFont *iconFont = nullptr;
@@ -251,8 +254,7 @@ namespace ren::eui {
     style.ItemSpacing = ImVec2(6.0f, 4.0f);
     style.ItemInnerSpacing = ImVec2(4.0f, 4.0f);
 
-    style.FontSizeBase = 14.0f;
-
+    style.FontSizeBase = static_cast<float>(kFontSize.get());
 
     auto c = [](u32 hex, float alpha = 1.0f) { return ren::hexImColor(hex, alpha); };
 

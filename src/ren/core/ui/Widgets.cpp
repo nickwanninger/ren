@@ -482,6 +482,10 @@ namespace ren::eui {
     // Draw the block. The arrow zones appear only on hover.
     auto* drawList = ImGui::GetWindowDrawList();
     const bool active = g.ActiveId == id;
+    if (hovered || (active && g.ActiveIdSource == ImGuiInputSource_Mouse)) {
+      ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+    }
+
     ImGui::RenderNavCursor(frame, id);
     drawBlock(drawList, frame.Min, frame.Max, BlockKind::Raised, hovered, active, corners);
     if (hovered || active) {
@@ -598,6 +602,10 @@ namespace ren::eui {
     // A mouse press must not move the value, because a release without a drag opens text input.
     // Keyboard and gamepad input go to SliderBehavior() at once.
     const bool active = g.ActiveId == id;
+    if (hovered || (active && g.ActiveIdSource == ImGuiInputSource_Mouse)) {
+      ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+    }
+
     bool changed = false;
     if (active && g.ActiveIdSource == ImGuiInputSource_Mouse && !isDragging()) {
       if (!g.IO.MouseDown[0]) {
