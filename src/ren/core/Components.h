@@ -45,7 +45,7 @@ namespace ren {
           : name(std::move(name)) {}
 
 
-      ren_describe(Name, name);
+      ren_auto_describe(Name, name);
     };
     ren_register_component(Name, .luaName = "NameComponent");
 
@@ -55,7 +55,6 @@ namespace ren {
       glm::quat rotation = {1.0f, 0.0f, 0.0f, 0.0f};
       glm::vec3 scale = {1.0f, 1.0f, 1.0f};
 
-
       // --- //
 
       // This value gets updated every frame to reflect the current *global*
@@ -63,9 +62,16 @@ namespace ren {
       // transformations, as well.
       glm::mat4 transformMatrix = glm::mat4(1.0f);
 
+      ren_describe(Transform, b) {
+        b.name("Transform");
+        ren_describe_field(b, translation).setFriendlyName("Local Transform").setDescription("Local translation of the entity relative to its parent.");
+        ren_describe_field(b, rotation).setFriendlyName("Local Rotation").setDescription("Local rotation of the entity relative to its parent.");
+        ren_describe_field(b, scale).setFriendlyName("Local Scale").setDescription("Local scale of the entity relative to its parent.");
+      }
+
+
       NLOHMANN_DEFINE_TYPE_INTRUSIVE(Transform, translation, rotation, scale);
 
-      ren_describe(Transform, translation, rotation, scale);
 
       Transform() = default;
       Transform(const Transform&) = default;

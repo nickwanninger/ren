@@ -25,6 +25,7 @@ namespace ren::obj {
   struct Field {
     std::string name;
     std::string friendlyName;  // 'firstName' -> 'First Name', 'user4' -> 'User 4'
+    std::string description;
     const Type* type;
 
     Field(std::string name, const Type& type);
@@ -34,6 +35,17 @@ namespace ren::obj {
 
     virtual Value readMember(const void* object) const = 0;
     virtual void writeMember(const Value& value, void* object) const = 0;
+
+    // These methods let the field be used like a builder in the ren_describe() macro.
+    Field &setDescription(std::string_view desc) {
+      this->description = desc;
+      return *this;
+    }
+
+    Field &setFriendlyName(std::string_view friendlyName) {
+      this->friendlyName = friendlyName;
+      return *this;
+    }
   };
 
 
@@ -152,18 +164,21 @@ namespace ren::obj {
   // Add fields during construction, before values depend on descriptor order.
   template <typename C>
   struct TypeBuilder {
+    using Component = C;
     Type& type;
+
+    void name(std::string_view name) { type.name = name; }
 
     // Names are JSON keys and path segments. Each must be unique in this structure.
     template <auto Member>
-    void field(const char* name) {
+    auto& field(const char* name) {
+      // TODO: O(n) walk in large objects.
       for (const auto& existing : type.fields) {
         if (existing->name == name) {
           throw std::runtime_error("Duplicate field: " + type.name + "." + name);
         }
       }
-
-      type.fields.push_back(ren::makeBox<detail::MemberField<C, Member>>(name));
+      return *type.fields.emplace_back(ren::makeBox<detail::MemberField<C, Member>>(name));
     }
   };
 
@@ -178,13 +193,19 @@ namespace ren::obj {
   //    };
   //
   // Which is pretty neat.
-#define REN_DESCRIBE_FIELD(Member) renDescribeBuilder.template field<&RenDescribeType::Member>(#Member);
-#define ren_describe(T, ...)                                             \
-  static void describe(::ren::obj::TypeBuilder<T>& renDescribeBuilder) { \
-    using RenDescribeType = T;                                           \
-    renDescribeBuilder.type.name = #T;                                   \
-    __VA_OPT__(NLOHMANN_JSON_PASTE(REN_DESCRIBE_FIELD, __VA_ARGS__))     \
+#define REN_DESCRIBE_FIELD(Member) builder.template field<&RenDescribeType::Member>(#Member);
+
+#define ren_describe(T, builderName) static void describe(::ren::obj::TypeBuilder<T>& builderName)
+#define ren_auto_describe(T, ...)                                    \
+  ren_describe(T, builder) {                                         \
+    using RenDescribeType = T;                                       \
+    builder.type.name = #T;                                          \
+    __VA_OPT__(NLOHMANN_JSON_PASTE(REN_DESCRIBE_FIELD, __VA_ARGS__)) \
   }
+
+
+
+#define ren_describe_field(builder, member) builder.template field<&std::remove_cvref_t<decltype(builder)>::Component::member>(#member)
 
 
   // Supplies copying and dispatch for one primitive C++ type. std::any owns T
