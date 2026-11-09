@@ -96,25 +96,11 @@ namespace ren {
         nodeFlags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
       }
 
-      char name[256];
-      if (node->name.empty()) {
-        if (node->location.arrayIndex) {
-          if (*node->location.arrayIndex > 0) {
-            nodeFlags &= ~ImGuiTreeNodeFlags_DefaultOpen;
-          }
-          snprintf(name, sizeof(name), "[#%d]", *node->location.arrayIndex);
-        } else {
-          snprintf(name, sizeof(name), "<unnamed>");
-        }
-      } else {
-        snprintf(name, sizeof(name), "%s", node->name.c_str());
-      }
-
-      const bool open = ImGui::TreeNodeEx(
-          const_cast<ShaderReflection::Node*>(node), nodeFlags, "%s", name);
+      const bool open =
+          ImGui::TreeNodeEx(const_cast<ShaderReflection::Node*>(node), nodeFlags, "%s", node->name.empty() ? "<unnamed>" : node->name.c_str());
 
       ImGui::TableNextColumn();
-      ImGui::Text("%s", node->type.toString().c_str());
+      ImGui::Text("%s", node->getTypeName());
       ImGui::TableNextColumn();
       ImGui::Text("%s", node->location.pushConstant ? "Yes" : "");
 
@@ -124,13 +110,8 @@ namespace ren {
     ImGui::Text("%d", *node->location.field);     \
   }
 
-      SHOW_LOCATION(bindingSet);
-      SHOW_LOCATION(bindingIndex);
       SHOW_LOCATION(byteOffset);
       SHOW_LOCATION(byteSize);
-      SHOW_LOCATION(arrayIndex);
-      SHOW_LOCATION(varyingIn);
-      SHOW_LOCATION(varyingOut);
 
 #undef SHOW_LOCATION
 
@@ -186,7 +167,7 @@ namespace ren {
     if (materialSchema.isSome()) {
       ImGui::SeparatorText("Material Schema");
       materialSchema.unwrap().inspect();
-      ImGui::SeparatorText("Raw Reflection");
+      ImGui::SeparatorText("Push Constants");
     }
 
     if (root == nullptr) {
@@ -205,7 +186,7 @@ namespace ren {
         ImGuiTableColumnFlags_NoHide |
         ImGuiTableColumnFlags_NoResize;
 
-    if (!ImGui::BeginTable("##ShaderReflection", 10, flags)) {
+    if (!ImGui::BeginTable("##ShaderReflection", 5, flags)) {
       return;
     }
 
@@ -214,13 +195,8 @@ namespace ren {
     ImGui::TableSetupColumn(
         "Type", ImGuiTableColumnFlags_WidthFixed, textBaseWidth * 25.0f);
     ImGui::TableSetupColumn("PC?", locationFlags, locationWidth);
-    ImGui::TableSetupColumn("SET", locationFlags, locationWidth);
-    ImGui::TableSetupColumn("IND", locationFlags, locationWidth);
     ImGui::TableSetupColumn("OFF", locationFlags, locationWidth);
     ImGui::TableSetupColumn("SIZ", locationFlags, locationWidth);
-    ImGui::TableSetupColumn("AID", locationFlags, locationWidth);
-    ImGui::TableSetupColumn("VIN", locationFlags, locationWidth);
-    ImGui::TableSetupColumn("VOUT", locationFlags, locationWidth);
     ImGui::TableHeadersRow();
 
     for (const auto* member : root->members) {

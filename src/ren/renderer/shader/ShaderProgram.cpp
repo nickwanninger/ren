@@ -11,6 +11,7 @@
 #include <ren/core/ui/EditorUI.h>
 #include <ren/core/Bundle.h>
 #include <fstream>
+#include <spirv_reflect/spirv_reflect.h>
 
 
 namespace ren {
@@ -33,18 +34,6 @@ namespace ren {
       : shaderPath(std::move(compiled.path))
       , reflection(std::move(compiled.reflection)) {
     createModules(compiled.entryPoints);
-
-    for (auto& r : this->reflection->bindings) {
-      ShaderBinding b = {
-          .name = r.path,
-          .set = r.set,
-          .binding = r.index,
-          .count = r.count,
-          .type = r.type.toVkDescriptorType(),
-          .stages = VK_SHADER_STAGE_ALL,  // TODO!!!
-      };
-      this->bindings.push_back(b);
-    }
 
     validateAgainstABI();
     bakeLayouts();
@@ -72,30 +61,26 @@ namespace ren {
 
 
   void ShaderProgram::validateAgainstABI(void) const {
-    for (const auto& binding : bindings) {
-      if (!isGlobalABIBinding(binding.set, binding.binding, binding.type)) {
-        throw std::runtime_error(fmt::format(
-            "Shader '{}' declares descriptor set {} binding {} outside REN's global ABI; "
-            "pass per-shader data through push constants, descriptor handles, or buffer addresses",
-            shaderPath, binding.set, binding.binding));
-      }
-    }
-
-    // Slang reflection intentionally omits its synthesized descriptor heaps.
-    // Validate the emitted modules too, so the actual Vulkan ABI is enforced.
-    ShaderReflection physicalReflection;
+    // Slang omits synthesized descriptor heaps from its program layout. Inspect
+    // emitted descriptors directly; validation needs no field or resource tree.
     for (const auto& shader : shaders) {
-      physicalReflection.parseFromSpirv(
-          reinterpret_cast<const u8*>(shader->getCode().data()),
-          shader->getCode().size() * sizeof(u32));
-    }
-    for (const auto& binding : physicalReflection.bindings) {
-      if (!isGlobalABIBinding(
-              binding.set, binding.index,
-              binding.type.toVkDescriptorType())) {
-        throw std::runtime_error(fmt::format(
-            "Shader '{}' emitted descriptor set {} binding {} outside REN's global ABI",
-            shaderPath, binding.set, binding.index));
+      SpvReflectShaderModule module{};
+      const auto& code = shader->getCode();
+      if (spvReflectCreateShaderModule(code.size() * sizeof(u32), code.data(), &module) != SPV_REFLECT_RESULT_SUCCESS) {
+        throw std::runtime_error("Failed to inspect emitted shader: " + shaderPath);
+      }
+      // Destruction also applies when descriptor validation throws.
+      struct ModuleGuard {
+        SpvReflectShaderModule* module;
+        ~ModuleGuard() { spvReflectDestroyShaderModule(module); }
+      } guard{&module};
+
+      for (u32 i = 0; i < module.descriptor_binding_count; ++i) {
+        const auto& binding = module.descriptor_bindings[i];
+        if (!isGlobalABIBinding(binding.set, binding.binding, static_cast<VkDescriptorType>(binding.descriptor_type))) {
+          throw std::runtime_error(
+              fmt::format("Shader '{}' emitted descriptor set {} binding {} outside REN's global ABI", shaderPath, binding.set, binding.binding));
+        }
       }
     }
   }
@@ -125,25 +110,6 @@ namespace ren {
     VK_CHECK(vkCreatePipelineLayout(
         vulkan.device, &pipelineLayoutInfo, nullptr, &pipelineLayout));
   }
-  const ShaderBinding* ShaderProgram::getBinding(const std::string_view& name) const {
-    // TODO: as we grow, we need a faster lookup mechanism!
-    for (const auto& binding : bindings) {
-      if (binding.name == name) {
-        return &binding;
-      }
-    }
-    return nullptr;  // Not found
-  }
-
-  const ShaderBinding* ShaderProgram::getBinding(u32 set, u32 binding) const {
-    for (const auto& b : bindings) {
-      if (b.set == set && b.binding == binding) {
-        return &b;
-      }
-    }
-    return nullptr;
-  }
-
 
 
   void ShaderProgram::inspect(void) {
@@ -189,13 +155,7 @@ namespace ren {
           system(fmt::format("spirv-dis {}", dumpPath).c_str());
           system(fmt::format("spirv-reflect {}", dumpPath).c_str());
           // unlink(dumpPath.c_str());
-          ren::ShaderReflection refl;
-          refl.parseFromSpirv(reinterpret_cast<const u8*>(module->getCode().data()), module->getCode().size() * sizeof(u32));
-          // ren::println("Reflection:\n{}", refl.getRoot()->toJson().dump(2));
 
-          for (const auto& b : refl.bindings) {
-            ren::println("Binding: set {} binding {} name {}", b.set, b.index, b.path);
-          }
         }
         ImGui::PopID();
       }
@@ -206,31 +166,6 @@ namespace ren {
     if (reflection) {
       ImGui::SeparatorText("Shader Reflection");
       reflection->inspect();
-    }
-
-
-    if (ImGui::BeginTable("##ShaderProgramBindings", 5, flags)) {
-      ImGui::TableSetupColumn("Set", colFlags);
-      ImGui::TableSetupColumn("Binding", colFlags);
-      ImGui::TableSetupColumn("Type", colFlags);
-      ImGui::TableSetupColumn("Count", colFlags);
-      ImGui::TableSetupColumn("Stages", colFlags);
-      ImGui::TableHeadersRow();
-
-      for (const auto& binding : bindings) {
-        ImGui::TableNextRow();
-        ImGui::TableNextColumn();
-        ImGui::Text("%u", binding.set);
-        ImGui::TableNextColumn();
-        ImGui::Text("%u", binding.binding);
-        ImGui::TableNextColumn();
-        ImGui::Text("%s", ren::VulkanInstance::stringifyEnum(binding.type));
-        ImGui::TableNextColumn();
-        ImGui::Text("%u", binding.count);
-        ImGui::TableNextColumn();
-        ImGui::Text("0x%X", binding.stages);
-      }
-      ImGui::EndTable();
     }
 
 

@@ -4,7 +4,6 @@
 #include <ren/renderer/shader/ShaderModule.h>
 #include <ren/renderer/vulkan/Vulkan.h>
 #include <ren/renderer/Descriptors.h>
-#include <spirv_reflect/spirv_reflect.h>
 #include <ren/misc/json_serialize.h>
 #include <ren/renderer/shader/ShaderReflection.h>
 #include <vector>
@@ -21,15 +20,6 @@ namespace ren {
    */
 
   class ShaderCache;
-
-
-  // A binding is a shader resource with a set and binding index, a type, and a name.
-  struct ShaderBinding {
-    std::string name;
-    u32 set, binding, count;
-    VkDescriptorType type;
-    VkShaderStageFlags stages;
-  };
 
 
   // One compiled entry point, as produced by the shader compiler front end.
@@ -51,8 +41,8 @@ namespace ren {
 
 
   // A shader program represents a set of shaders that are linked together
-  // to form a pipeline.  It is responsible for reflecting the shader resources
-  // and creating the pipeline layout.
+  // to form a pipeline. It owns parameter reflection and creates the pipeline
+  // layout from the fixed global shader ABI.
   //
   // Programs are not constructed directly: ask the cache for one with
   // `ren::getShader("demo/cube")`.
@@ -74,10 +64,6 @@ namespace ren {
     const std::string& getPath() const { return shaderPath; }
     VkPipelineLayout getPipelineLayout() const { return pipelineLayout; }
     const std::vector<ref<ShaderModule>>& getShaders() const { return shaders; }
-    const std::vector<ShaderBinding>& getBindings() const { return bindings; }
-    const ShaderBinding* getBinding(const std::string_view& name) const;
-    const ShaderBinding* getBinding(u32 set, u32 binding) const;
-
     const std::vector<VkDescriptorSetLayout>& getDescriptorSetLayouts() const { return setLayouts; }
 
     auto getReflection() const { return reflection; }
@@ -106,10 +92,9 @@ namespace ren {
     void createModules(const std::vector<CompiledEntryPoint>& entryPoints);
     void validateAgainstABI(void) const;
 
-    std::vector<ShaderBinding> bindings;
     ref<ren::ShaderReflection> reflection;
 
-    // Eventually, we generate a pipeline layout from the shader reflection.
+    // All programs use the fixed global shader ABI.
     std::vector<VkDescriptorSetLayout> setLayouts;
     std::vector<VkPushConstantRange> pushConstantRanges;
     VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;

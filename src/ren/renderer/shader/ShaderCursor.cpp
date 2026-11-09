@@ -53,8 +53,8 @@ namespace ren {
       throw std::runtime_error("ShaderCursor::root() must be called on the root cursor");
     }
     auto cursor = get(name);
-    if (cursor.m_node->type.type != ShaderReflection::Type::PushConstant) {
-      throw std::runtime_error(fmt::format("ShaderCursor: top-level field '{}' is {}, not a push constant", name, cursor.m_node->type.toString()));
+    if (cursor.m_node->type != ShaderReflection::Type::PushConstant) {
+      throw std::runtime_error(fmt::format("ShaderCursor: top-level field '{}' is {}, not a push constant", name, cursor.m_node->getTypeName()));
     }
     return cursor;
   }
