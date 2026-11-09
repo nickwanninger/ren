@@ -3,9 +3,10 @@ import ren.surface;
 import ren.core.bvh;
 import ren.core.raytrace;
 import ren.core.random;
+import ren.core.materials.pbr;
 
 // Disable sun traces through the fog while retaining distance fog.
-static const bool kVolumetricFog = true;
+static const bool kCollectStats = false;
 static const uint kFogSamples = 12;
 // Distances use world units.
 static const float kFogDensity = 0.012f;
@@ -22,6 +23,9 @@ static const float kInvPi = 0.318309886f;
 // The sun does not move. A moving sun makes the accumulated average incorrect.
 static const float3 kSunDirection = float3(0.45f, 0.8660254f, 0.1f) / length(float3(0.45f, 0.8660254f, 0.1f));
 
+
+static const float kSampleLevel = 2.0f;
+
 [[vk::push_constant]]
 cbuffer root {
   TextureHandle skyboxHdri;
@@ -32,6 +36,8 @@ cbuffer root {
   uint *indices;
   uint numMeshes;
   Mesh *meshes;
+  // Byte address of the shared PBR parameters.
+  uint64_t materialData;
   BVHNode *sceneNodes;
   uint *sceneEntries;
   // The emissive meshes, for next event estimation.
@@ -39,7 +45,7 @@ cbuffer root {
   uint numLights;
   // The cdf of the last light.
   float lightWeightTotal;
-  // 1 samples the emissive meshes directly at each diffuse hit. 0 finds them
+  // 1 samples the emissive meshes directly at each surface hit. 0 finds them
   // only with bounce rays.
   uint lightSampling;
   uint randomSeed;
@@ -49,18 +55,10 @@ cbuffer root {
   uint accumulatedFrames;
   // Irradiance from the sun on a surface that faces it. 0 disables the sun.
   float sunStrength;
+  // Multiplier on the sky radiance. 0 disables the sky.
+  float skyStrength;
   uint debugView; // 0 = path traced, 1 = triangle tests, 2 = box tests.
   uint debugTestScale;
-}
-
-struct RayTracingMaterial {
-  float4 color;
-  float4 emissionColor;
-  float smoothness;
-  // Multiplies color. Not valid when the material has no texture.
-  TextureHandle albedoTexture;
-  float _pad1;
-  float _pad2;
 }
 
 struct Mesh {
@@ -80,8 +78,8 @@ struct Mesh {
   // pointers.
   uint64_t bvhNodes;
   uint64_t bvhTriangles;
-  uint64_t _pad2;
-  RayTracingMaterial material;
+  uint materialOffset;
+  float emissionWeight;
 }
 
 // One emissive mesh. Each triangle of a light has the selection probability
@@ -152,22 +150,32 @@ struct AppScene : ITraceScene {
   bool isOpaque(uint instance) { return meshes[instance].opaque != 0; }
 }
 
+PBRParams loadMaterial(uint instance) {
+  return *((PBRParams *)(materialData + uint64_t(meshes[instance].materialOffset)));
+}
+
+
+float4 sampleBaseColor(PBRParams material, float2 uv) {
+  float4 texel = material.baseColorTexture.isValid()
+      ? material.baseColorTexture.SampleLevel(uv, kSampleLevel) : float4(1.0f);
+  return material.baseColor * texel;
+}
+
+float3 sampleEmission(PBRParams material, float2 uv) {
+  float3 texel = material.emissiveTexture.isValid()
+      ? material.emissiveTexture.SampleLevel(uv, kSampleLevel).rgb : float3(1.0f);
+  return max(material.emissiveFactor.rgb * texel, float3(0.0f));
+}
+
 float4 sampleAlbedo<C : IHitContext>(TriangleAttributes attributes, C context) {
   uint instance = context.instanceIndex();
-  var material = meshes[instance].material;
-  float4 color = material.color;
-  if (material.albedoTexture.isValid()) {
-    uint first = meshes[instance].indexOffset + context.primitiveIndex() * 3;
-    uint offset = meshes[instance].vertexOffset;
-    uint a = offset + indices[first];
-    uint b = offset + indices[first + 1];
-    uint c = offset + indices[first + 2];
-    float2 bary = attributes.barycentrics;
-    float2 uv =
-        vertices[a].texCoord * (1.0f - bary.x - bary.y) + vertices[b].texCoord * bary.x + vertices[c].texCoord * bary.y;
-    color *= material.albedoTexture.SampleLevel(uv, 1.0f);
-  }
-  return color;
+  uint first = meshes[instance].indexOffset + context.primitiveIndex() * 3;
+  uint offset = meshes[instance].vertexOffset;
+  float2 bary = attributes.barycentrics;
+  float2 uv = vertices[offset + indices[first]].texCoord * (1.0f - bary.x - bary.y)
+      + vertices[offset + indices[first + 1]].texCoord * bary.x
+      + vertices[offset + indices[first + 2]].texCoord * bary.y;
+  return sampleBaseColor(loadMaterial(instance), uv);
 }
 
 AnyHitAction testAlpha<C : IHitContext>(TriangleAttributes attributes, C context) {
@@ -177,7 +185,7 @@ AnyHitAction testAlpha<C : IHitContext>(TriangleAttributes attributes, C context
 float3 environmentLight(float3 direction) {
   float2 uv =
       float2(0.5f + atan2(direction.x, -direction.z) * (0.5f * kInvPi), acos(clamp(direction.y, -1.0f, 1.0f)) * kInvPi);
-  return skyboxHdri.SampleLevel(uv, 2.0f).rgb;
+  return skyboxHdri.SampleLevel(uv, 2.0f).rgb * skyStrength;
 }
 
 // One path vertex. A miss sets only emission, to the environment light.
@@ -188,9 +196,8 @@ struct PathPayload {
   float3 geometricNormal;
   // The interpolated vertex normal, on the same side as geometricNormal.
   float3 shadingNormal;
-  float3 albedo;
+  PBRBrdf brdf;
   float3 emission;
-  float smoothness;
   // The solid angle density with which light sampling from the ray origin
   // picks this point. 0 when the surface does not emit.
   float lightPdf;
@@ -236,13 +243,41 @@ struct PathProgram : ITraceProgram {
       payload.shadingNormal = geometric;
     }
 
-    var material = meshes[instance].material;
-    payload.albedo = saturate(sampleAlbedo(attributes, context).rgb);
-    payload.emission = material.emissionColor.rgb * material.emissionColor.a;
-    payload.smoothness = material.smoothness;
+    PBRParams material = loadMaterial(instance);
+    float2 uv = a.texCoord * (1.0f - bary.x - bary.y) + b.texCoord * bary.x + c.texCoord * bary.y;
+    payload.brdf.baseColor = saturate(sampleBaseColor(material, uv).rgb);
+    float4 metalRough = material.metallicRoughnessTexture.isValid()
+        ? material.metallicRoughnessTexture.SampleLevel(uv, kSampleLevel) : float4(1.0f);
+    payload.brdf.metallic = saturate(material.metallic * metalRough.b);
+    payload.brdf.roughness = clamp(material.roughness * metalRough.g, 0.05f, 1.0f);
+    payload.emission = sampleEmission(material, uv);
+
+    if (material.normalTexture.isValid()) {
+      float3x3 objectToWorld = (float3x3)context.objectToWorld();
+      float3 T = mul(objectToWorld, a.tangent * (1.0f - bary.x - bary.y) + b.tangent * bary.x + c.tangent * bary.y);
+      float3 B = mul(objectToWorld, a.bitangent * (1.0f - bary.x - bary.y) + b.bitangent * bary.x + c.bitangent * bary.y);
+      float3 N = payload.shadingNormal;
+      T -= N * dot(N, T);
+      if (dot(T, T) > 1e-10f) {
+        T = normalize(T);
+        B = cross(N, T) * (dot(cross(N, T), B) < 0.0f ? -1.0f : 1.0f);
+        float3 mapped = material.normalTexture.SampleLevel(uv, kSampleLevel).xyz * 2.0f - 1.0f;
+        float3 mappedNormal = T * mapped.x + B * mapped.y + N * mapped.z;
+        if (dot(mappedNormal, mappedNormal) > 1e-10f) {
+          mappedNormal = normalize(mappedNormal);
+          if (dot(mappedNormal, geometric) > 0.0f && dot(mappedNormal, direction) < 0.0f) {
+            payload.shadingNormal = mappedNormal;
+          }
+        }
+      }
+    }
+    // Strongly tilted vertex normals must still face the incoming ray.
+    if (dot(payload.shadingNormal, direction) >= 0.0f) {
+      payload.shadingNormal = geometric;
+    }
 
     payload.lightPdf = 0.0f;
-    float emitted = luminance(payload.emission);
+    float emitted = meshes[instance].emissionWeight;
     if (emitted > 0.0f && numLights > 0) {
       float4x4 objectToWorld = context.objectToWorld();
       float3 wa = mul(objectToWorld, float4(a.position, 1.0f)).xyz;
@@ -272,20 +307,19 @@ struct SunOcclusionProgram : ITraceProgram {
   typedef OcclusionPayload Payload;
 
   override static uint getRayFlags() {
-    return RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER;
+    return RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER | RAY_FLAG_FORCE_NON_OPAQUE;
   }
 
-  // override static AnyHitAction anyHit<C : IHitContext>(inout Payload payload, TriangleAttributes attributes, C
-  // context) {
-  //   return testAlpha(attributes, context);
-  // }
+  override static AnyHitAction anyHit<C : IHitContext>(inout Payload payload, TriangleAttributes attributes, C context) {
+    return testAlpha(attributes, context);
+  }
 
   override static void miss<C : IRayContext>(inout Payload payload, C context) { payload.occluded = false; }
 }
 
 // 1 when nothing blocks the ray before tMax, else 0.
 float visibility(float3 position, float3 direction, float tMax,
-                 inout Tracer<SunOcclusionProgram, AppScene, true> tracer) {
+                 inout Tracer<SunOcclusionProgram, AppScene, kCollectStats> tracer) {
   Ray ray;
   ray.update(position, direction);
   // The surface caller offsets the origin. Keep nearby wall intersections.
@@ -312,11 +346,9 @@ uint findLight(float weight) {
   return low;
 }
 
-// Next event estimation for a Lambertian surface: pick a point on an emissive
-// triangle and trace a shadow ray to it. The result has the MIS weight
-// against cosine sampling, and does not include the albedo.
-float3 sampleEmissiveLights(float3 origin, float3 shadingNormal, float3 geometricNormal, inout uint rngState,
-                            inout Tracer<SunOcclusionProgram, AppScene, true> tracer) {
+// Sample an emissive triangle and weight it against the full BRDF mixture.
+float3 sampleEmissiveLights(float3 origin, PathPayload hit, float3 V, inout uint rngState,
+                            inout Tracer<SunOcclusionProgram, AppScene, kCollectStats> tracer) {
   EmissiveLight light = lights[findLight(RandomValue(rngState) * lightWeightTotal)];
   uint triangle = min(uint(RandomValue(rngState) * light.triangleCount), light.triangleCount - 1);
   uint first = meshes[light.instance].indexOffset + triangle * 3;
@@ -340,9 +372,9 @@ float3 sampleEmissiveLights(float3 origin, float3 shadingNormal, float3 geometri
   float distance = sqrt(distanceSquared);
   float3 direction = toLight / distance;
 
-  float cosSurface = dot(shadingNormal, direction);
+  float cosSurface = dot(hit.shadingNormal, direction);
   float cosLight = abs(dot(face, direction)) / (2.0f * area);
-  if (cosSurface <= 0.0f || dot(geometricNormal, direction) <= 0.0f || cosLight <= 0.0f) {
+  if (cosSurface <= 0.0f || dot(hit.geometricNormal, direction) <= 0.0f || cosLight <= 0.0f) {
     return 0.0f;
   }
 
@@ -351,20 +383,27 @@ float3 sampleEmissiveLights(float3 origin, float3 shadingNormal, float3 geometri
     return 0.0f;
   }
 
-  float3 emission = meshes[light.instance].material.emissionColor.rgb * meshes[light.instance].material.emissionColor.a;
-  float lightPdf = luminance(emission) / (lightWeightTotal * area) * distanceSquared / cosLight;
-  float bsdfPdf = cosSurface * kInvPi;
-  // Lambertian: f * cos / pdf = (albedo / pi) * cos / lightPdf.
-  return emission * (cosSurface * kInvPi / lightPdf) * powerHeuristic(lightPdf, bsdfPdf);
+  float2 uv = vertices[offset + indices[first]].texCoord * (1.0f - rootU)
+      + vertices[offset + indices[first + 1]].texCoord * (rootU * (1.0f - v))
+      + vertices[offset + indices[first + 2]].texCoord * (rootU * v);
+  PBRParams material = loadMaterial(light.instance);
+  if (sampleBaseColor(material, uv).a < kAlphaCutoff) {
+    return float3(0.0f);
+  }
+  float3 emission = sampleEmission(material, uv);
+  float lightPdf = meshes[light.instance].emissionWeight / (lightWeightTotal * area) * distanceSquared / cosLight;
+  float bsdfPdf;
+  float3 response = hit.brdf.evaluate(hit.shadingNormal, V, direction, bsdfPdf);
+  return emission * response / lightPdf * powerHeuristic(lightPdf, bsdfPdf);
 }
 
 // Follow one path from the camera, and return the light that it carries back.
-// Bounce 0 is the primary ray. Diffuse surfaces sample the sun and the
-// emissive meshes directly (next event estimation). A bounce ray cannot hit
+// Bounce 0 is the primary ray. Surfaces sample the sun and emissive meshes
+// directly (next event estimation). A bounce ray cannot hit
 // the sun, which is a delta light.
 float3 tracePath(inout Ray ray, AppScene scene, inout uint rngState, inout TraceStats stats) {
-  var tracer = Tracer<PathProgram, AppScene, true>(scene);
-  var occlusionTracer = Tracer<SunOcclusionProgram, AppScene, true>(scene);
+  var tracer = Tracer<PathProgram, AppScene, kCollectStats>(scene);
+  var occlusionTracer = Tracer<SunOcclusionProgram, AppScene, kCollectStats>(scene);
   float3 radiance = 0.0f;
   float3 throughput = 1.0f;
 
@@ -383,34 +422,47 @@ float3 tracePath(inout Ray ray, AppScene scene, inout uint rngState, inout Trace
     }
 
     float3 origin = hit.hitPoint + hit.geometricNormal * kRayOriginOffset;
-    float3 direction;
-    if (RandomValue(rngState) < hit.smoothness) {
-      // Mirror bounce. A delta lobe cannot use next event estimation.
-      direction = reflect(ray.dir, hit.shadingNormal);
-      lastSampledLights = false;
-    } else {
-      // Lambertian: f * cos = (albedo / pi) * cos.
-      float cosSun = dot(hit.shadingNormal, kSunDirection);
-      if (sunStrength > 0.0f && cosSun > 0.0f && dot(hit.geometricNormal, kSunDirection) > 0.0f) {
-        float sunVisibility = visibility(origin, kSunDirection, kBVHMiss, occlusionTracer);
-        radiance += throughput * hit.albedo * (kInvPi * cosSun * sunStrength * sunVisibility);
-      }
-
-      lastSampledLights = lightSampling != 0 && numLights > 0;
-      if (lastSampledLights) {
-        radiance += throughput * hit.albedo *
-                    sampleEmissiveLights(origin, hit.shadingNormal, hit.geometricNormal, rngState, occlusionTracer);
-      }
-
-      // Cosine weighted random direction. The cosine and the pdf cancel.
-      direction = normalize(hit.shadingNormal + RandomDirection(rngState));
-      lastBsdfPdf = max(dot(hit.shadingNormal, direction), 0.0f) * kInvPi;
+    float3 V = -ray.dir;
+    float cosSun = dot(hit.shadingNormal, kSunDirection);
+    if (sunStrength > 0.0f && cosSun > 0.0f && dot(hit.geometricNormal, kSunDirection) > 0.0f) {
+      float sunVisibility = visibility(origin, kSunDirection, kBVHMiss, occlusionTracer);
+      float sunPdf;
+      radiance += throughput * hit.brdf.evaluate(hit.shadingNormal, V, kSunDirection, sunPdf)
+          * sunStrength * sunVisibility;
     }
-    throughput *= hit.albedo;
+
+    bool continuePath = bounce < maxBounces;
+    lastSampledLights = lightSampling != 0 && numLights > 0;
+    if (lastSampledLights) {
+      radiance += throughput * sampleEmissiveLights(origin, hit, V, rngState, occlusionTracer);
+    }
+
+    float3 random = float3(RandomValue(rngState), RandomValue(rngState), RandomValue(rngState));
+    float3 direction = hit.brdf.sample(hit.shadingNormal, V, random);
+    if (dot(hit.geometricNormal, direction) <= 0.0f) {
+      break;
+    }
+    float3 response = hit.brdf.evaluate(hit.shadingNormal, V, direction, lastBsdfPdf);
+    if (lastBsdfPdf <= 0.0f) {
+      break;
+    }
+    throughput *= response / lastBsdfPdf;
 
     ray.update(origin, direction);
     ray.tMin = 0.0f;
     ray.tMax = kBVHMiss;
+
+    if (!continuePath) {
+      // Direct emission still needs the BRDF strategy at the bounce limit.
+      // Without it, a light sample gets full weight at a sharp GGX peak.
+      // This ray collects emission only; it adds no scattering vertex.
+      PathPayload lightHit = {};
+      tracer.trace(ray, lightHit);
+      float weight = lastSampledLights && lightHit.lightPdf > 0.0f
+          ? powerHeuristic(lastBsdfPdf, lightHit.lightPdf) : 1.0f;
+      radiance += throughput * lightHit.emission * weight;
+      break;
+    }
   }
 
   stats += tracer.getStats();

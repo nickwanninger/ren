@@ -1,4 +1,4 @@
-// Fullscreen sky and world-space grid.
+// Fullscreen PBR lighting, sky, and world-space grid.
 
 import ren.core;
 import ren.surface;
@@ -11,16 +11,65 @@ cbuffer root {
   // blurred SSAO visibility.
   TextureHandle albedo;
   TextureHandle normal;
+  // R is metallic, G is roughness, and B is material occlusion.
+  TextureHandle metallicRoughness;
   TextureHandle depth;
   TextureHandle ssao;
 }
 
-// TEST lighting: one sun at a fixed direction plus a constant ambient term.
-// The direction points from the surface toward the sun: high in the sky,
-// from the side. There is no tone mapping, so the sum stays near 1.
+// The direction points from the surface toward the sun.
 static const float3 kSunDirection = float3(0.35f, 0.85f, 0.4f);
-static const float3 kSunColor = float3(1.0f, 0.95f, 0.85f) * 0.9f;
+static const float3 kSunColor = float3(1.0f, 0.95f, 0.85f) * 3.0f;
 static const float3 kAmbientColor = float3(0.55f, 0.6f, 0.7f) * 0.35f;
+static const float kPi = 3.14159265f;
+
+
+float3 fresnelSchlick(float cosine, float3 f0) {
+  return f0 + (1.0f - f0) * pow(1.0f - saturate(cosine), 5.0f);
+}
+
+
+float3 directLighting(float3 N, float3 V, float3 base, float metallic, float roughness) {
+  float3 L = normalize(kSunDirection);
+  float nDotL = saturate(dot(N, L));
+  float nDotV = saturate(dot(N, V));
+  if (nDotL <= 0.0f || nDotV <= 0.0f) {
+    return float3(0.0f);
+  }
+
+  float3 H = normalize(V + L);
+  float nDotH = saturate(dot(N, H));
+  float alpha = roughness * roughness;
+  float alphaSquared = alpha * alpha;
+  float denominator = (1.0f - nDotH * nDotH) + nDotH * nDotH * alphaSquared;
+  float distribution = alphaSquared / (kPi * denominator * denominator);
+
+  // Correlated Smith visibility includes the Cook-Torrance denominator.
+  float smithV = nDotL * sqrt(nDotV * nDotV * (1.0f - alphaSquared) + alphaSquared);
+  float smithL = nDotV * sqrt(nDotL * nDotL * (1.0f - alphaSquared) + alphaSquared);
+  float visibility = 0.5f / max(smithV + smithL, 0.000001f);
+  float3 f0 = lerp(float3(0.04f), base, metallic);
+  float3 fresnel = fresnelSchlick(dot(V, H), f0);
+  float3 specular = distribution * visibility * fresnel;
+  float3 diffuse = (1.0f - fresnel) * (1.0f - metallic) * base / kPi;
+  return (diffuse + specular) * kSunColor * nDotL;
+}
+
+
+float3 ambientLighting(float3 N, float3 V, float3 base, float metallic, float roughness) {
+  float nDotV = saturate(dot(N, V));
+  float3 f0 = lerp(float3(0.04f), base, metallic);
+
+  // Approximate the integrated GGX BRDF for a constant environment.
+  // The sky image is not a prefiltered environment map.
+  float4 r = roughness * float4(-1.0f, -0.0275f, -0.572f, 0.022f)
+      + float4(1.0f, 0.0425f, 1.04f, -0.04f);
+  float a004 = min(r.x * r.x, exp2(-9.28f * nDotV)) * r.x + r.y;
+  float2 brdf = float2(-1.04f, 1.04f) * a004 + r.zw;
+  float3 specular = saturate(f0 * brdf.x + brdf.y);
+  float3 diffuse = (1.0f - specular) * (1.0f - metallic) * base;
+  return (diffuse + specular) * kAmbientColor;
+}
 
 export static const float kAlphaCutoff = 0.4;
 export static const bool kWriteDepth = false;
@@ -66,42 +115,45 @@ struct Viewport : IFullscreenSurface {
     // Fade it out by 60 units and suppress lines smaller than one pixel.
     // fwidth runs for all pixels, outside the branch, for the same reason as
     // above: at the horizon, t changes sign between neighbors.
-    float safeRayY = abs(rayDir.y) > 0.001f ? rayDir.y : 0.001f;
-    float t = -cameraPos.y / safeRayY;
-    float2 hit = (cameraPos + rayDir * t).xz;
-    float2 width = max(fwidth(hit), float2(0.0001f));
-    if (abs(rayDir.y) > 0.001f && t > 0.0f) {
-      float2 minorDistance = abs(frac(hit + 0.5f) - 0.5f);
-      float2 majorDistance = abs(frac(hit / 10.0f + 0.5f) - 0.5f) * 10.0f;
-      float2 minorLines = 1.0f - smoothstep(float2(0.0f), width, minorDistance);
-      float2 majorLines = 1.0f - smoothstep(float2(0.0f), 2.0f * width, majorDistance);
-      float pixelFootprint = max(width.x, width.y);
-      float minor = max(minorLines.x, minorLines.y) * saturate(1.0f - pixelFootprint);
-      float major = max(majorLines.x, majorLines.y) * saturate(1.0f - pixelFootprint / 10.0f);
-      float fade = saturate(1.0f - t / 60.0f);
-      color = lerp(color, float3(0.85f), max(minor, major) * fade * 0.6f);
+    // float safeRayY = abs(rayDir.y) > 0.001f ? rayDir.y : 0.001f;
+    // float t = -cameraPos.y / safeRayY;
+    // float2 hit = (cameraPos + rayDir * t).xz;
+    // float2 width = max(fwidth(hit), float2(0.0001f));
+    // if (abs(rayDir.y) > 0.001f && t > 0.0f) {
+    //   float2 minorDistance = abs(frac(hit + 0.5f) - 0.5f);
+    //   float2 majorDistance = abs(frac(hit / 10.0f + 0.5f) - 0.5f) * 10.0f;
+    //   float2 minorLines = 1.0f - smoothstep(float2(0.0f), width, minorDistance);
+    //   float2 majorLines = 1.0f - smoothstep(float2(0.0f), 2.0f * width, majorDistance);
+    //   float pixelFootprint = max(width.x, width.y);
+    //   float minor = max(minorLines.x, minorLines.y) * saturate(1.0f - pixelFootprint);
+    //   float major = max(majorLines.x, majorLines.y) * saturate(1.0f - pixelFootprint / 10.0f);
+    //   float fade = saturate(1.0f - t / 60.0f);
+    //   color = lerp(color, float3(0.85f), max(minor, major) * fade * 0.6f);
 
-      // X is red and Z is blue. Both axes use the major line width.
-      float axisVisibility = saturate(1.0f - pixelFootprint / 10.0f);
-      float xAxis = (1.0f - smoothstep(0.0f, 2.0f * width.y, abs(hit.y))) * axisVisibility;
-      float zAxis = (1.0f - smoothstep(0.0f, 2.0f * width.x, abs(hit.x))) * axisVisibility;
-      float3 axisColor =
-          (float3(1.0f, 0.1f, 0.1f) * xAxis + float3(0.1f, 0.35f, 1.0f) * zAxis) / max(xAxis + zAxis, 0.0001f);
-      color = lerp(color, axisColor, max(xAxis, zAxis) * fade * 1.6f);
-    }
+    //   // X is red and Z is blue. Both axes use the major line width.
+    //   float axisVisibility = saturate(1.0f - pixelFootprint / 10.0f);
+    //   float xAxis = (1.0f - smoothstep(0.0f, 2.0f * width.y, abs(hit.y))) * axisVisibility;
+    //   float zAxis = (1.0f - smoothstep(0.0f, 2.0f * width.x, abs(hit.x))) * axisVisibility;
+    //   float3 axisColor =
+    //       (float3(1.0f, 0.1f, 0.1f) * xAxis + float3(0.1f, 0.35f, 1.0f) * zAxis) / max(xAxis + zAxis, 0.0001f);
+    //   color = lerp(color, axisColor, max(xAxis, zAxis) * fade * 1.6f);
+    // }
 
-    // TEST composite: where the G-buffer has geometry, light the albedo with
-    // the sun (Lambert) and the ambient term. The SSAO darkens only the
-    // ambient term: it is the visibility of the sky, not of the sun.
-    if (depth.SampleLevel(input.uv, 0.0f).r < 1.0f) {
+    // Occlusion affects ambient lighting, because it describes sky visibility.
+    float d = depth.SampleLevel(input.uv, 0.0f).r;
+    if (d < 1.0f) {
       float3 base = albedo.SampleLevel(input.uv, 0.0f).rgb;
       float3 N = normalize(normal.SampleLevel(input.uv, 0.0f).xyz);
+      float3 viewPosition = viewPositionFromDepth(input.uv, d);
+      float3 V = normalize(mul(transpose(viewRotation), -viewPosition));
+      float3 material = metallicRoughness.SampleLevel(input.uv, 0.0f).rgb;
+      float metallic = saturate(material.r);
+      float roughness = clamp(material.g, 0.05f, 1.0f);
       float visibility = ssao.SampleLevel(input.uv, 0.0f).r;
-      visibility = pow(visibility, ssaoContrast);
+      visibility = pow(saturate(visibility), ssaoContrast) * saturate(material.b);
 
-
-      float sun = max(dot(N, normalize(kSunDirection)), 0.0f);
-      color = base * (kSunColor * sun + kAmbientColor * visibility);
+      color = directLighting(N, V, base, metallic, roughness)
+          + ambientLighting(N, V, base, metallic, roughness) * visibility;
     }
 
     return float4(color, 1.0f);

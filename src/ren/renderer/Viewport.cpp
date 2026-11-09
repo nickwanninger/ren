@@ -54,15 +54,16 @@ namespace ren {
         .createColorAttachment("viewportColor", {.size = ImageSize::viewRelative(1.0f), .format = VK_FORMAT_R8G8B8A8_SRGB}, finalImage)
         .reads(gbufferAlbedo, GraphAccess::ShaderRead)
         .reads(gbufferNormal, GraphAccess::ShaderRead)
+        .reads(gbufferMaterial, GraphAccess::ShaderRead)
         .reads(gbufferDepth, GraphAccess::ShaderRead)
         .reads(ssao, GraphAccess::ShaderRead)
-        .render([this, skybox, gbufferAlbedo, gbufferNormal, gbufferDepth, ssao](GraphRenderPassContext &ctx) {
+        .render([this, skybox, gbufferAlbedo, gbufferNormal, gbufferMaterial, gbufferDepth, ssao](GraphRenderPassContext &ctx) {
           auto shader = ctx.encoder.bindGraphics(forwardPSO);
           auto root = shader.root("root");
           root.set("skyboxHdri", skybox);
-          // TEST lighting composite (see viewport_clear.slang).
           root.set("albedo", ctx.resources.texture(gbufferAlbedo));
           root.set("normal", ctx.resources.texture(gbufferNormal));
+          root.set("metallicRoughness", ctx.resources.texture(gbufferMaterial));
           root.set("depth", ctx.resources.texture(gbufferDepth));
           root.set("ssao", ctx.resources.texture(ssao));
           root.set("ssaoContrast", ssaoContrast);

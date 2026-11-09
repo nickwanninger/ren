@@ -1,28 +1,13 @@
 import ren.core;
 import ren.surface;
+import ren.core.materials.pbr;
 
 export struct Surface : ISurface = PBR;
 export struct SurfaceParams = PBR.Params; // This is just required...
 
 
 struct PBR : ISurface {
-  struct Params {
-    float4 baseColor;
-    float4 emissiveFactor;
-    float metallic;
-    float roughness;
-    float occlusionStrength; // How much occlusionTexture applies (glTF occlusionTexture.strength).
-
-    float _padding;
-
-    TextureHandle baseColorTexture;
-    TextureHandle metallicRoughnessTexture;
-    TextureHandle emissiveTexture;
-    TextureHandle normalTexture;
-    // R holds the ambient occlusion. glTF often packs it into the same image
-    // as metallicRoughnessTexture.
-    TextureHandle occlusionTexture;
-  }
+  typedef PBRParams Params;
 
   static GBufferOutput shade(SurfaceVarying input, Params *mat) {
 

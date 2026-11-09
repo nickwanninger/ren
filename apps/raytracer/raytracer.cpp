@@ -18,7 +18,9 @@
 #include <ren/core/Result.h>
 #include <ren/renderer/Viewport.h>
 #include <ren/renderer/graph/tasks/BloomTask.h>
+#include <algorithm>
 #include <cstring>
+#include <stdexcept>
 
 
 
@@ -29,23 +31,13 @@ static ren::Flag<float> renderScale("render-scale", 0.25, "raytracing scale");
 static ren::Flag<std::string> skyBoxPath("skybox", "assets/hdri/sky.jpg", "Path to the skybox texture to use in the viewport.");
 static ren::Flag<std::string> scenePath("scene", "assets/test/meshes/simple_scene.glb", "Path to the scene mesh");
 static ren::Flag<float> scaleArg("scene-scale", 1.0f, "Uniform scale to apply to the loaded mesh");
-static ren::Flag<int> maxBouncesArg("max-bounces", 2, "Bounces after the primary ray. 0 traces only the primary ray and the sun at its hit");
+static ren::Flag<int> maxBouncesArg("max-bounces", 2, "Scattering bounces after the first hit. The final hit still samples direct lighting");
 static ren::Flag<float> sunStrengthArg("sun-strength", 3.0f, "Sun irradiance on a surface that faces it. 0 disables the sun");
+static ren::Flag<float> skyStrengthArg("sky-strength", 1.0f, "Multiplier on the sky radiance. 0 disables the sky");
 
 
 
 namespace shd {
-
-  // These are shader structures we need to be careful with it.
-  struct RayTracingMaterial {
-    glm::vec4 color;
-    glm::vec4 emissionColor = glm::vec4(0.0f);
-    float smoothness = 0.0f;
-    // Packed bindless TextureHandle. 0 means no texture.
-    u32 albedoTexture = 0;
-    float _pad[2] = {};
-  };
-  static_assert(sizeof(RayTracingMaterial) == 48);
 
   // The padding makes the layout the same under std430, scalar and natural
   // layout rules.
@@ -64,11 +56,12 @@ namespace shd {
     // Device addresses of the ren::MeshBVH nodes and triangle list.
     u64 bvhNodes;
     u64 bvhTriangles;
-    u64 _pad2;
-    RayTracingMaterial material;
+    u32 materialOffset;
+    // Uses the emission factor, independent of the texture sample.
+    float emissionWeight;
   };
-  static_assert(sizeof(Mesh) == 176);
-  static_assert(offsetof(Mesh, material) == 128);
+  static_assert(sizeof(Mesh) == 128);
+  static_assert(offsetof(Mesh, materialOffset) == 120);
   static_assert(offsetof(Mesh, minBounds) == 64);
   static_assert(offsetof(Mesh, indexOffset) == 76);
   static_assert(offsetof(Mesh, maxBounds) == 80);
@@ -99,6 +92,7 @@ class RaytraceViewport : public ren::EditorViewport {
   u32 maxBounces = 4;
   u32 raysPerPixel = 1;
   float sunStrength = 3.0f;
+  float skyStrength = 1.0f;
   // Next event estimation toward emissive meshes, with MIS.
   bool lightSampling = true;
   bool randomizeSeed = true;
@@ -117,9 +111,11 @@ class RaytraceViewport : public ren::EditorViewport {
   glm::mat4 lastProjection = glm::mat4(0.0f);
   u32 lastMaxBounces = 0;
   float lastSunStrength = 0.0f;
+  float lastSkyStrength = 0.0f;
   u32 lastDebugView = 0;
   bool lastLightSampling = true;
   std::vector<shd::Mesh> lastMeshes;
+  std::vector<u8> lastMaterialBytes;
 
   u32 debugView = 0;
   u32 debugTestScale = 2000;
@@ -130,6 +126,7 @@ class RaytraceViewport : public ren::EditorViewport {
 
   // The scene of this frame, from prepareScene().
   std::vector<shd::Mesh> meshes;
+  std::vector<u8> materialBytes;
   // World-space box of each mesh, for the top-level BVH.
   std::vector<ren::AABB> meshBoxes;
   // The meshes with emission. The shader picks one in proportion to its
@@ -157,6 +154,7 @@ class RaytraceViewport : public ren::EditorViewport {
     this->renderScale = ::renderScale.get();
     this->maxBounces = static_cast<u32>(std::max(maxBouncesArg.get(), 0));
     this->sunStrength = sunStrengthArg.get();
+    this->skyStrength = skyStrengthArg.get();
 
 
     this->skybox = ren::Texture::load(skyBoxPath.get(), VK_FORMAT_R8G8B8A8_SRGB);
@@ -194,9 +192,18 @@ class RaytraceViewport : public ren::EditorViewport {
   // Make the shader meshes and the world-space boxes from the prepared world.
   void prepareScene() {
     meshes.clear();
+    materialBytes.clear();
     meshBoxes.clear();
     lights.clear();
     lightWeightTotal = 0.0f;
+
+    auto pbrProgram = ren::getShader("ren/core/pbr", "ren/pass/deferred");
+    const auto &pbrSchema = pbrProgram->getReflection()->getMaterialSchema().unwrap();
+    const auto emissionField =
+        std::find_if(pbrSchema.fields.begin(), pbrSchema.fields.end(), [](const auto &field) { return field.name == "emissiveFactor"; });
+    if (emissionField == pbrSchema.fields.end()) {
+      throw std::runtime_error("PBR material has no emissiveFactor field");
+    }
 
     auto &mmb = ren::resource<ren::MegaMeshBuffer>();
     for (auto &r : preparedWorld->renderables) {
@@ -218,43 +225,39 @@ class RaytraceViewport : public ren::EditorViewport {
       mesh.vertexOffset = entry.vertexOffset;
       mesh.bvhNodes = r.mesh->getBVH()->getNodeAddress();
       mesh.bvhTriangles = r.mesh->getBVH()->getTriangleAddress();
-      mesh.material.color = glm::vec4(1.0f);
-      // mesh.material.smoothness = 0.1f;
-      if (r.material) {
-        if (const auto *schema = r.material->getSchema()) {
-          const auto &data = r.material->getCpuMaterialData();
-          auto readField = [&](const auto &field, auto &value) {
-            if (field.scalarKind == ShaderReflection::ScalarKind::Float32 && field.byteSize == sizeof(value) && field.byteOffset <= data.size() &&
-                sizeof(value) <= data.size() - field.byteOffset) {
-              std::memcpy(&value, data.data() + field.byteOffset, sizeof(value));
-            }
-          };
-          for (const auto &field : schema->fields) {
-            if (field.name == "baseColor") {
-              readField(field, mesh.material.color);
-            } else if (field.name == "emissiveFactor") {
-              readField(field, mesh.material.emissionColor);
-              mesh.material.emissionColor.a = 1.0f;
-            } else if (field.name == "roughness") {
-              float roughness = 1.0f - mesh.material.smoothness;
-              readField(field, roughness);
-              mesh.material.smoothness = 1.0f - glm::clamp(roughness, 0.0f, 1.0f);
-            } else if (field.name == "baseColorTexture" && field.byteSize == sizeof(u32) && field.byteOffset <= data.size() &&
-                       sizeof(u32) <= data.size() - field.byteOffset) {
-              std::memcpy(&mesh.material.albedoTexture, data.data() + field.byteOffset, sizeof(u32));
-            }
-          }
-        }
+      if (!r.material || !r.material->getSchema()) {
+        throw std::runtime_error("Ray tracer needs a PBR material for each mesh");
       }
+      const auto &schema = *r.material->getSchema();
+      const auto &data = r.material->getCpuMaterialData();
+      bool compatible = schema.byteSize == pbrSchema.byteSize && schema.alignment == pbrSchema.alignment &&
+                        schema.fields.size() == pbrSchema.fields.size() && data.size() == pbrSchema.byteSize;
+      for (size_t i = 0; compatible && i < schema.fields.size(); i++) {
+        const auto &actual = schema.fields[i];
+        const auto &expected = pbrSchema.fields[i];
+        compatible = actual.name == expected.name && actual.typeName == expected.typeName && actual.byteOffset == expected.byteOffset &&
+                     actual.byteSize == expected.byteSize;
+      }
+      if (!compatible) {
+        throw std::runtime_error(fmt::format("Ray tracer needs a PBR layout: {}", r.material->getName()));
+      }
+
+      // Align each material without imposing a C++ copy of its shader layout.
+      const size_t alignment = std::max(pbrSchema.alignment, 16u);
+      const size_t offset = (materialBytes.size() + alignment - 1) / alignment * alignment;
+      mesh.materialOffset = static_cast<u32>(offset);
+      materialBytes.resize(offset + data.size(), 0);
+      std::memcpy(materialBytes.data() + offset, data.data(), data.size());
+
+      // Texture values affect emitted light at the sampled point. The factor
+      // alone sets the selection weight, so both sampling paths share a PDF.
+      glm::vec4 emission;
+      std::memcpy(&emission, data.data() + emissionField->byteOffset, sizeof(emission));
+      mesh.emissionWeight = std::max(glm::dot(glm::vec3(emission), glm::vec3(0.2126f, 0.7152f, 0.0722f)), 0.0f);
       meshes.push_back(mesh);
 
-      // The weight makes each triangle of a light equally likely, so the
-      // shader can find the probability of any point on a light from its
-      // mesh luminance and triangle area alone.
-      const glm::vec3 emission = glm::vec3(mesh.material.emissionColor) * mesh.material.emissionColor.a;
-      const float luminance = glm::dot(emission, glm::vec3(0.2126f, 0.7152f, 0.0722f));
       const u32 triangleCount = entry.indexCount / 3;
-      if (luminance > 0.0f && triangleCount > 0) {
+      if (mesh.emissionWeight > 0.0f && triangleCount > 0) {
         shd::EmissiveLight light = {};
         const glm::mat4 modelToWorld = glm::transpose(r.transform);
         for (int row = 0; row < 3; row++) {
@@ -262,7 +265,7 @@ class RaytraceViewport : public ren::EditorViewport {
         }
         light.instance = static_cast<u32>(meshes.size() - 1);
         light.triangleCount = triangleCount;
-        lightWeightTotal += luminance * static_cast<float>(triangleCount);
+        lightWeightTotal += mesh.emissionWeight * static_cast<float>(triangleCount);
         light.cdf = lightWeightTotal;
         lights.push_back(light);
       }
@@ -289,11 +292,10 @@ class RaytraceViewport : public ren::EditorViewport {
     const bool cameraStill = nearlyEqual(view, lastView) && nearlyEqual(projection, lastProjection);
     const bool cameraWasMoving = cameraMoving;
     cameraMoving = !cameraStill;
-    const bool settingsSame =
-        maxBounces == lastMaxBounces && sunStrength == lastSunStrength && debugView == lastDebugView && lightSampling == lastLightSampling;
-    // shd::Mesh has no implicit padding, so a byte compare finds any change
-    // to a transform or a material.
-    const bool sceneSame = meshes.size() == lastMeshes.size() &&
+    const bool settingsSame = maxBounces == lastMaxBounces && sunStrength == lastSunStrength && skyStrength == lastSkyStrength &&
+                              debugView == lastDebugView && lightSampling == lastLightSampling;
+    // Compare material contents separately from temporary GPU addresses.
+    const bool sceneSame = materialBytes == lastMaterialBytes && meshes.size() == lastMeshes.size() &&
                            (meshes.empty() || std::memcmp(meshes.data(), lastMeshes.data(), meshes.size() * sizeof(shd::Mesh)) == 0);
 
     // Restart at full quality when camera motion stops.
@@ -307,9 +309,11 @@ class RaytraceViewport : public ren::EditorViewport {
     lastProjection = projection;
     lastMaxBounces = maxBounces;
     lastSunStrength = sunStrength;
+    lastSkyStrength = skyStrength;
     lastDebugView = debugView;
     lastLightSampling = lightSampling;
     lastMeshes = meshes;
+    lastMaterialBytes = materialBytes;
     frameSeed = randomizeSeed ? static_cast<u32>(rand()) : randomSeed;
   }
 
@@ -321,6 +325,13 @@ class RaytraceViewport : public ren::EditorViewport {
 
     auto *meshBuf = arena.push<StorageBuffer<shd::Mesh>>(meshes.size());
     meshBuf->copyFromHost(meshes.data(), meshes.size());
+
+    u64 materialAddress = 0;
+    if (!materialBytes.empty()) {
+      auto *materialBuf = arena.push<StorageBuffer<u8>>(materialBytes.size());
+      materialBuf->copyFromHost(materialBytes);
+      materialAddress = materialBuf->getGPUAddress();
+    }
 
     // The top-level BVH over the meshes. The transforms can change each
     // frame, so build it each frame.
@@ -344,6 +355,7 @@ class RaytraceViewport : public ren::EditorViewport {
     root.set("indices", mmb.getIndexBuffer().getGPUAddress());
     root.set("numMeshes", static_cast<u32>(meshes.size()));
     root.set("meshes", meshBuf->getGPUAddress());
+    root.set("materialData", materialAddress);
     root.set("sceneNodes", sceneNodes);
     root.set("sceneEntries", sceneEntries);
 
@@ -351,6 +363,7 @@ class RaytraceViewport : public ren::EditorViewport {
     root.set("maxBounces", cameraMoving ? 1u : maxBounces);
     root.set("raysPerPixel", cameraMoving ? 1u : raysPerPixel);
     root.set("sunStrength", sunStrength);
+    root.set("skyStrength", skyStrength);
     root.set("accumulatedFrames", accumulatedFrames);
 
     u64 lightAddress = 0;
@@ -380,6 +393,7 @@ class RaytraceViewport : public ren::EditorViewport {
       ui.slide("Max Bounces", maxBounces, {.min = 0, .max = 10});
       ui.slide("Rays Per Pixel", raysPerPixel, {.min = 1, .max = 16});
       ui.slide("Sun Strength", sunStrength, {.min = 0.0f, .max = 20.0f});
+      ui.slide("Sky Strength", skyStrength, {.min = 0.0f, .max = 10.0f});
     });
 
     ui.inspect("Accumulate", accumulate);
