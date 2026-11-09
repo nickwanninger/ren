@@ -76,7 +76,7 @@ namespace authoring_sketch {
 
     struct Color {
       float r, g, b, a;
-      ren_describe(Color, r, g, b, a);
+      ren_auto_describe(Color, r, g, b, a);
     };
 
     struct ColorEditor final : Editor {
@@ -159,7 +159,7 @@ namespace authoring_sketch {
       glm::vec3 scale{1.0f};
 
 
-      ren_describe(Transform, translation, rotation, scale);
+      ren_auto_describe(Transform, translation, rotation, scale);
     };
 
 
@@ -182,7 +182,7 @@ namespace authoring_sketch {
       // std::vector<float> weights{0.25f, 0.75f};
       // std::vector<Transform> transforms{Transform{}};
 
-      ren_describe(ExampleComponent, A, B, C, D, E, F, yourFriendsName4, favoriteColor, TheTranslation);
+      ren_auto_describe(ExampleComponent, A, B, C, D, E, F, yourFriendsName4, favoriteColor, TheTranslation);
     };
 
 
