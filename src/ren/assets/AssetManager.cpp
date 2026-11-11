@@ -6,6 +6,13 @@
 #include <imgui/imgui.h>
 #include <ren/misc/hash.h>
 #include <ren/core/UUID.h>
+#include <algorithm>
+#include <cctype>
+#include <set>
+#include "ren/core/ThreadPool.h"
+#include <ren/assets/importers/ImportSource.h>
+#include <ren/assets/importers/Importer.h>
+#include <ren/core/Bundle.h>
 
 
 namespace ren {
@@ -13,7 +20,9 @@ namespace ren {
   AssetManager &getAssetManager() { return ren::Application::get().getAssetManager(); }
 
   AssetManager::AssetManager()
-      : store(source) {}
+      : store(source) {
+    registerBuiltinImporters();
+  }
 
   AssetManager::~AssetManager() {}
 
@@ -38,100 +47,183 @@ namespace ren {
 
 
 
-  static AssetType classifyAssetType(const std::filesystem::path &path) {
-    auto extension = path.extension();
-#define MAP(ext, type)  \
-  if (extension == ext) \
-    return type;
+  //=========================
+  // Import
+  //=========================
 
-    MAP(".png", AssetType::Texture);
-    MAP(".jpg", AssetType::Texture);
-    MAP(".jpeg", AssetType::Texture);
+  // Increase these when a change makes earlier outputs or sidecars invalid.
+  static constexpr int IMPORTER_VERSION = 1;
+  static constexpr int SIDECAR_VERSION = 1;
 
-    MAP(".glb", AssetType::Mesh);
-    MAP(".gltf", AssetType::Mesh);
-    MAP(".obj", AssetType::Mesh);
-    MAP(".fbx", AssetType::Mesh);
 
-#undef MAP
+  // The sidecar as it is on disk, and the settings that the import will save.
+  struct Sidecar {
+    std::string path;
+    bool existed = false;
+    std::vector<u8> originalBytes;
+    json original;
+    json settings;
+  };
 
-    return AssetType::Unknown;
+
+  // Read the sidecar, or make one with a new identity. This does not write it.
+  static Sidecar loadSidecar(AssetSource &source, const std::filesystem::path &path) {
+    Sidecar sidecar;
+    sidecar.path = path.generic_string() + ".import";
+    sidecar.existed = source.exists(sidecar.path);
+    if (sidecar.existed) {
+      sidecar.originalBytes = import_detail::readBytes(source, sidecar.path);
+      auto loaded = source.loadJSON(sidecar.path);
+      if (!loaded) {
+        throw std::runtime_error("Cannot read import settings: " + sidecar.path);
+      }
+      sidecar.original = loaded.unwrap();
+    } else {
+      sidecar.original = {{"version", SIDECAR_VERSION}, {"id", AssetID::generate().to_string()}};
+    }
+
+    sidecar.settings = sidecar.original;
+    if (sidecar.settings.at("version") != SIDECAR_VERSION) {
+      throw std::runtime_error("Invalid import identity: " + sidecar.path);
+    }
+    return sidecar;
   }
 
-  Option<AssetID> AssetManager::import(const std::filesystem::path &path) {
-    REN_PROFILE_FUNCTION();
+
+  // Undo a sidecar write after a failed publication.
+  static void restoreSidecar(AssetSource &source, Sidecar &sidecar) {
+    bool restored = sidecar.existed ? source.store(sidecar.path, ByteSpan(sidecar.originalBytes.data(), sidecar.originalBytes.size()))
+                                    : source.remove(sidecar.path);
+    if (!restored) {
+      throw std::runtime_error("Import publication failed and settings restoration failed: " + sidecar.path);
+    }
+  }
 
 
-    auto type = classifyAssetType(path);
+  static json makeImportRecord(const ImportContext &context, const json &settings, const std::string &importer) {
+    json dependencies = json::array();
+    for (const auto &[name, hash] : context.getInputHashes()) {
+      dependencies.push_back({{"path", name}, {"hash", hash}});
+    }
 
-    if (type == AssetType::Unknown) {
-      ren::errln("Cannot import asset {}: unknown type", path.string());
-      return None;
+    // The fingerprint changes when any input, setting, or format version changes.
+    json fingerprint = {{"dependencies", dependencies},
+                        {"settings", settings},
+                        {"importerVersion", IMPORTER_VERSION},
+                        {"assetFormatVersion", DERIVED_FORMAT_VERSION},
+                        {"bundleVersion", Bundle::VERSION}};
+    auto fingerprintText = fingerprint.dump();
+    auto now = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+
+    auto sourcePath = context.sourcePath.generic_string();
+    return {{"version", IMPORT_RECORD_VERSION},
+            {"sourceAsset", context.sourceAsset.to_string()},
+            {"sourcePath", sourcePath},
+            {"sourceHash", context.getInputHashes().at(sourcePath)},
+            {"importer", importer},
+            {"importerVersion", IMPORTER_VERSION},
+            {"dependencies", dependencies},
+            {"fingerprint", SHA256()(fingerprintText.data(), fingerprintText.size())},
+            {"importedAt", now},
+            {"derivedAssets", context.getOutputs()},
+            {"warnings", context.getWarnings()}};
+  }
+
+
+  json AssetManager::importFile(const std::filesystem::path &sourcePath) {
+    REN_PROFILE_SCOPE("ImportFile");
+
+    auto path = import_detail::sourcePath(sourcePath);
+    if (isDerivedPath(path) || !source.isFile(path.generic_string())) {
+      throw std::runtime_error("Cannot import generated or missing asset: " + path.string());
     }
 
 
-    return None;
+    // Fill the settings. The sidecar stays unchanged until the import succeeds.
+    auto sidecar = loadSidecar(source, path);
+    auto &settings = sidecar.settings;
+    auto id = parseAssetID(settings.at("id"));
+    if (!settings.contains("importer")) {
+      const auto *inferred = findImporterForPath(path);
+      settings["importer"] = inferred ? inferred->name : "";
+    }
+    auto importerName = settings.at("importer").get<std::string>();
+    const auto *info = findImporter(importerName);
+    if (!info) {
+      throw std::runtime_error("Unsupported importer for " + path.string() + ": " + importerName);
+    }
+
+    if (!settings.contains("options")) {
+      settings["options"] = json::object();
+    }
+    if (!settings.at("options").is_object()) {
+      throw std::runtime_error("Import options must be an object: " + sidecar.path);
+    }
+
+
+    // Construct the importer. This validates the options and fills the missing defaults into the settings.
+    auto importer = info->create(settings.at("options"));
+
+    // The importer writes bundles with fresh IDs, so a failure here leaves the published record valid.
+    ImportContext context(source, id, path);
+    importer->import(context);
+    context.validate();
+    auto record = makeImportRecord(context, settings, importerName);
+
+
+    // Save the sidecar, then publish the record. If publication fails, restore the old sidecar, so that a
+    // new identity or new defaults do not stay without a record.
+    bool changed = !sidecar.existed || sidecar.original != settings;
+    if (changed) {
+      import_detail::storeJSONAtomic(source, sidecar.path, settings, "import settings");
+    }
+    try {
+      import_detail::publishRecord(source, id, record);
+    } catch (...) {
+      if (changed) {
+        restoreSidecar(source, sidecar);
+      }
+      throw;
+    }
+    return record;
   }
 
-  void AssetManager::scanForImports(void) {
+
+  json AssetManager::scanForImports(void) {
     REN_PROFILE_FUNCTION();
-    // The way an import scan works is we go over every asset in the source.
-    // If it is an asset which we need to import, we check if it has a sidecar file next to it.
-    // If it does, we check that the sidecar file is up to date.
 
-    source.enumerate([&](const std::string_view &name) {
-      // For now, skip sidecar files. We will handle them later.
-      if (name.ends_with(".import")) {
-        return;
+    // Gather first: import creates files that must not enter this enumeration.
+    std::set<std::string> found;
+    bool enumerated = source.enumerate([&](const std::string_view &name) {
+      auto path = import_detail::sourcePath(std::string(name));
+      if (!isDerivedPath(path) && findImporterForPath(path) && source.isFile(path.generic_string())) {
+        found.insert(path.generic_string());
       }
-
-
-      AssetType type = classifyAssetType(name);
-      // We won't handle this.
-      if (type == AssetType::Unknown) {
-        return;
-      }
-
-      AssetStat st;
-      if (!source.stat(name, st)) {
-        ren::errln("Failed to stat asset {}", name);
-        return;
-      }
-
-
-
-      // if the sidecar file
-      std::string sidecarPath = std::string(name) + ".import";
-
-      AssetStat sidecarSt;
-      if (!source.stat(sidecarPath, sidecarSt)) {
-        // we need to import this asset, create its sidecar file to give it a UUID.
-        auto id = AssetID::generate();
-        nlohmann::ordered_json meta;
-
-        meta["version"] = 1;
-        meta["id"] = id.to_string();
-
-
-        auto f = source.open(sidecarPath, AssetOpenFlags::Write | AssetOpenFlags::Create | AssetOpenFlags::Truncate);
-        auto dumped = meta.dump(2);
-        if (!f || !f->write(ByteSpan(dumped.data(), dumped.size())) || !f->flush()) {
-          ren::errln("Failed to write sidecar file for asset {}", name);
-          return;
-        }
-
-        ren::println("{} <- {}", id.to_string(), name);
-      }
-
-      auto sidecarFile = source.open(sidecarPath, AssetOpenFlags::Read);
-      if (!sidecarFile) {
-        ren::errln("Failed to open sidecar file for asset {}", name);
-        return;
-      }
-
-      auto sidecarData = sidecarFile->readAllText().unwrap();
     });
-  }
+    if (!enumerated) {
+      throw std::runtime_error("Cannot enumerate asset sources for import");
+    }
 
+    // The set removes duplicates from multiple sources. The vector gives the workers indexed access.
+    std::vector<std::string> paths(found.begin(), found.end());
+    std::mutex mutex;
+    json result = {{"imported", json::array()}, {"errors", json::array()}};
+    ren::parallel_for(paths.size(), [&](size_t i) {
+      const auto &path = paths[i];
+      try {
+        auto start = std::chrono::high_resolution_clock::now();
+        importFile(path);
+        auto end = std::chrono::high_resolution_clock::now();
+        ren::println("Imported {} in {} ms", path, std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count());
+
+        std::scoped_lock lock(mutex);
+        result["imported"].push_back(path);
+      } catch (const std::exception &error) {
+        std::scoped_lock lock(mutex);
+        result["errors"].push_back({{"path", path}, {"error", error.what()}});
+      }
+    });
+    return result;
+  }
 
 }  // namespace ren

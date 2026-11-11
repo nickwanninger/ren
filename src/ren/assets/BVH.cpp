@@ -39,7 +39,7 @@ namespace ren {
     return result;
   }
 
-  MeshBVH::MeshBVH(std::span<const Vertex> vertices, std::span<const u32> indices) {
+  BakedMeshBVH buildMeshBVH(std::span<const Vertex> vertices, std::span<const u32> indices) {
     REN_PROFILE_FUNCTION();
 
     // The SIMD builders need a vertex stride that is a multiple of 16, and
@@ -76,13 +76,26 @@ namespace ren {
     gpuBVH.ConvertFrom(bvh);
 
     static_assert(sizeof(tinybvh::BVH_GPU::BVHNode) == sizeof(BVHNode));
-    nodes = makeBox<StorageBuffer<BVHNode>>(gpuBVH.usedNodes);
-    nodes->copyFromHost(reinterpret_cast<const BVHNode *>(gpuBVH.bvhNode), gpuBVH.usedNodes);
-
-    // The leaves index the triangle list of the source BVH.
-    triangles = makeBox<StorageBuffer<u32>>(bvh.idxCount);
-    triangles->copyFromHost(bvh.primIdx, bvh.idxCount);
+    BakedMeshBVH result;
+    const auto *bakedNodes = reinterpret_cast<const BVHNode *>(gpuBVH.bvhNode);
+    result.nodes.assign(bakedNodes, bakedNodes + gpuBVH.usedNodes);
+    result.triangles.assign(bvh.primIdx, bvh.primIdx + bvh.idxCount);
+    return result;
   }
+
+
+  MeshBVH::MeshBVH(std::span<const Vertex> vertices, std::span<const u32> indices)
+      : MeshBVH(buildMeshBVH(vertices, indices)) {}
+
+
+  MeshBVH::MeshBVH(const BakedMeshBVH &data) {
+    nodes = makeBox<StorageBuffer<BVHNode>>(data.nodes.size());
+    nodes->copyFromHost(data.nodes.data(), data.nodes.size());
+
+    triangles = makeBox<StorageBuffer<u32>>(data.triangles.size());
+    triangles->copyFromHost(data.triangles.data(), data.triangles.size());
+  }
+
 
   BoundsBVH buildBoundsBVH(std::span<const AABB> boxes) {
     REN_PROFILE_FUNCTION();

@@ -10,11 +10,14 @@
 
 namespace ren {
 
-  class Material : public ren::MaterialAsset {
+  class Material {
    public:
     Material() = default;
     explicit Material(ref<ShaderProgram> program);
     virtual ~Material() = default;
+
+    // The ID that scene serialization writes. TODO: Which code assigns this ID?
+    AssetID getAssetID(void) const { return assetID; }
 
     // Materials cannot be moved or copied
     Material(const Material &) = delete;
@@ -50,6 +53,7 @@ namespace ren {
     ren::PipelineStateObject &getPSO() { return pso; }
 
    private:
+    AssetID assetID;
     const ShaderReflection::MaterialField &field(std::string_view name) const;
     void writeField(const ShaderReflection::MaterialField &field, ren::ByteSpan value);
 

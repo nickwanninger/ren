@@ -15,7 +15,7 @@ namespace ren {
 
 
   // A texture is just a 2D image with a sampler.
-  class Texture : public ren::TextureAsset, ren::VulkanResource {
+  class Texture : ren::VulkanResource {
    public:
     // Construct a texture with CPU side pixel data. Color data (the default)
     // is R8G8B8A8_SRGB. Pass R8G8B8A8_UNORM for data such as normals.
@@ -84,9 +84,6 @@ namespace ren {
     const ref<Sampler>& getSamplerRef() const { return sampler; }
 
     VkDescriptorSet getImGui(void);
-
-    // ^ren::Asset
-    AssetType getType() override { return AssetType::Texture; }
 
     // Display the texture in the ImGui inspection interface (assume we are in a window)
     void inspect(void);

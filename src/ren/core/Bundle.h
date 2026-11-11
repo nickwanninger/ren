@@ -1,6 +1,7 @@
 #pragma once
 
 #include <ren/types.h>
+#include <cstring>
 
 namespace ren {
 
@@ -34,6 +35,32 @@ namespace ren {
     template <typename T>
     u32 attachBlob(const std::string_view &name, const std::vector<T> &data) {
       return attachBlob(name, std::span<u8>((u8 *)data.data(), data.size() * sizeof(T)));
+    }
+
+
+    // Copy the blob `name` into a vector of T. Throws if the blob is absent, is present more than
+    // one time, or has a size that is not a multiple of sizeof(T).
+    template <typename T>
+    std::vector<T> readBlob(const std::string_view &name) const {
+      const Blob *found = nullptr;
+      for (const auto &blob : blobs) {
+        if (blob.name == name) {
+          if (found) {
+            throw std::runtime_error("Duplicate bundle blob: " + std::string(name));
+          }
+          found = &blob;
+        }
+      }
+
+      if (!found || found->data.size() % sizeof(T) != 0) {
+        throw std::runtime_error("Missing or invalid bundle blob: " + std::string(name));
+      }
+
+      std::vector<T> result(found->data.size() / sizeof(T));
+      if (!result.empty()) {
+        std::memcpy(result.data(), found->data.data(), found->data.size());
+      }
+      return result;
     }
 
 

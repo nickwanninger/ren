@@ -4,9 +4,11 @@
 #include <ren/types.h>
 #include <ren/misc/json_serialize.h>
 #include <ren/core/UUID.h>
+#include <functional>
 
 namespace ren {
 
+  class Bundle;
 
   // An AssetID is just an integer.
   // The value comes from the issuing global asset manager.
@@ -32,49 +34,74 @@ namespace ren {
 
 
 
-  // An asset is a base class for all assets in the engine.
-  // Things like textures, meshes, shaders, etc are considered assets.
-  // Assets are identified by their UUID.
+  // The data of one asset in memory, without GPU objects. An importer fills an asset and writes it
+  // to a bundle. A loader reads the bundle back and builds GPU objects from the asset.
+  //
+  // A derived class holds the content and supplies these members for registerAssetType():
+  //   static constexpr AssetType TYPE
+  //   static ref<Derived> read(const Bundle &bundle)    Read the content that write() stores.
   class Asset {
    public:
-    Asset() = default;
+    // The identity of the asset. `sourceAsset` is the source file that the import made it from.
+    AssetID id;
+    AssetID sourceAsset;
+    std::string name;
+
     virtual ~Asset() = default;
-    virtual AssetType getType() = 0;
 
-    // No copy or move semantics
-    Asset(const Asset&) = delete;
-    Asset& operator=(const Asset&) = delete;
-    Asset(Asset&&) = delete;
-    Asset& operator=(Asset&&) = delete;
+    virtual AssetType getType(void) const = 0;
 
-    AssetID getAssetID() const { return this->assetID; }
+    // Throws if the content is not valid. The bundle functions call this before a write and after a read.
+    virtual void validate(void) const = 0;
 
-   protected:
-    friend class AssetManager;
-    // Set the asset ID for this asset. This is used by the AssetManager to
-    // register the asset in the asset registry.
-    void setAssetID(AssetID id) { this->assetID = id; }
+    // Add the content to the bundle as metadata keys and blobs. The caller writes the identity.
+    virtual void write(Bundle &bundle) const = 0;
 
-   private:
-    AssetID assetID;
+    // This asset as type T. Returns null if the asset has a different type.
+    template <typename T>
+    T *as(void) {
+      return getType() == T::TYPE ? static_cast<T *>(this) : nullptr;
+    }
+
+    template <typename T>
+    const T *as(void) const {
+      return getType() == T::TYPE ? static_cast<const T *>(this) : nullptr;
+    }
   };
 
 
-  namespace impl {
-    template <AssetType StaticType>
-    class TypedAsset : public Asset {
-     public:
-      virtual ~TypedAsset() = default;
-      static inline AssetType getStaticType() { return StaticType; }
-      inline AssetType getType() override { return StaticType; }
-    };
-  }  // namespace impl
+
+  //=========================
+  // Asset types
+  //=========================
+
+  // One registry entry. The registry owns it for the life of the program.
+  struct AssetTypeInfo {
+    AssetType type;
+
+    // Read the content of an asset from a bundle. Does not set the identity and does not validate.
+    std::function<ref<Asset>(const Bundle &bundle)> read;
+  };
 
 
-  using TextureAsset = impl::TypedAsset<AssetType::Texture>;
-  using MeshAsset = impl::TypedAsset<AssetType::Mesh>;
-  using MaterialAsset = impl::TypedAsset<AssetType::Material>;
-  using ShaderAsset = impl::TypedAsset<AssetType::Shader>;
+  namespace asset_detail {
 
+    // Add an entry to the registry. Throws if the type exists.
+    void addAssetType(AssetTypeInfo info);
+
+  }  // namespace asset_detail
+
+
+  // Register an asset class, so that bundles of its type can be read. Throws if the type exists.
+  template <typename T>
+    requires std::derived_from<T, Asset>
+  void registerAssetType(void) {
+    asset_detail::addAssetType({T::TYPE, [](const Bundle &bundle) -> ref<Asset> { return T::read(bundle); }});
+  }
+
+
+  // Find a registered asset type. The first call registers the types that ren supplies.
+  // Returns null if no class is registered for the type.
+  const AssetTypeInfo *findAssetType(AssetType type);
 
 }  // namespace ren

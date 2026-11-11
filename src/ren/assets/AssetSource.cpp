@@ -105,6 +105,12 @@ namespace ren {
   }
 
 
+  bool AssetSource::storeJSON(const std::string_view& name, const json& value) {
+    auto text = value.dump(2) + "\n";
+    return store(name, ByteSpan(text.data(), text.size()));
+  }
+
+
   Option<json> AssetSource::loadJSON(const std::string_view& name) {
     std::vector<u8> data;
     if (!load(name, data)) {

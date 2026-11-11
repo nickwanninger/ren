@@ -58,6 +58,19 @@ namespace ren {
     }
   }
 
+  Mesh::Mesh(const std::string &name, const std::vector<Vertex> &vertices, const std::vector<u32> &indices, const BakedMeshBVH &bakedBVH)
+      : name(name)
+      , vertexCount(vertices.size())
+      , indexCount(indices.size()) {
+    for (const auto &vertex : vertices) {
+      aabb.update(vertex.pos);
+    }
+
+    megaHandle = ren::resource<ren::MegaMeshBuffer>().allocate(vertices, indices);
+    bvh = makeBox<MeshBVH>(bakedBVH);
+  }
+
+
   Mesh::~Mesh() {}
 
 

@@ -270,7 +270,7 @@ class RaytraceViewport : public ren::EditorViewport {
         lights.push_back(light);
       }
 
-      ren::AABB worldBox(glm::vec3(INFINITY), glm::vec3(-INFINITY));
+      ren::AABB worldBox;
       for (int corner = 0; corner < 8; corner++) {
         glm::vec3 p((corner & 1) ? bb.max.x : bb.min.x, (corner & 2) ? bb.max.y : bb.min.y, (corner & 4) ? bb.max.z : bb.min.z);
         glm::vec3 worldPos = glm::vec3(r.transform * glm::vec4(p, 1.0f));

@@ -294,14 +294,18 @@ namespace ren {
 
     /**
      * @brief Reads a file for its json value.
-     * 
+     *
      * This exists mostly for convenience and avoids having to write the same
      * boilerplate code over and over again.
      *
      * @param name The name of the file to read.
-     * @return The json value of the file, or an empty json object if the file is not found or is not valid json.
+     * @return The JSON value, or None if reading or parsing fails.
      */
     Option<json> loadJSON(const std::string_view &name);
+
+    // Write indented JSON with a final newline through store(). The parent directory must exist.
+    // Returns false if writing or flushing fails.
+    bool storeJSON(const std::string_view &name, const json &value);
   };
 
 

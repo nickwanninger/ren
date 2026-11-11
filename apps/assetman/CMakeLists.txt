@@ -15,3 +15,9 @@ if(BUILD_TESTING)
     COMMAND ${CMAKE_INSTALL_PREFIX}/bin/assetman --test-authoring
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 endif()
+
+if(BUILD_TESTING)
+  add_test(NAME assetman-import
+    COMMAND ${CMAKE_INSTALL_PREFIX}/bin/assetman --test-import
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+endif()

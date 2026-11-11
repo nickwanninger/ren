@@ -156,6 +156,10 @@ if(BUILD_TESTING)
     COMMAND ${CMAKE_INSTALL_PREFIX}/bin/ren-edit-tests
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 
+  add_test(NAME shader-reflection
+    COMMAND ${CMAKE_INSTALL_PREFIX}/bin/ren-shader-reflection-tests
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+
   # This test takes over Window::onRender() and fails frames on purpose, so
   # it does not fit the rentest hooks. It opens a window, like rentest.
   add_test(NAME render-graph-vulkan

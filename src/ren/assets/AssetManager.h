@@ -53,15 +53,13 @@ namespace ren {
     AssetSource &getSource(void) { return source; }
 
 
-    // Scan the asset sources for new assets, and import them.
-    void scanForImports(void);
+    // Import supported files through importFile, excluding generated bundles and sidecars.
+    // Returns imported paths and per-file errors. Each call generates fresh outputs.
+    json scanForImports(void);
 
-    // Import an asset from a file path. This will do the import action,
-    // give it an asset id, and write the sidecar.
-    Option<AssetID> import(const std::filesystem::path &path);
-
-    // Import a mesh from a file path. implemented in importers/mesh.cpp
-    void importMesh(const std::filesystem::path &path);
+    // Import one source file from the configured sources. Use its sidecar importer or infer one from its extension.
+    // Throws if the importer, settings, source, or writes are invalid.
+    json importFile(const std::filesystem::path &path);
 
    private:
     // The source that assets are loaded from.
@@ -72,15 +70,5 @@ namespace ren {
   AssetManager &getAssetManager();
 
   bool loadAssetBytes(const std::string_view &path, std::vector<u8> &out);
-
-  template <typename T>
-  inline ref<T> getAsset(const std::filesystem::path &path) {
-    auto &am = getAssetManager();
-    auto asset = am.load(path.string(), T::getStaticType());
-    if (asset && asset->getType() == T::getStaticType()) {
-      return std::static_pointer_cast<T>(asset);
-    }
-    return nullptr;
-  }
 
 }  // namespace ren

@@ -1,4 +1,5 @@
 #include <ren/core/UUID.h>
+#include <mutex>
 #include <random>
 
 namespace ren {
@@ -15,7 +16,12 @@ namespace ren {
   }
 
 
-  UUID UUID::generate() { return UUID(s_UniformDistribution(s_Engine)); }
+  UUID UUID::generate() {
+    // Import workers generate IDs in parallel, and the engine is not thread-safe.
+    static std::mutex mutex;
+    std::scoped_lock lock(mutex);
+    return UUID(s_UniformDistribution(s_Engine));
+  }
 
 
   Option<UUID> UUID::parse(std::string_view str) {

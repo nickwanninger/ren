@@ -29,12 +29,25 @@ namespace ren {
   static_assert(sizeof(BVHNode) == 64);
 
 
+  // CPU data for a mesh BVH. Triangle entries refer to the final mesh indices.
+  struct BakedMeshBVH {
+    std::vector<BVHNode> nodes;
+    std::vector<u32> triangles;
+  };
+
+  // Build and optimize a mesh BVH without a GPU. Indices must describe triangles.
+  BakedMeshBVH buildMeshBVH(std::span<const Vertex> vertices, std::span<const u32> indices);
+
+
   // Bounding volume hierarchy over the triangles of one mesh, in model space.
   // The root is node 0, and it is always an inner node. The GPU reads the
   // nodes and the triangle list through buffer device addresses.
   class MeshBVH {
    public:
     MeshBVH(std::span<const Vertex> vertices, std::span<const u32> indices);
+
+    // Upload a baked BVH without rebuilding it. The caller validates its references.
+    explicit MeshBVH(const BakedMeshBVH &data);
 
     uintptr_t getNodeAddress(void) const { return nodes->getGPUAddress(); }
     uintptr_t getTriangleAddress(void) const { return triangles->getGPUAddress(); }

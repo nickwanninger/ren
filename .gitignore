@@ -23,3 +23,6 @@ engine_run_profile.json
 *.fxt.gz
 
 assets/store
+
+# Derived import records and native resource bundles are disposable.
+**/.derived/

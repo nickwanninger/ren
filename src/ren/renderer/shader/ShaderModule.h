@@ -18,7 +18,7 @@ namespace ren {
   // It's mainly responsible for managing the lifetime of the VkShaderModule
   // and providing the shader stage so the pipeline can use it.
   // ShaderProgram should be used instead of this class in most cases.
-  class ShaderModule : public ren::VulkanResource, public ren::ShaderAsset {
+  class ShaderModule : public ren::VulkanResource {
    public:
     ShaderModule(const std::string_view &name, const std::vector<u8> &spirv, VkShaderStageFlagBits stage);
     virtual ~ShaderModule();
