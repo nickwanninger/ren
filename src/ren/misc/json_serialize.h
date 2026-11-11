@@ -44,6 +44,23 @@
     e = ((it != std::end(m)) ? it : std::begin(m))->first;                                                                                          \
   }
 
+namespace ren {
+
+  // JSON_SERIALIZE_ENUM maps unknown strings to its first entry. Encode the result again to reject them.
+  // Throws an error that contains `what` if the value is not a name of the enum.
+  template <typename T>
+  T parseEnum(const json &value, const char *what) {
+    auto result = value.get<T>();
+    if (json(result) != value) {
+      throw std::runtime_error(std::string("Unsupported ") + what + ": " + value.dump());
+    }
+    return result;
+  }
+
+}  // namespace ren
+
+
+
 // this file provides serialization for a few types that are used
 // in the engine (such as glm::vec3, etc.)
 

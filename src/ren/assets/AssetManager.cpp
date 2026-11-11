@@ -5,306 +5,225 @@
 #include <ren/core/Application.h>
 #include <imgui/imgui.h>
 #include <ren/misc/hash.h>
+#include <ren/core/UUID.h>
+#include <algorithm>
+#include <cctype>
+#include <set>
+#include "ren/core/ThreadPool.h"
+#include <ren/assets/importers/ImportSource.h>
+#include <ren/assets/importers/Importer.h>
+#include <ren/core/Bundle.h>
+
 
 namespace ren {
 
-  AssetManager &getAssetManager() { return ren::world().get_mut<AssetManager>(); }
+  AssetManager &getAssetManager() { return ren::Application::get().getAssetManager(); }
 
-  AssetManager::AssetManager() {}
+  AssetManager::AssetManager()
+      : store(source) {
+    registerBuiltinImporters();
+  }
 
-  AssetManager::~AssetManager() { fmt::print("AssetManager destroyed.\n"); }
+  AssetManager::~AssetManager() {}
 
 
   void AssetManager::addFilesystemSource(const std::string_view &path) {
     this->source.addFilesystem(path);
+    store.reinit();
   }
-  void AssetManager::addEmbeddedSource(void) { this->source.addEmbeddedSource(); }
-
-
-  AssetID AssetManager::getID(const std::string_view &name) {
-    u64 state = 0;
-    // For now, simply hash. Later on we might need to do this centrally.
-    // It's unlikely to get a collision, but you never know.
-    ren::hashStd(state, name);
-    return state;
+  void AssetManager::addEmbeddedSource(void) {
+    this->source.addEmbeddedSource();
+    store.reinit();
+  }
+  void AssetManager::addDefaultSources(const std::string_view &root) {
+    addEmbeddedSource();
+    addFilesystemSource(root);
   }
 
 
-  ref<Asset> AssetManager::load(const std::string_view &path, AssetType type) {
-    REN_PROFILE_SCOPE("Get Asset");
-    // Check if the asset is already loaded
-    for (const auto &pair : assetRegistry) {
-      if (pair.second.path == path) {
-        fmt::print("Asset {} is already imported with ID {}\n", path, (u64)pair.first);
-        return getAsset(pair.second.id);
+  void AssetManager::tick() { REN_PROFILE_FUNCTION(); }
+
+  bool loadAssetBytes(const std::string_view &path, std::vector<u8> &out) { return getAssetManager().load(path, out); }
+
+
+
+  //=========================
+  // Import
+  //=========================
+
+  // Increase these when a change makes earlier outputs or sidecars invalid.
+  static constexpr int IMPORTER_VERSION = 1;
+  static constexpr int SIDECAR_VERSION = 1;
+
+
+  // The sidecar as it is on disk, and the settings that the import will save.
+  struct Sidecar {
+    std::string path;
+    bool existed = false;
+    std::vector<u8> originalBytes;
+    json original;
+    json settings;
+  };
+
+
+  // Read the sidecar, or make one with a new identity. This does not write it.
+  static Sidecar loadSidecar(AssetSource &source, const std::filesystem::path &path) {
+    Sidecar sidecar;
+    sidecar.path = path.generic_string() + ".import";
+    sidecar.existed = source.exists(sidecar.path);
+    if (sidecar.existed) {
+      sidecar.originalBytes = import_detail::readBytes(source, sidecar.path);
+      auto loaded = source.loadJSON(sidecar.path);
+      if (!loaded) {
+        throw std::runtime_error("Cannot read import settings: " + sidecar.path);
       }
-    }
-
-
-    if (type == AssetType::Unknown) {
-      auto extension = [&](const char *ext, AssetType t) {
-        // I don't have string_view::ends_with, so we do it manually.
-        if (path.size() >= strlen(ext) &&
-            path.compare(path.size() - strlen(ext), strlen(ext), ext) == 0) {
-          type = t;
-          fmt::print("Detected asset type {} for path {}\n", static_cast<int>(t), path);
-        }
-      };
-
-      // Texture formats we support
-      extension(".png", AssetType::Texture);
-      extension(".jpg", AssetType::Texture);
-      extension(".jpeg", AssetType::Texture);
-
-      // Mesh formats we support
-      extension(".glb", AssetType::Mesh);
-      extension(".gltf", AssetType::Mesh);
-      extension(".obj", AssetType::Mesh);
-      extension(".fbx", AssetType::Mesh);
-
-      // Shader formats we support
-      extension(".spv", AssetType::Shader);
-      extension(".vert", AssetType::Shader);
-      extension(".frag", AssetType::Shader);
-      extension(".comp", AssetType::Shader);
-      extension(".geom", AssetType::Shader);
-
-
-      // Scripts
-      extension(".lua", AssetType::Script);
-      extension(".fnl", AssetType::Script);
-    }
-
-    // Create a new AssetInfo
-    AssetInfo info;
-    info.id = UUID();  // Generate a new UUID for the asset
-    info.path = path;
-    info.type = type;
-    assetRegistry[info.id] = info;  // Store the asset info in the map
-    // sync();                         // sync the asset state!
-
-    return load(info);
-  }
-
-
-
-  ref<Asset> AssetManager::getAsset(ren::AssetID assetID) {
-    REN_PROFILE_SCOPE("Get Asset");
-    // First, lookup the asset in the cached asset map.
-    if (auto it = loadedAssets.find(assetID); it != loadedAssets.end()) {
-      return it->second;  // Return the cached asset if found
-    }
-
-    // If it isn't loaded, load the asset if we can.
-    if (auto it = assetRegistry.find(assetID); it != assetRegistry.end()) {
-      // if the cached asset is not loaded, load it.
-      return load(it->second);
+      sidecar.original = loaded.unwrap();
     } else {
-      fmt::print("Asset with ID {} is not found in the asset registry\n", (u64)assetID);
+      sidecar.original = {{"version", SIDECAR_VERSION}, {"id", AssetID::generate().to_string()}};
     }
-    return nullptr;  // Asset not found
+
+    sidecar.settings = sidecar.original;
+    if (sidecar.settings.at("version") != SIDECAR_VERSION) {
+      throw std::runtime_error("Invalid import identity: " + sidecar.path);
+    }
+    return sidecar;
   }
 
 
-
-
-  ref<Asset> AssetManager::load(const AssetInfo &info) {
-    REN_PROFILE_SCOPE("Load Asset");
-    std::string path = info.path;
-    ref<Asset> asset = nullptr;
-
-    // Load!
-    // TODO: asset loader abstraction
-    switch (info.type) {
-      case AssetType::Texture: {
-        asset = ren::Texture::load(path);
-        break;
-      }
-      case AssetType::Mesh: {
-        fmt::print("IMPORTING MESH FROM {} IS NOT IMPLEMENTED\n", path);
-        break;
-      }
-      case AssetType::Shader: {
-        // Load the shader from the file
-        auto stage = ShaderModule::getStageFromFilename(path);
-        auto shader = make<ShaderModule>(path, stage);
-        if (shader) {
-          // Register the shader asset
-          shader->setAssetID(info.id);
-          loadedAssets[info.id] = shader;  // Cache the loaded shader
-          return shader;  // Return the loaded shader
-        }
-        asset = shader;
-      }
-      case AssetType::Material: {
-        fmt::print("IMPORTING MATERIAL FROM {} IS NOT IMPLEMENTED\n", path);
-        break;
-      }
-
-
-      case AssetType::Unknown:
-      default: {
-        fmt::print("Unknown asset type for path {}\n", path);
-        break;
-      }
-    }
-
-    if (asset) {
-      asset->setAssetID(info.id);     // Set the asset ID for the asset
-      loadedAssets[info.id] = asset;  // Cache the loaded asset
-    } else {
-      fmt::print("Failed to import asset from path {}\n", path);
-    }
-
-
-    return asset;
-  }
-
-
-  // void AssetManager::inspect(void) {
-  //   REN_PROFILE_SCOPE("AssetManager Inspect");
-  //   ImGui::Text("Asset Manager");
-  //   ImGui::Separator();
-  //   if (ImGui::Button("Sync Assets")) {
-  //     sync();
-  //     fmt::print("Assets synced to disk.\n");
-  //   }
-  //   ImGui::Text("Assets Loaded: %zu", loadedAssets.size());
-  //   ImGui::Text("Assets Registered: %zu", assetRegistry.size());
-  //   // List all assets
-  //   for (const auto &pair : assetRegistry) {
-  //     const auto &assetInfo = pair.second;
-  //     ImGui::Text("Asset ID: %llu, Path: %s, Type: %s", (u64)assetInfo.id,
-  //                 assetInfo.path.string().c_str(), json(assetInfo.type).dump().c_str());
-  //   }
-  // }
-
-  bool loadAssetBytes(const std::string_view &path, std::vector<u8> &out) {
-    return getAssetManager().load(path, out);
-  }
-
-
-
-  // Utility: module name "a.b.c" -> "a/b/c"
-  inline std::string dot_to_slash(std::string s) {
-    std::replace(s.begin(), s.end(), '.', '/');
-    return s;
-  }
-
-  // A tiny path expander similar to package.path semantics.
-  // We’ll try <name>.lua, <name>/init.lua, and allow a configurable prefix like "scripts/".
-  inline void build_candidate_keys(const std::string &mod, const std::string &prefix,
-                                   std::vector<std::string> &out) {
-    const std::string base = dot_to_slash(mod);
-    out.push_back(prefix + base + ".lua");
-    out.push_back(prefix + base + "/init.lua");  // init
-    out.push_back(prefix + base + ".fnl");
-    out.push_back(prefix + base + "/init.fnl");  // init
-  }
-
-
-  static int loadFennelScript(lua_State *L, std::vector<u8> &scriptData, const char *filename) {
-    // Load the fennel compiler if not already loaded
-    // Use plain Lua C API to require fennel and call compileString.
-    // Stack: [...] before; we will clean up before continuing.
-    lua_getglobal(L, "require");            // push require
-    lua_pushstring(L, "fennel");            // arg
-    if (lua_pcall(L, 1, 1, 0) != LUA_OK) {  // call require("fennel")
-      const char *err = lua_tostring(L, -1);
-      ren::errln("Failed to require fennel: {}", err ? err : "unknown error");
-      abort();
-    }
-
-    // Now fennel module is on top of the stack.
-    if (!lua_istable(L, -1)) {
-      ren::errln("fennel.require did not return a table");
-      abort();
-    }
-
-    // Get fennel.compileString
-    lua_getfield(L, -1, "compileString");  // pushes function
-    if (!lua_isfunction(L, -1)) {
-      ren::errln("fennel.compileString not found or not a function");
-      abort();
-    }
-
-    // Push arguments: source string and options table { filename = candidate }
-    lua_pushlstring(L, (const char *)scriptData.data(), scriptData.size());
-    lua_newtable(L);
-    lua_pushstring(L, "filename");
-    lua_pushstring(L, filename);
-    lua_settable(L, -3);  // options["filename"] = candidate
-
-    // Call compileString(source, options)
-    if (lua_pcall(L, 2, 1, 0) != LUA_OK) {
-      const char *err = lua_tostring(L, -1);
-      ren::errln("fennel.compileString error: {}", err ? err : "unknown error");
-      return lua_error(L);
-      // lua_pop(L, 1);  // pop error
-      // lua_pop(L, 1);  // pop module
-      // return 0;
-    }
-
-    // Result should be a string containing compiled Lua
-    size_t compiled_len = 0;
-    const char *compiled_cstr = lua_tolstring(L, -1, &compiled_len);
-    if (!compiled_cstr) {
-      ren::errln("fennel.compileString did not return a string");
-      lua_pop(L, 1);  // pop result
-      return 0;
-    }
-
-    std::string compiledCode(compiled_cstr, compiled_len);
-    lua_pop(L, 1);  // pop compiled result
-    lua_pop(L, 1);  // pop fennel module
-
-    if (luaL_loadbuffer(L, compiledCode.c_str(), compiledCode.size(), filename) == LUA_OK) {
-      return 1;  // return the loaded chunk
-    } else {
-      return lua_error(L);
+  // Undo a sidecar write after a failed publication.
+  static void restoreSidecar(AssetSource &source, Sidecar &sidecar) {
+    bool restored = sidecar.existed ? source.store(sidecar.path, ByteSpan(sidecar.originalBytes.data(), sidecar.originalBytes.size()))
+                                    : source.remove(sidecar.path);
+    if (!restored) {
+      throw std::runtime_error("Import publication failed and settings restoration failed: " + sidecar.path);
     }
   }
 
-  void AssetManager::configureLua(sol::state &lua) {
-    // Override the normal filesystem loader with our custom one.
-    lua["package"]["loaders"][2] = +[](lua_State *L) -> int {
-      const char *modname = luaL_checkstring(L, 1);
-      auto &am = ren::Application::get().getAssetManager();
-      std::vector<std::string> candidates;
-      // Load everything from the scripts/ directory.
-      build_candidate_keys(modname, "scripts/", candidates);
-      // build_candidate_keys(modname, "", candidates);
-      std::vector<u8> scriptData;
-      for (auto &candidate : candidates) {
-        scriptData.clear();
-        if (am.load(candidate, scriptData)) {
-          // if the script is found, and it ends in .lua, load as lua.
-          if (candidate.ends_with(".lua")) {
-            if (luaL_loadbuffer(L, (const char *)scriptData.data(), scriptData.size(),
-                                candidate.c_str()) == LUA_OK) {
-              return 1;  // return the loaded chunk
-            } else {
-              // Loading failed; return the error message
-              return lua_error(L);
-            }
-          }
 
-          // if it ends in .fnl, load as fennel.
-          if (candidate.ends_with(".fnl")) {
-            return loadFennelScript(L, scriptData, candidate.c_str());
-          }
-        }
+  static json makeImportRecord(const ImportContext &context, const json &settings, const std::string &importer) {
+    json dependencies = json::array();
+    for (const auto &[name, hash] : context.getInputHashes()) {
+      dependencies.push_back({{"path", name}, {"hash", hash}});
+    }
+
+    // The fingerprint changes when any input, setting, or format version changes.
+    json fingerprint = {{"dependencies", dependencies},
+                        {"settings", settings},
+                        {"importerVersion", IMPORTER_VERSION},
+                        {"assetFormatVersion", DERIVED_FORMAT_VERSION},
+                        {"bundleVersion", Bundle::VERSION}};
+    auto fingerprintText = fingerprint.dump();
+    auto now = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+
+    auto sourcePath = context.sourcePath.generic_string();
+    return {{"version", IMPORT_RECORD_VERSION},
+            {"sourceAsset", context.sourceAsset.to_string()},
+            {"sourcePath", sourcePath},
+            {"sourceHash", context.getInputHashes().at(sourcePath)},
+            {"importer", importer},
+            {"importerVersion", IMPORTER_VERSION},
+            {"dependencies", dependencies},
+            {"fingerprint", SHA256()(fingerprintText.data(), fingerprintText.size())},
+            {"importedAt", now},
+            {"derivedAssets", context.getOutputs()},
+            {"warnings", context.getWarnings()}};
+  }
+
+
+  json AssetManager::importFile(const std::filesystem::path &sourcePath) {
+    REN_PROFILE_SCOPE("ImportFile");
+
+    auto path = import_detail::sourcePath(sourcePath);
+    if (isDerivedPath(path) || !source.isFile(path.generic_string())) {
+      throw std::runtime_error("Cannot import generated or missing asset: " + path.string());
+    }
+
+
+    // Fill the settings. The sidecar stays unchanged until the import succeeds.
+    auto sidecar = loadSidecar(source, path);
+    auto &settings = sidecar.settings;
+    auto id = parseAssetID(settings.at("id"));
+    if (!settings.contains("importer")) {
+      const auto *inferred = findImporterForPath(path);
+      settings["importer"] = inferred ? inferred->name : "";
+    }
+    auto importerName = settings.at("importer").get<std::string>();
+    const auto *info = findImporter(importerName);
+    if (!info) {
+      throw std::runtime_error("Unsupported importer for " + path.string() + ": " + importerName);
+    }
+
+    if (!settings.contains("options")) {
+      settings["options"] = json::object();
+    }
+    if (!settings.at("options").is_object()) {
+      throw std::runtime_error("Import options must be an object: " + sidecar.path);
+    }
+
+
+    // Construct the importer. This validates the options and fills the missing defaults into the settings.
+    auto importer = info->create(settings.at("options"));
+
+    // The importer writes bundles with fresh IDs, so a failure here leaves the published record valid.
+    ImportContext context(source, id, path);
+    importer->import(context);
+    context.validate();
+    auto record = makeImportRecord(context, settings, importerName);
+
+
+    // Save the sidecar, then publish the record. If publication fails, restore the old sidecar, so that a
+    // new identity or new defaults do not stay without a record.
+    bool changed = !sidecar.existed || sidecar.original != settings;
+    if (changed) {
+      import_detail::storeJSONAtomic(source, sidecar.path, settings, "import settings");
+    }
+    try {
+      import_detail::publishRecord(source, id, record);
+    } catch (...) {
+      if (changed) {
+        restoreSidecar(source, sidecar);
       }
+      throw;
+    }
+    return record;
+  }
 
-      ren::errln("[!!] Failed to load lua module '{}'\n", modname);
-      // On failure, return nil and an error string.
-      lua_pushnil(L);
-      lua_pushfstring(L, "Module '%s' not found", modname);
-      return 2;
-    };
-    // remove loaders 3 and 4 (C loader and all else fails)
-    lua["package"]["loaders"][3] = nullptr;
-    lua["package"]["loaders"][4] = nullptr;
+
+  json AssetManager::scanForImports(void) {
+    REN_PROFILE_FUNCTION();
+
+    // Gather first: import creates files that must not enter this enumeration.
+    std::set<std::string> found;
+    bool enumerated = source.enumerate([&](const std::string_view &name) {
+      auto path = import_detail::sourcePath(std::string(name));
+      if (!isDerivedPath(path) && findImporterForPath(path) && source.isFile(path.generic_string())) {
+        found.insert(path.generic_string());
+      }
+    });
+    if (!enumerated) {
+      throw std::runtime_error("Cannot enumerate asset sources for import");
+    }
+
+    // The set removes duplicates from multiple sources. The vector gives the workers indexed access.
+    std::vector<std::string> paths(found.begin(), found.end());
+    std::mutex mutex;
+    json result = {{"imported", json::array()}, {"errors", json::array()}};
+    ren::parallel_for(paths.size(), [&](size_t i) {
+      const auto &path = paths[i];
+      try {
+        auto start = std::chrono::high_resolution_clock::now();
+        importFile(path);
+        auto end = std::chrono::high_resolution_clock::now();
+        ren::println("Imported {} in {} ms", path, std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count());
+
+        std::scoped_lock lock(mutex);
+        result["imported"].push_back(path);
+      } catch (const std::exception &error) {
+        std::scoped_lock lock(mutex);
+        result["errors"].push_back({{"path", path}, {"error", error.what()}});
+      }
+    });
+    return result;
   }
 
 }  // namespace ren

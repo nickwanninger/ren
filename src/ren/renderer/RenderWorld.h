@@ -29,8 +29,7 @@ namespace ren {
 
     void extractFromECS(flecs::world &world);
 
-    inline RenderWorld(ren::Camera &cam)
-        : camera(cam) {};
+    RenderWorld() = default;
     // no copy
     RenderWorld(const RenderWorld &) = delete;
     RenderWorld &operator=(const RenderWorld &) = delete;
@@ -44,8 +43,6 @@ namespace ren {
     std::vector<PointLight> pointLights;
 
    private:
-    ren::Camera &camera;
-
     bool isFrustumCulled(const AABB &modelSpaceAABB, const glm::mat4 &transform) const;
   };
 }  // namespace ren

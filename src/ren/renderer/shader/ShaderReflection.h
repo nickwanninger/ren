@@ -2,126 +2,126 @@
 
 #include <slang.h>
 #include <ren/types.h>
-#include <spirv_reflect/spirv_reflect.h>
+#include <ren/core/Option.h>
 #include <ren/core/OptionalInt.h>
-
-// This file implements an abstraction over various shader resource binding
-// reflection systems such as spirv-reflect and slang reflection. It allows
-// querying information about shader resources (uniform buffers, textures,
-// fields, array index, etc.) by name or index and exposes them as a concrete
-// datastructure in the engine itself.
-// In essence, this structure represents the reflection information as a sort of "AST"
 
 namespace ren {
 
-
-// SRT = Shader Reflection Type.  These flags are used to describe various
-// bitmasks for each shader reflection type from ShaderReflectionTypes.def
-#define SRT_RESOURCE \
-  (1LU << 0)                   // This is a resource (requires binding). A semantic of this is that elements are
-                               // *not* resources.
-#define SRT_BUFFER (1LU << 1)  // This is a buffer type (UBO/SSBO). We include PCs in here.
-#define SRT_WRITE (1LU << 2)   // This type supports write access.
-
-
-
-
+  // Owns the push constant fields and material schema of one linked Slang program.
+  // Descriptor layouts follow the fixed shader ABI and stay outside this model.
   class ShaderReflection {
    public:
-    // These are the types of bindings we can have in a shader.
-    enum Type : u8 {
-#define TYPE(a, ...) a,
-#include "./ShaderReflectionTypes.def"
-#undef TYPE
+    enum class ValueKind : u8 {
       Unknown,
+      Scalar,
+      Vector,
+      Matrix,
+      Struct,
+      Array,
+      Pointer,
+      Enum,
     };
 
-    // A class that lets us represent the type of a binding in a higher level way.
-    struct BindingType {
-      Type type = Type::Unknown;
-      // For arrays, the element type
-      std::optional<Type> elementType;
-
-      inline BindingType(Type type)
-          : type(type)
-          , elementType(std::nullopt) {}
-      inline BindingType(Type type, Type elementType)
-          : type(type)
-          , elementType(elementType) {}
-
-      std::string toString(void) const;
-      static bool allowedInTopLevel(Type type);
-      static VkDescriptorType toVkDescriptorType(Type type);
-
-      inline bool operator==(const BindingType& other) const { return type == other.type && elementType == other.elementType; }
-      inline bool operator!=(const BindingType& other) const { return !(*this == other); }
+    enum class ScalarKind : u8 {
+      None,
+      Bool,
+      Int8,
+      UInt8,
+      Int16,
+      UInt16,
+      Int32,
+      UInt32,
+      Int64,
+      UInt64,
+      Float16,
+      Float32,
+      Float64,
     };
 
-    struct Location {
-      SlangStage stage;
-      bool pushConstant = false;  // Is this location within a push constant block
-      OptionalInt<u16> bindingSet;             // Descriptor set
-      OptionalInt<u16> bindingIndex;           // Binding index within the set
-      OptionalInt<u16> varyingIn, varyingOut;  // Varying location (if applicable)
-      OptionalInt<u32> byteOffset;             // Byte offset into a buffer (scalars)
-      OptionalInt<u32> byteSize;               // Size in bytes (if applicable)
-      OptionalInt<u32> arrayIndex;             // Array index (if applicable)
+    struct MaterialAttribute {
+      std::string name;
+      std::vector<json> arguments;
 
-      Location child(void) const;
       json toJson() const;
-      bool adjustLocation(slang::VariableLayoutReflection* vl);
     };
-    static constexpr size_t LocationSize = sizeof(Location);
 
+    struct MaterialField {
+      std::string name;
+      std::string typeName;
+      ValueKind kind = ValueKind::Unknown;
+      ScalarKind scalarKind = ScalarKind::None;
+      // Relative to the enclosing material/struct/array element.
+      u32 byteOffset = 0;
+      u32 byteSize = 0;
+      u32 alignment = 0;
+      u32 rowCount = 0;
+      u32 columnCount = 0;
+      u32 elementCount = 0;
+      u32 elementStride = 0;
+      std::vector<MaterialAttribute> attributes;
+      std::vector<MaterialField> fields;
 
+      json toJson() const;
+    };
+
+    struct MaterialSchema {
+      std::string pushConstantName;
+      u32 pushConstantByteSize = 0;
+      u32 drawPointerOffset = 0;
+      u32 objectPointerOffset = 0;
+      u32 materialPointerOffset = 0;
+      std::string typeName;
+      u32 byteSize = 0;
+      u32 alignment = 0;
+      std::vector<MaterialField> fields;
+
+      json toJson() const;
+      void inspect() const;
+    };
+
+    enum class Type : u8 { Root, PushConstant, Struct, Array, Scalar, Pointer };
+
+    // Stores an absolute byte location within a push constant block.
+    struct Location {
+      bool pushConstant = false;
+      OptionalInt<u32> byteOffset;
+      OptionalInt<u32> byteSize;
+
+      // Returns the byte location for diagnostic output.
+      json toJson() const;
+    };
+
+    // Describes one push constant field. Pointers remain leaves; the material
+    // schema separately describes the structure behind MaterialRoot.materials.
     struct Node {
-     public:
       std::string name;
       Location location;
-      BindingType type{Type::Unknown};
+      Type type = Type::Struct;
       std::vector<Node*> members;
-      json meta;  // Additional metadata (if any)
 
-      json toJson(void) const;
-
+      // Returns the field kind for diagnostic output.
+      const char* getTypeName() const;
+      // Returns this field and its children for diagnostic output.
+      json toJson() const;
     };
 
-
-    struct Binding {
-      u32 set, index, count = 1;
-      std::string path;  // "material.albedo", for example
-      BindingType type = Type::Unknown;
-      Node* node;
-
-      TO_JSON(Binding, set, index, count, path /* TODO: type */);
-    };
-
-
-    ShaderReflection() = default;
-    ~ShaderReflection() = default;
-
-
-
-    Node* getRoot() const { return root; }
-    void parseFromSpirv(const u8* spirvData, size_t spirvSize);
+    // Returns the root group. Parsing must precede lookup.
+    const Node* getRoot() const { return root; }
+    // Returns the schema of the MaterialDrawParams push constant, if present.
+    const Option<MaterialSchema>& getMaterialSchema() const { return materialSchema; }
+    // Replaces reflection with the push constants and material schema of a program.
     void parseFromSlang(slang::ProgramLayout* programLayout);
+    // Draws the push constant fields and material schema.
     void inspect();
+    // Returns the push constant fields and material schema for diagnostic output.
     json toJson() const;
 
-    std::vector<Binding> bindings;
-
    private:
-    Node* newNode(BindingType type, const char* name, const Location& loc);
-    Node* mergeNodes(Node* nodeA, Node* nodeB);
-    void parseBlockVariableMembers(const SpvReflectBlockVariable* var, Node* parent_node, Location loc);
-    Node* extractVariableLayout(slang::VariableLayoutReflection* varLayout, slang::TypeLayoutReflection* typeLayout, Location parentLocation);
-    void extractBindings(void);
+    Node* newNode(Type type, const char* name, const Location& location);
+    Node* extractValue(slang::VariableLayoutReflection* variable, slang::TypeLayoutReflection* layout, Location location);
 
-   private:
-    // This root node of the tree should be a struct to unify all the interfaces.
     Node* root = nullptr;
-    // The nodes of the reflection tree are owned by this object.
-    // We use raw pointers in the tree itself for simplicity.
     std::vector<Box<Node>> allNodes;
+    Option<MaterialSchema> materialSchema = None;
   };
 }  // namespace ren

@@ -2,9 +2,16 @@
 
 namespace ren {
 
-  std::vector<ComponentRegistrationInfo> &getRegisteredComponents() {
-    static std::vector<ComponentRegistrationInfo> registeredComponents;
+  std::deque<ComponentRegistrationInfo> &getRegisteredComponents() {
+    static std::deque<ComponentRegistrationInfo> registeredComponents;
     return registeredComponents;
+  }
+
+
+  void bindRegisteredComponents(flecs::world &world) {
+    for (const auto &info : getRegisteredComponents()) {
+      info.bindToWorld(world, info);
+    }
   }
 
 

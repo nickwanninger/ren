@@ -39,6 +39,7 @@ namespace ren {
     ren::hash(state, fillMode);
     ren::hash(state, cullMode);
     ren::hash(state, frontCCW);
+    ren::hash(state, hasVertexBinding);
     ren::hash(state, depthBias);
     ren::hash(state, depthBiasClamp);
     ren::hash(state, depthSlopeFactor);

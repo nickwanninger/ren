@@ -32,6 +32,7 @@ namespace ren {
   ref<CachedPipeline> PipelineCache::get(ren::RenderPass &renderPass,
                                          const PipelineStateObject &pso) {
     u64 hash = pso.hash();
+    ren::hash(hash, reinterpret_cast<u64>(renderPass.getHandle()));
 
     // Check if we already have this pipeline in the cache.
     auto it = pipelines.find(hash);
@@ -108,7 +109,8 @@ namespace ren {
       case CullMode::Back: rasterizer.cullMode = VK_CULL_MODE_BACK_BIT; break;
       case CullMode::Front: rasterizer.cullMode = VK_CULL_MODE_FRONT_BIT; break;
     }
-    rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    rasterizer.frontFace =
+        pso.frontCCW ? VK_FRONT_FACE_COUNTER_CLOCKWISE : VK_FRONT_FACE_CLOCKWISE;
     rasterizer.depthBiasEnable = pso.depthBias != 0.0f;      // Enable depth bias if it's non-zero.
     rasterizer.depthBiasConstantFactor = pso.depthBias;      // Optional
     rasterizer.depthBiasClamp = pso.depthBiasClamp;          // Optional

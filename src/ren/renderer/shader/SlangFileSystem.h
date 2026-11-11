@@ -71,7 +71,6 @@ public:
         char const* path,
         ISlangBlob** outBlob) override {
 
-        ren::println("SlangFileSystem::loadFile({})", path);
         
         std::vector<u8> content;
         // Try loading through asset manager

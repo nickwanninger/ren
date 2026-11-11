@@ -2,28 +2,28 @@
 
 #include <ren/types.h>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <vulkan/vulkan_core.h>
 #include <unordered_set>
 
 #include <ren/core/Builder.h>
 #include <ren/renderer/vulkan/Vulkan.h>
+#include <ren/renderer/TextureHandle.h>
 
 namespace ren {
 
   // This class represents the image resources in the rendering engine.
   // (It is effectively a VkImage and VkImageView wrapper.)
-  class Image : public ren::VulkanResource {
+  class Image : public ren::VulkanResource, public std::enable_shared_from_this<Image> {
    public:
     using Ref = ref<Image>;
     // Construct an image with the given resources.
     // The resources of these images are owned by this class now.
     // The memory allocation can be NULL, in the event that the image
     // is allocated by vkb::SwapchainBuilder, for example.
-    Image(const std::string &name, VkImage image, VkImageView imageView, VmaAllocation memory,
-          VkImageCreateInfo &createInfo);
-    static Image::Ref create(const std::string &name, VkImage image, VkImageView imageView,
-                             VmaAllocation memory, VkImageCreateInfo &createInfo);
+    Image(const std::string &name, VkImage image, VkImageView imageView, VmaAllocation memory, VkImageCreateInfo &createInfo);
+    static Image::Ref create(const std::string &name, VkImage image, VkImageView imageView, VmaAllocation memory, VkImageCreateInfo &createInfo);
 
 
     static std::unordered_set<Image *> allImages(void);
@@ -35,6 +35,9 @@ namespace ren {
     Image &operator=(const Image &) = delete;
     Image(Image &&) = delete;
     Image &operator=(Image &&) = delete;
+
+
+    void uploadPixels(u8 *pixels);  // must be width/height compatible in RGBA
 
     // Get the name of the image.
     const std::string &getName(void) const { return name; }
@@ -49,6 +52,12 @@ namespace ren {
     u32 getDepth(void) const { return imageCreateInfo.extent.depth; }
     auto getFormat() const { return imageCreateInfo.format; }
     u32 getMipLevels(void) const { return imageCreateInfo.mipLevels; }
+
+    // Lazily makes this view resident in the sampled-image heap. Index zero
+    // is reserved for the invalid/debug image contract.
+    SampledImageIndex sampledIndex();
+    // Return the bindless slot to the heap, which drops the heap's reference.
+    void releaseSampledIndex();
 
     inline bool isFramebuffer() const { return memory == VK_NULL_HANDLE; }
 
@@ -67,8 +76,15 @@ namespace ren {
     // etc. Only works for RGBA8 formats. Requires TRANSFER_SRC_BIT usage flag.
     void saveDebug(const std::string &outputDir = ".") const;
 
-    void readPixelToBuffer(VkCommandBuffer cmd, glm::vec2 position, VkBuffer stagingBuffer,
-                           VkDeviceSize bufferOffset);
+    // Copy mip 0 to the CPU as tightly packed rows, and wait for the copy. The
+    // bytes keep the format of the image: RGBA8 and BGRA8 (4 bytes), RGBA16F (8
+    // bytes), RGBA32F (16 bytes), or the depth of D32 and D32S8 (4 bytes, a
+    // float). The image must be in the layout `current`, and it returns to
+    // that layout. Throws for other formats. Requires TRANSFER_SRC_BIT usage.
+    // This stalls the GPU, so use it only in tools and tests.
+    std::vector<u8> readPixels(VkImageLayout current) const;
+
+    void readPixelToBuffer(VkCommandBuffer cmd, glm::vec2 position, VkBuffer stagingBuffer, VkDeviceSize bufferOffset);
 
    private:
     std::string name;
@@ -76,6 +92,8 @@ namespace ren {
     VkImageView imageView = VK_NULL_HANDLE;
     VmaAllocation memory = VK_NULL_HANDLE;
     const VkImageCreateInfo imageCreateInfo;
+    std::mutex sampledSlotMutex;
+    std::optional<SampledImageIndex> sampledSlot;
   };
 
 
@@ -93,6 +111,7 @@ namespace ren {
     BUILDER_SETTER(Width, u32, imageInfo.extent.width)
     BUILDER_SETTER(Height, u32, imageInfo.extent.height)
     BUILDER_SETTER(Depth, u32, imageInfo.extent.depth)
+    auto &setSize(u32 size) { return this->setWidth(size).setHeight(size); }
 
     BUILDER_SETTER(MipLevels, u32, imageInfo.mipLevels)
     BUILDER_SETTER(ArrayLayers, u32, imageInfo.arrayLayers)

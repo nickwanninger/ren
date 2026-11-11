@@ -20,6 +20,8 @@ namespace ren {
                                           std::span<const u32> indices) {
     REN_PROFILE_FUNCTION();
 
+    std::scoped_lock lock(mutex);
+
     MegaMeshHandle handle = nextMeshHandle++;
     MegaMeshEntry entry;
     entry.meshID = handle;
@@ -48,8 +50,8 @@ namespace ren {
 
     float vertexCommitted = vertexBuffer.committed() * sizeof(Vertex) / (1024.0f * 1024.0f);
     float indexCommitted = indexBuffer.committed() * sizeof(u32) / (1024.0f * 1024.0f);
-    ImGui::Text("Total Vertex Buffer: %.2f MB (%.2f MB Committed)", vertexBuffer.getSize() / (1024.0f * 1024.0f), vertexCommitted);
-    ImGui::Text("Total Index Buffer: %.2f MB (%.2f MB Committed)", indexBuffer.getSize() / (1024.0f * 1024.0f), indexCommitted);
+    ImGui::Text("Total Vertex Buffer: %.2f MB (%.2f MB Committed)", vertexBuffer.getByteCount() / (1024.0f * 1024.0f), vertexCommitted);
+    ImGui::Text("Total Index Buffer: %.2f MB (%.2f MB Committed)", indexBuffer.getByteCount() / (1024.0f * 1024.0f), indexCommitted);
     ImGui::Separator();
     ImGui::Text("Entries:");
     for (const auto &[handle, entry] : entries) {

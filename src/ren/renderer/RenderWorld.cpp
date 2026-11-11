@@ -5,46 +5,48 @@
 namespace ren {
 
   bool RenderWorld::isFrustumCulled(const AABB &modelSpaceAABB, const glm::mat4 &transform) const {
+
+    return false;
     // Transform all 8 corners of the AABB to world space
-    glm::vec3 worldCorners[8] = {
-        transform *
-            glm::vec4(modelSpaceAABB.min.x, modelSpaceAABB.min.y, modelSpaceAABB.min.z, 1.0f),
-        transform *
-            glm::vec4(modelSpaceAABB.max.x, modelSpaceAABB.min.y, modelSpaceAABB.min.z, 1.0f),
-        transform *
-            glm::vec4(modelSpaceAABB.min.x, modelSpaceAABB.max.y, modelSpaceAABB.min.z, 1.0f),
-        transform *
-            glm::vec4(modelSpaceAABB.max.x, modelSpaceAABB.max.y, modelSpaceAABB.min.z, 1.0f),
-        transform *
-            glm::vec4(modelSpaceAABB.min.x, modelSpaceAABB.min.y, modelSpaceAABB.max.z, 1.0f),
-        transform *
-            glm::vec4(modelSpaceAABB.max.x, modelSpaceAABB.min.y, modelSpaceAABB.max.z, 1.0f),
-        transform *
-            glm::vec4(modelSpaceAABB.min.x, modelSpaceAABB.max.y, modelSpaceAABB.max.z, 1.0f),
-        transform *
-            glm::vec4(modelSpaceAABB.max.x, modelSpaceAABB.max.y, modelSpaceAABB.max.z, 1.0f),
-    };
+    // glm::vec3 worldCorners[8] = {
+    //     transform *
+    //         glm::vec4(modelSpaceAABB.min.x, modelSpaceAABB.min.y, modelSpaceAABB.min.z, 1.0f),
+    //     transform *
+    //         glm::vec4(modelSpaceAABB.max.x, modelSpaceAABB.min.y, modelSpaceAABB.min.z, 1.0f),
+    //     transform *
+    //         glm::vec4(modelSpaceAABB.min.x, modelSpaceAABB.max.y, modelSpaceAABB.min.z, 1.0f),
+    //     transform *
+    //         glm::vec4(modelSpaceAABB.max.x, modelSpaceAABB.max.y, modelSpaceAABB.min.z, 1.0f),
+    //     transform *
+    //         glm::vec4(modelSpaceAABB.min.x, modelSpaceAABB.min.y, modelSpaceAABB.max.z, 1.0f),
+    //     transform *
+    //         glm::vec4(modelSpaceAABB.max.x, modelSpaceAABB.min.y, modelSpaceAABB.max.z, 1.0f),
+    //     transform *
+    //         glm::vec4(modelSpaceAABB.min.x, modelSpaceAABB.max.y, modelSpaceAABB.max.z, 1.0f),
+    //     transform *
+    //         glm::vec4(modelSpaceAABB.max.x, modelSpaceAABB.max.y, modelSpaceAABB.max.z, 1.0f),
+    // };
 
-    // Get view-projection matrix
-    glm::mat4 view = camera.view_matrix();
-    glm::mat4 viewProj = Camera::projectionMatrix(320.0f, 240.0f) * view;
+    // // Get view-projection matrix
+    // glm::mat4 view = Camera::get().view_matrix();
+    // glm::mat4 viewProj = Camera::projectionMatrix(320.0f, 240.0f) * view;
 
-    // Check if any corner is inside the frustum
-    for (int i = 0; i < 8; ++i) {
-      glm::vec4 clipSpace = viewProj * glm::vec4(worldCorners[i], 1.0f);
+    // // Check if any corner is inside the frustum
+    // for (int i = 0; i < 8; ++i) {
+    //   glm::vec4 clipSpace = viewProj * glm::vec4(worldCorners[i], 1.0f);
 
-      // Only consider points in front of the camera (w > 0)
-      if (clipSpace.w > 0.0f) {
-        clipSpace /= clipSpace.w;
+    //   // Only consider points in front of the camera (w > 0)
+    //   if (clipSpace.w > 0.0f) {
+    //     clipSpace /= clipSpace.w;
 
-        // Vulkan NDC: x, y in [-1, 1], z in [0, 1]
-        if (clipSpace.x >= -1.0f && clipSpace.x <= 1.0f && clipSpace.y >= -1.0f &&
-            clipSpace.y <= 1.0f && clipSpace.z >= 0.0f && clipSpace.z <= 1.0f) {
-          // Found at least one corner inside frustum, object is visible
-          return false;
-        }
-      }
-    }
+    //     // Vulkan NDC: x, y in [-1, 1], z in [0, 1]
+    //     if (clipSpace.x >= -1.0f && clipSpace.x <= 1.0f && clipSpace.y >= -1.0f &&
+    //         clipSpace.y <= 1.0f && clipSpace.z >= 0.0f && clipSpace.z <= 1.0f) {
+    //       // Found at least one corner inside frustum, object is visible
+    //       return false;
+    //     }
+    //   }
+    // }
 
     // All corners are outside the frustum
     return true;
@@ -89,13 +91,13 @@ namespace ren {
         });
 
     // sort renderables by distance to camera
-    glm::vec3 cameraPos = glm::inverse(camera.view_matrix())[3];
-    std::sort(renderables.begin(), renderables.end(),
-              [&cameraPos](const Renderable &a, const Renderable &b) {
-                float distA = glm::length(glm::vec3(a.transform[3]) - cameraPos);
-                float distB = glm::length(glm::vec3(b.transform[3]) - cameraPos);
-                return distA < distB;
-              });
+    // glm::vec3 cameraPos = glm::inverse(Camera::get().view_matrix())[3];
+    // std::sort(renderables.begin(), renderables.end(),
+    //           [&cameraPos](const Renderable &a, const Renderable &b) {
+    //             float distA = glm::length(glm::vec3(a.transform[3]) - cameraPos);
+    //             float distB = glm::length(glm::vec3(b.transform[3]) - cameraPos);
+    //             return distA < distB;
+    //           });
   }
 
 }  // namespace ren
