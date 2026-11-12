@@ -11,6 +11,7 @@
 #include <imgui/misc/cpp/imgui_stdlib.h>
 #include "AuthoringSketch.h"
 #include "ImportTest.h"
+#include "LibraryTest.h"
 
 static ren::Flag<bool> testAuthoring("test-authoring", false, "Verify the authoring sketch without a window");
 
@@ -21,6 +22,7 @@ static ren::Flag<std::string> inspectImport("inspect-import", "", "Verify and in
 static ren::Flag<std::string> loadImport("load-import", "", "Load an import by source ID and upload its bundles to the GPU");
 static ren::Flag<bool> verifyImportGPU("verify-import-gpu", false, "Exit after one successful bundle upload test");
 static ren::Flag<bool> testImport("test-import", false, "Verify one-file import and bundle loading without a GPU");
+static ren::Flag<bool> testLibrary("test-library", false, "Verify asset library scans without a GPU");
 
 static void assetsTab(ren::eui::Ui &ui) {
   auto &manager = ren::getAssetManager();
@@ -287,6 +289,9 @@ int main(int argc, char *argv[]) {
 
     if (testImport.get()) {
       return runImportTests();
+    }
+    if (testLibrary.get()) {
+      return runLibraryTests();
     }
     if (importOnly.get()) {
       return runImportOnly(sourceFlag->get());

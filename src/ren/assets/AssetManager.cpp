@@ -20,7 +20,8 @@ namespace ren {
   AssetManager &getAssetManager() { return ren::Application::get().getAssetManager(); }
 
   AssetManager::AssetManager()
-      : store(source) {
+      : store(source)
+      , library(source) {
     registerBuiltinImporters();
   }
 

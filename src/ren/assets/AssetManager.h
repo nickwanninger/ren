@@ -3,6 +3,7 @@
 #include <map>
 #include <ren/assets/Asset.h>
 #include <ren/renderer/shader/ShaderModule.h>
+#include <ren/assets/AssetLibrary.h>
 #include <ren/assets/AssetSource.h>
 #include <ren/assets/AssetStore.h>
 #include <sol/sol.hpp>
@@ -35,6 +36,9 @@ namespace ren {
 
 
     AssetStore &getStore() { return store; }
+
+    // The assets that the sources hold. Call getLibrary().scan() to update it.
+    AssetLibrary &getLibrary() { return library; }
     AssetSource &getSource(void) { return source; }
 
 
@@ -50,6 +54,7 @@ namespace ren {
     // The source that assets are loaded from.
     ren::MultiAssetSource source;
     ren::AssetStore store;
+    ren::AssetLibrary library;
   };
 
   AssetManager &getAssetManager();
