@@ -49,7 +49,8 @@ namespace ren {
   // or if no asset class is registered for the bundle type.
   ref<Asset> readDerivedAsset(AssetSource &source, const std::string_view &name);
 
-  // Write one self-contained bundle. Throws if validation or the write fails.
+  // Write one self-contained bundle, and replace an existing bundle atomically where the source
+  // supports rename. Throws if validation or the write fails; the existing bundle then stays.
   void writeDerivedAsset(AssetSource &source, const std::string_view &name, const Asset &asset);
 
   // Read a published import record and validate its version, IDs, and resource paths.

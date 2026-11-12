@@ -108,11 +108,18 @@ namespace ren {
     bundle.setKey("type", asset.getType());
     asset.write(bundle);
 
-    // Resource IDs are fresh, so a failed write cannot replace a published resource.
+    // A reimport replaces the bundle that the published record lists. Write a temporary file, then
+    // rename it into place, so that a reader or a failed write never leaves a partial bundle.
     auto bytes = bundle.serialize();
     auto parent = std::filesystem::path(name).parent_path().generic_string();
-    if ((!parent.empty() && !source.mkdir(parent)) || !source.store(name, ByteSpan(bytes.data(), bytes.size()))) {
+    auto temporary = std::string(name) + "." + AssetID::generate().to_string() + ".tmp";
+    if ((!parent.empty() && !source.mkdir(parent)) || !source.store(temporary, ByteSpan(bytes.data(), bytes.size()))) {
+      source.remove(temporary);
       throw std::runtime_error("Cannot write bundle: " + std::string(name));
+    }
+    if (!source.rename(temporary, name)) {
+      source.remove(temporary);
+      throw std::runtime_error("Cannot replace bundle: " + std::string(name));
     }
   }
 
