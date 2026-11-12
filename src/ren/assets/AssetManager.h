@@ -49,15 +49,27 @@ namespace ren {
     // Make the next tick start a scan, also when timed scans are off.
     void scheduleScan(void);
 
+    // Make a later tick import these Sources, one at a time, after any scheduled scan.
+    void scheduleImport(const std::vector<AssetID> &sources);
+
     // Timed scans. The --asset-scan flag sets the start value.
     void setScanEnabled(bool enabled) { scanEnabled = enabled; }
     bool isScanEnabled(void) const { return scanEnabled; }
 
+    // When on, a tick imports the pending list without a prompt. The --auto-import flag sets the
+    // start value. When off, the app shows the pending list and calls scheduleImport().
+    void setAutoImport(bool enabled) { autoImport = enabled; }
+    bool isAutoImport(void) const { return autoImport; }
+
     AssetActivity getActivity(void) const { return activity.load(); }
 
     // The Sources that need an import after the last scan: NotImported and Stale, sorted by path.
-    // A dismissed Source is not in the list until its file or sidecar changes.
+    // A dismissed or failed Source is not in the list until its file or sidecar changes.
     std::vector<AssetID> getPendingImports(void) const;
+
+    // The Sources whose last import failed, with the error. They stay here until their file or
+    // sidecar changes.
+    std::vector<std::pair<AssetID, std::string>> getFailedImports(void) const;
 
     // Increases each time the pending list changes. A UI compares it with the value it last
     // showed, to know when to show the list again.
@@ -111,6 +123,10 @@ namespace ren {
     // Make the pending list from the library. The scan task calls this after the scan.
     void updatePendingImports(void);
 
+    // The import task. Imports each Source and updates its library entries. A failure goes to
+    // failedImports. Each Source leaves the pending list when its import ends.
+    void importSources(const std::vector<AssetID> &sources);
+
     // The source that assets are loaded from.
     ren::MultiAssetSource source;
     ren::AssetStore store;
@@ -122,6 +138,9 @@ namespace ren {
     std::atomic<AssetActivity> activity{AssetActivity::Idle};
     std::atomic<bool> scanRequested{false};
     bool scanEnabled = true;
+    bool autoImport = true;
+    // Sources that scheduleImport() asked for. The main thread writes and reads it in tick().
+    std::vector<AssetID> importRequests;
     std::mutex taskMutex;
     std::condition_variable taskFinished;
     Option<std::chrono::steady_clock::time_point> lastTaskFinished = None;

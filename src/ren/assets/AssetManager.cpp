@@ -21,6 +21,7 @@
 // game packaging eventually.)
 static ren::Flag<bool> kAssetScan("asset-scan", true, "Scan the asset sources on a timer. Scans that the program schedules still run.");
 static ren::Flag<int> kAssetManagerScanIntervalMs("asset-scan-interval-ms", 1000, "Time from the end of one asset task to the next timed scan.");
+static ren::Flag<bool> kAutoImport("auto-import", true, "Import new and changed asset sources after a scan, without a prompt.");
 
 
 namespace ren {
@@ -31,7 +32,8 @@ namespace ren {
   AssetManager::AssetManager()
       : store(source)
       , library(source)
-      , scanEnabled(kAssetScan.get()) {
+      , scanEnabled(kAssetScan.get())
+      , autoImport(kAutoImport.get()) {
     registerBuiltinImporters();
   }
 
@@ -86,11 +88,61 @@ namespace ren {
         library.scan();
         updatePendingImports();
       });
+      return;
+    }
+
+    // With auto-import, the pending list is the request. The import task removes each Source from
+    // the list, so the next tick does not import it again.
+    if (autoImport && importRequests.empty()) {
+      importRequests = getPendingImports();
+    }
+    if (!importRequests.empty()) {
+      startTask(AssetActivity::Importing, [this, sources = std::move(importRequests)]() { importSources(sources); });
+      importRequests.clear();
     }
   }
 
 
   void AssetManager::scheduleScan(void) { scanRequested = true; }
+
+
+  void AssetManager::scheduleImport(const std::vector<AssetID> &sources) {
+    for (auto id : sources) {
+      if (std::find(importRequests.begin(), importRequests.end(), id) == importRequests.end()) {
+        importRequests.push_back(id);
+      }
+    }
+  }
+
+
+  void AssetManager::importSources(const std::vector<AssetID> &sources) {
+    for (auto id : sources) {
+      auto entry = library.find(id);
+      if (!entry || entry->kind != AssetKind::Source) {
+        continue;
+      }
+
+      // Stat before the import, so that an edit during a failed import brings the Source back.
+      auto stats = statSource(entry->path);
+      Option<std::string> error = None;
+      try {
+        importFile(entry->path);
+        library.rescan(entry->path);
+      } catch (const std::exception &failure) {
+        error = Some(std::string(failure.what()));
+        ren::warnln("Cannot import {}: {}", entry->path, failure.what());
+      }
+
+      std::scoped_lock lock(pendingMutex);
+      std::erase(pendingImports, id);
+      if (error) {
+        failedImports[id] = {stats, error.unwrap()};
+      } else {
+        failedImports.erase(id);
+      }
+      pendingGeneration++;
+    }
+  }
 
 
   void AssetManager::startTask(AssetActivity kind, std::function<void(void)> work) {
@@ -128,6 +180,16 @@ namespace ren {
   std::vector<AssetID> AssetManager::getPendingImports(void) const {
     std::scoped_lock lock(pendingMutex);
     return pendingImports;
+  }
+
+
+  std::vector<std::pair<AssetID, std::string>> AssetManager::getFailedImports(void) const {
+    std::scoped_lock lock(pendingMutex);
+    std::vector<std::pair<AssetID, std::string>> failures;
+    for (const auto &[id, failed] : failedImports) {
+      failures.emplace_back(id, failed.error);
+    }
+    return failures;
   }
 
 

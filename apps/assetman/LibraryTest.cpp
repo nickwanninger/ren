@@ -92,8 +92,10 @@ namespace {
     TemporaryAssets temporary;
     writeText(temporary.root / "first.png", "not decoded by the scan");
 
+    // Auto-import stays off until the last part, so that each tick starts only the expected task.
     ren::AssetManager manager;
     manager.addFilesystemSource(temporary.root.string());
+    manager.setAutoImport(false);
     auto count = [&]() { return countEntries(manager.getLibrary()); };
 
     // The first tick scans at once. The next tick waits for the interval.
@@ -133,6 +135,30 @@ namespace {
     manager.tick();
     tickUntilIdle(manager);
     verify(manager.getPendingImports() == std::vector<ren::AssetID>({first, second}), "Changed Source did not come back");
+
+    // A scheduled import runs on the next tick. These files are not valid images, so both imports
+    // fail: they leave the pending list and stay failed until they change.
+    manager.scheduleImport({first, second});
+    manager.tick();
+    verify(manager.getActivity() == ren::AssetActivity::Importing, "Tick did not start the import task");
+    tickUntilIdle(manager);
+    verify(manager.getPendingImports().empty() && manager.getFailedImports().size() == 2, "Failed imports were not recorded");
+    manager.scheduleScan();
+    manager.tick();
+    tickUntilIdle(manager);
+    verify(manager.getPendingImports().empty() && manager.getFailedImports().size() == 2, "Unchanged scan retried failed imports");
+
+    // With auto-import on, a changed Source is imported on the tick after the scan.
+    writeText(temporary.root / "second.png", "edited");
+    manager.setAutoImport(true);
+    manager.scheduleScan();
+    manager.tick();
+    tickUntilIdle(manager);
+    verify(manager.getPendingImports() == std::vector<ren::AssetID>({second}), "Changed failed Source did not come back");
+    manager.tick();
+    verify(manager.getActivity() == ren::AssetActivity::Importing, "Auto-import did not start");
+    tickUntilIdle(manager);
+    verify(manager.getPendingImports().empty() && manager.getFailedImports().size() == 2, "Auto-import did not run");
   }
 
 }  // namespace
