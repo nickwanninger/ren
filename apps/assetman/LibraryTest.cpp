@@ -42,17 +42,28 @@ namespace {
   }
 
 
-  // Write an import record that lists one Texture output for each ID.
-  void writeRecord(const std::filesystem::path &root, ren::AssetID sourceAsset, const std::vector<ren::AssetID> &outputs) {
+  ren::AssetStat statOf(ren::AssetSource &source, const std::string &path) {
+    ren::AssetStat stat;
+    verify(source.stat(path, stat), "Cannot stat fixture: " + path);
+    return stat;
+  }
+
+
+  // Write an import record of `path` that lists one Texture output for each ID. With `withStats`,
+  // the record stores the current stats of the file and its sidecar, as an import does.
+  void writeRecord(ren::AssetSource &source, const std::filesystem::path &root, const std::string &path, ren::AssetID sourceAsset,
+                   const std::vector<ren::AssetID> &outputs, bool withStats = true) {
     json derived = json::array();
     for (auto id : outputs) {
       derived.push_back({{"id", id.to_string()}, {"name", "out-" + id.to_string()}, {"path", ren::derivedBundlePath(id)}, {"type", "Texture"}});
     }
-    json record = {{"version", ren::IMPORT_RECORD_VERSION},
-                   {"sourceAsset", sourceAsset.to_string()},
-                   {"derivedAssets", derived},
-                   {"dependencies", json::array()},
-                   {"sidecar", ren::AssetStat{}}};
+    json record = {{"version", ren::IMPORT_RECORD_VERSION}, {"sourceAsset", sourceAsset.to_string()}, {"derivedAssets", derived}};
+    if (withStats) {
+      record["dependencies"] = json::array({{{"path", path}, {"hash", ""}, {"stat", statOf(source, path)}}});
+      record["sidecar"] = statOf(source, path + ".import");
+    } else {
+      record["dependencies"] = json::array({{{"path", path}, {"hash", ""}}});
+    }
     writeText(root / ren::importRecordPath(sourceAsset), record.dump());
   }
 
@@ -103,7 +114,7 @@ int runLibraryTests() {
   // A record adds the Derived entries and marks the Source as imported.
   auto kept = ren::AssetID::generate();
   auto dropped = ren::AssetID::generate();
-  writeRecord(root, pixelID, {kept, dropped});
+  writeRecord(source, root, "pixel.png", pixelID, {kept, dropped});
   library.scan();
   verify(library.find(pixelID)->importState == ren::ImportState::Imported, "Record did not mark the Source as imported");
   auto keptEntry = library.find(kept);
@@ -114,9 +125,27 @@ int runLibraryTests() {
 
 
   // A new record updates the outputs by ID.
-  writeRecord(root, pixelID, {kept});
+  writeRecord(source, root, "pixel.png", pixelID, {kept});
   library.scan();
   verify(library.find(kept) != nullptr && library.find(dropped) == nullptr, "Reimport did not update the outputs by ID");
+
+
+  // A changed input or sidecar makes the Source stale, and keeps its outputs. A record with the
+  // current stats makes it imported again. A record without stats is stale.
+  auto importState = [&]() { return library.find(pixelID)->importState; };
+  verify(importState() == ren::ImportState::Imported, "Record with current stats is not imported");
+  writeText(root / "pixel.png", "edited");
+  library.scan();
+  verify(importState() == ren::ImportState::Stale && library.find(kept) != nullptr, "Edited input did not make the Source stale");
+  writeRecord(source, root, "pixel.png", pixelID, {kept});
+  library.scan();
+  verify(importState() == ren::ImportState::Imported, "Reimport did not clear the stale state");
+  writeText(root / "pixel.png.import", readJSON(root / "pixel.png.import").dump());
+  library.scan();
+  verify(importState() == ren::ImportState::Stale, "Edited sidecar did not make the Source stale");
+  writeRecord(source, root, "pixel.png", pixelID, {kept}, false);
+  library.scan();
+  verify(importState() == ren::ImportState::Stale, "Record without stats is not stale");
 
 
   // A copy with the same sidecar is a conflict. The first path keeps the ID.

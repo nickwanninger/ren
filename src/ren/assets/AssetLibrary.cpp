@@ -149,13 +149,29 @@ namespace ren {
     bool imported = source.stat(importRecordPath(id), recordStat);
     if (!sidecarChanged && sameStat(scanState.at(id).recordStat, recordStat)) {
       markSeen(id);
+      updateImportState(id, sidecarStat);
       return;
     }
 
     // Read the record before any map change, so that an invalid record leaves the old entries.
+    ScanState state = {.fileStat = sidecarStat, .recordStat = recordStat};
     std::vector<ref<AssetEntry>> outputs;
     if (imported) {
       auto record = readImportRecord(source, id);
+
+      // A record from before the stats were added has none. The next import adds them.
+      state.hasImportStats = record.contains("sidecar");
+      if (state.hasImportStats) {
+        state.importedSidecar = record.at("sidecar").get<AssetStat>();
+      }
+      for (const auto &dependency : record.at("dependencies")) {
+        if (!dependency.contains("stat")) {
+          state.hasImportStats = false;
+          break;
+        }
+        state.importedInputs.emplace_back(dependency.at("path").get<std::string>(), dependency.at("stat").get<AssetStat>());
+      }
+
       for (const auto &output : record.at("derivedAssets")) {
         auto derived = std::make_shared<AssetEntry>();
         derived->id = parseAssetID(output.at("id"));
@@ -175,7 +191,6 @@ namespace ren {
     entry->name = std::filesystem::path(path).filename().string();
     entry->importState = imported ? ImportState::Imported : ImportState::NotImported;
 
-    ScanState state = {.fileStat = sidecarStat, .recordStat = recordStat};
     for (const auto &output : outputs) {
       state.outputs.push_back(output->id);
     }
@@ -185,6 +200,35 @@ namespace ren {
     // longer lists is not seen, so removeUnseen() removes it.
     for (auto &output : outputs) {
       addEntry(output, {});
+    }
+    updateImportState(id, sidecarStat);
+  }
+
+
+  // Set Stale or Imported on an imported Source. This stats each input of the last import, so it
+  // runs on each scan, also when the record did not change. The entry is replaced only when its
+  // state changes.
+  void AssetLibrary::updateImportState(AssetID id, const AssetStat &sidecarStat) {
+    auto entry = entries.at(id);
+    if (entry->importState == ImportState::NotImported) {
+      return;
+    }
+
+    const auto &state = scanState.at(id);
+    bool stale = !state.hasImportStats || !sameStat(state.importedSidecar, sidecarStat);
+    for (const auto &[path, imported] : state.importedInputs) {
+      if (stale) {
+        break;
+      }
+      AssetStat current;
+      stale = !source.stat(path, current) || !sameStat(imported, current);
+    }
+
+    auto importState = stale ? ImportState::Stale : ImportState::Imported;
+    if (entry->importState != importState) {
+      auto updated = std::make_shared<AssetEntry>(*entry);
+      updated->importState = importState;
+      entries[id] = updated;
     }
   }
 

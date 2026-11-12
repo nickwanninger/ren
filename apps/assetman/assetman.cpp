@@ -130,7 +130,7 @@ static void libraryTab(ren::eui::Ui &ui) {
   }
 
   static const char *kinds[] = {"Source", "Native", "Derived"};
-  static const char *states[] = {"", "Not imported", "Imported"};
+  static const char *states[] = {"", "Not imported", "Imported", "Stale"};
 
   // Draw one row. Returns true if the row is an open tree node, and the caller must call TreePop().
   auto drawRow = [&](const ren::AssetEntry &entry, bool hasChildren) {

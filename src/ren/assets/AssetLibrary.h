@@ -25,6 +25,9 @@ namespace ren {
     None,
     NotImported,
     Imported,
+    // A dependency or the sidecar has a different stat than at the last import, or is missing.
+    // The content can still be the same, for example after a touch.
+    Stale,
   };
 
 
@@ -76,11 +79,18 @@ namespace ren {
       AssetStat recordStat;
       // The Derived entries that the record of a Source lists.
       std::vector<AssetID> outputs;
+
+      // The stats that the record of a Source stores. False if the record has none, which makes
+      // the Source stale.
+      bool hasImportStats = false;
+      AssetStat importedSidecar;
+      std::vector<std::pair<std::string, AssetStat>> importedInputs;
     };
 
     // Scan steps. The caller holds the lock. Each visit throws if a file cannot be read or written.
     void visitNative(const std::string &path);
     void visitSource(const std::string &path);
+    void updateImportState(AssetID id, const AssetStat &sidecarStat);
     void markSeen(AssetID id);
     void addEntry(ref<const AssetEntry> entry, const ScanState &state);
     void removeEntry(AssetID id);
