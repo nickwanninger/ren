@@ -7,6 +7,7 @@
 #include <ren/core/Bundle.h>
 #include <fstream>
 #include <set>
+#include <thread>
 
 
 namespace {
@@ -231,6 +232,23 @@ namespace {
   }
 
 
+  // Tick until a tick starts no task, and wait for each task. Fails after about 30 seconds.
+  void runTasks(ren::AssetManager &manager) {
+    for (int ticks = 0; ticks < 100; ticks++) {
+      auto finished = manager.getFinishedTaskCount();
+      manager.tick();
+      for (int i = 0; i < 30000 && manager.getActivity() != ren::AssetActivity::Idle; i++) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      }
+      verify(manager.getActivity() == ren::AssetActivity::Idle, "Asset task did not finish");
+      if (manager.getFinishedTaskCount() == finished) {
+        return;
+      }
+    }
+    throw std::runtime_error("Asset tasks did not stop");
+  }
+
+
   struct TemporaryAssets {
     std::filesystem::path root = std::filesystem::temp_directory_path() / ("ren-import-test-" + ren::AssetID::generate().to_string());
 
@@ -252,22 +270,35 @@ int runImportTests() {
     std::ofstream(scanAssets.root / "broken.PNG") << "invalid image";
     std::filesystem::create_directories(scanAssets.root / ".derived/nested");
     std::filesystem::copy_file(scanAssets.root / "pixel.png", scanAssets.root / ".derived/nested/ignored.png");
+    // With auto-import, one scan task and one import task import all supported sources.
     ren::AssetManager scanner;
     scanner.addFilesystemSource(scanAssets.root.string());
-    auto scanned = scanner.scanForImports();
-    verify(scanned.at("imported").size() == 3 && scanned.at("errors").size() == 1 && scanned.at("errors")[0].at("path") == "broken.PNG",
-           "Scan did not import supported sources or report failures");
-    verify(!std::filesystem::exists(scanAssets.root / "broken.PNG.import"), "Failed import created a sidecar");
-    for (const auto &name : scanned.at("imported")) {
-      auto sidecar = json::parse(readText(scanAssets.root / (name.get<std::string>() + ".import")));
-      auto id = ren::parseAssetID(sidecar.at("id"));
+    scanner.setAutoImport(true);
+    runTasks(scanner);
+    auto &library = scanner.getLibrary();
+    auto failures = scanner.getFailedImports();
+    verify(failures.size() == 1 && library.find(failures[0].first)->path == "broken.PNG", "Tasks did not report the failed import");
+    verify(std::filesystem::exists(scanAssets.root / "broken.PNG.import"), "Scan did not write an identity sidecar for the failed source");
+
+    std::vector<ren::AssetID> imported;
+    library.forEach([&](const ren::ref<const ren::AssetEntry> &entry) {
+      if (entry->importState == ren::ImportState::Imported) {
+        imported.push_back(entry->id);
+      }
+    });
+    verify(imported.size() == 3 && scanner.getPendingImports().empty(), "Tasks did not import the supported sources");
+    for (auto id : imported) {
       auto record = ren::readImportRecord(scanner.getSource(), id);
-      verify(!ren::readImportedAssets(scanner.getSource(), record).empty(), "Scan created a sidecar without derived bundles");
+      verify(!ren::readImportedAssets(scanner.getSource(), record).empty(), "Import wrote a record without derived bundles");
     }
+
+    // A second scan imports nothing: the sources are current, and the failed source is unchanged.
     auto previous = readText(scanAssets.root / "pixel.png.import");
-    auto repeated = scanner.scanForImports();
-    verify(repeated.at("imported").size() == 3 && repeated.at("errors").size() == 1 && readText(scanAssets.root / "pixel.png.import") == previous,
-           "Repeated scan imported generated files or changed settings");
+    auto tasks = scanner.getFinishedTaskCount();
+    scanner.scheduleScan();
+    runTasks(scanner);
+    verify(scanner.getFinishedTaskCount() == tasks + 1 && readText(scanAssets.root / "pixel.png.import") == previous,
+           "Repeated scan imported again or changed settings");
     verify(!std::filesystem::exists(scanAssets.root / ".derived/nested/ignored.png.import"), "Scan imported a generated file");
   }
 

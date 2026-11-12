@@ -420,42 +420,4 @@ namespace ren {
     return record;
   }
 
-
-  json AssetManager::scanForImports(void) {
-    REN_PROFILE_FUNCTION();
-
-    // Gather first: import creates files that must not enter this enumeration.
-    std::set<std::string> found;
-    bool enumerated = source.enumerate([&](const std::string_view &name) {
-      auto path = import_detail::sourcePath(std::string(name));
-      if (!isDerivedPath(path) && findImporterForPath(path) && source.isFile(path.generic_string())) {
-        found.insert(path.generic_string());
-      }
-    });
-    if (!enumerated) {
-      throw std::runtime_error("Cannot enumerate asset sources for import");
-    }
-
-    // The set removes duplicates from multiple sources. The vector gives the workers indexed access.
-    std::vector<std::string> paths(found.begin(), found.end());
-    std::mutex mutex;
-    json result = {{"imported", json::array()}, {"errors", json::array()}};
-    ren::parallel_for(paths.size(), [&](size_t i) {
-      const auto &path = paths[i];
-      try {
-        auto start = std::chrono::high_resolution_clock::now();
-        importFile(path);
-        auto end = std::chrono::high_resolution_clock::now();
-        ren::println("Imported {} in {} ms", path, std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count());
-
-        std::scoped_lock lock(mutex);
-        result["imported"].push_back(path);
-      } catch (const std::exception &error) {
-        std::scoped_lock lock(mutex);
-        result["errors"].push_back({{"path", path}, {"error", error.what()}});
-      }
-    });
-    return result;
-  }
-
 }  // namespace ren

@@ -102,10 +102,6 @@ namespace ren {
     AssetSource &getSource(void) { return source; }
 
 
-    // Import supported files through importFile, excluding generated bundles and sidecars.
-    // Returns imported paths and per-file errors. Each call generates fresh outputs.
-    json scanForImports(void);
-
     // Import one source file from the configured sources. Use its sidecar importer or infer one from its extension.
     // Throws if the importer, settings, source, or writes are invalid.
     json importFile(const std::filesystem::path &path);

@@ -27,33 +27,10 @@ static ren::Flag<bool> verifyImportGPU("verify-import-gpu", false, "Exit after o
 static ren::Flag<bool> testImport("test-import", false, "Verify one-file import and bundle loading without a GPU");
 static ren::Flag<bool> testLibrary("test-library", false, "Verify asset library scans without a GPU");
 
+// List the files of all asset sources, as they are on disk. The Library tab shows what the
+// asset manager knows about them.
 static void assetsTab(ren::eui::Ui &ui) {
   auto &manager = ren::getAssetManager();
-  static json lastScan;
-  static std::string scanError;
-
-  if (ui.button("Import source files")) {
-    scanError.clear();
-    lastScan = {};
-    try {
-      lastScan = manager.scanForImports();
-    } catch (const std::exception &error) {
-      scanError = error.what();
-    }
-  }
-  ImGui::TextUnformatted("Imports all supported source files and generates fresh bundles.");
-
-  if (!scanError.empty()) {
-    ImGui::TextWrapped("%s", scanError.c_str());
-  }
-  if (lastScan.is_object()) {
-    ImGui::Text("Imported: %zu  Failed: %zu", lastScan.at("imported").size(), lastScan.at("errors").size());
-    for (const auto &failure : lastScan.at("errors")) {
-      ImGui::TextWrapped("%s: %s", failure.at("path").get<std::string>().c_str(), failure.at("error").get<std::string>().c_str());
-    }
-  }
-
-  ImGui::Separator();
   ImGui::BeginChild("AssetList");
   manager.getSource().enumerate([&](const std::string_view &name) { ImGui::TextUnformatted(name.data(), name.data() + name.size()); });
   ImGui::EndChild();
