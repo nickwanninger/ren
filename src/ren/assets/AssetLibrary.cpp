@@ -131,12 +131,27 @@ namespace ren {
     AssetID id = sidecarChanged ? readSidecarID(source, sidecarPath) : existing->second;
 
     // A missing record has a zero stat, so a record that appears or goes away is a change.
-    // TODO: read the record and update the Derived entries when the record stat changed.
     AssetStat recordStat;
     bool imported = source.stat(importRecordPath(id), recordStat);
     if (!sidecarChanged && sameStat(scanState.at(id).recordStat, recordStat)) {
       markSeen(id);
       return;
+    }
+
+    // Read the record before any map change, so that an invalid record leaves the old entries.
+    std::vector<ref<AssetEntry>> outputs;
+    if (imported) {
+      auto record = readImportRecord(source, id);
+      for (const auto &output : record.at("derivedAssets")) {
+        auto derived = std::make_shared<AssetEntry>();
+        derived->id = parseAssetID(output.at("id"));
+        derived->kind = AssetKind::Derived;
+        derived->type = parseEnum<AssetType>(output.at("type"), "derived asset type");
+        derived->path = derivedPath(output.at("path").get<std::string>());
+        derived->name = output.at("name").get<std::string>();
+        derived->source = id;
+        outputs.push_back(derived);
+      }
     }
 
     auto entry = std::make_shared<AssetEntry>();
@@ -145,11 +160,32 @@ namespace ren {
     entry->path = path;
     entry->name = std::filesystem::path(path).filename().string();
     entry->importState = imported ? ImportState::Imported : ImportState::NotImported;
-    addEntry(entry, {.fileStat = sidecarStat, .recordStat = recordStat});
+
+    ScanState state = {.fileStat = sidecarStat, .recordStat = recordStat};
+    for (const auto &output : outputs) {
+      state.outputs.push_back(output->id);
+    }
+    addEntry(entry, state);
+
+    // An output with an ID from the last record replaces its entry. An output that the record no
+    // longer lists is not seen, so removeUnseen() removes it.
+    for (auto &output : outputs) {
+      addEntry(output, {});
+    }
   }
 
 
-  void AssetLibrary::markSeen(AssetID id) { scanState.at(id).seen = generation; }
+  // Mark the entry and, for a Source, its outputs. An unchanged Source keeps its Derived entries.
+  void AssetLibrary::markSeen(AssetID id) {
+    auto &state = scanState.at(id);
+    state.seen = generation;
+    for (auto output : state.outputs) {
+      // An output that addEntry() rejected has no state.
+      if (auto it = scanState.find(output); it != scanState.end()) {
+        it->second.seen = generation;
+      }
+    }
+  }
 
 
   // Add or replace the entry for a path. If the path had a different ID, its old entry goes away.

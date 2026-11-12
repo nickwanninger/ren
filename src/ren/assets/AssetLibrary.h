@@ -65,8 +65,8 @@ namespace ren {
     void forEach(const std::function<void(const ref<const AssetEntry> &)> &fn) const;
 
    private:
-    // What the scan last read for a Source or Native entry. The scan reads a file again only
-    // when its stat changed.
+    // What the scan last read for an entry. The scan reads a file again only when its stat
+    // changed. A Derived entry uses only `seen`, because its Source reads the record.
     struct ScanState {
       // The last scan generation that visited the entry. The scan removes older entries.
       u64 seen = 0;
@@ -74,6 +74,8 @@ namespace ren {
       AssetStat fileStat;
       // The import record of a Source.
       AssetStat recordStat;
+      // The Derived entries that the record of a Source lists.
+      std::vector<AssetID> outputs;
     };
 
     // Scan steps. The caller holds the lock. Each visit throws if a file cannot be read or written.
