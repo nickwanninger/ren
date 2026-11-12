@@ -76,6 +76,14 @@ namespace ren {
       AssetStat recordStat;
     };
 
+    // Scan steps. The caller holds the lock. Each visit throws if a file cannot be read or written.
+    void visitNative(const std::string &path);
+    void visitSource(const std::string &path);
+    void markSeen(AssetID id);
+    void addEntry(ref<const AssetEntry> entry, const ScanState &state);
+    void removeEntry(AssetID id);
+    void removeUnseen(void);
+
     AssetSource &source;
 
     // Protects all members below.

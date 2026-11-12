@@ -51,9 +51,8 @@ namespace ren {
   // Import
   //=========================
 
-  // Increase these when a change makes earlier outputs or sidecars invalid.
+  // Increase this when a change makes earlier outputs invalid.
   static constexpr int IMPORTER_VERSION = 1;
-  static constexpr int SIDECAR_VERSION = 1;
 
 
   // The sidecar as it is on disk, and the settings that the import will save.

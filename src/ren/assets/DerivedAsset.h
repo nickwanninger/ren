@@ -18,6 +18,12 @@ namespace ren {
   inline constexpr int DERIVED_FORMAT_VERSION = 1;
   inline constexpr int IMPORT_RECORD_VERSION = 1;
 
+  // A sidecar with a different version is rejected on read.
+  inline constexpr int SIDECAR_VERSION = 1;
+
+  // The sidecar of `foo.glb` is `foo.glb.import`, next to the source file.
+  inline constexpr std::string_view SIDECAR_EXTENSION = ".import";
+
   // Generated files are in this folder at the source root. Imports skip it.
   inline constexpr std::string_view DERIVED_ROOT = ".derived";
 
