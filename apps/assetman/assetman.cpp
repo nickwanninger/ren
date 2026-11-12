@@ -65,6 +65,11 @@ static void libraryTab(ren::eui::Ui &ui) {
   if (ImGui::Checkbox("Auto-import", &autoImport)) {
     manager.setAutoImport(autoImport);
   }
+  ImGui::SameLine();
+  bool hashCheck = manager.isHashCheck();
+  if (ImGui::Checkbox("Hash check", &hashCheck)) {
+    manager.setHashCheck(hashCheck);
+  }
 
   if (ui.button("Scan now")) {
     manager.scheduleScan();

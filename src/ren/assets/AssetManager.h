@@ -66,6 +66,12 @@ namespace ren {
     void setAutoImport(bool enabled) { autoImport = enabled; }
     bool isAutoImport(void) const { return autoImport; }
 
+    // When on, a scan hashes the inputs and sidecar of each Stale Source. If they match the record,
+    // the record gets the new stats, and the Source is Imported again without an import. The
+    // --asset-hash-check flag sets the start value.
+    void setHashCheck(bool enabled) { hashCheck = enabled; }
+    bool isHashCheck(void) const { return hashCheck.load(); }
+
     AssetActivity getActivity(void) const { return activity.load(); }
 
     // The number of tasks that finished. A UI compares it with the value it last saw, to know
@@ -135,6 +141,13 @@ namespace ren {
     // failedImports. Each Source leaves the pending list when its import ends.
     void importSources(const std::vector<AssetID> &sources);
 
+    // The hash check of the scan task. Runs outside the library lock.
+    void confirmStaleSources(void);
+
+    // If the inputs and sidecar of a Source have the hashes in its record, write the current
+    // stats into the record and return true. Returns false if anything changed or is missing.
+    bool refreshUnchangedRecord(const AssetEntry &entry);
+
     // The source that assets are loaded from.
     ren::MultiAssetSource source;
     ren::AssetStore store;
@@ -148,6 +161,8 @@ namespace ren {
     bool scanEnabled = true;
     bool autoImport = true;
     int scanIntervalMs = 1000;
+    // The scan task reads it on a worker thread.
+    std::atomic<bool> hashCheck{true};
     std::atomic<u64> finishedTasks{0};
     std::atomic<float> lastTaskMilliseconds{0};
     // Sources that scheduleImport() asked for. The main thread writes and reads it in tick().

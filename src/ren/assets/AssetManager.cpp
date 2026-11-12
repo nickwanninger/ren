@@ -22,6 +22,8 @@
 static ren::Flag<bool> kAssetScan("asset-scan", true, "Scan the asset sources on a timer. Scans that the program schedules still run.");
 static ren::Flag<int> kAssetManagerScanIntervalMs("asset-scan-interval-ms", 1000, "Time from the end of one asset task to the next timed scan.");
 static ren::Flag<bool> kAutoImport("auto-import", true, "Import new and changed asset sources after a scan, without a prompt.");
+static ren::Flag<bool> kAssetHashCheck("asset-hash-check", true,
+                                       "After a scan, hash stale asset sources, and do not import the ones whose content is the same.");
 
 
 namespace ren {
@@ -34,7 +36,8 @@ namespace ren {
       , library(source)
       , scanEnabled(kAssetScan.get())
       , autoImport(kAutoImport.get())
-      , scanIntervalMs(kAssetManagerScanIntervalMs.get()) {
+      , scanIntervalMs(kAssetManagerScanIntervalMs.get())
+      , hashCheck(kAssetHashCheck.get()) {
     registerBuiltinImporters();
   }
 
@@ -87,6 +90,9 @@ namespace ren {
     if (scanRequested.exchange(false) || timedScanReady) {
       startTask(AssetActivity::Scanning, [this]() {
         library.scan();
+        if (hashCheck) {
+          confirmStaleSources();
+        }
         updatePendingImports();
       });
       return;
@@ -143,6 +149,60 @@ namespace ren {
       }
       pendingGeneration++;
     }
+  }
+
+
+  void AssetManager::confirmStaleSources(void) {
+    std::vector<ref<const AssetEntry>> stale;
+    library.forEach([&](const ref<const AssetEntry> &entry) {
+      if (entry->importState == ImportState::Stale) {
+        stale.push_back(entry);
+      }
+    });
+
+    // The library lock is not held here, so the hashes do not block readers. One Source that
+    // cannot be checked stays Stale, and the others still get their check.
+    for (const auto &entry : stale) {
+      try {
+        if (refreshUnchangedRecord(*entry)) {
+          library.rescan(entry->path);
+        }
+      } catch (const std::exception &error) {
+        ren::warnln("Cannot hash-check {}: {}", entry->path, error.what());
+      }
+    }
+  }
+
+
+  bool AssetManager::refreshUnchangedRecord(const AssetEntry &entry) {
+    REN_PROFILE_SCOPE("Refresh Unchanged Record");
+    auto record = readImportRecord(source, entry.id);
+
+    // Stat each file before its hash, so that an edit during the hash makes the next scan see a
+    // change.
+    auto sidecarPath = entry.path + std::string(SIDECAR_EXTENSION);
+    AssetStat sidecarStat;
+    if (!source.stat(sidecarPath, sidecarStat)) {
+      return false;
+    }
+    bool sidecarSame = record.contains("sidecar") && record.at("sidecar").get<AssetStat>() == sidecarStat;
+    if (!sidecarSame && (!record.contains("sidecarHash") || import_detail::fileHash(source, sidecarPath) != record.at("sidecarHash"))) {
+      return false;
+    }
+
+    for (auto &dependency : record.at("dependencies")) {
+      auto path = dependency.at("path").get<std::string>();
+      AssetStat stat;
+      if (!source.stat(path, stat) || import_detail::fileHash(source, path) != dependency.at("hash")) {
+        return false;
+      }
+      dependency["stat"] = stat;
+    }
+
+    // The content is the same, so only the stats in the record change.
+    record["sidecar"] = sidecarStat;
+    import_detail::publishRecord(source, entry.id, record);
+    return true;
   }
 
 
@@ -401,14 +461,21 @@ namespace ren {
 
     // Save the sidecar, then publish the record. If publication fails, restore the old sidecar, so that a
     // new identity or new defaults do not stay without a record.
+    // The record keeps the sidecar's stat and hash. The hash check after a scan uses the hash to
+    // tell a touched sidecar from changed settings.
     bool changed = !sidecar.existed || sidecar.original != settings;
+    std::string sidecarHash;
     if (changed) {
       import_detail::storeJSONAtomic(source, sidecar.path, settings, "import settings");
       if (!source.stat(sidecar.path, sidecar.stat)) {
         throw std::runtime_error("Cannot stat import settings: " + sidecar.path);
       }
+      sidecarHash = import_detail::fileHash(source, sidecar.path);
+    } else {
+      sidecarHash = SHA256()(sidecar.originalBytes.data(), sidecar.originalBytes.size());
     }
     record["sidecar"] = sidecar.stat;
+    record["sidecarHash"] = sidecarHash;
     try {
       import_detail::publishRecord(source, id, record);
     } catch (...) {

@@ -232,6 +232,12 @@ namespace {
   }
 
 
+  // Move the mtime of a file forward without a change to its content.
+  void touch(const std::filesystem::path &path) {
+    std::filesystem::last_write_time(path, std::filesystem::last_write_time(path) + std::chrono::seconds(2));
+  }
+
+
   // Tick until a tick starts no task, and wait for each task. Fails after about 30 seconds.
   void runTasks(ren::AssetManager &manager) {
     for (int ticks = 0; ticks < 100; ticks++) {
@@ -300,6 +306,30 @@ int runImportTests() {
     verify(scanner.getFinishedTaskCount() == tasks + 1 && readText(scanAssets.root / "pixel.png.import") == previous,
            "Repeated scan imported again or changed settings");
     verify(!std::filesystem::exists(scanAssets.root / ".derived/nested/ignored.png.import"), "Scan imported a generated file");
+
+    // A touched source and sidecar with the same content stay imported. The hash check refreshes
+    // the records after the scan, so no import task runs. external.gltf also uses pixel.png.
+    auto pixel = library.findByPath("pixel.png")->id;
+    touch(scanAssets.root / "pixel.png");
+    touch(scanAssets.root / "pixel.png.import");
+    tasks = scanner.getFinishedTaskCount();
+    scanner.scheduleScan();
+    runTasks(scanner);
+    verify(scanner.getFinishedTaskCount() == tasks + 1 && library.find(pixel)->importState == ren::ImportState::Imported,
+           "Hash check did not keep an unchanged source imported");
+    ren::AssetStat touched;
+    scanner.getSource().stat("pixel.png", touched);
+    auto refreshed = ren::readImportRecord(scanner.getSource(), pixel);
+    verify(refreshed.at("dependencies")[0].at("stat").get<ren::AssetStat>() == touched, "Hash check did not write the new stats");
+
+    // Without the hash check, the same touch is a change, so auto-import runs an import task.
+    scanner.setHashCheck(false);
+    touch(scanAssets.root / "pixel.png");
+    tasks = scanner.getFinishedTaskCount();
+    scanner.scheduleScan();
+    runTasks(scanner);
+    verify(scanner.getFinishedTaskCount() == tasks + 2 && library.find(pixel)->importState == ren::ImportState::Imported,
+           "Touched source was not imported without the hash check");
   }
 
   TemporaryAssets temporary;
