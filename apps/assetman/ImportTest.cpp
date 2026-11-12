@@ -177,7 +177,7 @@ namespace {
     verify(readText(sidecarPath) == sidecarText && second.at("sourceAsset") == first.at("sourceAsset") &&
                second.at("fingerprint") == first.at("fingerprint"),
            "Standalone texture reimport changed identity, settings, or fingerprint");
-    verify(second.at("derivedAssets")[0].at("id") != first.at("derivedAssets")[0].at("id"), "Texture reimport reused a derived ID");
+    verify(second.at("derivedAssets")[0].at("id") == first.at("derivedAssets")[0].at("id"), "Texture reimport changed its derived ID");
     verify(std::filesystem::exists(root / ".derived" / first.at("derivedAssets")[0].at("path").get<std::string>()),
            "Texture reimport removed the old bundle");
 
@@ -286,13 +286,17 @@ int runImportTests() {
   verify(first.at("fingerprint") == second.at("fingerprint"), "Unchanged inputs changed the import fingerprint");
   verify(readText(root / "triangle.glb.import") == sidecar, "Reimport changed the sidecar");
   verify(first.at("sourceAsset") == second.at("sourceAsset"), "Reimport changed source identity");
-  std::set<std::string> oldIDs;
-  for (const auto &output : first.at("derivedAssets")) {
-    oldIDs.insert(output.at("id").get<std::string>());
-    verify(std::filesystem::exists(root / ".derived" / output.at("path").get<std::string>()), "Reimport removed an old bundle");
-  }
+  // Outputs are written in parallel, so compare them as sets.
+  auto outputKeys = [](const json &record) {
+    std::set<std::string> keys;
+    for (const auto &output : record.at("derivedAssets")) {
+      keys.insert(output.at("id").get<std::string>() + " " + output.at("localName").get<std::string>());
+    }
+    return keys;
+  };
+  verify(outputKeys(first) == outputKeys(second), "Reimport changed a derived ID or local name");
   for (const auto &output : second.at("derivedAssets")) {
-    verify(!oldIDs.contains(output.at("id").get<std::string>()), "Reimport reused a derived ID");
+    verify(std::filesystem::exists(root / ".derived" / output.at("path").get<std::string>()), "Reimport removed a bundle");
   }
   auto record = ren::readImportRecord(manager.getSource(), id);
   verify(record == second, "Published record differs from the import result");
@@ -350,6 +354,6 @@ int runImportTests() {
   rejects([&]() { ren::readDerivedAsset(manager.getSource(), ren::derivedPath(record.at("derivedAssets")[0].at("path").get<std::string>())); },
           "Truncated bundle passed validation");
   ren::println(
-      "Import tests passed: texture options, importer dispatch, fresh IDs, stable settings, publication, baked BVHs, pixels, dependencies, source-free loading, invalid bundles");
+      "Import tests passed: texture options, importer dispatch, stable IDs, stable settings, publication, baked BVHs, pixels, dependencies, source-free loading, invalid bundles");
   return 0;
 }

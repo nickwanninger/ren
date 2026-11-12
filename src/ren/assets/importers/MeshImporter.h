@@ -47,6 +47,7 @@ namespace ren {
 
     // Geometry
     void importMeshes(void);
+    std::vector<std::string> nameMeshes(void) const;
     static MeshAsset importGeometry(const aiMesh &source);
     static Vertex readVertex(const aiMesh &source, u32 i);
     static void optimizeMesh(MeshAsset &mesh);

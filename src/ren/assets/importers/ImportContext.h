@@ -3,6 +3,7 @@
 #include <ren/assets/DerivedAsset.h>
 #include <map>
 #include <mutex>
+#include <set>
 
 namespace ren {
 
@@ -23,9 +24,14 @@ namespace ren {
     // Open an input for Assimp and record its hash. Throws if opening or hashing fails.
     ref<AssetFile> openInput(const std::filesystem::path &path);
 
-    // Assign a fresh identity and ownership to the asset, write a bundle, and record the output.
-    // Returns the new ID. A second call with the same asset writes a second bundle.
-    AssetID writeDerived(Asset &asset);
+    // The stable ID of an output. The importer picks `localName`, unique among outputs of the same
+    // type. The ID stays the same across imports while the source ID, type, and local name stay.
+    AssetID derivedID(AssetType type, std::string_view localName) const;
+
+    // Give the asset its stable ID and ownership, write its bundle, and record the output. Replaces
+    // the bundle of an earlier import. Returns the ID. Throws if this import already wrote an output
+    // with the same type and local name.
+    AssetID writeDerived(Asset &asset, const std::string &localName);
 
     // Record an unsupported feature for display in assetman.
     void warn(std::string message);
@@ -41,6 +47,7 @@ namespace ren {
     // Protects the input hashes, outputs, and warnings.
     std::mutex mutex;
     std::map<std::string, std::string> inputHashes;
+    std::set<AssetID> outputIDs;
     json outputs = json::array();
     json warnings = json::array();
 

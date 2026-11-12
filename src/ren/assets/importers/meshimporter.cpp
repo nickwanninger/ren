@@ -257,10 +257,54 @@ namespace ren {
   }
 
 
+  // The local name of each mesh, by mesh index. A mesh takes its name from the first node that uses
+  // it: "<node>/<k>", where k is the index of the mesh in that node. Blender writes object names to
+  // nodes and splits an object into one mesh per used material slot, so a rename in Blender changes
+  // the ID and an added object or material does not. A second node with the same name becomes
+  // "<node>#1". A mesh that no node uses is "mesh:<mesh name>#<index>".
+  std::vector<std::string> MeshImporter::nameMeshes(void) const {
+    std::vector<std::string> names(scene->mNumMeshes);
+    std::map<std::string, u32> nodeNames;
+
+    // Depth-first in child order, so that the first node to use a mesh is the same on each import.
+    std::vector<const aiNode *> stack = {scene->mRootNode};
+    while (!stack.empty()) {
+      const auto *node = stack.back();
+      stack.pop_back();
+      for (u32 i = node->mNumChildren; i > 0; --i) {
+        stack.push_back(node->mChildren[i - 1]);
+      }
+      if (node->mNumMeshes == 0) {
+        continue;
+      }
+
+      std::string nodeName = node->mName.C_Str();
+      auto count = nodeNames[nodeName]++;
+      if (count > 0) {
+        nodeName += "#" + std::to_string(count);
+      }
+      for (u32 k = 0; k < node->mNumMeshes; ++k) {
+        auto &name = names.at(node->mMeshes[k]);
+        if (name.empty()) {
+          name = nodeName + "/" + std::to_string(k);
+        }
+      }
+    }
+
+    for (u32 i = 0; i < scene->mNumMeshes; ++i) {
+      if (names[i].empty()) {
+        names[i] = "mesh:" + std::string(scene->mMeshes[i]->mName.C_Str()) + "#" + std::to_string(i);
+      }
+    }
+    return names;
+  }
+
+
   void MeshImporter::importMeshes(void) {
+    auto names = nameMeshes();
     parallelImport(scene->mNumMeshes, [&](size_t i) {
       const auto &mesh = *scene->mMeshes[i];
-      std::string name = mesh.mName.C_Str();
+      const auto &name = names[i];
       if (!(mesh.mPrimitiveTypes & aiPrimitiveType_TRIANGLE)) {
         context->warn("Skipped non-triangle mesh: " + name);
         return;
@@ -270,8 +314,8 @@ namespace ren {
       }
 
       auto asset = importGeometry(mesh);
-      asset.name = name.empty() ? "mesh_" + std::to_string(i) : name;
-      context->writeDerived(asset);
+      asset.name = name;
+      context->writeDerived(asset, name);
     });
   }
 
@@ -370,8 +414,8 @@ namespace ren {
   }
 
 
-  // Write one bundle for each format of each image. Each write gives the asset a fresh ID, so one
-  // asset serves all formats and the pixels are not copied.
+  // Write one bundle for each format of each image. Each write gives the asset the ID of its local
+  // name, so one asset serves all formats and the pixels are not copied.
   void MeshImporter::importTextures(void) {
     auto collected = collectImages();
     std::vector<std::pair<std::string, Image>> images(collected.begin(), collected.end());
@@ -380,10 +424,12 @@ namespace ren {
       const auto &[name, image] = images[i];
       auto texture = decodeImage(name, image);
 
+      // The image name is "*<index>" or the image path, so "<image>/<format>" is unique.
       for (auto format : image.formats) {
+        bool srgb = format == PixelFormat::RGBA8_SRGB;
         texture->pixelFormat = format;
-        texture->name = name + (format == PixelFormat::RGBA8_SRGB ? " (sRGB)" : " (linear)");
-        context->writeDerived(*texture);
+        texture->name = name + (srgb ? " (sRGB)" : " (linear)");
+        context->writeDerived(*texture, name + (srgb ? "/sRGB" : "/linear"));
       }
     });
   }

@@ -8,7 +8,8 @@ namespace ren {
 
     auto texture = TextureAsset::decode(bytes.data(), bytes.size(), options.srgb ? PixelFormat::RGBA8_SRGB : PixelFormat::RGBA8_UNORM, name);
     texture->name = name;
-    context.writeDerived(*texture);
+    // A texture source makes one output.
+    context.writeDerived(*texture, "texture");
   }
 
 }  // namespace ren

@@ -37,18 +37,26 @@ namespace ren {
   }
 
 
-  AssetID ImportContext::writeDerived(Asset &asset) {
+  AssetID ImportContext::derivedID(AssetType type, std::string_view localName) const {
+    // The first 64 bits of the hash. Collisions are not handled.
+    auto text = sourceAsset.to_string() + "/" + json(type).get<std::string>() + "/" + std::string(localName);
+    auto hash = SHA256()(text);
+    return AssetID(std::stoull(hash.substr(0, 16), nullptr, 16));
+  }
+
+
+  AssetID ImportContext::writeDerived(Asset &asset, const std::string &localName) {
     // TODO: Are asset sources safe for parallel writes? Until then, the lock also serializes the bundle writes.
     std::scoped_lock lock(mutex);
-    asset.id = AssetID::generate();
+    asset.id = derivedID(asset.getType(), localName);
     asset.sourceAsset = sourceAsset;
+    if (!outputIDs.insert(asset.id).second) {
+      throw std::runtime_error("Import wrote two outputs with the local name: " + localName);
+    }
 
     auto path = derivedBundlePath(asset.id);
-    if (source.exists(derivedPath(path))) {
-      throw std::runtime_error("Derived asset ID already exists: " + asset.id.to_string());
-    }
     writeDerivedAsset(source, derivedPath(path), asset);
-    outputs.push_back({{"id", asset.id.to_string()}, {"name", asset.name}, {"type", asset.getType()}, {"path", path}});
+    outputs.push_back({{"id", asset.id.to_string()}, {"localName", localName}, {"name", asset.name}, {"type", asset.getType()}, {"path", path}});
     return asset.id;
   }
 
