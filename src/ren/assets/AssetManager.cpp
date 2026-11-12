@@ -82,7 +82,10 @@ namespace ren {
 
     // If there was a requested scan from the application, or a timed scan is ready, start the task.
     if (scanRequested.exchange(false) || timedScanReady) {
-      startTask(AssetActivity::Scanning, [this]() { library.scan(); });
+      startTask(AssetActivity::Scanning, [this]() {
+        library.scan();
+        updatePendingImports();
+      });
     }
   }
 
@@ -114,6 +117,88 @@ namespace ren {
       taskFinished.notify_all();
     });
   }
+
+
+
+
+  //=========================
+  // Pending imports
+  //=========================
+
+  std::vector<AssetID> AssetManager::getPendingImports(void) const {
+    std::scoped_lock lock(pendingMutex);
+    return pendingImports;
+  }
+
+
+  AssetManager::SourceStats AssetManager::statSource(const std::string &path) {
+    SourceStats stats;
+    source.stat(path, stats.file);
+    source.stat(path + std::string(SIDECAR_EXTENSION), stats.sidecar);
+    return stats;
+  }
+
+
+  void AssetManager::dismissImports(const std::vector<AssetID> &sources) {
+    std::scoped_lock lock(pendingMutex);
+    for (auto id : sources) {
+      auto entry = library.find(id);
+      if (entry) {
+        dismissedImports[id] = statSource(entry->path);
+      }
+      std::erase(pendingImports, id);
+    }
+    pendingGeneration++;
+  }
+
+
+  void AssetManager::updatePendingImports(void) {
+    std::vector<ref<const AssetEntry>> needed;
+    library.forEach([&](const ref<const AssetEntry> &entry) {
+      if (entry->importState == ImportState::NotImported || entry->importState == ImportState::Stale) {
+        needed.push_back(entry);
+      }
+    });
+    std::sort(needed.begin(), needed.end(), [](const auto &a, const auto &b) { return a->path < b->path; });
+
+    std::scoped_lock lock(pendingMutex);
+
+    // A dismissed or failed Source stays out until its file or sidecar changes. A Source that
+    // changed, or no longer needs an import, leaves both maps, so a later change asks again.
+    std::unordered_map<AssetID, SourceStats> dismissed;
+    std::unordered_map<AssetID, FailedImport> failed;
+    std::vector<AssetID> pending;
+    for (const auto &entry : needed) {
+      auto wasDismissed = dismissedImports.find(entry->id);
+      auto wasFailed = failedImports.find(entry->id);
+      if (wasDismissed == dismissedImports.end() && wasFailed == failedImports.end()) {
+        pending.push_back(entry->id);
+        continue;
+      }
+
+      auto stats = statSource(entry->path);
+      bool held = false;
+      if (wasDismissed != dismissedImports.end() && wasDismissed->second == stats) {
+        dismissed.emplace(entry->id, wasDismissed->second);
+        held = true;
+      }
+      if (wasFailed != failedImports.end() && wasFailed->second.stats == stats) {
+        failed.emplace(entry->id, wasFailed->second);
+        held = true;
+      }
+      if (!held) {
+        pending.push_back(entry->id);
+      }
+    }
+
+    dismissedImports = std::move(dismissed);
+    failedImports = std::move(failed);
+    if (pending != pendingImports) {
+      pendingImports = std::move(pending);
+      pendingGeneration++;
+    }
+  }
+
 
   bool loadAssetBytes(const std::string_view &path, std::vector<u8> &out) { return getAssetManager().load(path, out); }
 

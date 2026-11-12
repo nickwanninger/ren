@@ -110,6 +110,29 @@ namespace {
     manager.tick();
     tickUntilIdle(manager);
     verify(count() == 2, "Scheduled scan did not run");
+
+    // Both files are not imported, so both are pending, sorted by path.
+    auto first = manager.getLibrary().findByPath("first.png")->id;
+    auto second = manager.getLibrary().findByPath("second.png")->id;
+    verify(manager.getPendingImports() == std::vector<ren::AssetID>({first, second}), "Pending list is wrong");
+    auto generation = manager.getPendingGeneration();
+
+    // A dismissed Source leaves the list, and an unchanged scan does not bring it back.
+    manager.dismissImports({first});
+    verify(manager.getPendingImports() == std::vector<ren::AssetID>({second}), "Dismiss did not remove the Source");
+    verify(manager.getPendingGeneration() > generation, "Dismiss did not change the generation");
+    generation = manager.getPendingGeneration();
+    manager.scheduleScan();
+    manager.tick();
+    tickUntilIdle(manager);
+    verify(manager.getPendingImports().size() == 1 && manager.getPendingGeneration() == generation, "Unchanged scan changed the list");
+
+    // A change to the dismissed file brings it back.
+    writeText(temporary.root / "first.png", "edited");
+    manager.scheduleScan();
+    manager.tick();
+    tickUntilIdle(manager);
+    verify(manager.getPendingImports() == std::vector<ren::AssetID>({first, second}), "Changed Source did not come back");
   }
 
 }  // namespace

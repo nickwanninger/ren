@@ -25,6 +25,8 @@ namespace ren {
     AssetEntryType type = AssetEntryType::File;
     u64 size = 0;  ///< Size in bytes. Always 0 for directories.
     i64 mtime = 0;
+
+    bool operator==(const AssetStat &) const = default;
   };
 
 

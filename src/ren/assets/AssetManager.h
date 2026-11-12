@@ -12,6 +12,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
+#include <unordered_map>
 
 namespace ren {
 
@@ -54,6 +55,18 @@ namespace ren {
 
     AssetActivity getActivity(void) const { return activity.load(); }
 
+    // The Sources that need an import after the last scan: NotImported and Stale, sorted by path.
+    // A dismissed Source is not in the list until its file or sidecar changes.
+    std::vector<AssetID> getPendingImports(void) const;
+
+    // Increases each time the pending list changes. A UI compares it with the value it last
+    // showed, to know when to show the list again.
+    u64 getPendingGeneration(void) const { return pendingGeneration.load(); }
+
+    // Remove Sources from the pending list until their file or sidecar changes, for example when
+    // the user answers "not now".
+    void dismissImports(const std::vector<AssetID> &sources);
+
     // Load the bytes of some asset from the asset source. No Caching!
     bool load(const std::string_view &name, std::vector<u8> &out) { return source.load(name, out); }
 
@@ -77,6 +90,27 @@ namespace ren {
     // Run `work` with ren::backgroundWork as the one task. The caller checked that no task runs.
     void startTask(AssetActivity kind, std::function<void(void)> work);
 
+    // The stats of a Source file and its sidecar. A dismissed or failed Source comes back to the
+    // pending list when they change. Only these two files are checked, not other inputs.
+    struct SourceStats {
+      AssetStat file;
+      AssetStat sidecar;
+
+      bool operator==(const SourceStats &) const = default;
+    };
+
+    // An import that failed, with the stats of its Source at the time.
+    struct FailedImport {
+      SourceStats stats;
+      std::string error;
+    };
+
+    // Read the stats of a Source and its sidecar. Missing files give zero stats.
+    SourceStats statSource(const std::string &path);
+
+    // Make the pending list from the library. The scan task calls this after the scan.
+    void updatePendingImports(void);
+
     // The source that assets are loaded from.
     ren::MultiAssetSource source;
     ren::AssetStore store;
@@ -91,6 +125,13 @@ namespace ren {
     std::mutex taskMutex;
     std::condition_variable taskFinished;
     Option<std::chrono::steady_clock::time_point> lastTaskFinished = None;
+
+    // The pending list. The scan task writes it, and the main thread reads and dismisses.
+    mutable std::mutex pendingMutex;
+    std::vector<AssetID> pendingImports;
+    std::unordered_map<AssetID, SourceStats> dismissedImports;
+    std::unordered_map<AssetID, FailedImport> failedImports;
+    std::atomic<u64> pendingGeneration{0};
   };
 
   AssetManager &getAssetManager();
