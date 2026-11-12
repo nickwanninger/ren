@@ -77,6 +77,7 @@ namespace ren {
 
 
   void AssetLibrary::scan(void) {
+    REN_PROFILE_SCOPE("Library Scan");
     std::scoped_lock lock(mutex);
     generation++;
 

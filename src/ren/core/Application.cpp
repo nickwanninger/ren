@@ -298,6 +298,11 @@ namespace ren {
       }
 
 
+      // Tick the assets after we submit the frame so any work isn't on the game path when we are vsync'd
+      if (running) {
+        assets.tick();
+      }
+
       {
         // FPS limiting at the end of frame (after submission) to reduce input latency.
         // If the window is not focused, limit to 30 FPS to reduce CPU/GPU usage.

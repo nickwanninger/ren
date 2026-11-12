@@ -1,8 +1,10 @@
 #include "LibraryTest.h"
 #include <ren/assets/AssetLibrary.h>
+#include <ren/assets/AssetManager.h>
 #include <ren/assets/DerivedAsset.h>
 #include <ren/core/Logging.h>
 #include <fstream>
+#include <thread>
 
 
 namespace {
@@ -72,6 +74,42 @@ namespace {
     size_t count = 0;
     library.forEach([&](const ren::ref<const ren::AssetEntry> &) { count++; });
     return count;
+  }
+
+
+  // Tick until the manager is idle again. Fails after about one second.
+  void tickUntilIdle(ren::AssetManager &manager) {
+    for (int i = 0; i < 1000 && manager.getActivity() != ren::AssetActivity::Idle; i++) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    verify(manager.getActivity() == ren::AssetActivity::Idle, "Asset task did not finish");
+  }
+
+
+  // tick() starts the background scans. This test assumes the default --asset-scan-interval-ms,
+  // which is much longer than the test.
+  void verifyManagerTasks(void) {
+    TemporaryAssets temporary;
+    writeText(temporary.root / "first.png", "not decoded by the scan");
+
+    ren::AssetManager manager;
+    manager.addFilesystemSource(temporary.root.string());
+    auto count = [&]() { return countEntries(manager.getLibrary()); };
+
+    // The first tick scans at once. The next tick waits for the interval.
+    manager.tick();
+    tickUntilIdle(manager);
+    verify(count() == 1, "First tick did not scan");
+    writeText(temporary.root / "second.png", "not decoded by the scan");
+    manager.tick();
+    verify(manager.getActivity() == ren::AssetActivity::Idle && count() == 1, "Tick scanned before the interval");
+
+    // A scheduled scan runs on the next tick, also with timed scans off.
+    manager.setScanEnabled(false);
+    manager.scheduleScan();
+    manager.tick();
+    tickUntilIdle(manager);
+    verify(count() == 2, "Scheduled scan did not run");
   }
 
 }  // namespace
@@ -187,6 +225,7 @@ int runLibraryTests() {
   library.scan();
   verify(countEntries(library) == 0, "Scan kept entries of deleted files");
 
+  verifyManagerTasks();
   ren::println("Asset library tests passed");
   return 0;
 }

@@ -6,26 +6,41 @@
 #include <imgui/imgui.h>
 #include <ren/misc/hash.h>
 #include <ren/core/UUID.h>
-#include <algorithm>
-#include <cctype>
 #include <set>
 #include "ren/core/ThreadPool.h"
 #include <ren/assets/importers/ImportSource.h>
 #include <ren/assets/importers/Importer.h>
 #include <ren/core/Bundle.h>
+#include <ren/core/Flag.h>
+#include <ren/core/Logging.h>
+
+
+// Launch options can disable timed scans. This will be something we need to
+// deal with when a game is running in runtime mode, as we won't run any
+// importing logic then. (It would be an error, if we eventually have proper
+// game packaging eventually.)
+static ren::Flag<bool> kAssetScan("asset-scan", true, "Scan the asset sources on a timer. Scans that the program schedules still run.");
+static ren::Flag<int> kAssetManagerScanIntervalMs("asset-scan-interval-ms", 1000, "Time from the end of one asset task to the next timed scan.");
 
 
 namespace ren {
 
   AssetManager &getAssetManager() { return ren::Application::get().getAssetManager(); }
 
+  // The flags must be parsed before the construction, so that they set the start values.
   AssetManager::AssetManager()
       : store(source)
-      , library(source) {
+      , library(source)
+      , scanEnabled(kAssetScan.get()) {
     registerBuiltinImporters();
   }
 
-  AssetManager::~AssetManager() {}
+
+  // A task uses the sources and the library, so wait for it before they are destroyed.
+  AssetManager::~AssetManager() {
+    std::unique_lock lock(taskMutex);
+    taskFinished.wait(lock, [&]() { return activity.load() == AssetActivity::Idle; });
+  }
 
 
   void AssetManager::addFilesystemSource(const std::string_view &path) {
@@ -42,7 +57,63 @@ namespace ren {
   }
 
 
-  void AssetManager::tick() { REN_PROFILE_FUNCTION(); }
+  //=========================
+  // Background tasks
+  //=========================
+
+  void AssetManager::tick() {
+    REN_PROFILE_SCOPE("AssetManager::tick");
+
+
+    // if the manager is not idle, wait for the next tick.
+    if (activity.load() != AssetActivity::Idle) {
+      return;
+    }
+
+    // We can scan every once in a while (a timed scan). This can be disabled
+    // with --asset-scan, but a scheduled scan still runs.
+    bool timedScanReady = false;
+    if (scanEnabled) {
+      // Check the last task finished time under the lock, so that the destructor sees a consistent state.
+      std::scoped_lock lock(taskMutex);
+      auto interval = std::chrono::milliseconds(kAssetManagerScanIntervalMs.get());
+      timedScanReady = !lastTaskFinished || std::chrono::steady_clock::now() - lastTaskFinished.unwrap() >= interval;
+    }
+
+    // If there was a requested scan from the application, or a timed scan is ready, start the task.
+    if (scanRequested.exchange(false) || timedScanReady) {
+      startTask(AssetActivity::Scanning, [this]() { library.scan(); });
+    }
+  }
+
+
+  void AssetManager::scheduleScan(void) { scanRequested = true; }
+
+
+  void AssetManager::startTask(AssetActivity kind, std::function<void(void)> work) {
+    // Set the activity
+    activity = kind;
+
+    // Fire off the background work.
+    ren::backgroundWork([this, work = std::move(work)]() {
+
+      // The work can throw, but the backgroundWork cannot handle it. Catch it
+      // here and log it, so that the task can finish and the manager can return
+      // to Idle.
+      try {
+        work();
+      } catch (const std::exception &error) {
+        // TODO: we need some proper way to report this out to the user, but just log it for now.
+        ren::warnln("Asset task failed: {}", error.what());
+      }
+
+      // Notify the background task is finished, so the next tick is no longer idle.
+      std::scoped_lock lock(taskMutex);
+      lastTaskFinished = Some(std::chrono::steady_clock::now()); 
+      activity = AssetActivity::Idle; // Back to idle.
+      taskFinished.notify_all();
+    });
+  }
 
   bool loadAssetBytes(const std::string_view &path, std::vector<u8> &out) { return getAssetManager().load(path, out); }
 
