@@ -52,25 +52,39 @@ namespace ren {
   }
 
 
+  // Add the files below `directory` to `paths`, without sidecars. Walk with list(), not
+  // enumerate(), so that the walk does not go into the derived folder, which can hold many
+  // thousands of bundles. Listed names are leaf names, so the joined paths are already normal.
+  // Returns false if no source can list `directory`.
+  static bool gatherPaths(AssetSource &source, const std::string &directory, std::set<std::string> &paths) {
+    std::set<std::string> children;
+    bool listed = source.list(directory, [&](const AssetDirEntry &entry) {
+      auto path = directory.empty() ? std::string(entry.name) : directory + "/" + std::string(entry.name);
+      if (entry.type == AssetEntryType::Directory) {
+        if (!isDerivedPath(path)) {
+          children.insert(path);
+        }
+      } else if (!path.ends_with(SIDECAR_EXTENSION)) {
+        paths.insert(path);
+      }
+    });
+
+    for (const auto &child : children) {
+      gatherPaths(source, child, paths);
+    }
+    return listed;
+  }
+
+
   void AssetLibrary::scan(void) {
     std::scoped_lock lock(mutex);
     generation++;
 
-    // Gather first, because a visit can write a sidecar. The set removes paths that are in more
+    // Gather first, because a visit can write a sidecar. The sets remove paths that are in more
     // than one source.
     std::set<std::string> paths;
-    bool enumerated = source.enumerate([&](const std::string_view &name) {
-      auto parsed = import_detail::trySourcePath(std::string(name));
-      if (!parsed) {
-        return;
-      }
-      auto path = parsed.unwrap();
-      if (!isDerivedPath(path) && path.extension() != SIDECAR_EXTENSION) {
-        paths.insert(path.generic_string());
-      }
-    });
-    if (!enumerated) {
-      throw std::runtime_error("Cannot enumerate asset sources for the asset library");
+    if (!gatherPaths(source, "", paths)) {
+      throw std::runtime_error("Cannot list asset sources for the asset library");
     }
 
     // One bad file does not stop the scan. Its entry, if any, stays as the last scan left it.
