@@ -59,16 +59,22 @@ namespace ren {
 
 
   AssetID ImportContext::writeDerived(Asset &asset, const std::string &localName) {
-    // TODO: Are asset sources safe for parallel writes? Until then, the lock also serializes the bundle writes.
-    std::scoped_lock lock(mutex);
+    REN_PROFILE_SCOPE("Write Derived Asset");
     asset.id = derivedID(asset.getType(), localName);
     asset.sourceAsset = sourceAsset;
-    if (!outputIDs.insert(asset.id).second) {
-      throw std::runtime_error("Import wrote two outputs with the local name: " + localName);
+    {
+      std::scoped_lock lock(mutex);
+      if (!outputIDs.insert(asset.id).second) {
+        throw std::runtime_error("Import wrote two outputs with the local name: " + localName);
+      }
     }
 
+    // The serialization and the file write run without the lock. Each output has its own path,
+    // which the check above makes sure of, and writes to different paths are safe in parallel.
     auto path = derivedBundlePath(asset.id);
     writeDerivedAsset(source, derivedPath(path), asset);
+
+    std::scoped_lock lock(mutex);
     outputs.push_back({{"id", asset.id.to_string()}, {"localName", localName}, {"name", asset.name}, {"type", asset.getType()}, {"path", path}});
     return asset.id;
   }

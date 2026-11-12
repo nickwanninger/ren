@@ -45,7 +45,7 @@ namespace ren {
    private:
     friend class AssetManager;
 
-    // Protects the input hashes and stats, outputs, and warnings.
+    // Protects the input hashes and stats, output IDs, outputs, and warnings.
     std::mutex mutex;
     std::map<std::string, std::string> inputHashes;
     // The stat of each input before its first read. A scan compares it with the current stat.
