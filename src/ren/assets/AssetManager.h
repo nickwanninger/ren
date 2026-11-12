@@ -9,21 +9,6 @@
 
 namespace ren {
 
-  // An AssetHandle is a typed wrapper around a u64 integer, which abstracts the
-  // resolution of an asset of a given type. Whenever an asset is needed, it can
-  // be resolved, but should not be maintained beyond that, to allow the asset
-  // manager to manage the lifetimes of assets according to the requirements of
-  // the program.
-  template <typename T>
-    requires(std::is_base_of_v<Asset, T>)
-  struct AssetHandle {
-    AssetID id;  // Just the ID.
-
-    AssetHandle(AssetID id)
-        : id(id) {}
-  };
-
-
 
   // The AssetManager is responsible for managing asset importing and retrieval.
   // 

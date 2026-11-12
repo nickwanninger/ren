@@ -70,6 +70,10 @@ namespace ren {
   };
 
 
+  class RuntimeAsset {
+    // TODO:
+  };
+
 
   //=========================
   // Asset types
