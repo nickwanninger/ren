@@ -59,6 +59,11 @@ namespace ren {
     // file that has none. Blocks until the scan is done.
     void scan(void);
 
+    // Update the entries of one file: a Native file, or a Source and its Derived entries. Removes
+    // them if the file is gone. Call this after an import, so that the result is visible before
+    // the next scan. Throws if the file cannot be read.
+    void rescan(const std::string &path);
+
     // Returns null if no entry has the ID or the path.
     ref<const AssetEntry> find(AssetID id) const;
     ref<const AssetEntry> findByPath(std::string_view path) const;

@@ -130,6 +130,16 @@ int runLibraryTests() {
   verify(library.find(kept) != nullptr && library.find(dropped) == nullptr, "Reimport did not update the outputs by ID");
 
 
+  // rescan() updates one source and removes the outputs that its new record no longer lists.
+  auto extra = ren::AssetID::generate();
+  writeRecord(source, root, "pixel.png", pixelID, {kept, extra});
+  library.rescan("pixel.png");
+  verify(library.find(extra) != nullptr, "Rescan did not add an output");
+  writeRecord(source, root, "pixel.png", pixelID, {kept});
+  library.rescan("pixel.png");
+  verify(library.find(kept) != nullptr && library.find(extra) == nullptr, "Rescan did not remove a dropped output");
+
+
   // A changed input or sidecar makes the Source stale, and keeps its outputs. A record with the
   // current stats makes it imported again. A record without stats is stale.
   auto importState = [&]() { return library.find(pixelID)->importState; };
@@ -166,9 +176,14 @@ int runLibraryTests() {
   verify(library.find(kept) != nullptr, "Move removed the outputs");
 
 
-  // Deleted files remove their entries, and a removed Source removes its outputs.
+  // Deleted files remove their entries, and a removed Source removes its outputs. rescan() does
+  // this for one file, scan() for all.
   std::filesystem::remove(root / "level.scene");
+  library.rescan("level.scene");
+  verify(library.find(sceneID) == nullptr, "Rescan kept a deleted file");
   std::filesystem::remove(root / "moved/pixel.png");
+  library.rescan("moved/pixel.png");
+  verify(countEntries(library) == 0, "Rescan kept a deleted Source or its outputs");
   library.scan();
   verify(countEntries(library) == 0, "Scan kept entries of deleted files");
 

@@ -107,6 +107,38 @@ namespace ren {
   }
 
 
+  void AssetLibrary::rescan(const std::string &path) {
+    std::scoped_lock lock(mutex);
+
+    // A full scan removes old outputs by generation. One file has no generation pass, so compare
+    // the outputs before and after the visit.
+    AssetID oldID;
+    std::vector<AssetID> oldOutputs;
+    if (auto existing = byPath.find(path); existing != byPath.end()) {
+      oldID = existing->second;
+      oldOutputs = scanState.at(oldID).outputs;
+    }
+
+    if (!source.isFile(path)) {
+      removeEntry(oldID);
+    } else if (isNativePath(path)) {
+      visitNative(path);
+    } else if (findImporterForPath(path)) {
+      visitSource(path);
+    }
+
+    std::set<AssetID> kept;
+    if (auto current = byPath.find(path); current != byPath.end()) {
+      kept.insert(scanState.at(current->second).outputs.begin(), scanState.at(current->second).outputs.end());
+    }
+    for (auto output : oldOutputs) {
+      if (!kept.contains(output)) {
+        removeEntry(output);
+      }
+    }
+  }
+
+
   void AssetLibrary::visitNative(const std::string &path) {
     auto stat = statFile(source, path);
     auto existing = byPath.find(path);
