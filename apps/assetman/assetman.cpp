@@ -12,6 +12,9 @@
 #include "AuthoringSketch.h"
 #include "ImportTest.h"
 #include "LibraryTest.h"
+#include <algorithm>
+#include <chrono>
+#include <unordered_set>
 
 static ren::Flag<bool> testAuthoring("test-authoring", false, "Verify the authoring sketch without a window");
 
@@ -54,6 +57,134 @@ static void assetsTab(ren::eui::Ui &ui) {
   ImGui::BeginChild("AssetList");
   manager.getSource().enumerate([&](const std::string_view &name) { ImGui::TextUnformatted(name.data(), name.data() + name.size()); });
   ImGui::EndChild();
+}
+
+
+// Scan the asset library by hand or on a timer, and show its entries. Rows that the last scan added
+// or replaced are highlighted, so an unchanged scan shows no highlight.
+static void libraryTab(ren::eui::Ui &ui) {
+  auto &library = ren::getAssetManager().getLibrary();
+  static bool autoScan = false;
+  static std::string filter;
+  static std::string scanError;
+  static double scanMilliseconds = 0;
+  static double lastScanTime = -1;
+  static std::unordered_map<ren::AssetID, ren::ref<const ren::AssetEntry>> previous;
+  static std::unordered_set<ren::AssetID> changed;
+
+  auto scan = [&]() {
+    scanError.clear();
+    auto start = std::chrono::high_resolution_clock::now();
+    try {
+      library.scan();
+    } catch (const std::exception &error) {
+      scanError = error.what();
+    }
+    auto end = std::chrono::high_resolution_clock::now();
+    scanMilliseconds = std::chrono::duration<double, std::milli>(end - start).count();
+    lastScanTime = ImGui::GetTime();
+
+    // An entry object that differs from the last scan is new or replaced.
+    std::unordered_map<ren::AssetID, ren::ref<const ren::AssetEntry>> current;
+    changed.clear();
+    library.forEach([&](const ren::ref<const ren::AssetEntry> &entry) {
+      current[entry->id] = entry;
+      auto it = previous.find(entry->id);
+      if (it == previous.end() || it->second != entry) {
+        changed.insert(entry->id);
+      }
+    });
+    previous = std::move(current);
+  };
+
+  if (lastScanTime < 0 || ui.button("Scan")) {
+    scan();
+  }
+  ImGui::SameLine();
+  ImGui::Checkbox("Scan every second", &autoScan);
+  if (autoScan && ImGui::GetTime() - lastScanTime > 1.0) {
+    scan();
+  }
+  ImGui::InputText("Filter", &filter);
+
+  ImGui::Text("Entries: %zu  Changed by last scan: %zu  Scan time: %.2f ms", previous.size(), changed.size(), scanMilliseconds);
+  if (!scanError.empty()) {
+    ImGui::TextWrapped("%s", scanError.c_str());
+  }
+
+  // Top rows are Source and Native entries. Derived entries are children of their Source.
+  // Sort by path, so that rows do not move between frames.
+  std::vector<ren::ref<const ren::AssetEntry>> rows;
+  std::unordered_map<ren::AssetID, std::vector<ren::ref<const ren::AssetEntry>>> outputs;
+  for (const auto &[id, entry] : previous) {
+    if (entry->kind == ren::AssetKind::Derived) {
+      outputs[entry->source].push_back(entry);
+    } else if (filter.empty() || entry->path.find(filter) != std::string::npos) {
+      rows.push_back(entry);
+    }
+  }
+  auto byPath = [](const auto &a, const auto &b) { return a->path < b->path; };
+  std::sort(rows.begin(), rows.end(), byPath);
+  for (auto &[id, children] : outputs) {
+    std::sort(children.begin(), children.end(), [](const auto &a, const auto &b) { return a->name < b->name; });
+  }
+
+  static const char *kinds[] = {"Source", "Native", "Derived"};
+  static const char *states[] = {"", "Not imported", "Imported"};
+
+  // Draw one row. Returns true if the row is an open tree node, and the caller must call TreePop().
+  auto drawRow = [&](const ren::AssetEntry &entry, bool hasChildren) {
+    ImGui::TableNextRow();
+    if (changed.contains(entry.id)) {
+      ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg1, IM_COL32(200, 160, 40, 80));
+    }
+
+    ImGui::TableNextColumn();
+    ImGuiTreeNodeFlags nodeFlags = ImGuiTreeNodeFlags_SpanFullWidth;
+    if (!hasChildren) {
+      nodeFlags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
+    }
+    ImGui::PushID(entry.id.to_string().c_str());
+    bool open = ImGui::TreeNodeEx(kinds[static_cast<int>(entry.kind)], nodeFlags);
+    ImGui::PopID();
+
+    // A Source can make assets of several types, so it shows none.
+    ImGui::TableNextColumn();
+    ImGui::TextUnformatted(entry.kind == ren::AssetKind::Source ? "-" : json(entry.type).get<std::string>().c_str());
+    ImGui::TableNextColumn();
+    ImGui::TextUnformatted(entry.name.c_str());
+    ImGui::TableNextColumn();
+    ImGui::TextUnformatted(entry.id.to_string().c_str());
+    ImGui::TableNextColumn();
+    ImGui::TextUnformatted(states[static_cast<int>(entry.importState)]);
+    ImGui::TableNextColumn();
+    ImGui::TextUnformatted(entry.path.c_str());
+    return open && hasChildren;
+  };
+
+  ImGuiTableFlags flags = ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_Resizable | ImGuiTableFlags_ScrollY;
+  if (!ImGui::BeginTable("Library", 6, flags)) {
+    return;
+  }
+  ImGui::TableSetupScrollFreeze(0, 1);
+  ImGui::TableSetupColumn("Kind");
+  ImGui::TableSetupColumn("Type");
+  ImGui::TableSetupColumn("Name");
+  ImGui::TableSetupColumn("ID");
+  ImGui::TableSetupColumn("Import");
+  ImGui::TableSetupColumn("Path");
+  ImGui::TableHeadersRow();
+  for (const auto &entry : rows) {
+    auto it = outputs.find(entry->id);
+    if (!drawRow(*entry, it != outputs.end())) {
+      continue;
+    }
+    for (const auto &child : it->second) {
+      drawRow(*child, false);
+    }
+    ImGui::TreePop();
+  }
+  ImGui::EndTable();
 }
 
 
@@ -250,6 +381,7 @@ namespace {
                              ui.tabBar("Asset Manager Tabs", [&](ren::eui::Ui &ui) {
                                ui.tab("Imports", [&](ren::eui::Ui &ui) { panel->draw(); });
                                ui.tab("Assets", [&](ren::eui::Ui &ui) { assetsTab(ui); });
+                               ui.tab("Library", [&](ren::eui::Ui &ui) { libraryTab(ui); });
                                ui.tab("Authoring", [&](ren::eui::Ui &ui) { authoring_sketch::draw(ui); });
                              });
                            });
