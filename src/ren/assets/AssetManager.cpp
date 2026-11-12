@@ -33,7 +33,8 @@ namespace ren {
       : store(source)
       , library(source)
       , scanEnabled(kAssetScan.get())
-      , autoImport(kAutoImport.get()) {
+      , autoImport(kAutoImport.get())
+      , scanIntervalMs(kAssetManagerScanIntervalMs.get()) {
     registerBuiltinImporters();
   }
 
@@ -78,7 +79,7 @@ namespace ren {
     if (scanEnabled) {
       // Check the last task finished time under the lock, so that the destructor sees a consistent state.
       std::scoped_lock lock(taskMutex);
-      auto interval = std::chrono::milliseconds(kAssetManagerScanIntervalMs.get());
+      auto interval = std::chrono::milliseconds(scanIntervalMs);
       timedScanReady = !lastTaskFinished || std::chrono::steady_clock::now() - lastTaskFinished.unwrap() >= interval;
     }
 
@@ -151,6 +152,7 @@ namespace ren {
 
     // Fire off the background work.
     ren::backgroundWork([this, work = std::move(work)]() {
+      auto start = std::chrono::steady_clock::now();
 
       // The work can throw, but the backgroundWork cannot handle it. Catch it
       // here and log it, so that the task can finish and the manager can return
@@ -163,8 +165,11 @@ namespace ren {
       }
 
       // Notify the background task is finished, so the next tick is no longer idle.
+      auto end = std::chrono::steady_clock::now();
       std::scoped_lock lock(taskMutex);
-      lastTaskFinished = Some(std::chrono::steady_clock::now()); 
+      lastTaskMilliseconds = std::chrono::duration<float, std::milli>(end - start).count();
+      finishedTasks++;
+      lastTaskFinished = Some(end);
       activity = AssetActivity::Idle; // Back to idle.
       taskFinished.notify_all();
     });

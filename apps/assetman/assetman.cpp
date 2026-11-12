@@ -60,31 +60,78 @@ static void assetsTab(ren::eui::Ui &ui) {
 }
 
 
-// Scan the asset library by hand or on a timer, and show its entries. Rows that the last scan added
-// or replaced are highlighted, so an unchanged scan shows no highlight.
+// Control the asset manager's background tasks, and show the library. The library is read again
+// after each finished task. Rows that the last task added or replaced are highlighted, so an
+// unchanged scan shows no highlight.
 static void libraryTab(ren::eui::Ui &ui) {
-  auto &library = ren::getAssetManager().getLibrary();
-  static bool autoScan = false;
+  auto &manager = ren::getAssetManager();
+  auto &library = manager.getLibrary();
   static std::string filter;
-  static std::string scanError;
-  static double scanMilliseconds = 0;
-  static double lastScanTime = -1;
+  static ren::Option<u64> shownTasks = ren::None;
   static std::unordered_map<ren::AssetID, ren::ref<const ren::AssetEntry>> previous;
   static std::unordered_set<ren::AssetID> changed;
 
-  auto scan = [&]() {
-    scanError.clear();
-    auto start = std::chrono::high_resolution_clock::now();
-    try {
-      library.scan();
-    } catch (const std::exception &error) {
-      scanError = error.what();
-    }
-    auto end = std::chrono::high_resolution_clock::now();
-    scanMilliseconds = std::chrono::duration<double, std::milli>(end - start).count();
-    lastScanTime = ImGui::GetTime();
 
-    // An entry object that differs from the last scan is new or replaced.
+  // Settings of the manager. Each control writes the setting at once.
+  bool scanEnabled = manager.isScanEnabled();
+  if (ImGui::Checkbox("Timed scans", &scanEnabled)) {
+    manager.setScanEnabled(scanEnabled);
+  }
+  ImGui::SameLine();
+  int interval = manager.getScanIntervalMs();
+  ImGui::SetNextItemWidth(200);
+  if (ImGui::SliderInt("Scan interval (ms)", &interval, 100, 10000, "%d", ImGuiSliderFlags_Logarithmic)) {
+    manager.setScanIntervalMs(interval);
+  }
+  ImGui::SameLine();
+  bool autoImport = manager.isAutoImport();
+  if (ImGui::Checkbox("Auto-import", &autoImport)) {
+    manager.setAutoImport(autoImport);
+  }
+
+  if (ui.button("Scan now")) {
+    manager.scheduleScan();
+  }
+  static const char *activities[] = {"Idle", "Scanning", "Importing"};
+  ImGui::SameLine();
+  ImGui::Text("Activity: %s  Last task: %.2f ms  Tasks: %llu", activities[static_cast<int>(manager.getActivity())], manager.getLastTaskMilliseconds(),
+              static_cast<unsigned long long>(manager.getFinishedTaskCount()));
+
+
+  // The pending list and the failures. With auto-import off, this is where the app asks the user.
+  auto pathOf = [&](ren::AssetID id) {
+    auto entry = library.find(id);
+    return entry ? entry->path : id.to_string();
+  };
+  auto pending = manager.getPendingImports();
+  auto failed = manager.getFailedImports();
+  ImGui::Text("Pending imports: %zu  Failed imports: %zu", pending.size(), failed.size());
+  if (!pending.empty()) {
+    ImGui::SameLine();
+    if (ui.button("Import all")) {
+      manager.scheduleImport(pending);
+    }
+    ImGui::SameLine();
+    if (ui.button("Dismiss all")) {
+      manager.dismissImports(pending);
+    }
+    for (auto id : pending) {
+      ImGui::BulletText("%s", pathOf(id).c_str());
+    }
+  }
+  if (!failed.empty() && ImGui::TreeNode("Failures")) {
+    for (const auto &[id, error] : failed) {
+      ImGui::TextWrapped("%s: %s", pathOf(id).c_str(), error.c_str());
+    }
+    ImGui::TreePop();
+  }
+  ImGui::Separator();
+
+
+  // Read the library again when a task finished. An entry object that differs from the last
+  // read is new or replaced.
+  if (!shownTasks || shownTasks.unwrap() != manager.getFinishedTaskCount()) {
+    shownTasks = ren::Some(manager.getFinishedTaskCount());
     std::unordered_map<ren::AssetID, ren::ref<const ren::AssetEntry>> current;
     changed.clear();
     library.forEach([&](const ren::ref<const ren::AssetEntry> &entry) {
@@ -95,22 +142,10 @@ static void libraryTab(ren::eui::Ui &ui) {
       }
     });
     previous = std::move(current);
-  };
+  }
 
-  if (lastScanTime < 0 || ui.button("Scan")) {
-    scan();
-  }
-  ImGui::SameLine();
-  ImGui::Checkbox("Scan every second", &autoScan);
-  if (autoScan && ImGui::GetTime() - lastScanTime > 1.0) {
-    scan();
-  }
   ImGui::InputText("Filter", &filter);
-
-  ImGui::Text("Entries: %zu  Changed by last scan: %zu  Scan time: %.2f ms", previous.size(), changed.size(), scanMilliseconds);
-  if (!scanError.empty()) {
-    ImGui::TextWrapped("%s", scanError.c_str());
-  }
+  ImGui::Text("Entries: %zu  Changed by last task: %zu", previous.size(), changed.size());
 
   // Top rows are Source and Native entries. Derived entries are children of their Source.
   // Sort by path, so that rows do not move between frames.

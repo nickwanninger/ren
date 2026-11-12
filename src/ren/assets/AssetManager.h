@@ -56,12 +56,24 @@ namespace ren {
     void setScanEnabled(bool enabled) { scanEnabled = enabled; }
     bool isScanEnabled(void) const { return scanEnabled; }
 
+    // The time from the end of one task to the next timed scan. The --asset-scan-interval-ms flag
+    // sets the start value.
+    void setScanIntervalMs(int milliseconds) { scanIntervalMs = milliseconds; }
+    int getScanIntervalMs(void) const { return scanIntervalMs; }
+
     // When on, a tick imports the pending list without a prompt. The --auto-import flag sets the
     // start value. When off, the app shows the pending list and calls scheduleImport().
     void setAutoImport(bool enabled) { autoImport = enabled; }
     bool isAutoImport(void) const { return autoImport; }
 
     AssetActivity getActivity(void) const { return activity.load(); }
+
+    // The number of tasks that finished. A UI compares it with the value it last saw, to know
+    // when to read the library again.
+    u64 getFinishedTaskCount(void) const { return finishedTasks.load(); }
+
+    // The duration of the last task, in milliseconds.
+    float getLastTaskMilliseconds(void) const { return lastTaskMilliseconds.load(); }
 
     // The Sources that need an import after the last scan: NotImported and Stale, sorted by path.
     // A dismissed or failed Source is not in the list until its file or sidecar changes.
@@ -139,6 +151,9 @@ namespace ren {
     std::atomic<bool> scanRequested{false};
     bool scanEnabled = true;
     bool autoImport = true;
+    int scanIntervalMs = 1000;
+    std::atomic<u64> finishedTasks{0};
+    std::atomic<float> lastTaskMilliseconds{0};
     // Sources that scheduleImport() asked for. The main thread writes and reads it in tick().
     std::vector<AssetID> importRequests;
     std::mutex taskMutex;
