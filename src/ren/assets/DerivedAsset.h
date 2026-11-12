@@ -39,6 +39,11 @@ namespace ren {
   // Convert a path relative to the derived folder into a path relative to the source root.
   std::string derivedPath(std::string_view relative);
 
+  // The record form of a file stat: {"mtime": <ns>, "size": <bytes>}. A scan compares a stat that
+  // a record stores with the current stat to find a stale import.
+  void to_json(json &out, const AssetStat &stat);
+  void from_json(const json &in, AssetStat &stat);
+
 
 
   //=========================

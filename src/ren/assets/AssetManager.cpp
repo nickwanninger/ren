@@ -63,6 +63,8 @@ namespace ren {
     std::vector<u8> originalBytes;
     json original;
     json settings;
+    // The stat before the read, or after the write. An edit during the import makes the source stale.
+    AssetStat stat;
   };
 
 
@@ -70,7 +72,7 @@ namespace ren {
   static Sidecar loadSidecar(AssetSource &source, const std::filesystem::path &path) {
     Sidecar sidecar;
     sidecar.path = path.generic_string() + ".import";
-    sidecar.existed = source.exists(sidecar.path);
+    sidecar.existed = source.stat(sidecar.path, sidecar.stat);
     if (sidecar.existed) {
       sidecar.originalBytes = import_detail::readBytes(source, sidecar.path);
       auto loaded = source.loadJSON(sidecar.path);
@@ -101,13 +103,16 @@ namespace ren {
 
 
   static json makeImportRecord(const ImportContext &context, const json &settings, const std::string &importer) {
+    // The fingerprint uses only the hashes, so that a touched but unchanged input keeps it.
+    json hashes = json::array();
     json dependencies = json::array();
     for (const auto &[name, hash] : context.getInputHashes()) {
-      dependencies.push_back({{"path", name}, {"hash", hash}});
+      hashes.push_back({{"path", name}, {"hash", hash}});
+      dependencies.push_back({{"path", name}, {"hash", hash}, {"stat", context.getInputStats().at(name)}});
     }
 
     // The fingerprint changes when any input, setting, or format version changes.
-    json fingerprint = {{"dependencies", dependencies},
+    json fingerprint = {{"dependencies", hashes},
                         {"settings", settings},
                         {"importerVersion", IMPORTER_VERSION},
                         {"assetFormatVersion", DERIVED_FORMAT_VERSION},
@@ -164,7 +169,7 @@ namespace ren {
     // Construct the importer. This validates the options and fills the missing defaults into the settings.
     auto importer = info->create(settings.at("options"));
 
-    // The importer writes bundles with fresh IDs, so a failure here leaves the published record valid.
+    // A failure here leaves the published record. Bundles that the import already replaced keep their IDs.
     ImportContext context(source, id, path);
     importer->import(context);
     context.validate();
@@ -176,7 +181,11 @@ namespace ren {
     bool changed = !sidecar.existed || sidecar.original != settings;
     if (changed) {
       import_detail::storeJSONAtomic(source, sidecar.path, settings, "import settings");
+      if (!source.stat(sidecar.path, sidecar.stat)) {
+        throw std::runtime_error("Cannot stat import settings: " + sidecar.path);
+      }
     }
+    record["sidecar"] = sidecar.stat;
     try {
       import_detail::publishRecord(source, id, record);
     } catch (...) {

@@ -48,7 +48,11 @@ namespace {
     for (auto id : outputs) {
       derived.push_back({{"id", id.to_string()}, {"name", "out-" + id.to_string()}, {"path", ren::derivedBundlePath(id)}, {"type", "Texture"}});
     }
-    json record = {{"version", ren::IMPORT_RECORD_VERSION}, {"sourceAsset", sourceAsset.to_string()}, {"derivedAssets", derived}};
+    json record = {{"version", ren::IMPORT_RECORD_VERSION},
+                   {"sourceAsset", sourceAsset.to_string()},
+                   {"derivedAssets", derived},
+                   {"dependencies", json::array()},
+                   {"sidecar", ren::AssetStat{}}};
     writeText(root / ren::importRecordPath(sourceAsset), record.dump());
   }
 

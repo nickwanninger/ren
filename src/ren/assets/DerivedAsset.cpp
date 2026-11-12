@@ -32,6 +32,16 @@ namespace ren {
   std::string derivedPath(std::string_view relative) { return std::string(DERIVED_ROOT) + "/" + std::string(relative); }
 
 
+  void to_json(json &out, const AssetStat &stat) { out = {{"mtime", stat.mtime}, {"size", stat.size}}; }
+
+
+  void from_json(const json &in, AssetStat &stat) {
+    stat = {};
+    stat.mtime = in.at("mtime").get<i64>();
+    stat.size = in.at("size").get<u64>();
+  }
+
+
 
   //=========================
   // Validation
@@ -45,7 +55,6 @@ namespace ren {
     if (!record.at("derivedAssets").is_array()) {
       throw std::runtime_error("Import outputs must be an array");
     }
-
     std::set<AssetID> ids;
     for (const auto &output : record.at("derivedAssets")) {
       auto id = parseAssetID(output.at("id"));

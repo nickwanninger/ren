@@ -9,30 +9,43 @@ namespace ren {
       , sourcePath(std::move(path)) {}
 
 
-  void ImportContext::trackInput(const std::string &name, const std::string &hash) {
+  AssetStat ImportContext::statInput(const std::string &name) {
+    AssetStat stat;
+    if (!source.stat(name, stat)) {
+      throw std::runtime_error("Cannot stat import input: " + name);
+    }
+    return stat;
+  }
+
+
+  // The first read of an input sets its stat. A later read keeps that stat.
+  void ImportContext::trackInput(const std::string &name, const std::string &hash, const AssetStat &stat) {
     std::scoped_lock lock(mutex);
     auto [it, inserted] = inputHashes.emplace(name, hash);
     if (!inserted && it->second != hash) {
       throw std::runtime_error("Input changed during import: " + name);
     }
+    inputStats.emplace(name, stat);
   }
 
 
   std::vector<u8> ImportContext::readInput(const std::filesystem::path &path) {
     auto name = import_detail::sourcePath(path).generic_string();
+    auto stat = statInput(name);
     auto bytes = import_detail::readBytes(source, name);
-    trackInput(name, SHA256()(bytes.data(), bytes.size()));
+    trackInput(name, SHA256()(bytes.data(), bytes.size()), stat);
     return bytes;
   }
 
 
   ref<AssetFile> ImportContext::openInput(const std::filesystem::path &path) {
     auto name = import_detail::sourcePath(path).generic_string();
+    auto stat = statInput(name);
     auto file = source.open(name, AssetOpenFlags::Read);
     if (!file) {
       throw std::runtime_error("Cannot open import input: " + name);
     }
-    trackInput(name, import_detail::fileHash(source, name));
+    trackInput(name, import_detail::fileHash(source, name), stat);
     return file;
   }
 

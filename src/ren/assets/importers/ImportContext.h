@@ -38,20 +38,26 @@ namespace ren {
 
     // Import results for the record. Read them only after the importer returns.
     const std::map<std::string, std::string> &getInputHashes(void) const { return inputHashes; }
+    const std::map<std::string, AssetStat> &getInputStats(void) const { return inputStats; }
     const json &getOutputs(void) const { return outputs; }
     const json &getWarnings(void) const { return warnings; }
 
    private:
     friend class AssetManager;
 
-    // Protects the input hashes, outputs, and warnings.
+    // Protects the input hashes and stats, outputs, and warnings.
     std::mutex mutex;
     std::map<std::string, std::string> inputHashes;
+    // The stat of each input before its first read. A scan compares it with the current stat.
+    std::map<std::string, AssetStat> inputStats;
     std::set<AssetID> outputIDs;
     json outputs = json::array();
     json warnings = json::array();
 
-    void trackInput(const std::string &name, const std::string &hash);
+    // Stat an input before a read. An edit during the import then gives a different stat, so the
+    // next scan finds the source stale.
+    AssetStat statInput(const std::string &name);
+    void trackInput(const std::string &name, const std::string &hash, const AssetStat &stat);
     void validate() const;
   };
 
