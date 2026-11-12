@@ -262,6 +262,7 @@ namespace ren {
       auto updated = std::make_shared<AssetEntry>(*entry);
       updated->importState = importState;
       entries[id] = updated;
+      version++;
     }
   }
 
@@ -297,6 +298,7 @@ namespace ren {
     scanState[entry->id] = state;
     scanState[entry->id].seen = generation;
     entries[entry->id] = std::move(entry);
+    version++;
   }
 
 
@@ -308,6 +310,7 @@ namespace ren {
     byPath.erase(it->second->path);
     scanState.erase(id);
     entries.erase(it);
+    version++;
   }
 
 

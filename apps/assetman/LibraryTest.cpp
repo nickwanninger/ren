@@ -193,9 +193,11 @@ int runLibraryTests() {
   verify(library.findByPath("notes.txt") == nullptr && countEntries(library) == 2, "Scan added an unsupported file");
 
 
-  // An unchanged scan keeps the same entry objects.
+  // An unchanged scan keeps the same entry objects and the same version.
+  auto version = library.getVersion();
   library.scan();
   verify(library.find(pixelID) == pixel && library.find(sceneID) == scene, "Unchanged scan replaced entries");
+  verify(library.getVersion() == version, "Unchanged scan changed the version");
 
 
   // A record adds the Derived entries and marks the Source as imported.
@@ -220,8 +222,9 @@ int runLibraryTests() {
   // rescan() updates one source and removes the outputs that its new record no longer lists.
   auto extra = ren::AssetID::generate();
   writeRecord(source, root, "pixel.png", pixelID, {kept, extra});
+  version = library.getVersion();
   library.rescan("pixel.png");
-  verify(library.find(extra) != nullptr, "Rescan did not add an output");
+  verify(library.find(extra) != nullptr && library.getVersion() > version, "Rescan did not add an output or change the version");
   writeRecord(source, root, "pixel.png", pixelID, {kept});
   library.rescan("pixel.png");
   verify(library.find(kept) != nullptr && library.find(extra) == nullptr, "Rescan did not remove a dropped output");

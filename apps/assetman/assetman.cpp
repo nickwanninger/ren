@@ -38,13 +38,13 @@ static void assetsTab(ren::eui::Ui &ui) {
 
 
 // Control the asset manager's background tasks, and show the library. The library is read again
-// after each finished task. Rows that the last task added or replaced are highlighted, so an
-// unchanged scan shows no highlight.
+// each time it changes, so each import shows as it finishes. Rows that the last change added or
+// replaced are highlighted, so an unchanged scan shows no highlight.
 static void libraryTab(ren::eui::Ui &ui) {
   auto &manager = ren::getAssetManager();
   auto &library = manager.getLibrary();
   static std::string filter;
-  static ren::Option<u64> shownTasks = ren::None;
+  static ren::Option<u64> shownVersion = ren::None;
   static std::unordered_map<ren::AssetID, ren::ref<const ren::AssetEntry>> previous;
   static std::unordered_set<ren::AssetID> changed;
 
@@ -105,10 +105,10 @@ static void libraryTab(ren::eui::Ui &ui) {
   ImGui::Separator();
 
 
-  // Read the library again when a task finished. An entry object that differs from the last
-  // read is new or replaced.
-  if (!shownTasks || shownTasks.unwrap() != manager.getFinishedTaskCount()) {
-    shownTasks = ren::Some(manager.getFinishedTaskCount());
+  // Read the library again when it changed. An entry object that differs from the last read is
+  // new or replaced.
+  if (!shownVersion || shownVersion.unwrap() != library.getVersion()) {
+    shownVersion = ren::Some(library.getVersion());
     std::unordered_map<ren::AssetID, ren::ref<const ren::AssetEntry>> current;
     changed.clear();
     library.forEach([&](const ren::ref<const ren::AssetEntry> &entry) {
@@ -122,7 +122,7 @@ static void libraryTab(ren::eui::Ui &ui) {
   }
 
   ImGui::InputText("Filter", &filter);
-  ImGui::Text("Entries: %zu  Changed by last task: %zu", previous.size(), changed.size());
+  ImGui::Text("Entries: %zu  Changed by last update: %zu", previous.size(), changed.size());
 
   // Top rows are Source and Native entries. Derived entries are children of their Source.
   // Sort by path, so that rows do not move between frames.

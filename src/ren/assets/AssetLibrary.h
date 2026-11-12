@@ -2,6 +2,7 @@
 
 #include <ren/assets/Asset.h>
 #include <ren/assets/AssetSource.h>
+#include <atomic>
 #include <functional>
 #include <mutex>
 #include <string>
@@ -72,6 +73,10 @@ namespace ren {
     // calls, so `fn` must not call the library.
     void forEach(const std::function<void(const ref<const AssetEntry> &)> &fn) const;
 
+    // Increases each time an entry is added, replaced, or removed. A reader compares it with the
+    // value it last saw, to know when to read the entries again.
+    u64 getVersion(void) const { return version.load(); }
+
    private:
     // What the scan last read for an entry. The scan reads a file again only when its stat
     // changed. A Derived entry uses only `seen`, because its Source reads the record.
@@ -109,6 +114,9 @@ namespace ren {
     std::unordered_map<std::string, AssetID> byPath;
     std::unordered_map<AssetID, ScanState> scanState;
     u64 generation = 0;
+
+    // Written under the mutex, read without it.
+    std::atomic<u64> version{0};
   };
 
 }  // namespace ren
