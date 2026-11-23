@@ -30,7 +30,7 @@ namespace ren {
 #if 0
     auto &viewCamera = ren::Camera::get();
 
-    auto &megaMesh = ren::world().get_mut<ren::MegaMeshBuffer>();
+    auto &megaMesh = ren::Renderer::get().getMegaMeshBuffer();
     megaMesh.bind(ctx.cmd);
 
     auto image = ctx.resources.getImage(out.shadow);

@@ -51,6 +51,7 @@ namespace ren {
     ren::AssetManager &getAssetManager() { return assets; }
 
     double timeSeconds = 0.0f;
+    double deltaTime = 0.0f;
     // Arguably the most important part of the application is the ECS world.
     // We try to put everything in the world, so that we can use flecs systems to process basically
     // everything.
@@ -108,7 +109,7 @@ namespace ren {
   // access the low-level ECS world without having to go through an abstraction which would restrict
   // functionality.
   static inline flecs::world &world(void) { return ren::Application::get().world; }
-  static inline float deltaTime(void) { return ren::world().delta_time(); }
+  static inline float deltaTime(void) { return ren::Application::get().deltaTime; }
   static inline float timeSeconds(void) { return ren::Application::get().timeSeconds; }
   static inline Entity entity(void) { return ren::world().entity(); }
 

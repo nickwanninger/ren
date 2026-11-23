@@ -20,6 +20,7 @@
 namespace ren {
 
   class Window;
+  class MegaMeshBuffer;
 
   // This class attempts to provide a generic interface for rendering triangles in a 3D Scene.
   // We render to a renderTarget, which is a ren::Texture, and then have a separate pass which
@@ -136,6 +137,9 @@ namespace ren {
     }
     SamplerCache &getSamplerCache() { return *samplerCache; }
 
+    // The vertex and index data of all meshes.
+    MegaMeshBuffer &getMegaMeshBuffer() { return *megaMeshBuffer; }
+
    private:
     inline const PipelineStateObject &getCurrentPSO() const {
       if (currentPipeline == nullptr) {
@@ -165,6 +169,7 @@ namespace ren {
     ref<VulkanInstance> vulkan = nullptr;
     Box<FrameGlobalsAllocator> frameGlobalsAllocator;
     ref<SamplerCache> samplerCache;
+    Box<MegaMeshBuffer> megaMeshBuffer;
     // One per frame in flight, used in turn.
     std::vector<Box<FrameContext>> frames;
     ref<RenderPass> displayPass = nullptr;

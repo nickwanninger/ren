@@ -50,7 +50,7 @@ namespace ren {
       aabb.update(vert.pos);
     }
 
-    this->megaHandle = ren::resource<ren::MegaMeshBuffer>().allocate(vertices, indices);
+    this->megaHandle = ren::Renderer::get().getMegaMeshBuffer().allocate(vertices, indices);
 
     // TODO: build only for meshes that need ray tracing.
     if (!indices.empty()) {
@@ -66,7 +66,7 @@ namespace ren {
       aabb.update(vertex.pos);
     }
 
-    megaHandle = ren::resource<ren::MegaMeshBuffer>().allocate(vertices, indices);
+    megaHandle = ren::Renderer::get().getMegaMeshBuffer().allocate(vertices, indices);
     bvh = makeBox<MeshBVH>(bakedBVH);
   }
 

@@ -1,4 +1,5 @@
 #include <ren/renderer/Renderer.h>
+#include <ren/assets/MegaMeshBuffer.h>
 #include <ren/misc/DeprecationLogger.h>
 #include <ren/renderer/CommandEncoder.h>
 #include <ren/renderer/submission/SubmissionQueue.h>
@@ -36,6 +37,7 @@ namespace ren {
     this->samplerHeap = make<SamplerDescriptorHeap>();
     this->samplerCache = make<SamplerCache>(this->samplerHeap);
     this->frameGlobalsAllocator = makeBox<FrameGlobalsAllocator>();
+    this->megaMeshBuffer = makeBox<MegaMeshBuffer>();
 
     // Frame contexts allocate their frame globals from the allocator above.
     for (u32 i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
@@ -65,6 +67,7 @@ namespace ren {
     this->imageHeap.reset();
     this->samplerHeap.reset();
     this->frameGlobalsAllocator.reset();
+    this->megaMeshBuffer.reset();
     this->vulkan.reset();
   }
 

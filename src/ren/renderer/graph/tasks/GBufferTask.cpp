@@ -89,7 +89,7 @@ namespace ren {
     });
 
     const auto drawCount = static_cast<u32>(sortedDraws.size());
-    auto &megaMesh = ren::world().get_mut<ren::MegaMeshBuffer>();
+    auto &megaMesh = ren::Renderer::get().getMegaMeshBuffer();
 
     auto &arena = ctx.encoder.getArena();
     auto *objects = arena.push<StorageBuffer<ObjectData>>(drawCount);

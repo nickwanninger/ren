@@ -22,34 +22,5 @@ namespace ren {
   }
 
   void DepthPrepassTask::run(ren::GraphRenderPassContext &ctx) const {
-#if 0
-    auto &camera = ren::Camera::get();
-
-    auto &megaMesh = ren::world().get_mut<ren::MegaMeshBuffer>();
-    megaMesh.bind(ctx.cmd);
-
-    auto image = ctx.resources.getImage(depthOut);
-    auto projection = ren::Camera::projectionMatrix(image->getWidth(), image->getHeight());
-
-    ren::MeshPushConstants pc;
-
-    ren::RenderWorld rw(camera);
-    rw.extractFromECS(ren::world());
-
-
-    pc.view = camera.view_matrix();
-    pc.proj = projection;
-    ctx.renderer.bind(pso);
-
-    for (auto &r : rw.renderables) {
-      auto &entry = megaMesh.getEntry(r.mesh->megaHandle);
-      pc.model = r.transform;
-      pc.normalMatrix = glm::transpose(glm::inverse(pc.model));
-
-      ctx.renderer.setPushConstants(pc);
-
-      vkCmdDrawIndexed(ctx.cmd, entry.indexCount, 1, entry.indexOffset, entry.vertexOffset, 0);
-    }
-#endif
   }
 }  // namespace ren

@@ -45,7 +45,6 @@
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
 #include <ren/core/Systems.h>
-#include <ren/assets/MegaMeshBuffer.h>
 
 #include <ren/core/Flag.h>
 #include <ren/renderer/shader/ShaderProgram.h>
@@ -151,9 +150,6 @@ namespace ren {
 
     assets.addDefaultSources(kAssetSources.get());
 
-    // Ensure we have a megamesh buffer. (TODO: move this somewhere non-global.)
-    ren::ensureResource<ren::MegaMeshBuffer>();
-
     this->window->initializeUI();
     ren::AutoPlugin::registerPlugins(*this);
 
@@ -212,6 +208,7 @@ namespace ren {
         deltaTime = options.fixedDeltaTime;
         this->timeSeconds = framesThisRun * static_cast<double>(options.fixedDeltaTime);
       }
+      this->deltaTime = deltaTime;
 
       {
         REN_PROFILE_SCOPE("Frame");

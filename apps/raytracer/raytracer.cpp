@@ -205,7 +205,7 @@ class RaytraceViewport : public ren::EditorViewport {
       throw std::runtime_error("PBR material has no emissiveFactor field");
     }
 
-    auto &mmb = ren::resource<ren::MegaMeshBuffer>();
+    auto &mmb = ren::Renderer::get().getMegaMeshBuffer();
     for (auto &r : preparedWorld->renderables) {
       if (r.mesh->getBVH() == nullptr) {
         continue;
@@ -321,7 +321,7 @@ class RaytraceViewport : public ren::EditorViewport {
   void runRaytracer(GraphRenderPassContext &ctx) {
     auto shader = ctx.encoder.bindGraphics(rtPSO);
     auto &arena = ctx.encoder.getArena();
-    auto &mmb = ren::resource<ren::MegaMeshBuffer>();
+    auto &mmb = ren::Renderer::get().getMegaMeshBuffer();
 
     auto *meshBuf = arena.push<StorageBuffer<shd::Mesh>>(meshes.size());
     meshBuf->copyFromHost(meshes.data(), meshes.size());
