@@ -5,6 +5,8 @@
 #include <ren/renderer/shader/ShaderModule.h>
 #include <ren/assets/AssetLibrary.h>
 #include <ren/assets/AssetSource.h>
+#include <ren/assets/DerivedAsset.h>
+#include <ren/assets/NativeAsset.h>
 #include <ren/core/Option.h>
 #include <sol/sol.hpp>
 #include <atomic>
@@ -116,6 +118,20 @@ namespace ren {
     // Throws if the importer, settings, source, or writes are invalid.
     json importFile(const std::filesystem::path &path);
 
+
+    // The runtime object of an asset. The first call loads it, and later calls return the same
+    // object, so the AssetManager keeps every resolved object. Call on the main thread, because a
+    // load can make GPU objects. Returns None for the null ID, an asset of another type, an ID that
+    // the library does not have, or a failed load. A failed load warns one time and is not tried again.
+    template <typename T>
+      requires std::derived_from<T, RuntimeAsset>
+    Option<ref<T>> resolve(AssetID id);
+
+    // Drop every resolved asset and cached failure. Runtime assets own GPU objects, so the
+    // application calls this before it destroys the renderer. Objects that other code still holds
+    // stay alive until that code drops them.
+    void releaseRuntimeAssets(void);
+
    private:
     // Run `work` with ren::backgroundWork as the one task. The caller checked that no task runs.
     void startTask(AssetActivity kind, std::function<void(void)> work);
@@ -152,6 +168,10 @@ namespace ren {
     // stats into the record and return true. Returns false if anything changed or is missing.
     bool refreshUnchangedRecord(const AssetEntry &entry);
 
+    // The cached object of `id`. On a miss, `load` makes the object from the library entry. Returns
+    // null if the library entry has another type than `type`, or the load failed.
+    ref<RuntimeAsset> findRuntimeAsset(AssetID id, AssetType type, const std::function<ref<RuntimeAsset>(const AssetEntry &)> &load);
+
     // The source that assets are loaded from.
     ren::MultiAssetSource source;
     ren::AssetLibrary library;
@@ -174,6 +194,10 @@ namespace ren {
     std::condition_variable taskFinished;
     Option<std::chrono::steady_clock::time_point> lastTaskFinished = None;
 
+    // Resolved runtime assets by ID. A failed load is null, so that it is not tried again. Only the
+    // main thread uses it.
+    std::map<AssetID, ref<RuntimeAsset>> runtimeAssets;
+
     // The pending list. The scan task writes it, and the main thread reads and dismisses.
     mutable std::mutex pendingMutex;
     std::vector<AssetID> pendingImports;
@@ -183,6 +207,66 @@ namespace ren {
   };
 
   AssetManager &getAssetManager();
+
+
+  // The asset type that a runtime type T loads from: T::TYPE for a native type, or the type of
+  // T::SourceAsset.
+  template <typename T>
+  constexpr AssetType runtimeAssetType(void) {
+    if constexpr (std::derived_from<T, NativeAsset>) {
+      return T::TYPE;
+    } else {
+      return T::SourceAsset::TYPE;
+    }
+  }
+
+
+  template <typename T>
+    requires std::derived_from<T, RuntimeAsset>
+  Option<ref<T>> AssetManager::resolve(AssetID id) {
+    if (id == UUID::null) {
+      return None;
+    }
+
+    auto load = [this](const AssetEntry &entry) -> ref<RuntimeAsset> {
+      if constexpr (std::derived_from<T, NativeAsset>) {
+        // A native file holds the file JSON. A derived bundle holds the content.
+        if (entry.kind == AssetKind::Native) {
+          auto file = source.loadJSON(entry.path);
+          if (!file) {
+            throw std::runtime_error("Cannot read " + entry.path);
+          }
+          return deserializeNativeAsset<T>(file.unwrap());
+        }
+        auto content = std::dynamic_pointer_cast<NativeContentAsset>(readDerivedAsset(source, entry.path));
+        if (!content) {
+          throw std::runtime_error("Bundle has no native content: " + entry.path);
+        }
+        return deserializeNativeAsset<T>(content->serializeNativeFile());
+      } else {
+        auto asset = readDerivedAsset(source, entry.path);
+        const auto *typed = dynamic_cast<const typename T::SourceAsset *>(asset.get());
+        if (!typed) {
+          throw std::runtime_error("Bundle has another asset class: " + entry.path);
+        }
+        return T::fromAsset(*typed);
+      }
+    };
+
+    auto asset = findRuntimeAsset(id, runtimeAssetType<T>(), load);
+    if (!asset) {
+      return None;
+    }
+
+    // Two runtime types can load from the same asset type, and the cache keeps the object of the
+    // first one that resolved the ID.
+    auto typed = std::dynamic_pointer_cast<T>(asset);
+    if (!typed) {
+      ren::warnln("Asset {} was resolved as another runtime type", id.to_string());
+      return None;
+    }
+    return Some(typed);
+  }
 
   bool loadAssetBytes(const std::string_view &path, std::vector<u8> &out);
 

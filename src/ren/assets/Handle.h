@@ -1,18 +1,15 @@
 #pragma once
 
-#include <ren/assets/Asset.h>
+#include <ren/assets/AssetManager.h>
 #include <ren/core/Option.h>
 
 namespace ren {
 
 
-  // T must be derived from a RuntimeAsset, and have a `static ref<T>
-  // load(DerivedAsset &asset)` method that loads the runtime asset from the
-  // asset.
+  // T is a RuntimeAsset that AssetManager::resolve() can load: a native type, or a type with a
+  // `SourceAsset` and `static ref<T> fromAsset(const SourceAsset &)`.
   template <typename T>
-  concept AssetTypeConstraint = std::derived_from<T, ren::RuntimeAsset> && requires(ren::Asset &asset) {
-    { T::load(static_cast<ren::Asset &>(asset)) } -> std::convertible_to<ren::ref<T>>;
-  };
+  concept AssetTypeConstraint = std::derived_from<T, ren::RuntimeAsset> && requires { runtimeAssetType<T>(); };
 
   // A handle is used in runtime to refer to a runtime asset. It is a small,
   // copyable struct that simply refers to an asset by its ID.  The handle does
@@ -38,10 +35,8 @@ namespace ren {
       return *this;
     }
 
-    Option<ref<T>> resolve() const {
-      // TODO: get the RuntimeAsset from the AssetManager by ID.
-      return None;
-    }
+    // The asset from the application's AssetManager. See AssetManager::resolve().
+    Option<ref<T>> resolve() const { return getAssetManager().resolve<T>(m_id); }
 
     AssetID id() const { return m_id; }
 

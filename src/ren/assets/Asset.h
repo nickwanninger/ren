@@ -70,8 +70,12 @@ namespace ren {
   };
 
 
+  // The base of objects that the engine uses at run time and loads from an asset, such as a
+  // Texture or a Material. AssetManager::resolve() keeps them by AssetID, so the object does not
+  // store its ID.
   class RuntimeAsset {
-    // TODO:
+   public:
+    virtual ~RuntimeAsset() = default;
   };
 
 

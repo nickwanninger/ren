@@ -18,7 +18,7 @@ namespace ren {
   // isStoredField() accepts: scalars, vectors and matrices whose names do not
   // start with '_'. Matrix values are arrays of columns. Use
   // deserializeNativeAsset() and serializeNativeAsset() for the whole file.
-  class Material : public NativeAsset {
+  class Material : public NativeAsset, public RuntimeAsset {
    public:
     static constexpr AssetType TYPE = AssetType::Material;
     // The version of the .material content.

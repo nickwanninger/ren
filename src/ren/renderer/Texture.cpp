@@ -1,3 +1,4 @@
+#include <ren/assets/TextureAsset.h>
 
 #include <ren/renderer/Texture.h>
 #include <ren/renderer/Buffer.h>
@@ -97,6 +98,14 @@ VkDescriptorSet ren::Texture::getImGui(void) {
         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
   }
   return imguiTextureID;
+}
+
+
+ren::ref<ren::Texture> ren::Texture::fromAsset(const TextureAsset &asset) {
+  const VkFormat format = asset.pixelFormat == PixelFormat::RGBA8_SRGB ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM;
+  // The constructor only reads the pixels, to copy them into a staging buffer.
+  auto *pixels = const_cast<u8 *>(asset.pixels.data());
+  return make<Texture>(asset.name, asset.width, asset.height, pixels, format);
 }
 
 

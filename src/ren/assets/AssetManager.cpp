@@ -336,6 +336,45 @@ namespace ren {
 
 
   //=========================
+  // Runtime assets
+  //=========================
+
+  void AssetManager::releaseRuntimeAssets(void) { runtimeAssets.clear(); }
+
+
+  ref<RuntimeAsset> AssetManager::findRuntimeAsset(AssetID id, AssetType type, const std::function<ref<RuntimeAsset>(const AssetEntry &)> &load) {
+    auto libraryEntry = library.find(id);
+
+    // A wrong type is the caller's error, not a property of the asset, so it is not cached: a
+    // caller that asks for the right type must still get the asset.
+    if (libraryEntry && libraryEntry->type != type) {
+      ren::warnln("Asset {} is a {}, not a {}", id.to_string(), json(libraryEntry->type).get<std::string>(), json(type).get<std::string>());
+      return nullptr;
+    }
+
+    auto cached = runtimeAssets.find(id);
+    if (cached != runtimeAssets.end()) {
+      return cached->second;
+    }
+
+    // A failure warns one time: the null entry stops later calls from loading again.
+    ref<RuntimeAsset> asset;
+    if (!libraryEntry) {
+      ren::warnln("Cannot load asset {}: the library has no asset with this ID", id.to_string());
+    } else {
+      try {
+        asset = load(*libraryEntry);
+      } catch (const std::exception &error) {
+        ren::warnln("Cannot load asset {}: {}", id.to_string(), error.what());
+      }
+    }
+    runtimeAssets.emplace(id, asset);
+    return asset;
+  }
+
+
+
+  //=========================
   // Import
   //=========================
 

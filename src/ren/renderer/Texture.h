@@ -2,6 +2,7 @@
 
 #include <ren/types.h>
 #include <ren/renderer/Image.h>
+#include <ren/assets/Asset.h>
 #include <ren/renderer/BindlessTexture.h>
 #include <ren/renderer/SamplerCache.h>
 #include <ren/core/Builder.h>
@@ -15,8 +16,13 @@ namespace ren {
 
 
   // A texture is just a 2D image with a sampler.
-  class Texture : ren::VulkanResource {
+  class TextureAsset;
+
+  class Texture : ren::VulkanResource, public RuntimeAsset {
    public:
+    // The CPU form that AssetManager::resolve() loads a Texture from.
+    using SourceAsset = TextureAsset;
+
     // Construct a texture with CPU side pixel data. Color data (the default)
     // is R8G8B8A8_SRGB. Pass R8G8B8A8_UNORM for data such as normals.
     // Use the load methods to create textures.
@@ -53,6 +59,9 @@ namespace ren {
                                       u8 *data = nullptr, VkFormat format = VK_FORMAT_R8G8B8A8_UNORM) {
       return make<Texture>(name, width, height, data, format);
     }
+
+    // Upload the pixels of a texture asset. Call on the main thread.
+    static ref<Texture> fromAsset(const TextureAsset &asset);
 
     static ref<Texture> createSinglePixel(const std::string_view &name, u8 r, u8 g, u8 b, u8 a, VkFormat format = VK_FORMAT_R8G8B8A8_UNORM);
 

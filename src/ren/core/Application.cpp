@@ -163,6 +163,8 @@ namespace ren {
     // An import task can make materials, which use the renderer's shader cache. The run loop
     // has stopped, so no tick() starts another task.
     assets.waitForIdle();
+    // Resolved assets own GPU objects, so they go before the renderer.
+    assets.releaseRuntimeAssets();
     this->renderer->waitForIdle();
     this->renderer->releaseCompletedFrames();
     // Not quite sure when to tear down lua yet.
