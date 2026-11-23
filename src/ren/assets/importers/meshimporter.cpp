@@ -2,9 +2,12 @@
 #include "MeshImporter.h"
 #include "ImportSource.h"
 #include <ren/assets/DerivedAsset.h>
+#include <ren/assets/Material.h>
+#include <ren/assets/NativeAsset.h>
 #include <ren/assets/Vertex.h>
 #include <ren/core/ThreadPool.h>
 
+#include <assimp/GltfMaterial.h>
 #include <assimp/Importer.hpp>
 #include <assimp/IOStream.hpp>
 #include <assimp/IOSystem.hpp>
@@ -148,6 +151,7 @@ namespace ren {
 
     importMeshes();
     importTextures();
+    importMaterials();
   }
 
 
@@ -432,6 +436,109 @@ namespace ren {
         context->writeDerived(*texture, name + (srgb ? "/sRGB" : "/linear"));
       }
     });
+  }
+
+
+
+
+  //=========================
+  // Materials
+  //=========================
+
+  // One Assimp material that a mesh uses.
+  struct MeshImporter::MaterialSource {
+    // The index in aiScene::mMaterials. Meshes refer to the material by this index.
+    u32 index = 0;
+    // The output name: the Assimp material name, or "material#<index>" without one. A second
+    // material with the same name becomes "<name>#1".
+    std::string localName;
+    const aiMaterial *material = nullptr;
+  };
+
+
+  // List the materials that a mesh uses, in index order. Assimp adds a default material that only
+  // meshes without a material use, so an unused material is not listed.
+  std::vector<MeshImporter::MaterialSource> MeshImporter::collectMaterials(void) const {
+    std::set<u32> used;
+    for (u32 i = 0; i < scene->mNumMeshes; ++i) {
+      used.insert(scene->mMeshes[i]->mMaterialIndex);
+    }
+
+    // Name every material, used or not, so that a material's name does not depend on which
+    // other materials the meshes use.
+    std::vector<MaterialSource> sources;
+    std::map<std::string, u32> counts;
+    for (u32 i = 0; i < scene->mNumMaterials; ++i) {
+      const auto *material = scene->mMaterials[i];
+      std::string name = material->GetName().C_Str();
+      if (name.empty()) {
+        name = "material#" + std::to_string(i);
+      }
+      auto count = counts[name]++;
+      if (count > 0) {
+        name += "#" + std::to_string(count);
+      }
+
+      if (used.contains(i)) {
+        sources.push_back({.index = i, .localName = std::move(name), .material = material});
+      }
+    }
+    return sources;
+  }
+
+
+  // Make a PBR material from the factors of an Assimp material.
+  // TODO: Set the texture fields to the IDs of the derived textures.
+  ref<Material> MeshImporter::makeMaterial(const MaterialSource &source) {
+    const auto &input = *source.material;
+    auto material = make<Material>("ren/core/pbr");
+
+    // The material data starts as zeros. Set defaults, so that a key that the file does not have
+    // does not give a black or mirror-like material. The glTF importer always writes the factors,
+    // so these apply to other formats. Metallic is 0, not the glTF default of 1, because such
+    // files are mostly not metal.
+    material->setColor("baseColor", glm::vec4(1.0f));
+    material->setColor("emissiveFactor", glm::vec4(0.0f));
+    material->setFloat("metallic", 0.0f);
+    material->setFloat("roughness", 1.0f);
+    material->setFloat("occlusionStrength", 1.0f);
+
+    aiColor4D color;
+    if (input.Get(AI_MATKEY_COLOR_DIFFUSE, color) == aiReturn_SUCCESS) {
+      material->setColor("baseColor", glm::vec4(color.r, color.g, color.b, color.a));
+    }
+    if (input.Get(AI_MATKEY_COLOR_EMISSIVE, color) == aiReturn_SUCCESS) {
+      material->setColor("emissiveFactor", glm::vec4(color.r, color.g, color.b, color.a));
+    }
+
+    float factor = 0.0f;
+    if (input.Get(AI_MATKEY_METALLIC_FACTOR, factor) == aiReturn_SUCCESS) {
+      material->setFloat("metallic", glm::clamp(factor, 0.0f, 1.0f));
+    }
+    if (input.Get(AI_MATKEY_ROUGHNESS_FACTOR, factor) == aiReturn_SUCCESS) {
+      material->setFloat("roughness", glm::clamp(factor, 0.0f, 1.0f));
+    }
+    if (input.Get(AI_MATKEY_GLTF_TEXTURE_STRENGTH(aiTextureType_LIGHTMAP, 0), factor) == aiReturn_SUCCESS) {
+      material->setFloat("occlusionStrength", glm::clamp(factor, 0.0f, 1.0f));
+    }
+
+    int twoSided = 0;
+    if (input.Get(AI_MATKEY_TWOSIDED, twoSided) == aiReturn_SUCCESS && twoSided) {
+      material->getPSO().cullMode = CullMode::None;
+    }
+    return material;
+  }
+
+
+  // Write one derived material for each material that a mesh uses. The materials are made one at
+  // a time, because each one takes the shader cache lock.
+  void MeshImporter::importMaterials(void) {
+    for (const auto &source : collectMaterials()) {
+      auto material = makeMaterial(source);
+      NativeContentAsset asset(AssetType::Material, material->serializeContent());
+      asset.name = source.localName;
+      context->writeDerived(asset, source.localName);
+    }
   }
 
 }  // namespace ren

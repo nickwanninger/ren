@@ -6,6 +6,8 @@
 
 #include <ren/assets/AssetManager.h>
 #include <ren/assets/DerivedAsset.h>
+#include <ren/assets/Material.h>
+#include <ren/assets/NativeAsset.h>
 #include <ren/assets/MeshAsset.h>
 #include <ren/assets/TextureAsset.h>
 #include <ren/assets/importers/Importer.h>
@@ -370,12 +372,21 @@ static void runImportTests() {
   auto assets = ren::readImportedAssets(manager.getSource(), record);
   size_t meshes = 0;
   size_t textures = 0;
+  size_t materials = 0;
   bool srgb = false;
   bool linear = false;
   for (const auto &asset : assets) {
     if (const auto *mesh = asset->as<ren::MeshAsset>()) {
       ++meshes;
       verify(mesh->indices.size() == 3 && mesh->vertices.size() == 3 && !mesh->bvh.nodes.empty(), "Geometry or baked BVH is missing");
+    } else if (const auto *content = dynamic_cast<const ren::NativeContentAsset *>(asset.get())) {
+      ++materials;
+      // The fixture has no factors, so the glTF defaults apply: metallic and roughness are 1.
+      auto material = ren::deserializeNativeAsset<ren::Material>(content->serializeNativeFile());
+      verify(content->type == ren::AssetType::Material && material->getAssetID() == content->id, "Material output has a wrong type or ID");
+      verify(material->getValue("baseColor") == json::array({1.0, 1.0, 1.0, 1.0}) && material->getValue("metallic") == 1.0 &&
+                 material->getValue("roughness") == 1.0,
+             "Material factors differ from the glTF defaults");
     } else {
       ++textures;
       const auto &texture = *asset->as<ren::TextureAsset>();
@@ -384,7 +395,7 @@ static void runImportTests() {
       linear |= texture.pixelFormat == ren::PixelFormat::RGBA8_UNORM;
     }
   }
-  verify(meshes == 1 && textures == 2 && srgb && linear, "Import lost geometry or a texture format");
+  verify(meshes == 1 && textures == 2 && materials == 1 && srgb && linear, "Import lost geometry, a material, or a texture format");
 
   // A failure must retain the last successful record, even with a changed source.
   std::ofstream(root / "triangle.glb", std::ios::binary | std::ios::trunc) << "invalid";
@@ -402,7 +413,7 @@ static void runImportTests() {
   rejects([&]() { manager.importFile("external.gltf"); }, "Missing texture import succeeded");
   verify(ren::readImportRecord(manager.getSource(), externalID) == external, "Partial import replaced the published record");
   std::filesystem::remove(root / "geometry.bin");
-  verify(ren::readImportedAssets(manager.getSource(), ren::readImportRecord(manager.getSource(), externalID)).size() == 3,
+  verify(ren::readImportedAssets(manager.getSource(), ren::readImportRecord(manager.getSource(), externalID)).size() == 4,
          "Bundles required external inputs");
 
   auto changedOwner = record;

@@ -10,8 +10,11 @@ struct aiScene;
 
 namespace ren {
 
-  // Converts static geometry, baked BVHs, and model textures through Assimp.
-  // import() reads the scene, then writes one bundle per mesh and one per texture format of each image.
+  class Material;
+
+  // Converts static geometry, baked BVHs, model textures, and materials through Assimp.
+  // import() reads the scene, then writes one bundle per mesh, one per texture format of each image,
+  // and one per material.
   class MeshImporter : public Importer {
    public:
     struct Options {
@@ -34,6 +37,7 @@ namespace ren {
     class IO;
 
     struct Image;
+    struct MaterialSource;
 
     Options options;
 
@@ -57,6 +61,11 @@ namespace ren {
     std::map<std::string, Image> collectImages(void) const;
     ref<TextureAsset> decodeImage(const std::string &name, const Image &image) const;
     static PixelFormat getSlotFormat(int textureType);
+
+    // Materials
+    void importMaterials(void);
+    std::vector<MaterialSource> collectMaterials(void) const;
+    static ref<Material> makeMaterial(const MaterialSource &source);
   };
 
 }  // namespace ren
