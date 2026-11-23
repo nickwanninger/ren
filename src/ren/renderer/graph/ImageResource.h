@@ -2,7 +2,7 @@
 #include <ren/renderer/Image.h>
 #include <ren/renderer/graph/Resource.h>
 #include <ren/renderer/Sampler.h>
-#include <ren/renderer/TextureHandle.h>
+#include <ren/renderer/BindlessTexture.h>
 
 namespace ren {
 
@@ -19,7 +19,7 @@ namespace ren {
 
     // Return the bindless handle of the image and its sampler. The first call
     // adds the image to the bindless heap.
-    TextureHandle textureHandle() const;
+    BindlessTexture textureHandle() const;
 
     // Record one image barrier from the last accesses to the next access. The
     // accesses in from are one write or several reads, so they have one layout.

@@ -9,7 +9,7 @@ struct SquareAConstants {
   float2 offset;
   float scale;
   float pulseAmount;
-  TextureHandle image;
+  BindlessTexture image;
 };
 
 [[vk::push_constant]]

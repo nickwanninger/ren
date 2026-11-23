@@ -16,16 +16,15 @@ namespace ren {
     auto operator<=>(const SamplerIndex&) const = default;
   };
 
-  struct TextureHandle {
+  struct BindlessTexture {
     u32 value = 0;
-    auto operator<=>(const TextureHandle&) const = default;
+    auto operator<=>(const BindlessTexture&) const = default;
 
     static constexpr u32 samplerBits = 8;
     static constexpr u32 samplerMask = (1u << samplerBits) - 1u;
     static constexpr u32 maxImageIndex = (1u << 24) - 1u;
 
-    static constexpr TextureHandle pack(
-        SampledImageIndex image, SamplerIndex sampler) {
+    static constexpr BindlessTexture pack(SampledImageIndex image, SamplerIndex sampler) {
       return {(image.value << samplerBits) | (sampler.value & samplerMask)};
     }
     constexpr SampledImageIndex image() const { return {value >> samplerBits}; }
@@ -35,6 +34,6 @@ namespace ren {
 
   static_assert(sizeof(SampledImageIndex) == sizeof(u32));
   static_assert(sizeof(SamplerIndex) == sizeof(u32));
-  static_assert(sizeof(TextureHandle) == sizeof(u32));
-  static_assert(std::is_trivially_copyable_v<TextureHandle>);
+  static_assert(sizeof(BindlessTexture) == sizeof(u32));
+  static_assert(std::is_trivially_copyable_v<BindlessTexture>);
 }  // namespace ren

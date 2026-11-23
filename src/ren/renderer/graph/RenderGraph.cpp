@@ -485,7 +485,7 @@ namespace ren {
   }
 
 
-  TextureHandle ResourceResolver::texture(GraphHandle handle) const { return get<ImageStorage>(handle)->textureHandle(); }
+  BindlessTexture ResourceResolver::texture(GraphHandle handle) const { return get<ImageStorage>(handle)->textureHandle(); }
 
 
   ref<ImageStorage> RenderGraph::displayImage(GraphHandle handle) {

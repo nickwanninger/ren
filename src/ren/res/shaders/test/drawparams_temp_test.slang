@@ -12,7 +12,7 @@ namespace glorp {
 
 struct Material {
     [Source("default-white.png")]
-    TextureHandle textureIndex;
+    BindlessTexture textureIndex;
     [Color]
     float4 color;
     [FloatRange(0.0, 1.0)]

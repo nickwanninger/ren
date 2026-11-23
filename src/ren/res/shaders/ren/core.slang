@@ -36,7 +36,7 @@ public SamplerState getSampler(uint index) { return __ren_samplers[NonUniformRes
 // Importantly, REN doesn't expose CombinedImageSamplers to the shader. Instead
 // we provide a small struct that packs the image sampler indices into a single
 // uint, and provides a Sample() function to sample the texture.
-public struct TextureHandle {
+public struct BindlessTexture {
   public uint packed;
   public uint imageIndex() { return packed >> 8; }
   public uint samplerIndex() { return packed & 0xff; }

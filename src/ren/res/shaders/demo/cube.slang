@@ -15,7 +15,7 @@ struct Material {
   uint2 H;
 
   float4 color;
-  TextureHandle tex;
+  BindlessTexture tex;
 };
 
 [[vk::push_constant]]

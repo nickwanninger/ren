@@ -10,13 +10,13 @@ public struct PBRParams {
 
   public float _padding;
 
-  public TextureHandle baseColorTexture;
-  public TextureHandle metallicRoughnessTexture;
-  public TextureHandle emissiveTexture;
-  public TextureHandle normalTexture;
+  public BindlessTexture baseColorTexture;
+  public BindlessTexture metallicRoughnessTexture;
+  public BindlessTexture emissiveTexture;
+  public BindlessTexture normalTexture;
   // R holds the ambient occlusion. glTF often packs it into the same image
   // as metallicRoughnessTexture.
-  public TextureHandle occlusionTexture;
+  public BindlessTexture occlusionTexture;
 }
 
 // Single-scattering GGX with dielectric or metallic Fresnel.

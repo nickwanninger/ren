@@ -28,10 +28,10 @@ static const float kSampleLevel = 2.0f;
 
 [[vk::push_constant]]
 cbuffer root {
-  TextureHandle skyboxHdri;
+  BindlessTexture skyboxHdri;
   // The running average of the earlier frames. Not valid when
   // accumulatedFrames is 0.
-  TextureHandle history;
+  BindlessTexture history;
   Vertex *vertices;
   uint *indices;
   uint numMeshes;

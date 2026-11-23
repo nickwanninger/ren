@@ -377,7 +377,7 @@ class RaytraceViewport : public ren::EditorViewport {
     root.set("lightWeightTotal", lightWeightTotal);
     root.set("lightSampling", static_cast<u32>(lightSampling));
     // The shader reads the history only when accumulatedFrames is not 0.
-    root.set("history", accumulatedFrames > 0 ? ctx.resources.texture(previousScene) : TextureHandle{});
+    root.set("history", accumulatedFrames > 0 ? ctx.resources.texture(previousScene) : BindlessTexture{});
 
 
     root.set("debugView", debugView);

@@ -2,7 +2,7 @@
 
 #include <ren/types.h>
 #include <ren/renderer/Image.h>
-#include <ren/renderer/TextureHandle.h>
+#include <ren/renderer/BindlessTexture.h>
 #include <ren/renderer/SamplerCache.h>
 #include <ren/core/Builder.h>
 #include <ren/core/Instrumentation.h>
@@ -78,9 +78,7 @@ namespace ren {
     // across frames.
     SampledImageIndex sampledIndex() const { return image->sampledIndex(); }
     SamplerIndex samplerIndex() const;
-    TextureHandle handle() const {
-      return TextureHandle::pack(sampledIndex(), samplerIndex());
-    }
+    BindlessTexture bindless() const { return BindlessTexture::pack(sampledIndex(), samplerIndex()); }
     const ref<Sampler>& getSamplerRef() const { return sampler; }
 
     VkDescriptorSet getImGui(void);

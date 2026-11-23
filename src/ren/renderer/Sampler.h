@@ -2,7 +2,7 @@
 
 #include <ren/types.h>
 #include <ren/renderer/vulkan/Vulkan.h>
-#include <ren/renderer/TextureHandle.h>
+#include <ren/renderer/BindlessTexture.h>
 
 namespace ren {
 

@@ -3,8 +3,8 @@ import ren.surface;
 
 [[vk::push_constant]]
 cbuffer root {
-  TextureHandle source;
-  TextureHandle detail;
+  BindlessTexture source;
+  BindlessTexture detail;
   float2 sourceTexelSize;
   float2 detailTexelSize;
   uint upsample;

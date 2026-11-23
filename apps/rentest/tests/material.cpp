@@ -200,7 +200,7 @@ namespace {
     void onSetup(rentest::TestContext &ctx) override {
       auto fields = kStoredFields;
       fields["_padding"] = {{"type", "float"}, {"value", 3.0}};
-      fields["texture"] = {{"type", "TextureHandle"}, {"value", "a41e93c07b2d5f18"}};
+      fields["texture"] = {{"type", "BindlessTexture"}, {"value", "a41e93c07b2d5f18"}};
       fields["removed"] = {{"type", "float"}, {"value", 1.0}};
       fields["scalar"]["type"] = "int";  // A retyped field keeps its default.
 

@@ -6,7 +6,7 @@ import ren.surface;
 
 [[vk::push_constant]]
 cbuffer root {
-  TextureHandle history;
+  BindlessTexture history;
   float4 step;
 }
 

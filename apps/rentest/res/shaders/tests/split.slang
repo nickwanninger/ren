@@ -5,8 +5,8 @@ import ren.surface;
 
 [[vk::push_constant]]
 cbuffer root {
-  TextureHandle left;
-  TextureHandle right;
+  BindlessTexture left;
+  BindlessTexture right;
 }
 
 export struct Surface : IFullscreenSurface = Split;

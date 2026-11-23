@@ -33,10 +33,10 @@
                                                                     [0.0, 0.0, 1.0, 0.0],
                                                                     [0.0, 0.0, 0.0, 1.0]]},
 
-        "baseColorTexture":         {"type": "TextureHandle", "value": "a41e93c07b2d5f18"},
-        "metallicRoughnessTexture": {"type": "TextureHandle", "value": null},
-        "emissiveTexture":          {"type": "TextureHandle", "value": null},
-        "normalTexture":            {"type": "TextureHandle", "value": "0d7b6e2f95c1a843"},
-        "occlusionTexture":         {"type": "TextureHandle", "value": null}
+        "baseColorTexture":         {"type": "BindlessTexture", "value": "a41e93c07b2d5f18"},
+        "metallicRoughnessTexture": {"type": "BindlessTexture", "value": null},
+        "emissiveTexture":          {"type": "BindlessTexture", "value": null},
+        "normalTexture":            {"type": "BindlessTexture", "value": "0d7b6e2f95c1a843"},
+        "occlusionTexture":         {"type": "BindlessTexture", "value": null}
     }
 }

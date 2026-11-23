@@ -33,7 +33,7 @@ namespace {
     auto &accumulate = graph.addTask<FullscreenTask>("accumulate", "tests/accumulate",
                                                      [previous, step](ren::ShaderCursor &root, const ren::GraphRenderPassContext &ctx) {
                                                        const bool hasHistory = ctx.resources.storage(*previous) != nullptr;
-                                                       root.set("history", hasHistory ? ctx.resources.texture(*previous) : ren::TextureHandle{});
+                                                       root.set("history", hasHistory ? ctx.resources.texture(*previous) : ren::BindlessTexture{});
                                                        root.set("step", step);
                                                      });
 

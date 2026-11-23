@@ -3,8 +3,8 @@ import ren.surface;
 
 [[vk::push_constant]]
 cbuffer root {
-  TextureHandle scene;
-  TextureHandle bloom;
+  BindlessTexture scene;
+  BindlessTexture bloom;
   float2 bloomTexelSize;
   float strength;
   float exposure;

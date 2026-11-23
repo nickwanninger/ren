@@ -10,7 +10,7 @@ import ren.surface;
 [[vk::push_constant]]
 cbuffer root {
   // The G-buffer depth (D32, [0, 1], 1 is the far plane).
-  TextureHandle depth;
+  BindlessTexture depth;
   // The size of the SSAO target in pixels. It selects the kernel rotation of
   // each pixel.
   float2 targetSize;

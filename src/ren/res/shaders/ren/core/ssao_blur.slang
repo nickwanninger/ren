@@ -14,11 +14,11 @@ import ren.surface;
 [[vk::push_constant]]
 cbuffer root {
   // The SSAO visibility in R.
-  TextureHandle ssao;
+  BindlessTexture ssao;
   // The G-buffer depth (D32, [0, 1], 1 is the far plane).
-  TextureHandle depth;
+  BindlessTexture depth;
   // The G-buffer world-space normal, stored raw.
-  TextureHandle normal;
+  BindlessTexture normal;
   // 1 / the size of the SSAO image.
   float2 ssaoTexelSize;
   // The size of the depth image. It can be larger than the SSAO image.

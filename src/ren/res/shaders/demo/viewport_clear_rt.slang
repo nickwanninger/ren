@@ -9,7 +9,7 @@ struct Varying {
 
 [[vk::push_constant]]
 cbuffer pc {
-  TextureHandle skyboxHdri;
+  BindlessTexture skyboxHdri;
   uint raysPerPixel;
   float focusDistance;
   float lensRadius;

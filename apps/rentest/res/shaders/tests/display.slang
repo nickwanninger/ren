@@ -12,7 +12,7 @@ import ren.surface;
 
 [[vk::push_constant]]
 cbuffer root {
-  TextureHandle image;
+  BindlessTexture image;
   // Where the image is in the window, in window uv: (min x, min y, max x, max y).
   float4 rect;
   // Not zero if the values of the image must decode from sRGB.

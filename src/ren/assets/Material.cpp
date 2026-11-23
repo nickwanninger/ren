@@ -469,9 +469,9 @@ namespace ren {
 
   void Material::setTexture(std::string_view name, const ref<Texture> &texture) {
     const auto &target = field(name);
-    auto handle = texture->handle();
+    auto bindless = texture->bindless();
     // TODO: validate that the target is a texture type.
-    writeField(target, ren::ByteSpan(handle));
+    writeField(target, ren::ByteSpan(bindless));
     boundTextures[name.data()] = texture;
   }
 

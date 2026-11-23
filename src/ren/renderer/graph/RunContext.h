@@ -2,7 +2,7 @@
 #include <ren/renderer/CommandEncoder.h>
 #include <ren/renderer/graph/Resource.h>
 #include <ren/renderer/FrameGlobals.h>
-#include <ren/renderer/TextureHandle.h>
+#include <ren/renderer/BindlessTexture.h>
 
 namespace ren {
   class RenderGraph;
@@ -46,7 +46,7 @@ namespace ren {
     // Return the bindless handle of an image, for shaders that sample it. The
     // first call for an image adds it to the bindless heap. Throws for history
     // that is not available.
-    TextureHandle texture(GraphHandle) const;
+    BindlessTexture texture(GraphHandle) const;
 
     // Return the storage of a handle as type T. Throws if the storage is null
     // or of a different type.

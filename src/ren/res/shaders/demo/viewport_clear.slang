@@ -6,15 +6,15 @@ import ren.surface;
 [[vk::push_constant]]
 cbuffer root {
   float ssaoContrast;
-  TextureHandle skyboxHdri;
+  BindlessTexture skyboxHdri;
   // The G-buffer albedo (linear), world-space normal (raw), depth, and the
   // blurred SSAO visibility.
-  TextureHandle albedo;
-  TextureHandle normal;
+  BindlessTexture albedo;
+  BindlessTexture normal;
   // R is metallic, G is roughness, and B is material occlusion.
-  TextureHandle metallicRoughness;
-  TextureHandle depth;
-  TextureHandle ssao;
+  BindlessTexture metallicRoughness;
+  BindlessTexture depth;
+  BindlessTexture ssao;
 }
 
 // The direction points from the surface toward the sun.

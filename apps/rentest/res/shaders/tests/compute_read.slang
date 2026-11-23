@@ -5,7 +5,7 @@
 import ren.core;
 
 struct Args {
-  TextureHandle image;
+  BindlessTexture image;
   float4 *output;
 };
 

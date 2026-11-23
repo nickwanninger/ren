@@ -10,7 +10,7 @@ namespace ren {
     if (!texture) {
       throw std::invalid_argument("ShaderCursor cannot bind a null Texture");
     }
-    set(texture->handle());
+    set(texture->bindless());
   }
 
   void ShaderCursor::set(const ref<Image>& image) {

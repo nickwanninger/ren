@@ -22,7 +22,7 @@ struct MaterialFields : ISurface {
     // The file skips names that start with '_'.
     float _padding;
     // Texture fields come in a later step.
-    TextureHandle texture;
+    BindlessTexture texture;
   }
 
   static GBufferOutput shade(SurfaceVarying v, Params *params) {

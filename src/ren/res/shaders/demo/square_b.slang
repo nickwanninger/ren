@@ -14,7 +14,7 @@ struct SquareBTransform {
 struct SquareBConstants {
   SquareBTransform transform;
   float4 tint;
-  TextureHandle pattern;
+  BindlessTexture pattern;
 };
 
 [[vk::push_constant]]

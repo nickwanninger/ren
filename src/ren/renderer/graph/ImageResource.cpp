@@ -48,7 +48,7 @@ namespace ren {
   }
 
 
-  TextureHandle ImageStorage::textureHandle() const { return TextureHandle::pack(image->sampledIndex(), sampler->index()); }
+  BindlessTexture ImageStorage::textureHandle() const { return BindlessTexture::pack(image->sampledIndex(), sampler->index()); }
 
 
   void ImageStorage::transition(RecordContext &ctx, const std::vector<GraphAccess> &from, GraphAccess to) const {

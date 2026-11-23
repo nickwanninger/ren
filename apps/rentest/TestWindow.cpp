@@ -310,7 +310,7 @@ namespace rentest {
 
     auto shader = pass.bindGraphics(displayPso);
     auto root = shader.root("root");
-    root.set("image", ren::TextureHandle::pack(source->sampledIndex(), sampler.index()));
+    root.set("image", ren::BindlessTexture::pack(source->sampledIndex(), sampler.index()));
     root.set("rect", rect);
     root.set("decodeSrgb", decodeSrgb);
     shader.drawFullscreenTriangle();
