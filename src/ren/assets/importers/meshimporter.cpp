@@ -261,12 +261,22 @@ namespace ren {
   }
 
 
-  // The local name of each mesh, by mesh index. A mesh takes its name from the first node that uses
-  // it: "<node>/<k>", where k is the index of the mesh in that node. Blender writes object names to
-  // nodes and splits an object into one mesh per used material slot, so a rename in Blender changes
-  // the ID and an added object or material does not. A second node with the same name becomes
-  // "<node>#1". A mesh that no node uses is "mesh:<mesh name>#<index>".
-  std::vector<std::string> MeshImporter::nameMeshes(void) const {
+  // One Assimp mesh of the scene.
+  struct MeshImporter::MeshSource {
+    // The index in aiScene::mMeshes. Nodes refer to the mesh by this index.
+    u32 index = 0;
+    // The output name. A mesh takes its name from the first node that uses it: "<node>/<k>", where k
+    // is the index of the mesh in that node. Blender writes object names to nodes and splits an
+    // object into one mesh per used material slot, so a rename in Blender changes the ID and an
+    // added object or material does not. A second node with the same name becomes "<node>#1". A
+    // mesh that no node uses is "mesh:<mesh name>#<index>".
+    std::string localName;
+    const aiMesh *mesh = nullptr;
+  };
+
+
+  // List every mesh of the scene, in index order, with its local name.
+  std::vector<MeshImporter::MeshSource> MeshImporter::collectMeshes(void) const {
     std::vector<std::string> names(scene->mNumMeshes);
     std::map<std::string, u32> nodeNames;
 
@@ -295,20 +305,24 @@ namespace ren {
       }
     }
 
+    std::vector<MeshSource> sources;
+    sources.reserve(scene->mNumMeshes);
     for (u32 i = 0; i < scene->mNumMeshes; ++i) {
+      const auto *mesh = scene->mMeshes[i];
       if (names[i].empty()) {
-        names[i] = "mesh:" + std::string(scene->mMeshes[i]->mName.C_Str()) + "#" + std::to_string(i);
+        names[i] = "mesh:" + std::string(mesh->mName.C_Str()) + "#" + std::to_string(i);
       }
+      sources.push_back({.index = i, .localName = std::move(names[i]), .mesh = mesh});
     }
-    return names;
+    return sources;
   }
 
 
   void MeshImporter::importMeshes(void) {
-    auto names = nameMeshes();
-    parallelImport(scene->mNumMeshes, [&](size_t i) {
-      const auto &mesh = *scene->mMeshes[i];
-      const auto &name = names[i];
+    auto sources = collectMeshes();
+    parallelImport(sources.size(), [&](size_t i) {
+      const auto &mesh = *sources[i].mesh;
+      const auto &name = sources[i].localName;
       if (!(mesh.mPrimitiveTypes & aiPrimitiveType_TRIANGLE)) {
         context->warn("Skipped non-triangle mesh: " + name);
         return;

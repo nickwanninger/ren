@@ -36,6 +36,7 @@ namespace ren {
     class Stream;
     class IO;
 
+    struct MeshSource;
     struct Image;
     struct MaterialSource;
 
@@ -51,7 +52,7 @@ namespace ren {
 
     // Geometry
     void importMeshes(void);
-    std::vector<std::string> nameMeshes(void) const;
+    std::vector<MeshSource> collectMeshes(void) const;
     static MeshAsset importGeometry(const aiMesh &source);
     static Vertex readVertex(const aiMesh &source, u32 i);
     static void optimizeMesh(MeshAsset &mesh);
