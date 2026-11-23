@@ -10,7 +10,6 @@
 #include <ren/assets/Mesh.h>
 #include <imgui/misc/cpp/imgui_stdlib.h>
 #include "AuthoringSketch.h"
-#include "ImportTest.h"
 #include "LibraryTest.h"
 #include <algorithm>
 #include <chrono>
@@ -24,7 +23,6 @@ static ren::Flag<bool> importOnly("import-only", false, "Import one file without
 static ren::Flag<std::string> inspectImport("inspect-import", "", "Verify and inspect an import by source ID without a GPU");
 static ren::Flag<std::string> loadImport("load-import", "", "Load an import by source ID and upload its bundles to the GPU");
 static ren::Flag<bool> verifyImportGPU("verify-import-gpu", false, "Exit after one successful bundle upload test");
-static ren::Flag<bool> testImport("test-import", false, "Verify one-file import and bundle loading without a GPU");
 static ren::Flag<bool> testLibrary("test-library", false, "Verify asset library scans without a GPU");
 
 // List the files of all asset sources, as they are on disk. The Library tab shows what the
@@ -436,9 +434,6 @@ int main(int argc, char *argv[]) {
       sourceFlag->set(assetRoot.get());
     }
 
-    if (testImport.get()) {
-      return runImportTests();
-    }
     if (testLibrary.get()) {
       return runLibraryTests();
     }

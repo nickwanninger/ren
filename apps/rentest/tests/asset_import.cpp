@@ -1,4 +1,9 @@
-#include "ImportTest.h"
+// Tests of one-file import, publication, baked data, and loading after the source is removed.
+// The tests make no viewport, so they have no golden image. They run in rentest, because mesh
+// imports make materials, and a material needs the renderer's shader cache.
+
+#include "RenderTest.h"
+
 #include <ren/assets/AssetManager.h>
 #include <ren/assets/DerivedAsset.h>
 #include <ren/assets/MeshAsset.h>
@@ -269,7 +274,8 @@ namespace {
 }  // namespace
 
 
-int runImportTests() {
+// verify() and rejects() throw, and an exception from a hook fails the test.
+static void runImportTests() {
   {
     TemporaryAssets scanAssets;
     makeFixture(scanAssets.root);
@@ -416,5 +422,16 @@ int runImportTests() {
           "Truncated bundle passed validation");
   ren::println(
       "Import tests passed: texture options, importer dispatch, stable IDs, stable settings, publication, baked BVHs, pixels, dependencies, source-free loading, invalid bundles");
-  return 0;
 }
+
+
+namespace {
+
+  class AssetImport : public rentest::RenderTest {
+    void onSetup(rentest::TestContext &) override { runImportTests(); }
+  };
+
+}  // namespace
+
+
+REN_RENDER_TEST("assets.import", AssetImport, {.frames = 1, .expect = "No image. The checks are in the log."});
