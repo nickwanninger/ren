@@ -5,7 +5,6 @@
 #include <ren/renderer/shader/ShaderModule.h>
 #include <ren/assets/AssetLibrary.h>
 #include <ren/assets/AssetSource.h>
-#include <ren/assets/AssetStore.h>
 #include <ren/core/Option.h>
 #include <sol/sol.hpp>
 #include <atomic>

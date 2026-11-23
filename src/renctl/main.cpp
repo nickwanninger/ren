@@ -1,4 +1,4 @@
-// renctl: command-line tool for the asset store, in the style of git porcelain.
+// renctl: command-line tool for ren assets, in the style of git porcelain.
 //
 //   renctl [-C <dir>] <command> [<args>]
 //
@@ -17,40 +17,19 @@ struct GlobalOptions {
 };
 
 
-// Creates the asset manager the same way the engine does. Returns nullptr if
-// there is no store under the root: the asset manager creates <root>/store
-// when it starts, and a read-only command must not do that.
-static std::unique_ptr<ren::AssetManager> openAssets(const GlobalOptions &global) {
-  std::error_code ec;
-  if (!std::filesystem::is_directory(std::filesystem::path(global.root) / ren::ASSET_STORE_DIR, ec)) {
-    fmt::print(stderr, "renctl: no store at '{}/{}'\n", global.root, ren::ASSET_STORE_DIR);
-    return nullptr;
-  }
-
-  auto am = std::make_unique<ren::AssetManager>();
-  am->addDefaultSources(global.root);
-  return am;
-}
-
-
 // -------------------------- viewbundle -------------------------- //
 
 struct ViewBundleOptions {
-  std::string target;  // a file path, or a store key
+  std::string target;  // a bundle file path
   bool noHeader = false;
 };
 
-// Reads the bundle file at `target`, or data.blob of the store entry `target`.
-static bool readBundleFile(const GlobalOptions &global, const std::string &target, std::vector<u8> &out) {
-  std::error_code ec;
+// Reads the bundle file at `target`.
+static bool readBundleFile(const std::string &target, std::vector<u8> &out) {
   std::filesystem::path path = target;
-  if (!std::filesystem::is_regular_file(path, ec)) {
-    path = std::filesystem::path(global.root) / ren::ASSET_STORE_DIR / target / "data.blob";
-  }
-
   std::ifstream ifs(path, std::ios::binary);
   if (!ifs) {
-    fmt::print(stderr, "renctl: '{}' is not a file or a store key\n", target);
+    fmt::print(stderr, "renctl: cannot open '{}'\n", target);
     return false;
   }
   out.assign(std::istreambuf_iterator<char>(ifs), std::istreambuf_iterator<char>());
@@ -62,7 +41,7 @@ static bool readBundleFile(const GlobalOptions &global, const std::string &targe
 // problems are reported, not only the first one.
 static int runViewBundle(const GlobalOptions &global, const ViewBundleOptions &opts) {
   std::vector<u8> data;
-  if (!readBundleFile(global, opts.target, data)) {
+  if (!readBundleFile(opts.target, data)) {
     return 1;
   }
 
@@ -176,7 +155,7 @@ static int runViewBundle(const GlobalOptions &global, const ViewBundleOptions &o
 static void addViewBundleCommand(CLI::App &app, const GlobalOptions &global, int &exitCode) {
   auto opts = std::make_shared<ViewBundleOptions>();
   auto *cmd = app.add_subcommand("viewbundle", "Print the header of a bundle and validate its blob layout");
-  cmd->add_option("target", opts->target, "Bundle file, or store key of a bundle entry")->required();
+  cmd->add_option("target", opts->target, "Bundle file")->required();
   cmd->add_flag("--no-header", opts->noHeader, "Do not print the JSON header");
   cmd->callback([&global, &exitCode, opts] { exitCode = runViewBundle(global, *opts); });
 }
@@ -185,11 +164,11 @@ static void addViewBundleCommand(CLI::App &app, const GlobalOptions &global, int
 // ----------------------------- main ----------------------------- //
 
 int main(int argc, char **argv) {
-  CLI::App app{"renctl: manage a ren asset store"};
+  CLI::App app{"renctl: inspect ren assets"};
   app.require_subcommand(1);
 
   GlobalOptions global;
-  app.add_option("-C,--root", global.root, "Asset directory that contains the store")->capture_default_str();
+  app.add_option("-C,--root", global.root, "Asset directory")->capture_default_str();
 
   int exitCode = 0;
   addViewBundleCommand(app, global, exitCode);

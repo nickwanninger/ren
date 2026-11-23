@@ -105,7 +105,6 @@ void testSaxpy(void) {
 }
 
 
-#include <ren/assets/AssetStore.h>
 
 int main(int argc, char* argv[]) {
 
