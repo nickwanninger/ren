@@ -76,7 +76,7 @@ static void libraryTab(ren::eui::Ui &ui) {
   }
   static const char *activities[] = {"Idle", "Scanning", "Importing"};
   ImGui::SameLine();
-  ImGui::Text("Activity: %s  Last task: %.2f ms  Tasks: %llu", activities[static_cast<int>(manager.getActivity())], manager.getLastTaskMilliseconds(),
+  ImGui::Text("DeltaTime: %f ms  Activity: %s  Last task: %.2f ms  Tasks: %llu", ren::deltaTime(), activities[static_cast<int>(manager.getActivity())], manager.getLastTaskMilliseconds(),
               static_cast<unsigned long long>(manager.getFinishedTaskCount()));
 
 

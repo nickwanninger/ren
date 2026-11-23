@@ -33,60 +33,6 @@ static std::unique_ptr<ren::AssetManager> openAssets(const GlobalOptions &global
 }
 
 
-// ---------------------------- verify ---------------------------- //
-
-struct VerifyOptions {
-  std::vector<std::string> keys;  // empty = all entries
-  bool quiet = false;
-};
-
-static const char *describe(ren::AssetStore::VerifyResult result) {
-  switch (result) {
-    case ren::AssetStore::VerifyResult::Ok: return "ok";
-    case ren::AssetStore::VerifyResult::BadKey: return "not a store key";
-    case ren::AssetStore::VerifyResult::Missing: return "data.blob or meta.json missing";
-    case ren::AssetStore::VerifyResult::Mismatch: return "contents do not match key";
-  }
-  return "unknown";
-}
-
-static int runVerify(const GlobalOptions &global, const VerifyOptions &opts) {
-  auto am = openAssets(global);
-  if (!am) {
-    return 1;
-  }
-  auto &store = am->getStore();
-
-  std::vector<std::string> keys = opts.keys;
-  if (keys.empty()) {
-    store.listKeys([&](std::string_view key) { keys.emplace_back(key); });
-    std::sort(keys.begin(), keys.end());
-  }
-
-  size_t bad = 0;
-  for (const auto &key : keys) {
-    auto result = store.verify(key);
-    if (result != ren::AssetStore::VerifyResult::Ok) {
-      bad++;
-      fmt::print("FAIL {}: {}\n", key, describe(result));
-    } else if (!opts.quiet) {
-      fmt::print("ok   {}\n", key);
-    }
-  }
-
-  fmt::print("{} entries, {} failed\n", keys.size(), bad);
-  return bad == 0 ? 0 : 1;
-}
-
-static void addVerifyCommand(CLI::App &app, const GlobalOptions &global, int &exitCode) {
-  auto opts = std::make_shared<VerifyOptions>();
-  auto *cmd = app.add_subcommand("verify", "Verify hashes of the store entries");
-  cmd->add_option("keys", opts->keys, "Store keys to verify (default: all entries)");
-  cmd->add_flag("-q,--quiet", opts->quiet, "Only print entries that fail");
-  cmd->callback([&global, &exitCode, opts] { exitCode = runVerify(global, *opts); });
-}
-
-
 // -------------------------- viewbundle -------------------------- //
 
 struct ViewBundleOptions {
@@ -246,7 +192,6 @@ int main(int argc, char **argv) {
   app.add_option("-C,--root", global.root, "Asset directory that contains the store")->capture_default_str();
 
   int exitCode = 0;
-  addVerifyCommand(app, global, exitCode);
   addViewBundleCommand(app, global, exitCode);
 
   CLI11_PARSE(app, argc, argv);

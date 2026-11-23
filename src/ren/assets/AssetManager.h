@@ -101,8 +101,6 @@ namespace ren {
     bool load(const std::string_view &name, std::vector<u8> &out) { return source.load(name, out); }
 
 
-    AssetStore &getStore() { return store; }
-
     // The assets that the sources hold. Call getLibrary().scan() to update it.
     AssetLibrary &getLibrary() { return library; }
     AssetSource &getSource(void) { return source; }
@@ -150,7 +148,6 @@ namespace ren {
 
     // The source that assets are loaded from.
     ren::MultiAssetSource source;
-    ren::AssetStore store;
     ren::AssetLibrary library;
 
     // Background tasks. Only tick() starts a task, so only the worker changes `activity` away

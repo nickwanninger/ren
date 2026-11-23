@@ -32,8 +32,7 @@ namespace ren {
 
   // The flags must be parsed before the construction, so that they set the start values.
   AssetManager::AssetManager()
-      : store(source)
-      , library(source)
+      : library(source)
       , scanEnabled(kAssetScan.get())
       , autoImport(kAutoImport.get())
       , scanIntervalMs(kAssetManagerScanIntervalMs.get())
@@ -49,14 +48,10 @@ namespace ren {
   }
 
 
-  void AssetManager::addFilesystemSource(const std::string_view &path) {
-    this->source.addFilesystem(path);
-    store.reinit();
-  }
-  void AssetManager::addEmbeddedSource(void) {
-    this->source.addEmbeddedSource();
-    store.reinit();
-  }
+  void AssetManager::addFilesystemSource(const std::string_view &path) { this->source.addFilesystem(path); }
+
+  void AssetManager::addEmbeddedSource(void) { this->source.addEmbeddedSource(); }
+
   void AssetManager::addDefaultSources(const std::string_view &root) {
     addEmbeddedSource();
     addFilesystemSource(root);
@@ -132,6 +127,8 @@ namespace ren {
       // Stat before the import, so that an edit during a failed import brings the Source back.
       auto stats = statSource(entry->path);
       Option<std::string> error = None;
+
+      auto start = std::chrono::steady_clock::now();
       try {
         importFile(entry->path);
         library.rescan(entry->path);
@@ -139,6 +136,10 @@ namespace ren {
         error = Some(std::string(failure.what()));
         ren::warnln("Cannot import {}: {}", entry->path, failure.what());
       }
+      auto end = std::chrono::steady_clock::now();
+      auto duration = std::chrono::duration<float, std::milli>(end - start).count();
+      // ren::dbgln("Imported {} ({}) in {:.2f} ms", entry->path, entry->id.to_string(), duration);
+      ren::dbgln("{:8.2f} ms import of {} ({})", duration, entry->id.to_string(), entry->path);
 
       std::scoped_lock lock(pendingMutex);
       std::erase(pendingImports, id);
@@ -230,7 +231,7 @@ namespace ren {
       lastTaskMilliseconds = std::chrono::duration<float, std::milli>(end - start).count();
       finishedTasks++;
       lastTaskFinished = Some(end);
-      activity = AssetActivity::Idle; // Back to idle.
+      activity = AssetActivity::Idle;  // Back to idle.
       taskFinished.notify_all();
     });
   }
