@@ -160,6 +160,9 @@ namespace ren {
 
   Application::~Application() {
     REN_PROFILE_FUNCTION();
+    // An import task can make materials, which use the renderer's shader cache. The run loop
+    // has stopped, so no tick() starts another task.
+    assets.waitForIdle();
     this->renderer->waitForIdle();
     this->renderer->releaseCompletedFrames();
     // Not quite sure when to tear down lua yet.

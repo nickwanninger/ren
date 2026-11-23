@@ -29,7 +29,14 @@ namespace ren {
   class AssetManager {
    public:
     AssetManager();
+    // Waits for the running task. Call waitForIdle() earlier if a task can use objects that are
+    // destroyed first, such as the renderer.
     ~AssetManager();
+
+    // Blocks until no background task runs. Only tick() starts a task, so no new task starts
+    // while the caller does not call tick().
+    void waitForIdle(void);
+
     // Add a filesystem source to the asset manager.
     void addFilesystemSource(const std::string_view &path);
     void addEmbeddedSource(void);

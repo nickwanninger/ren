@@ -42,7 +42,10 @@ namespace ren {
 
 
   // A task uses the sources and the library, so wait for it before they are destroyed.
-  AssetManager::~AssetManager() {
+  AssetManager::~AssetManager() { waitForIdle(); }
+
+
+  void AssetManager::waitForIdle(void) {
     std::unique_lock lock(taskMutex);
     taskFinished.wait(lock, [&]() { return activity.load() == AssetActivity::Idle; });
   }
