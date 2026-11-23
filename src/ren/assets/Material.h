@@ -10,6 +10,13 @@
 
 namespace ren {
 
+  // A shader program, its pipeline state, and the CPU bytes of its reflected
+  // material struct. The bytes are the source of truth for field values:
+  // setValue() encodes JSON into them, and getValue() decodes them.
+  //
+  // The JSON value format covers the fields that isStoredField() accepts:
+  // 32-bit scalars, vectors and matrices whose names do not start with '_'.
+  // Matrix values are arrays of columns.
   class Material {
    public:
     Material() = default;
@@ -35,7 +42,13 @@ namespace ren {
     const ShaderReflection::MaterialSchema *getSchema() const;
     const std::vector<u8> &getCpuMaterialData() const { return cpuMaterialData; }
 
-    // Named writes use the reflected byte layout. Texture writes follow later.
+    // Encodes `value` into the field with the JSON value format. Throws if the field
+    // does not exist, is not stored, or `value` does not fit it. A failed write changes no bytes.
+    void setValue(std::string_view name, const json &value);
+    // Decodes the field into the JSON value format. Throws as setValue() does.
+    json getValue(std::string_view name) const;
+
+    // Named writes use the reflected byte layout.
     void setFloat(std::string_view name, float value);
     void setFloat2(std::string_view name, const glm::vec2 &value);
     void setFloat3(std::string_view name, const glm::vec3 &value);
@@ -51,6 +64,16 @@ namespace ren {
     virtual bool isDeferred(void) const { return false; }
     
     ren::PipelineStateObject &getPSO() { return pso; }
+
+    // Returns true if a .material file stores the field: a 32-bit scalar, vector or matrix
+    // whose name does not start with '_'.
+    static bool isStoredField(const ShaderReflection::MaterialField &field);
+
+    // Encode and decode one field of the JSON value format. `out` and `data` point to the
+    // field's bytes, field.byteSize long. Throws if the field is not stored, its reflected
+    // layout does not fit its shape, or `value` does not fit the field.
+    static void encodeValue(const ShaderReflection::MaterialField &field, const json &value, u8 *out);
+    static json decodeValue(const ShaderReflection::MaterialField &field, const u8 *data);
 
    private:
     AssetID assetID;
