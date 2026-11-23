@@ -46,25 +46,14 @@ namespace ren {
   static constexpr const char *kMaterialPass = "ren/pass/deferred";
 
 
-  ref<Material> Material::fromJson(const json &j) {
-    const bool hasVersion = j.is_object() && j.contains("version") && j["version"].is_number_integer();
-    if (!hasVersion || j["version"] != Material::version) {
-      throw std::runtime_error("Material version mismatch");
-    }
-    if (!j.contains("id") || !j["id"].is_string()) {
-      throw std::runtime_error("Material missing id");
-    }
+  ref<Material> Material::fromContent(AssetID id, const json &j) {
     if (!j.contains("surface_shader") || !j["surface_shader"].is_string()) {
-      throw std::runtime_error("Material missing surface_shader");
-    }
-    const auto id = UUID::parse(j["id"].get<std::string>());
-    if (id.isNone()) {
-      throw std::runtime_error("Invalid material id: " + j["id"].get<std::string>());
+      throw std::runtime_error("Material missing surface_shader: " + id.to_string());
     }
 
     const auto surface = j["surface_shader"].get<std::string>();
     auto material = make<Material>(getShader(surface, kMaterialPass));
-    material->assetID = id.unwrap();
+    material->id = id;
     material->surfaceShader = surface;
     if (j.contains("pso")) {
       from_json(j["pso"], material->pso);
@@ -87,15 +76,15 @@ namespace ren {
       const auto target =
           std::find_if(schema->fields.begin(), schema->fields.end(), [&](const ShaderReflection::MaterialField &f) { return f.name == name; });
       if (target == schema->fields.end()) {
-        ren::warnln("Material {}: shader {} has no field '{}'", id.unwrap().to_string(), surface, name);
+        ren::warnln("Material {}: shader {} has no field '{}'", id.to_string(), surface, name);
         continue;
       }
       if (!isStoredField(*target)) {
-        ren::warnln("Material {}: field '{}' ({}) is not stored", id.unwrap().to_string(), name, target->typeName);
+        ren::warnln("Material {}: field '{}' ({}) is not stored", id.to_string(), name, target->typeName);
         continue;
       }
       if (entry.contains("type") && entry["type"] != target->typeName) {
-        ren::warnln("Material {}: field '{}' is now {}, not {}", id.unwrap().to_string(), name, target->typeName, entry["type"].dump());
+        ren::warnln("Material {}: field '{}' is now {}, not {}", id.to_string(), name, target->typeName, entry["type"].dump());
         continue;
       }
 
@@ -105,14 +94,12 @@ namespace ren {
   }
 
 
-  json Material::toJson(void) const {
+  json Material::serializeContent(void) const {
     if (surfaceShader.empty()) {
       throw std::runtime_error("Material has no surface shader: " + name);
     }
 
     json j;
-    j["version"] = Material::version;
-    j["id"] = assetID.to_string();
     j["surface_shader"] = surfaceShader;
 
     // The surface shader replaces the PSO's program entry.

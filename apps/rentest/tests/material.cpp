@@ -163,10 +163,10 @@ namespace {
   }
 
 
-  // Every stored field comes back from toJson() with the same type and value.
+  // Every stored field comes back from serializeNativeAsset() with the same type and value.
   class MaterialRoundTrip : public rentest::RenderTest {
     void onSetup(rentest::TestContext &ctx) override {
-      auto material = ren::Material::fromJson(makeFile(kStoredFields));
+      auto material = ren::deserializeNativeAsset<ren::Material>(makeFile(kStoredFields));
 
       // Record the reflected names and sizes, so that a Slang change shows in the log.
       for (const auto &field : material->getSchema()->fields) {
@@ -174,7 +174,7 @@ namespace {
                    field.rowCount, field.columnCount);
       }
 
-      const auto saved = material->toJson();
+      const auto saved = ren::serializeNativeAsset(*material);
       ctx.check(saved["id"] == "5f0c2a9e71d4b386", "the id round-trips");
       ctx.check(saved["surface_shader"] == "test/modules/material_fields", "the surface shader round-trips");
       ctx.check(!saved["pso"].contains("program"), "the PSO has no program entry");
@@ -186,7 +186,7 @@ namespace {
       ctx.check(readFloat(*material, matrix3.byteOffset + columnStride) == 4.0f, "matrix3 is column-major in the bytes");
 
       // A second load of the saved file gives the same bytes.
-      auto reloaded = ren::Material::fromJson(saved);
+      auto reloaded = ren::deserializeNativeAsset<ren::Material>(saved);
       ctx.check(reloaded->getCpuMaterialData() == material->getCpuMaterialData(), "a reload gives the same bytes");
     }
   };
@@ -201,8 +201,8 @@ namespace {
       fields["removed"] = {{"type", "float"}, {"value", 1.0}};
       fields["scalar"]["type"] = "int";  // A retyped field keeps its default.
 
-      auto material = ren::Material::fromJson(makeFile(fields));
-      const auto saved = material->toJson()["fields"];
+      auto material = ren::deserializeNativeAsset<ren::Material>(makeFile(fields));
+      const auto saved = ren::serializeNativeAsset(*material)["fields"];
       ctx.check(!saved.contains("_padding"), "'_padding' is not saved");
       ctx.check(!saved.contains("texture"), "'texture' is not saved");
       ctx.check(!saved.contains("removed"), "'removed' is not saved");
@@ -215,7 +215,7 @@ namespace {
   // A value that does not fit its field throws, and a failed write changes no bytes.
   class MaterialBadValues : public rentest::RenderTest {
     void onSetup(rentest::TestContext &ctx) override {
-      auto material = ren::Material::fromJson(makeFile(kStoredFields));
+      auto material = ren::deserializeNativeAsset<ren::Material>(makeFile(kStoredFields));
       const auto before = material->getCpuMaterialData();
 
       auto throws = [&](const char *name, const json &value) {
@@ -248,9 +248,40 @@ namespace {
         return;
       }
 
-      auto material = ren::Material::fromJson(json::parse(file));
+      auto material = ren::deserializeNativeAsset<ren::Material>(json::parse(file));
       ctx.check(material->getValue("roughness") == 1.0, "roughness loads from the example");
-      ctx.check(material->toJson()["surface_shader"] == "ren/core/pbr", "the example uses the PBR surface");
+      ctx.check(ren::serializeNativeAsset(*material)["surface_shader"] == "ren/core/pbr", "the example uses the PBR surface");
+    }
+  };
+
+
+  // The id and version are checked before the content, and the registry finds .material files.
+  class MaterialIdAndVersion : public rentest::RenderTest {
+    void onSetup(rentest::TestContext &ctx) override {
+      auto throws = [&](const char *what, json file) {
+        try {
+          ren::deserializeNativeAsset<ren::Material>(file);
+          ctx.fail(fmt::format("a file with {} loads", what));
+        } catch (const std::runtime_error &) {
+        }
+      };
+      const auto file = makeFile(kStoredFields);
+      auto with = [&](const char *key, const json &value) {
+        auto changed = file;
+        changed[key] = value;
+        return changed;
+      };
+      auto without = file;
+      without.erase("id");
+
+      throws("another version", with("version", 2));
+      throws("no id", without);
+      throws("a bad id", with("id", "xyz"));
+      throws("a null id", with("id", "null"));
+
+      const auto *info = ren::findNativeTypeForPath("folder/name.material");
+      ctx.check(info != nullptr && info->type == ren::AssetType::Material, "the registry finds .material files");
+      ctx.check(ren::findNativeTypeForPath("folder/name.png") == nullptr, "the registry does not find .png files");
     }
   };
 
@@ -262,3 +293,4 @@ REN_RENDER_TEST("material.round_trip", MaterialRoundTrip, {.frames = 1, .expect 
 REN_RENDER_TEST("material.skipped_fields", MaterialSkippedFields, {.frames = 1, .expect = "No image. The checks are in the log."});
 REN_RENDER_TEST("material.bad_values", MaterialBadValues, {.frames = 1, .expect = "No image. The checks are in the log."});
 REN_RENDER_TEST("material.example_file", MaterialExampleFile, {.frames = 1, .expect = "No image. The checks are in the log."});
+REN_RENDER_TEST("material.id_and_version", MaterialIdAndVersion, {.frames = 1, .expect = "No image. The checks are in the log."});

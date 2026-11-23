@@ -3,7 +3,7 @@
 
 #include <string>
 #include <vector>
-#include <ren/assets/Asset.h>
+#include <ren/assets/NativeAsset.h>
 #include <ren/renderer/Texture.h>
 #include <ren/renderer/shader/ShaderProgram.h>
 #include <ren/renderer/pipelines/PipelineStateObject.h>
@@ -16,27 +16,28 @@ namespace ren {
   //
   // A .material file stores the surface shader, the PSO, and the fields that
   // isStoredField() accepts: scalars, vectors and matrices whose names do not
-  // start with '_'. Matrix values are arrays of columns.
-  class Material {
+  // start with '_'. Matrix values are arrays of columns. Use
+  // deserializeNativeAsset() and serializeNativeAsset() for the whole file.
+  class Material : public NativeAsset {
    public:
-    // The version of the .material format.
+    static constexpr AssetType TYPE = AssetType::Material;
+    // The version of the .material content.
     static constexpr u32 version = 1;
 
     Material() = default;
     explicit Material(ref<ShaderProgram> program);
     virtual ~Material() = default;
 
-    // Makes a material from the JSON of a .material file. The surface shader links with the
+    // Makes a material from the content of a .material file. The surface shader links with the
     // deferred pass. A file field that the shader does not have, or does not store, gives a
-    // warning. Throws if the file is malformed or a field value does not fit its field.
-    static ref<Material> fromJson(const json &j);
+    // warning. Throws if the content is malformed or a field value does not fit its field.
+    static ref<Material> fromContent(AssetID id, const json &content);
 
-    // Writes the .material JSON: the ID, surface shader, PSO and stored fields.
+    AssetType getType(void) const override { return TYPE; }
+
+    // Writes the surface shader, PSO and stored fields.
     // Throws if the material did not come from a surface shader.
-    json toJson(void) const;
-
-    // The ID that scene serialization writes. fromJson() sets it from the file.
-    AssetID getAssetID(void) const { return assetID; }
+    json serializeContent(void) const override;
 
     // Materials cannot be moved or copied
     Material(const Material &) = delete;
@@ -88,12 +89,11 @@ namespace ren {
     static json decodeValue(const ShaderReflection::MaterialField &field, const u8 *data);
 
    private:
-    AssetID assetID;
     const ShaderReflection::MaterialField &field(std::string_view name) const;
     void writeField(const ShaderReflection::MaterialField &field, ren::ByteSpan value);
 
     std::string name = "Unknown Material";
-    // The surface module that fromJson() linked. Empty for a material made from a full program.
+    // The surface module that fromContent() linked. Empty for a material made from a full program.
     std::string surfaceShader;
 
     ren::PipelineStateObject pso;
