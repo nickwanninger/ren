@@ -105,10 +105,7 @@ namespace ren {
 
     // Every shader in the engine is compiled and owned here. Prefer the free
     // function `ren::getShader("demo/cube")` over touching this directly.
-    inline auto &getShaderCache() {
-      if (shaderCache == nullptr) { shaderCache = make<ShaderCache>(); }
-      return *shaderCache;
-    }
+    inline auto &getShaderCache() { return *shaderCache; }
 
     inline auto getDisplayPass() {
       if (displayPass == nullptr) {

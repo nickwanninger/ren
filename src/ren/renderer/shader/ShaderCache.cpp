@@ -314,6 +314,7 @@ namespace ren {
   }
 
   ref<ShaderProgram> ShaderCache::get(const Desc& desc) {
+    std::scoped_lock lock(mutex);
     auto& entry = lookup(desc);
     if (!entry.program) {
       throw std::runtime_error(fmt::format("Shader '{}' failed to compile: {}", desc.toString(), entry.error));
@@ -331,6 +332,18 @@ namespace ren {
 
 
   void ShaderCache::clear(void) {
+    std::scoped_lock lock(mutex);
+    clearLocked();
+  }
+
+
+  size_t ShaderCache::size(void) const {
+    std::scoped_lock lock(mutex);
+    return entries.size();
+  }
+
+
+  void ShaderCache::clearLocked(void) {
     entries.clear();
     selected.reset();
     session = nullptr;
@@ -339,10 +352,11 @@ namespace ren {
 
 
   void ShaderCache::inspect(void) {
+    std::scoped_lock lock(mutex);
     ImGui::Text("%zu shader(s) cached", entries.size());
     ImGui::SameLine();
     if (ImGui::Button("Clear")) {
-      clear();
+      clearLocked();
       return;
     }
 

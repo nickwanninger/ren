@@ -4,6 +4,7 @@
 #include <ren/renderer/shader/ShaderProgram.h>
 #include <slang.h>
 #include <slang-com-ptr.h>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <concepts>
@@ -23,6 +24,10 @@ namespace ren {
    *
    * Keys are canonicalized, so `demo/cube`, `demo/cube.slang`, `./demo/cube`,
    * and `shaders/demo/cube` are all the same cache entry.
+   *
+   * The public functions are thread-safe, because asset imports call get() from
+   * worker threads. One lock covers the compile too, so a slow compile blocks
+   * other callers until it ends.
    */
   class ShaderCache {
    public:
@@ -74,7 +79,7 @@ namespace ren {
     // ref keep their old program; subsequent gets recompile from scratch.
     void clear(void);
 
-    size_t size(void) const { return entries.size(); }
+    size_t size(void) const;
 
     // Inspect the cache in imgui.
     void inspect(void);
@@ -87,7 +92,10 @@ namespace ren {
       std::vector<std::string> dependencies;  // source files the compile touched
     };
 
+    // Requires `mutex`. The entry stays valid while the caller holds it.
     Entry &lookup(const Desc &desc);
+    // Requires `mutex`.
+    void clearLocked(void);
 
     // Create the global/shared session if needed. Returns true if the session
     // was (re)built, which invalidates everything compiled before it.
@@ -103,6 +111,9 @@ namespace ren {
 
     std::unordered_map<Desc, Entry, Desc::Hasher> entries;
     std::optional<Desc> selected;  // inspector selection
+
+    // Protects the session, the entries and the selection.
+    mutable std::mutex mutex;
   };
 
 

@@ -36,6 +36,8 @@ namespace ren {
     this->imageHeap = make<ImageDescriptorHeap>();
     this->samplerHeap = make<SamplerDescriptorHeap>();
     this->samplerCache = make<SamplerCache>(this->samplerHeap);
+    // Made here, not on first use, because asset imports call getShader() from worker threads.
+    this->shaderCache = make<ShaderCache>();
     this->frameGlobalsAllocator = makeBox<FrameGlobalsAllocator>();
     this->megaMeshBuffer = makeBox<MegaMeshBuffer>();
 
