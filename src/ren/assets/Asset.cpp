@@ -1,5 +1,6 @@
 #include <ren/assets/Asset.h>
 #include <ren/assets/MeshAsset.h>
+#include <ren/assets/NativeAsset.h>
 #include <ren/assets/TextureAsset.h>
 
 #include <map>
@@ -35,6 +36,8 @@ namespace ren {
     std::call_once(once, []() {
       registerAssetType<MeshAsset>();
       registerAssetType<TextureAsset>();
+      // The native types add the bundle readers of their content.
+      registerBuiltinNativeTypes();
     });
 
     auto &registry = getRegistry();

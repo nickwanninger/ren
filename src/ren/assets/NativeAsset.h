@@ -49,8 +49,13 @@ namespace ren {
   };
 
 
-  // Add an entry to the registry. Throws if the type or the extension exists.
+  // Add an entry to the registry, and a bundle reader for NativeContentAsset of the type.
+  // Throws if the type or the extension exists.
   void addNativeType(NativeTypeInfo info);
+
+  // Registers the native types that ren supplies, one time. findNativeType() and findAssetType()
+  // call it, so that the bundle readers of native types exist before a derived bundle is read.
+  void registerBuiltinNativeTypes(void);
 
   // Register a native class for files with `extension`. Throws if the type or the extension exists.
   template <typename T>
@@ -91,5 +96,37 @@ namespace ren {
   // Writes the file of `asset`: its content and the id+version. Throws if the type is not
   // registered, or the content is not an object or contains "version" or "id".
   json serializeNativeAsset(const NativeAsset &asset);
+
+
+
+  // The content of a native type as a derived bundle. An importer makes CPU data only, so it
+  // writes the content JSON and does not make the runtime object. Loading it is the same as
+  // loading a native file: pass serializeNativeFile() to deserializeNativeAsset().
+  //
+  // The bundle stores the content in the metadata key "content" and has no blobs. The bundle
+  // header holds the ID. The version is the current version of the native type.
+  class NativeContentAsset : public Asset {
+   public:
+    NativeContentAsset(AssetType type, json content)
+        : type(type)
+        , content(std::move(content)) {}
+
+    // A registered native type.
+    AssetType type;
+    // The keys of the native file without "version" and "id".
+    json content;
+
+    AssetType getType(void) const override { return type; }
+
+    // Throws if the type is not a registered native type, or the content is not an object
+    // without "version" and "id".
+    void validate(void) const override;
+
+    void write(Bundle &bundle) const override;
+    static ref<NativeContentAsset> read(AssetType type, const Bundle &bundle);
+
+    // The JSON of the native file with this content, ID and the current version of the type.
+    json serializeNativeFile(void) const;
+  };
 
 }  // namespace ren

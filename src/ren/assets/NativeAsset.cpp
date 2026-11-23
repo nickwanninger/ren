@@ -1,5 +1,6 @@
 #include <ren/assets/NativeAsset.h>
 #include <ren/assets/Material.h>
+#include <ren/core/Bundle.h>
 
 #include <filesystem>
 #include <map>
@@ -24,29 +25,35 @@ namespace ren {
 
 
   void addNativeType(NativeTypeInfo info) {
-    auto &registry = getRegistry();
-    std::scoped_lock lock(registry.mutex);
+    const auto type = info.type;
+    {
+      auto &registry = getRegistry();
+      std::scoped_lock lock(registry.mutex);
 
-    if (registry.types.contains(info.type)) {
-      throw std::runtime_error("Native type is already registered: " + typeName(info.type));
+      if (registry.types.contains(type)) {
+        throw std::runtime_error("Native type is already registered: " + typeName(type));
+      }
+      if (registry.extensions.contains(info.extension)) {
+        throw std::runtime_error("Native extension is already registered: " + info.extension);
+      }
+      registry.extensions.emplace(info.extension, type);
+      registry.types.emplace(type, std::move(info));
     }
-    if (registry.extensions.contains(info.extension)) {
-      throw std::runtime_error("Native extension is already registered: " + info.extension);
-    }
-    registry.extensions.emplace(info.extension, info.type);
-    registry.types.emplace(info.type, std::move(info));
+
+    // A derived bundle of the type holds its content. Register the reader without the native
+    // lock, because the bundle registry has its own lock.
+    asset_detail::addAssetType({type, [type](const Bundle &bundle) -> ref<Asset> { return NativeContentAsset::read(type, bundle); }});
   }
 
 
-  // Registers the types that ren supplies, one time.
-  static void registerBuiltinTypes(void) {
+  void registerBuiltinNativeTypes(void) {
     static std::once_flag once;
     std::call_once(once, []() { registerNativeType<Material>(".material"); });
   }
 
 
   const NativeTypeInfo *findNativeType(AssetType type) {
-    registerBuiltinTypes();
+    registerBuiltinNativeTypes();
 
     auto &registry = getRegistry();
     std::scoped_lock lock(registry.mutex);
@@ -57,7 +64,7 @@ namespace ren {
 
 
   const NativeTypeInfo *findNativeTypeForPath(std::string_view path) {
-    registerBuiltinTypes();
+    registerBuiltinNativeTypes();
 
     auto &registry = getRegistry();
     std::scoped_lock lock(registry.mutex);
@@ -108,6 +115,42 @@ namespace ren {
     }
     file["version"] = info->version;
     file["id"] = asset.getAssetID().to_string();
+    return file;
+  }
+
+
+
+  //=========================
+  // Derived bundles
+  //=========================
+
+  void NativeContentAsset::validate(void) const {
+    if (findNativeType(type) == nullptr) {
+      throw std::runtime_error("Native type is not registered: " + typeName(type));
+    }
+    if (!content.is_object() || content.contains("version") || content.contains("id")) {
+      throw std::runtime_error(typeName(type) + " content must be an object without 'version' or 'id'");
+    }
+  }
+
+
+  void NativeContentAsset::write(Bundle &bundle) const { bundle.setKey("content", content); }
+
+
+  ref<NativeContentAsset> NativeContentAsset::read(AssetType type, const Bundle &bundle) {
+    return make<NativeContentAsset>(type, bundle.getMetadata().at("content"));
+  }
+
+
+  json NativeContentAsset::serializeNativeFile(void) const {
+    const auto *info = findNativeType(type);
+    if (info == nullptr) {
+      throw std::runtime_error("Native type is not registered: " + typeName(type));
+    }
+
+    auto file = content;
+    file["version"] = info->version;
+    file["id"] = id.to_string();
     return file;
   }
 

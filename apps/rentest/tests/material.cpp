@@ -5,9 +5,12 @@
 
 #include "RenderTest.h"
 
+#include <ren/assets/DerivedAsset.h>
 #include <ren/assets/Material.h>
+#include <ren/assets/NativeAsset.h>
 
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <limits>
 
@@ -285,6 +288,50 @@ namespace {
     }
   };
 
+
+  // A derived bundle of material content reads back through the bundle registry, and makes the
+  // same material as a native file with that content.
+  class MaterialDerivedBundle : public rentest::RenderTest {
+    void onSetup(rentest::TestContext &ctx) override {
+      const auto root = std::filesystem::temp_directory_path() / ("ren-material-test-" + ren::AssetID::generate().to_string());
+      std::filesystem::create_directories(root);
+      ren::FilesystemAssetSource source(root);
+
+      auto content = makeFile(kStoredFields);
+      content.erase("version");
+      content.erase("id");
+      ren::NativeContentAsset written(ren::AssetType::Material, content);
+      written.id = ren::AssetID::generate();
+      written.sourceAsset = ren::AssetID::generate();
+      written.name = "derived material";
+
+      const auto path = ren::derivedPath(ren::derivedBundlePath(written.id));
+      ren::writeDerivedAsset(source, path, written);
+      auto read = std::dynamic_pointer_cast<ren::NativeContentAsset>(ren::readDerivedAsset(source, path));
+      std::filesystem::remove_all(root);
+
+      if (!read) {
+        ctx.fail("the bundle does not read back as a NativeContentAsset");
+        return;
+      }
+      ctx.check(read->id == written.id && read->sourceAsset == written.sourceAsset, "the bundle keeps the identity");
+      ctx.check(read->content == content, "the bundle keeps the content");
+
+      auto material = ren::deserializeNativeAsset<ren::Material>(read->serializeNativeFile());
+      ctx.check(material->getAssetID() == written.id, "the material has the bundle ID");
+      ctx.check(ren::serializeNativeAsset(*material)["fields"] == kStoredFields, "the material has the bundle fields");
+
+      // The content must not hold the keys that the bundle header and the type supply.
+      auto withID = content;
+      withID["id"] = written.id.to_string();
+      try {
+        ren::NativeContentAsset(ren::AssetType::Material, withID).validate();
+        ctx.fail("content with an id passes validation");
+      } catch (const std::runtime_error &) {
+      }
+    }
+  };
+
 }  // namespace
 
 
@@ -294,3 +341,4 @@ REN_RENDER_TEST("material.skipped_fields", MaterialSkippedFields, {.frames = 1, 
 REN_RENDER_TEST("material.bad_values", MaterialBadValues, {.frames = 1, .expect = "No image. The checks are in the log."});
 REN_RENDER_TEST("material.example_file", MaterialExampleFile, {.frames = 1, .expect = "No image. The checks are in the log."});
 REN_RENDER_TEST("material.id_and_version", MaterialIdAndVersion, {.frames = 1, .expect = "No image. The checks are in the log."});
+REN_RENDER_TEST("material.derived_bundle", MaterialDerivedBundle, {.frames = 1, .expect = "No image. The checks are in the log."});
