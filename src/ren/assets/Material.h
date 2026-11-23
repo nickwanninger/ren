@@ -26,6 +26,9 @@ namespace ren {
 
     Material() = default;
     explicit Material(ref<ShaderProgram> program);
+    // Links the surface module with the deferred pass. Only a material made this way can be
+    // saved, because the file stores the surface module, not the program.
+    explicit Material(std::string_view surfaceShader);
     virtual ~Material() = default;
 
     // Makes a material from the content of a .material file. The surface shader links with the

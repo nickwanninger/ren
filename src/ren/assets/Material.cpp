@@ -12,6 +12,10 @@
 
 namespace ren {
 
+  // TODO: Which code selects the pass? A material uses only the deferred pass until a second pass exists.
+  static constexpr const char *kMaterialPass = "ren/pass/deferred";
+
+
   Material::Material(ref<ShaderProgram> shader) {
     pso.program = shader;
     if (!pso.program || !pso.program->getReflection()) {
@@ -30,6 +34,12 @@ namespace ren {
   }
 
 
+  Material::Material(std::string_view surfaceShader)
+      : Material(getShader(surfaceShader, kMaterialPass)) {
+    this->surfaceShader = surfaceShader;
+  }
+
+
   const ShaderReflection::MaterialSchema *Material::getSchema() const {
     if (!pso.program || !pso.program->getReflection()) {
       return nullptr;
@@ -42,19 +52,14 @@ namespace ren {
   // .material files
   //=========================
 
-  // TODO: Which code selects the pass? A material uses only the deferred pass until a second pass exists.
-  static constexpr const char *kMaterialPass = "ren/pass/deferred";
-
-
   ref<Material> Material::fromContent(AssetID id, const json &j) {
     if (!j.contains("surface_shader") || !j["surface_shader"].is_string()) {
       throw std::runtime_error("Material missing surface_shader: " + id.to_string());
     }
 
     const auto surface = j["surface_shader"].get<std::string>();
-    auto material = make<Material>(getShader(surface, kMaterialPass));
+    auto material = make<Material>(surface);
     material->id = id;
-    material->surfaceShader = surface;
     if (j.contains("pso")) {
       from_json(j["pso"], material->pso);
     }
