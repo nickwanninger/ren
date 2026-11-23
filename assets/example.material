@@ -1,0 +1,42 @@
+{
+    "version": 1,
+    "id": "5f0c2a9e71d4b386",
+    "surface_shader": "ren/core/pbr",
+
+    "pso": {
+        "topology": "Triangle list",
+        "depthTest": true,
+        "depthWrite": true,
+        "depthClip": true,
+        "fillMode": "Solid",
+        "cullMode": "Back",
+        "frontCCW": true,
+        "hasVertexBinding": true,
+        "depthBias": 0.0,
+        "depthBiasClamp": 0.0,
+        "depthSlopeFactor": 0.0,
+        "blendMode": "None"
+    },
+
+    "fields": {
+        "baseColor":         {"type": "vector<float,4>", "value": [1.0, 1.0, 1.0, 1.0]},
+        "emissiveFactor":    {"type": "vector<float,4>", "value": [0.0, 0.0, 0.0, 0.0]},
+        "metallic":          {"type": "float", "value": 0.0},
+        "roughness":         {"type": "float", "value": 1.0},
+        "occlusionStrength": {"type": "float", "value": 1.0},
+
+        "uvTransform": {"type": "matrix<float,3,3>", "value": [[1.0, 0.0, 0.0],
+                                                                 [0.0, 1.0, 0.0],
+                                                                 [0.0, 0.0, 1.0]]},
+        "debugTransform": {"type": "matrix<float,4,4>", "value": [[1.0, 0.0, 0.0, 0.0],
+                                                                    [0.0, 1.0, 0.0, 0.0],
+                                                                    [0.0, 0.0, 1.0, 0.0],
+                                                                    [0.0, 0.0, 0.0, 1.0]]},
+
+        "baseColorTexture":         {"type": "TextureHandle", "value": "a41e93c07b2d5f18"},
+        "metallicRoughnessTexture": {"type": "TextureHandle", "value": null},
+        "emissiveTexture":          {"type": "TextureHandle", "value": null},
+        "normalTexture":            {"type": "TextureHandle", "value": "0d7b6e2f95c1a843"},
+        "occlusionTexture":         {"type": "TextureHandle", "value": null}
+    }
+}

@@ -14,16 +14,28 @@ namespace ren {
   // material struct. The bytes are the source of truth for field values:
   // setValue() encodes JSON into them, and getValue() decodes them.
   //
-  // The JSON value format covers the fields that isStoredField() accepts:
-  // 32-bit scalars, vectors and matrices whose names do not start with '_'.
-  // Matrix values are arrays of columns.
+  // A .material file stores the surface shader, the PSO, and the fields that
+  // isStoredField() accepts: scalars, vectors and matrices whose names do not
+  // start with '_'. Matrix values are arrays of columns.
   class Material {
    public:
+    // The version of the .material format.
+    static constexpr u32 version = 1;
+
     Material() = default;
     explicit Material(ref<ShaderProgram> program);
     virtual ~Material() = default;
 
-    // The ID that scene serialization writes. TODO: Which code assigns this ID?
+    // Makes a material from the JSON of a .material file. The surface shader links with the
+    // deferred pass. A file field that the shader does not have, or does not store, gives a
+    // warning. Throws if the file is malformed or a field value does not fit its field.
+    static ref<Material> fromJson(const json &j);
+
+    // Writes the .material JSON: the ID, surface shader, PSO and stored fields.
+    // Throws if the material did not come from a surface shader.
+    json toJson(void) const;
+
+    // The ID that scene serialization writes. fromJson() sets it from the file.
     AssetID getAssetID(void) const { return assetID; }
 
     // Materials cannot be moved or copied
@@ -65,7 +77,7 @@ namespace ren {
     
     ren::PipelineStateObject &getPSO() { return pso; }
 
-    // Returns true if a .material file stores the field: a 32-bit scalar, vector or matrix
+    // Returns true if a .material file stores the field: a scalar, vector or matrix
     // whose name does not start with '_'.
     static bool isStoredField(const ShaderReflection::MaterialField &field);
 
@@ -81,6 +93,8 @@ namespace ren {
     void writeField(const ShaderReflection::MaterialField &field, ren::ByteSpan value);
 
     std::string name = "Unknown Material";
+    // The surface module that fromJson() linked. Empty for a material made from a full program.
+    std::string surfaceShader;
 
     ren::PipelineStateObject pso;
     // Zero-filled storage with the size of the reflected MaterialT.

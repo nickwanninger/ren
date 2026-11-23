@@ -1,6 +1,7 @@
 #include <ren/assets/Material.h>
 #include <ren/renderer/shader/ShaderCache.h>
 
+#include <algorithm>
 #include <cstring>
 #include <limits>
 #include <stdexcept>
@@ -36,6 +37,98 @@ namespace ren {
     const auto &schema = pso.program->getReflection()->getMaterialSchema();
     return schema.isSome() ? &schema.unwrap() : nullptr;
   }
+
+  //=========================
+  // .material files
+  //=========================
+
+  // TODO: Which code selects the pass? A material uses only the deferred pass until a second pass exists.
+  static constexpr const char *kMaterialPass = "ren/pass/deferred";
+
+
+  ref<Material> Material::fromJson(const json &j) {
+    const bool hasVersion = j.is_object() && j.contains("version") && j["version"].is_number_integer();
+    if (!hasVersion || j["version"] != Material::version) {
+      throw std::runtime_error("Material version mismatch");
+    }
+    if (!j.contains("id") || !j["id"].is_string()) {
+      throw std::runtime_error("Material missing id");
+    }
+    if (!j.contains("surface_shader") || !j["surface_shader"].is_string()) {
+      throw std::runtime_error("Material missing surface_shader");
+    }
+    const auto id = UUID::parse(j["id"].get<std::string>());
+    if (id.isNone()) {
+      throw std::runtime_error("Invalid material id: " + j["id"].get<std::string>());
+    }
+
+    const auto surface = j["surface_shader"].get<std::string>();
+    auto material = make<Material>(getShader(surface, kMaterialPass));
+    material->assetID = id.unwrap();
+    material->surfaceShader = surface;
+    if (j.contains("pso")) {
+      from_json(j["pso"], material->pso);
+    }
+
+    if (!j.contains("fields")) {
+      return material;
+    }
+    if (!j["fields"].is_object()) {
+      throw std::runtime_error("Material fields must be an object: " + surface);
+    }
+
+    for (const auto &[name, entry] : j["fields"].items()) {
+      if (!entry.is_object() || !entry.contains("value")) {
+        throw std::runtime_error(fmt::format("Material field '{}' needs a value", name));
+      }
+
+      // A shader edit can remove or retype a field. The field then keeps its default.
+      const auto *schema = material->getSchema();
+      const auto target =
+          std::find_if(schema->fields.begin(), schema->fields.end(), [&](const ShaderReflection::MaterialField &f) { return f.name == name; });
+      if (target == schema->fields.end()) {
+        ren::warnln("Material {}: shader {} has no field '{}'", id.unwrap().to_string(), surface, name);
+        continue;
+      }
+      if (!isStoredField(*target)) {
+        ren::warnln("Material {}: field '{}' ({}) is not stored", id.unwrap().to_string(), name, target->typeName);
+        continue;
+      }
+      if (entry.contains("type") && entry["type"] != target->typeName) {
+        ren::warnln("Material {}: field '{}' is now {}, not {}", id.unwrap().to_string(), name, target->typeName, entry["type"].dump());
+        continue;
+      }
+
+      material->setValue(name, entry["value"]);
+    }
+    return material;
+  }
+
+
+  json Material::toJson(void) const {
+    if (surfaceShader.empty()) {
+      throw std::runtime_error("Material has no surface shader: " + name);
+    }
+
+    json j;
+    j["version"] = Material::version;
+    j["id"] = assetID.to_string();
+    j["surface_shader"] = surfaceShader;
+
+    // The surface shader replaces the PSO's program entry.
+    j["pso"] = pso;
+    j["pso"].erase("program");
+
+    auto fields = json::object();
+    for (const auto &target : getSchema()->fields) {
+      if (isStoredField(target)) {
+        fields[target.name] = {{"type", target.typeName}, {"value", getValue(target.name)}};
+      }
+    }
+    j["fields"] = std::move(fields);
+    return j;
+  }
+
 
   const ShaderReflection::MaterialField &Material::field(std::string_view name) const {
     const auto *schema = getSchema();
