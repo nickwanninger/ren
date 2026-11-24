@@ -1,5 +1,5 @@
 #pragma once
-#include <ren/renderer/graph/Handle.h>
+#include <ren/renderer/graph/GraphHandle.h>
 #include <ren/types.h>
 #include <optional>
 
