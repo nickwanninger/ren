@@ -366,11 +366,28 @@ namespace ren {
   }
 
 
-  // List the images of the scene by name. A name is "*<index>" for an embedded image, or the
-  // source path for an external file. Material references to the same image share one entry.
+  // The name of the image that a material texture reference names: "*<index>" for an embedded
+  // image, or the source path for an external file. Assimp finds an embedded image by index or by
+  // file name. Other references are paths relative to the source file.
+  std::string MeshImporter::getImageName(const char *reference) const {
+    auto [embedded, index] = scene->GetEmbeddedTextureAndIndex(reference);
+    if (embedded) {
+      return "*" + std::to_string(index);
+    }
+    return import_detail::sourcePath(context->sourcePath.parent_path() / reference).generic_string();
+  }
+
+
+  // The local name of the texture output of an image in one format. The image name is "*<index>"
+  // or the image path, so "<image>/<format>" is unique.
+  std::string MeshImporter::getTextureName(const std::string &image, PixelFormat format) {
+    return image + (format == PixelFormat::RGBA8_SRGB ? "/sRGB" : "/linear");
+  }
+
+
+  // List the images of the scene by name. Material references to the same image share one entry.
   std::map<std::string, MeshImporter::Image> MeshImporter::collectImages(void) const {
     std::map<std::string, Image> images;
-    auto directory = context->sourcePath.parent_path();
 
     for (u32 m = 0; m < scene->mNumMaterials; ++m) {
       const auto &material = *scene->mMaterials[m];
@@ -381,13 +398,8 @@ namespace ren {
             continue;
           }
 
-          // Assimp finds an embedded image by index or by file name. Other references are paths
-          // relative to the source file.
-          auto [embedded, index] = scene->GetEmbeddedTextureAndIndex(reference.C_Str());
-          auto name = embedded ? "*" + std::to_string(index) : import_detail::sourcePath(directory / reference.C_Str()).generic_string();
-
-          auto &image = images[name];
-          image.embedded = embedded;
+          auto &image = images[getImageName(reference.C_Str())];
+          image.embedded = scene->GetEmbeddedTexture(reference.C_Str());
           image.formats.insert(getSlotFormat(type));
         }
       }
@@ -442,12 +454,11 @@ namespace ren {
       const auto &[name, image] = images[i];
       auto texture = decodeImage(name, image);
 
-      // The image name is "*<index>" or the image path, so "<image>/<format>" is unique.
       for (auto format : image.formats) {
         bool srgb = format == PixelFormat::RGBA8_SRGB;
         texture->pixelFormat = format;
         texture->name = name + (srgb ? " (sRGB)" : " (linear)");
-        context->writeDerived(*texture, name + (srgb ? "/sRGB" : "/linear"));
+        context->writeDerived(*texture, getTextureName(name, format));
       }
     });
   }

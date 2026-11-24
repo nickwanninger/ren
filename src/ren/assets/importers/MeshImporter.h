@@ -62,6 +62,8 @@ namespace ren {
     std::map<std::string, Image> collectImages(void) const;
     ref<TextureAsset> decodeImage(const std::string &name, const Image &image) const;
     static PixelFormat getSlotFormat(int textureType);
+    std::string getImageName(const char *reference) const;
+    static std::string getTextureName(const std::string &image, PixelFormat format);
 
     // Materials
     void importMaterials(void);
