@@ -84,9 +84,9 @@ namespace ren {
 
 
 
-  REN_PLUGIN("Debug Draw", [](ren::Application &app) {
-    app.onEvent<DebugDrawEvent>([](const DebugDrawEvent &e) { renderDebugLines(e.view, e.proj); });
-  });
+  // REN_PLUGIN("Debug Draw", [](ren::Application &app) {
+  //   app.onEvent<DebugDrawEvent>([](const DebugDrawEvent &e) { renderDebugLines(e.view, e.proj); });
+  // });
 
   void DebugScribe::drawCube(glm::vec3 center, float size, glm::vec3 color, float thickness) {
     float halfSize = size / 2.0f;

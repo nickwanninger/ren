@@ -5,306 +5,557 @@
 #include <ren/core/Application.h>
 #include <imgui/imgui.h>
 #include <ren/misc/hash.h>
+#include <ren/core/UUID.h>
+#include <set>
+#include "ren/core/ThreadPool.h"
+#include <ren/assets/importers/ImportSource.h>
+#include <ren/assets/importers/Importer.h>
+#include <ren/core/Bundle.h>
+#include <ren/core/Flag.h>
+#include <ren/core/Logging.h>
+
+
+// Launch options can disable timed scans. This will be something we need to
+// deal with when a game is running in runtime mode, as we won't run any
+// importing logic then. (It would be an error, if we eventually have proper
+// game packaging eventually.)
+static ren::Flag<bool> kAssetScan("asset-scan", true, "Scan the asset sources on a timer. Scans that the program schedules still run.");
+static ren::Flag<int> kAssetManagerScanIntervalMs("asset-scan-interval-ms", 1000, "Time from the end of one asset task to the next timed scan.");
+static ren::Flag<bool> kAutoImport("auto-import", true, "Import new and changed asset sources after a scan, without a prompt.");
+static ren::Flag<bool> kAssetHashCheck("asset-hash-check", true,
+                                       "After a scan, hash stale asset sources, and do not import the ones whose content is the same.");
+
 
 namespace ren {
 
-  AssetManager &getAssetManager() { return ren::world().get_mut<AssetManager>(); }
+  AssetManager &getAssetManager() { return ren::Application::get().getAssetManager(); }
 
-  AssetManager::AssetManager() {}
-
-  AssetManager::~AssetManager() { fmt::print("AssetManager destroyed.\n"); }
-
-
-  void AssetManager::addFilesystemSource(const std::string_view &path) {
-    this->source.addFilesystem(path);
+  // The flags must be parsed before the construction, so that they set the start values.
+  AssetManager::AssetManager()
+      : library(source)
+      , scanEnabled(kAssetScan.get())
+      , autoImport(kAutoImport.get())
+      , scanIntervalMs(kAssetManagerScanIntervalMs.get())
+      , hashCheck(kAssetHashCheck.get()) {
+    registerBuiltinImporters();
   }
+
+
+  // A task uses the sources and the library, so wait for it before they are destroyed.
+  AssetManager::~AssetManager() { waitForIdle(); }
+
+
+  void AssetManager::waitForIdle(void) {
+    std::unique_lock lock(taskMutex);
+    taskFinished.wait(lock, [&]() { return activity.load() == AssetActivity::Idle; });
+  }
+
+
+  void AssetManager::addFilesystemSource(const std::string_view &path) { this->source.addFilesystem(path); }
+
   void AssetManager::addEmbeddedSource(void) { this->source.addEmbeddedSource(); }
 
-
-  AssetID AssetManager::getID(const std::string_view &name) {
-    u64 state = 0;
-    // For now, simply hash. Later on we might need to do this centrally.
-    // It's unlikely to get a collision, but you never know.
-    ren::hashStd(state, name);
-    return state;
+  void AssetManager::addDefaultSources(const std::string_view &root) {
+    addEmbeddedSource();
+    addFilesystemSource(root);
   }
 
 
-  ref<Asset> AssetManager::load(const std::string_view &path, AssetType type) {
-    REN_PROFILE_SCOPE("Get Asset");
-    // Check if the asset is already loaded
-    for (const auto &pair : assetRegistry) {
-      if (pair.second.path == path) {
-        fmt::print("Asset {} is already imported with ID {}\n", path, (u64)pair.first);
-        return getAsset(pair.second.id);
-      }
+  //=========================
+  // Background tasks
+  //=========================
+
+  void AssetManager::tick() {
+    REN_PROFILE_SCOPE("AssetManager::tick");
+
+    // Before the idle check, so that a long task does not delay the new data of finished imports.
+    refreshRuntimeAssets();
+
+    // if the manager is not idle, wait for the next tick.
+    if (activity.load() != AssetActivity::Idle) {
+      return;
     }
 
+    // We can scan every once in a while (a timed scan). This can be disabled
+    // with --asset-scan, but a scheduled scan still runs.
+    bool timedScanReady = false;
+    if (scanEnabled) {
+      // Check the last task finished time under the lock, so that the destructor sees a consistent state.
+      std::scoped_lock lock(taskMutex);
+      auto interval = std::chrono::milliseconds(scanIntervalMs);
+      timedScanReady = !lastTaskFinished || std::chrono::steady_clock::now() - lastTaskFinished.unwrap() >= interval;
+    }
 
-    if (type == AssetType::Unknown) {
-      auto extension = [&](const char *ext, AssetType t) {
-        // I don't have string_view::ends_with, so we do it manually.
-        if (path.size() >= strlen(ext) &&
-            path.compare(path.size() - strlen(ext), strlen(ext), ext) == 0) {
-          type = t;
-          fmt::print("Detected asset type {} for path {}\n", static_cast<int>(t), path);
+    // If there was a requested scan from the application, or a timed scan is ready, start the task.
+    if (scanRequested.exchange(false) || timedScanReady) {
+      startTask(AssetActivity::Scanning, [this]() {
+        library.scan();
+        if (hashCheck) {
+          confirmStaleSources();
         }
-      };
-
-      // Texture formats we support
-      extension(".png", AssetType::Texture);
-      extension(".jpg", AssetType::Texture);
-      extension(".jpeg", AssetType::Texture);
-
-      // Mesh formats we support
-      extension(".glb", AssetType::Mesh);
-      extension(".gltf", AssetType::Mesh);
-      extension(".obj", AssetType::Mesh);
-      extension(".fbx", AssetType::Mesh);
-
-      // Shader formats we support
-      extension(".spv", AssetType::Shader);
-      extension(".vert", AssetType::Shader);
-      extension(".frag", AssetType::Shader);
-      extension(".comp", AssetType::Shader);
-      extension(".geom", AssetType::Shader);
-
-
-      // Scripts
-      extension(".lua", AssetType::Script);
-      extension(".fnl", AssetType::Script);
+        updatePendingImports();
+      });
+      return;
     }
 
-    // Create a new AssetInfo
-    AssetInfo info;
-    info.id = UUID();  // Generate a new UUID for the asset
-    info.path = path;
-    info.type = type;
-    assetRegistry[info.id] = info;  // Store the asset info in the map
-    // sync();                         // sync the asset state!
-
-    return load(info);
+    // With auto-import, the pending list is the request. The import task removes each Source from
+    // the list, so the next tick does not import it again.
+    if (autoImport && importRequests.empty()) {
+      importRequests = getPendingImports();
+    }
+    if (!importRequests.empty()) {
+      startTask(AssetActivity::Importing, [this, sources = std::move(importRequests)]() { importSources(sources); });
+      importRequests.clear();
+    }
   }
 
 
+  void AssetManager::scheduleScan(void) { scanRequested = true; }
 
-  ref<Asset> AssetManager::getAsset(ren::AssetID assetID) {
-    REN_PROFILE_SCOPE("Get Asset");
-    // First, lookup the asset in the cached asset map.
-    if (auto it = loadedAssets.find(assetID); it != loadedAssets.end()) {
-      return it->second;  // Return the cached asset if found
-    }
 
-    // If it isn't loaded, load the asset if we can.
-    if (auto it = assetRegistry.find(assetID); it != assetRegistry.end()) {
-      // if the cached asset is not loaded, load it.
-      return load(it->second);
-    } else {
-      fmt::print("Asset with ID {} is not found in the asset registry\n", (u64)assetID);
+  void AssetManager::scheduleImport(const std::vector<AssetID> &sources) {
+    for (auto id : sources) {
+      if (std::find(importRequests.begin(), importRequests.end(), id) == importRequests.end()) {
+        importRequests.push_back(id);
+      }
     }
-    return nullptr;  // Asset not found
   }
 
 
-
-
-  ref<Asset> AssetManager::load(const AssetInfo &info) {
-    REN_PROFILE_SCOPE("Load Asset");
-    std::string path = info.path;
-    ref<Asset> asset = nullptr;
-
-    // Load!
-    // TODO: asset loader abstraction
-    switch (info.type) {
-      case AssetType::Texture: {
-        asset = ren::Texture::load(path);
-        break;
+  void AssetManager::importSources(const std::vector<AssetID> &sources) {
+    for (auto id : sources) {
+      auto entry = library.find(id);
+      if (!entry || entry->kind != AssetKind::Source) {
+        continue;
       }
-      case AssetType::Mesh: {
-        fmt::print("IMPORTING MESH FROM {} IS NOT IMPLEMENTED\n", path);
-        break;
+
+      // Stat before the import, so that an edit during a failed import brings the Source back.
+      auto stats = statSource(entry->path);
+      Option<std::string> error = None;
+
+      auto start = std::chrono::steady_clock::now();
+      try {
+        importFile(entry->path);
+        library.rescan(entry->path);
+      } catch (const std::exception &failure) {
+        error = Some(std::string(failure.what()));
+        ren::warnln("Cannot import {}: {}", entry->path, failure.what());
       }
-      case AssetType::Shader: {
-        // Load the shader from the file
-        auto stage = ShaderModule::getStageFromFilename(path);
-        auto shader = make<ShaderModule>(path, stage);
-        if (shader) {
-          // Register the shader asset
-          shader->setAssetID(info.id);
-          loadedAssets[info.id] = shader;  // Cache the loaded shader
-          return shader;  // Return the loaded shader
+      auto end = std::chrono::steady_clock::now();
+      auto duration = std::chrono::duration<float, std::milli>(end - start).count();
+      // ren::dbgln("Imported {} ({}) in {:.2f} ms", entry->path, entry->id.to_string(), duration);
+      ren::dbgln("{:8.2f} ms import of {} ({})", duration, entry->id.to_string(), entry->path);
+
+      std::scoped_lock lock(pendingMutex);
+      std::erase(pendingImports, id);
+      if (error) {
+        failedImports[id] = {stats, error.unwrap()};
+      } else {
+        failedImports.erase(id);
+        reimportedSources.push_back(id);
+      }
+      pendingGeneration++;
+    }
+  }
+
+
+  void AssetManager::confirmStaleSources(void) {
+    std::vector<ref<const AssetEntry>> stale;
+    library.forEach([&](const ref<const AssetEntry> &entry) {
+      if (entry->importState == ImportState::Stale) {
+        stale.push_back(entry);
+      }
+    });
+
+    // The library lock is not held here, so the hashes do not block readers. One Source that
+    // cannot be checked stays Stale, and the others still get their check.
+    for (const auto &entry : stale) {
+      try {
+        if (refreshUnchangedRecord(*entry)) {
+          library.rescan(entry->path);
         }
-        asset = shader;
+      } catch (const std::exception &error) {
+        ren::warnln("Cannot hash-check {}: {}", entry->path, error.what());
       }
-      case AssetType::Material: {
-        fmt::print("IMPORTING MATERIAL FROM {} IS NOT IMPLEMENTED\n", path);
-        break;
-      }
+    }
+  }
 
 
-      case AssetType::Unknown:
-      default: {
-        fmt::print("Unknown asset type for path {}\n", path);
-        break;
+  bool AssetManager::refreshUnchangedRecord(const AssetEntry &entry) {
+    REN_PROFILE_SCOPE("Refresh Unchanged Record");
+    auto record = readImportRecord(source, entry.id);
+
+    // Stat each file before its hash, so that an edit during the hash makes the next scan see a
+    // change.
+    auto sidecarPath = entry.path + std::string(SIDECAR_EXTENSION);
+    AssetStat sidecarStat;
+    if (!source.stat(sidecarPath, sidecarStat)) {
+      return false;
+    }
+    bool sidecarSame = record.contains("sidecar") && record.at("sidecar").get<AssetStat>() == sidecarStat;
+    if (!sidecarSame && (!record.contains("sidecarHash") || import_detail::fileHash(source, sidecarPath) != record.at("sidecarHash"))) {
+      return false;
+    }
+
+    for (auto &dependency : record.at("dependencies")) {
+      auto path = dependency.at("path").get<std::string>();
+      AssetStat stat;
+      if (!source.stat(path, stat) || import_detail::fileHash(source, path) != dependency.at("hash")) {
+        return false;
+      }
+      dependency["stat"] = stat;
+    }
+
+    // The content is the same, so only the stats in the record change.
+    record["sidecar"] = sidecarStat;
+    import_detail::publishRecord(source, entry.id, record);
+    return true;
+  }
+
+
+  void AssetManager::startTask(AssetActivity kind, std::function<void(void)> work) {
+    // Set the activity
+    activity = kind;
+
+    // Fire off the background work.
+    ren::backgroundWork([this, work = std::move(work)]() {
+      auto start = std::chrono::steady_clock::now();
+
+      // The work can throw, but the backgroundWork cannot handle it. Catch it
+      // here and log it, so that the task can finish and the manager can return
+      // to Idle.
+      try {
+        work();
+      } catch (const std::exception &error) {
+        // TODO: we need some proper way to report this out to the user, but just log it for now.
+        ren::warnln("Asset task failed: {}", error.what());
+      }
+
+      // Notify the background task is finished, so the next tick is no longer idle.
+      auto end = std::chrono::steady_clock::now();
+      std::scoped_lock lock(taskMutex);
+      lastTaskMilliseconds = std::chrono::duration<float, std::milli>(end - start).count();
+      finishedTasks++;
+      lastTaskFinished = Some(end);
+      activity = AssetActivity::Idle;  // Back to idle.
+      taskFinished.notify_all();
+    });
+  }
+
+
+
+
+  //=========================
+  // Pending imports
+  //=========================
+
+  std::vector<AssetID> AssetManager::getPendingImports(void) const {
+    std::scoped_lock lock(pendingMutex);
+    return pendingImports;
+  }
+
+
+  std::vector<std::pair<AssetID, std::string>> AssetManager::getFailedImports(void) const {
+    std::scoped_lock lock(pendingMutex);
+    std::vector<std::pair<AssetID, std::string>> failures;
+    for (const auto &[id, failed] : failedImports) {
+      failures.emplace_back(id, failed.error);
+    }
+    return failures;
+  }
+
+
+  AssetManager::SourceStats AssetManager::statSource(const std::string &path) {
+    SourceStats stats;
+    source.stat(path, stats.file);
+    source.stat(path + std::string(SIDECAR_EXTENSION), stats.sidecar);
+    return stats;
+  }
+
+
+  void AssetManager::dismissImports(const std::vector<AssetID> &sources) {
+    std::scoped_lock lock(pendingMutex);
+    for (auto id : sources) {
+      auto entry = library.find(id);
+      if (entry) {
+        dismissedImports[id] = statSource(entry->path);
+      }
+      std::erase(pendingImports, id);
+    }
+    pendingGeneration++;
+  }
+
+
+  void AssetManager::updatePendingImports(void) {
+    std::vector<ref<const AssetEntry>> needed;
+    library.forEach([&](const ref<const AssetEntry> &entry) {
+      if (entry->importState == ImportState::NotImported || entry->importState == ImportState::Stale) {
+        needed.push_back(entry);
+      }
+    });
+    std::sort(needed.begin(), needed.end(), [](const auto &a, const auto &b) { return a->path < b->path; });
+
+    std::scoped_lock lock(pendingMutex);
+
+    // A dismissed or failed Source stays out until its file or sidecar changes. A Source that
+    // changed, or no longer needs an import, leaves both maps, so a later change asks again.
+    std::unordered_map<AssetID, SourceStats> dismissed;
+    std::unordered_map<AssetID, FailedImport> failed;
+    std::vector<AssetID> pending;
+    for (const auto &entry : needed) {
+      auto wasDismissed = dismissedImports.find(entry->id);
+      auto wasFailed = failedImports.find(entry->id);
+      if (wasDismissed == dismissedImports.end() && wasFailed == failedImports.end()) {
+        pending.push_back(entry->id);
+        continue;
+      }
+
+      auto stats = statSource(entry->path);
+      bool held = false;
+      if (wasDismissed != dismissedImports.end() && wasDismissed->second == stats) {
+        dismissed.emplace(entry->id, wasDismissed->second);
+        held = true;
+      }
+      if (wasFailed != failedImports.end() && wasFailed->second.stats == stats) {
+        failed.emplace(entry->id, wasFailed->second);
+        held = true;
+      }
+      if (!held) {
+        pending.push_back(entry->id);
       }
     }
 
-    if (asset) {
-      asset->setAssetID(info.id);     // Set the asset ID for the asset
-      loadedAssets[info.id] = asset;  // Cache the loaded asset
+    dismissedImports = std::move(dismissed);
+    failedImports = std::move(failed);
+    if (pending != pendingImports) {
+      pendingImports = std::move(pending);
+      pendingGeneration++;
+    }
+  }
+
+
+  bool loadAssetBytes(const std::string_view &path, std::vector<u8> &out) { return getAssetManager().load(path, out); }
+
+
+
+  //=========================
+  // Runtime assets
+  //=========================
+
+  void AssetManager::releaseRuntimeAssets(void) { runtimeAssets.clear(); }
+
+
+  void AssetManager::refreshRuntimeAssets(void) {
+    std::vector<AssetID> reimported;
+    {
+      std::scoped_lock lock(pendingMutex);
+      reimported.swap(reimportedSources);
+    }
+    const auto version = library.getVersion();
+    if (reimported.empty() && version == runtimeLibraryVersion) {
+      return;
+    }
+    runtimeLibraryVersion = version;
+
+    // The library entry of a derived asset names the Source that owns it.
+    std::set<AssetID> sources(reimported.begin(), reimported.end());
+    std::erase_if(runtimeAssets, [&](const auto &item) {
+      if (!item.second) {
+        return true;
+      }
+      auto entry = library.find(item.first);
+      return entry && sources.contains(entry->source);
+    });
+  }
+
+
+  ref<RuntimeAsset> AssetManager::findRuntimeAsset(AssetID id, AssetType type, const std::function<ref<RuntimeAsset>(const AssetEntry &)> &load) {
+    auto libraryEntry = library.find(id);
+
+    // A wrong type is the caller's error, not a property of the asset, so it is not cached: a
+    // caller that asks for the right type must still get the asset.
+    if (libraryEntry && libraryEntry->type != type) {
+      ren::warnln("Asset {} is a {}, not a {}", id.to_string(), json(libraryEntry->type).get<std::string>(), json(type).get<std::string>());
+      return nullptr;
+    }
+
+    auto cached = runtimeAssets.find(id);
+    if (cached != runtimeAssets.end()) {
+      return cached->second;
+    }
+
+    // A failure warns one time: the null entry stops later calls from loading again.
+    ref<RuntimeAsset> asset;
+    if (!libraryEntry) {
+      ren::warnln("Cannot load asset {}: the library has no asset with this ID", id.to_string());
     } else {
-      fmt::print("Failed to import asset from path {}\n", path);
+      try {
+        asset = load(*libraryEntry);
+        asset->id = id;
+      } catch (const std::exception &error) {
+        ren::warnln("Cannot load asset {}: {}", id.to_string(), error.what());
+      }
     }
-
-
+    runtimeAssets.emplace(id, asset);
     return asset;
   }
 
 
-  // void AssetManager::inspect(void) {
-  //   REN_PROFILE_SCOPE("AssetManager Inspect");
-  //   ImGui::Text("Asset Manager");
-  //   ImGui::Separator();
-  //   if (ImGui::Button("Sync Assets")) {
-  //     sync();
-  //     fmt::print("Assets synced to disk.\n");
-  //   }
-  //   ImGui::Text("Assets Loaded: %zu", loadedAssets.size());
-  //   ImGui::Text("Assets Registered: %zu", assetRegistry.size());
-  //   // List all assets
-  //   for (const auto &pair : assetRegistry) {
-  //     const auto &assetInfo = pair.second;
-  //     ImGui::Text("Asset ID: %llu, Path: %s, Type: %s", (u64)assetInfo.id,
-  //                 assetInfo.path.string().c_str(), json(assetInfo.type).dump().c_str());
-  //   }
-  // }
 
-  bool loadAssetBytes(const std::string_view &path, std::vector<u8> &out) {
-    return getAssetManager().load(path, out);
-  }
+  //=========================
+  // Import
+  //=========================
+
+  // Increase this when a change makes earlier outputs invalid.
+  static constexpr int IMPORTER_VERSION = 1;
 
 
-
-  // Utility: module name "a.b.c" -> "a/b/c"
-  inline std::string dot_to_slash(std::string s) {
-    std::replace(s.begin(), s.end(), '.', '/');
-    return s;
-  }
-
-  // A tiny path expander similar to package.path semantics.
-  // We’ll try <name>.lua, <name>/init.lua, and allow a configurable prefix like "scripts/".
-  inline void build_candidate_keys(const std::string &mod, const std::string &prefix,
-                                   std::vector<std::string> &out) {
-    const std::string base = dot_to_slash(mod);
-    out.push_back(prefix + base + ".lua");
-    out.push_back(prefix + base + "/init.lua");  // init
-    out.push_back(prefix + base + ".fnl");
-    out.push_back(prefix + base + "/init.fnl");  // init
-  }
+  // The sidecar as it is on disk, and the settings that the import will save.
+  struct Sidecar {
+    std::string path;
+    bool existed = false;
+    std::vector<u8> originalBytes;
+    json original;
+    json settings;
+    // The stat before the read, or after the write. An edit during the import makes the source stale.
+    AssetStat stat;
+  };
 
 
-  static int loadFennelScript(lua_State *L, std::vector<u8> &scriptData, const char *filename) {
-    // Load the fennel compiler if not already loaded
-    // Use plain Lua C API to require fennel and call compileString.
-    // Stack: [...] before; we will clean up before continuing.
-    lua_getglobal(L, "require");            // push require
-    lua_pushstring(L, "fennel");            // arg
-    if (lua_pcall(L, 1, 1, 0) != LUA_OK) {  // call require("fennel")
-      const char *err = lua_tostring(L, -1);
-      ren::errln("Failed to require fennel: {}", err ? err : "unknown error");
-      abort();
-    }
-
-    // Now fennel module is on top of the stack.
-    if (!lua_istable(L, -1)) {
-      ren::errln("fennel.require did not return a table");
-      abort();
-    }
-
-    // Get fennel.compileString
-    lua_getfield(L, -1, "compileString");  // pushes function
-    if (!lua_isfunction(L, -1)) {
-      ren::errln("fennel.compileString not found or not a function");
-      abort();
-    }
-
-    // Push arguments: source string and options table { filename = candidate }
-    lua_pushlstring(L, (const char *)scriptData.data(), scriptData.size());
-    lua_newtable(L);
-    lua_pushstring(L, "filename");
-    lua_pushstring(L, filename);
-    lua_settable(L, -3);  // options["filename"] = candidate
-
-    // Call compileString(source, options)
-    if (lua_pcall(L, 2, 1, 0) != LUA_OK) {
-      const char *err = lua_tostring(L, -1);
-      ren::errln("fennel.compileString error: {}", err ? err : "unknown error");
-      return lua_error(L);
-      // lua_pop(L, 1);  // pop error
-      // lua_pop(L, 1);  // pop module
-      // return 0;
-    }
-
-    // Result should be a string containing compiled Lua
-    size_t compiled_len = 0;
-    const char *compiled_cstr = lua_tolstring(L, -1, &compiled_len);
-    if (!compiled_cstr) {
-      ren::errln("fennel.compileString did not return a string");
-      lua_pop(L, 1);  // pop result
-      return 0;
-    }
-
-    std::string compiledCode(compiled_cstr, compiled_len);
-    lua_pop(L, 1);  // pop compiled result
-    lua_pop(L, 1);  // pop fennel module
-
-    if (luaL_loadbuffer(L, compiledCode.c_str(), compiledCode.size(), filename) == LUA_OK) {
-      return 1;  // return the loaded chunk
-    } else {
-      return lua_error(L);
-    }
-  }
-
-  void AssetManager::configureLua(sol::state &lua) {
-    // Override the normal filesystem loader with our custom one.
-    lua["package"]["loaders"][2] = +[](lua_State *L) -> int {
-      const char *modname = luaL_checkstring(L, 1);
-      auto &am = ren::Application::get().getAssetManager();
-      std::vector<std::string> candidates;
-      // Load everything from the scripts/ directory.
-      build_candidate_keys(modname, "scripts/", candidates);
-      // build_candidate_keys(modname, "", candidates);
-      std::vector<u8> scriptData;
-      for (auto &candidate : candidates) {
-        scriptData.clear();
-        if (am.load(candidate, scriptData)) {
-          // if the script is found, and it ends in .lua, load as lua.
-          if (candidate.ends_with(".lua")) {
-            if (luaL_loadbuffer(L, (const char *)scriptData.data(), scriptData.size(),
-                                candidate.c_str()) == LUA_OK) {
-              return 1;  // return the loaded chunk
-            } else {
-              // Loading failed; return the error message
-              return lua_error(L);
-            }
-          }
-
-          // if it ends in .fnl, load as fennel.
-          if (candidate.ends_with(".fnl")) {
-            return loadFennelScript(L, scriptData, candidate.c_str());
-          }
-        }
+  // Read the sidecar, or make one with a new identity. This does not write it.
+  static Sidecar loadSidecar(AssetSource &source, const std::filesystem::path &path) {
+    Sidecar sidecar;
+    sidecar.path = path.generic_string() + ".import";
+    sidecar.existed = source.stat(sidecar.path, sidecar.stat);
+    if (sidecar.existed) {
+      sidecar.originalBytes = import_detail::readBytes(source, sidecar.path);
+      auto loaded = source.loadJSON(sidecar.path);
+      if (!loaded) {
+        throw std::runtime_error("Cannot read import settings: " + sidecar.path);
       }
+      sidecar.original = loaded.unwrap();
+    } else {
+      sidecar.original = {{"version", SIDECAR_VERSION}, {"id", AssetID::generate().to_string()}};
+    }
 
-      ren::errln("[!!] Failed to load lua module '{}'\n", modname);
-      // On failure, return nil and an error string.
-      lua_pushnil(L);
-      lua_pushfstring(L, "Module '%s' not found", modname);
-      return 2;
-    };
-    // remove loaders 3 and 4 (C loader and all else fails)
-    lua["package"]["loaders"][3] = nullptr;
-    lua["package"]["loaders"][4] = nullptr;
+    sidecar.settings = sidecar.original;
+    if (sidecar.settings.at("version") != SIDECAR_VERSION) {
+      throw std::runtime_error("Invalid import identity: " + sidecar.path);
+    }
+    return sidecar;
+  }
+
+
+  // Undo a sidecar write after a failed publication.
+  static void restoreSidecar(AssetSource &source, Sidecar &sidecar) {
+    bool restored = sidecar.existed ? source.store(sidecar.path, ByteSpan(sidecar.originalBytes.data(), sidecar.originalBytes.size()))
+                                    : source.remove(sidecar.path);
+    if (!restored) {
+      throw std::runtime_error("Import publication failed and settings restoration failed: " + sidecar.path);
+    }
+  }
+
+
+  static json makeImportRecord(const ImportContext &context, const json &settings, const std::string &importer) {
+    // The fingerprint uses only the hashes, so that a touched but unchanged input keeps it.
+    json hashes = json::array();
+    json dependencies = json::array();
+    for (const auto &[name, hash] : context.getInputHashes()) {
+      hashes.push_back({{"path", name}, {"hash", hash}});
+      dependencies.push_back({{"path", name}, {"hash", hash}, {"stat", context.getInputStats().at(name)}});
+    }
+
+    // The fingerprint changes when any input, setting, or format version changes.
+    json fingerprint = {{"dependencies", hashes},
+                        {"settings", settings},
+                        {"importerVersion", IMPORTER_VERSION},
+                        {"assetFormatVersion", DERIVED_FORMAT_VERSION},
+                        {"bundleVersion", Bundle::VERSION}};
+    auto fingerprintText = fingerprint.dump();
+    auto now = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+
+    auto sourcePath = context.sourcePath.generic_string();
+    return {{"version", IMPORT_RECORD_VERSION},
+            {"sourceAsset", context.sourceAsset.to_string()},
+            {"sourcePath", sourcePath},
+            {"sourceHash", context.getInputHashes().at(sourcePath)},
+            {"importer", importer},
+            {"importerVersion", IMPORTER_VERSION},
+            {"dependencies", dependencies},
+            {"fingerprint", SHA256()(fingerprintText.data(), fingerprintText.size())},
+            {"importedAt", now},
+            {"derivedAssets", context.getOutputs()},
+            {"warnings", context.getWarnings()}};
+  }
+
+
+  json AssetManager::importFile(const std::filesystem::path &sourcePath) {
+    REN_PROFILE_SCOPE("ImportFile");
+
+    auto path = import_detail::sourcePath(sourcePath);
+    if (isDerivedPath(path) || !source.isFile(path.generic_string())) {
+      throw std::runtime_error("Cannot import generated or missing asset: " + path.string());
+    }
+
+
+    // Fill the settings. The sidecar stays unchanged until the import succeeds.
+    auto sidecar = loadSidecar(source, path);
+    auto &settings = sidecar.settings;
+    auto id = parseAssetID(settings.at("id"));
+    if (!settings.contains("importer")) {
+      const auto *inferred = findImporterForPath(path);
+      settings["importer"] = inferred ? inferred->name : "";
+    }
+    auto importerName = settings.at("importer").get<std::string>();
+    const auto *info = findImporter(importerName);
+    if (!info) {
+      throw std::runtime_error("Unsupported importer for " + path.string() + ": " + importerName);
+    }
+
+    if (!settings.contains("options")) {
+      settings["options"] = json::object();
+    }
+    if (!settings.at("options").is_object()) {
+      throw std::runtime_error("Import options must be an object: " + sidecar.path);
+    }
+
+
+    // Construct the importer. This validates the options and fills the missing defaults into the settings.
+    auto importer = info->create(settings.at("options"));
+
+    // A failure here leaves the published record. Bundles that the import already replaced keep their IDs.
+    ImportContext context(source, id, path);
+    importer->import(context);
+    context.validate();
+    auto record = makeImportRecord(context, settings, importerName);
+
+
+    // Save the sidecar, then publish the record. If publication fails, restore the old sidecar, so that a
+    // new identity or new defaults do not stay without a record.
+    // The record keeps the sidecar's stat and hash. The hash check after a scan uses the hash to
+    // tell a touched sidecar from changed settings.
+    bool changed = !sidecar.existed || sidecar.original != settings;
+    std::string sidecarHash;
+    if (changed) {
+      import_detail::storeJSONAtomic(source, sidecar.path, settings, "import settings");
+      if (!source.stat(sidecar.path, sidecar.stat)) {
+        throw std::runtime_error("Cannot stat import settings: " + sidecar.path);
+      }
+      sidecarHash = import_detail::fileHash(source, sidecar.path);
+    } else {
+      sidecarHash = SHA256()(sidecar.originalBytes.data(), sidecar.originalBytes.size());
+    }
+    record["sidecar"] = sidecar.stat;
+    record["sidecarHash"] = sidecarHash;
+    try {
+      import_detail::publishRecord(source, id, record);
+    } catch (...) {
+      if (changed) {
+        restoreSidecar(source, sidecar);
+      }
+      throw;
+    }
+    return record;
   }
 
 }  // namespace ren

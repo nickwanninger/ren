@@ -1,265 +1,11 @@
 #pragma once
 
-
-#include <algorithm>
-#include <chrono>
-#include <fstream>
-#include <iomanip>
-#include <string>
-#include <thread>
-#include <mutex>
-#include <sstream>
-#include <list>
+#include "instrumenting/ftr.h"
 
 #include <vulkan/vulkan.h>
 
 #define REN_PROFILE
 
-namespace ren {
-
-
-
-  using FloatingPointMicroseconds = std::chrono::duration<double, std::micro>;
-
-  struct ProfileResult {
-    std::string Name;
-
-    FloatingPointMicroseconds Start;
-    std::chrono::microseconds ElapsedTime;
-    std::thread::id ThreadID;
-    char ph = 'X';
-  };
-
-  struct InstrumentationSession {
-    std::string Name;
-  };
-
-  class Instrumentor {
-   public:
-    std::list<std::string> m_ProfilePoints;
-    uint64_t profileEvents = 0;
-    uint64_t profileBytes = 0;
-    Instrumentor(const Instrumentor&) = delete;
-    Instrumentor(Instrumentor&&) = delete;
-
-    void BeginSession(const std::string& name, const std::string& filepath = "results.json") {
-      std::lock_guard lock(m_Mutex);
-      if (m_CurrentSession) {
-        // If there is already a current session, then close it before beginning new one.
-        // Subsequent profiling output meant for the original session will end up in the
-        // newly opened session instead.  That's better than having badly formatted
-        // profiling output.
-        InternalEndSession();
-      }
-      m_OutputStream.open(filepath);
-
-      if (m_OutputStream.is_open()) {
-        m_CurrentSession = new InstrumentationSession({name});
-      }
-    }
-
-    void EndSession() {
-      std::lock_guard lock(m_Mutex);
-      InternalEndSession();
-    }
-    inline void writeEvent(std::string&& event) {
-      if (m_ProfilePoints.size() >= 100'000) {
-        auto& front = m_ProfilePoints.front();
-        profileBytes -= front.size();
-        profileEvents--;
-        m_ProfilePoints.pop_front();
-      }
-      profileBytes += event.size();
-      profileEvents++;
-      m_ProfilePoints.push_back(std::move(event));
-    }
-
-
-
-    inline void WriteProfile(const ProfileResult& result) {
-      if (!m_OutputEnabled) {
-        return;
-      }
-
-      std::lock_guard lock(m_Mutex);
-      if (m_CurrentSession) {
-        // m_ProfilePoints.push_back(result);
-        std::stringstream json;
-        json << std::setprecision(3) << std::fixed;
-        json << "{";
-        // json << "\"cat\":\"function\",";
-        json << "\"dur\":" << (result.ElapsedTime.count()) << ',';
-        json << "\"name\":\"" << result.Name << "\",";
-        json << "\"ph\":\"" << result.ph << "\",";
-        json << "\"pid\":\"0\",";
-        json << "\"tid\":\"" << result.ThreadID << "\",";
-        json << "\"ts\":" << result.Start.count();
-        json << "}";
-
-        writeEvent(json.str());
-      }
-    }
-
-    template <typename T>
-    inline void writeCounter(const char* name, T value) {
-      if (!m_OutputEnabled) {
-        return;
-      }
-
-      std::stringstream json;
-      json << std::setprecision(3) << std::fixed;
-      json << "{";
-      json << "\"name\":\"" << name << "\",";
-      json << "\"ph\":\"C\",";
-      json << "\"pid\":\"0\",";
-      json << "\"tid\":\"" << std::this_thread::get_id() << "\",";
-      json << "\"ts\":" << FloatingPointMicroseconds{std::chrono::steady_clock::now().time_since_epoch()}.count();
-      json << ",\"args\":{\"value\":" << value << "}";
-      json << "}";
-
-      writeEvent(json.str());
-    }
-
-
-    inline void writeGPUTime(const char* name, double duration_ms) {
-      if (!m_OutputEnabled) {
-        return;
-      }
-
-      std::stringstream json;
-      json << std::setprecision(3) << std::fixed;
-      json << "{";
-      json << "\"name\":\"" << name << "\",";
-      json << "\"ph\":\"X\",";
-      json << "\"pid\":\"0\",";
-      json << "\"tid\":\"GPU\",";
-      json << "\"ts\":" << FloatingPointMicroseconds{std::chrono::steady_clock::now().time_since_epoch()}.count();
-      json << ",\"dur\":" << (duration_ms * 1000.0);
-      json << "}";
-
-      writeEvent(json.str());
-    }
-
-
-
-    void enableOutput(bool enable) {
-      std::lock_guard lock(m_Mutex);
-      m_OutputEnabled = enable;
-    }
-
-    inline bool isOutputEnabled() const { return m_OutputEnabled; }
-
-    static Instrumentor& Get() {
-      static Instrumentor instance;
-      return instance;
-    }
-
-
-   private:
-    Instrumentor()
-        : m_CurrentSession(nullptr) {}
-
-    ~Instrumentor() { EndSession(); }
-
-    void WriteHeader() { m_OutputStream << "{\"otherData\": {}, \"traceEvents\":["; }
-
-    void WriteFooter() { m_OutputStream << "]}"; }
-
-    // Note: you must already own lock on m_Mutex before
-    // calling InternalEndSession()
-    void InternalEndSession() {
-      if (m_CurrentSession) {
-        WriteHeader();
-
-        int index = 0;
-        for (const auto& event : m_ProfilePoints) {
-          if (index++ > 0) {
-            m_OutputStream << ',';
-          }
-          m_OutputStream << event;
-        }
-        WriteFooter();
-        m_OutputStream.close();
-        delete m_CurrentSession;
-        m_CurrentSession = nullptr;
-      }
-    }
-
-   private:
-    std::mutex m_Mutex;
-    InstrumentationSession* m_CurrentSession;
-    std::ofstream m_OutputStream;
-    bool m_OutputEnabled = true;
-  };
-
-  class InstrumentationTimer {
-   public:
-    InstrumentationTimer(const char* name)
-        : m_Name(name)
-        , m_Stopped(false) {
-      m_StartTimepoint = std::chrono::steady_clock::now();
-    }
-
-    ~InstrumentationTimer() {
-      if (!m_Stopped) {
-        Stop();
-      }
-    }
-
-    void Stop() {
-      auto endTimepoint = std::chrono::steady_clock::now();
-      auto highResStart = FloatingPointMicroseconds{m_StartTimepoint.time_since_epoch()};
-      auto elapsedTime = std::chrono::time_point_cast<std::chrono::microseconds>(endTimepoint).time_since_epoch() -
-                         std::chrono::time_point_cast<std::chrono::microseconds>(m_StartTimepoint).time_since_epoch();
-
-      Instrumentor::Get().WriteProfile({m_Name, highResStart, elapsedTime, std::this_thread::get_id(), 'X'});
-
-      m_Stopped = true;
-    }
-
-   private:
-    const char* m_Name;
-    std::chrono::time_point<std::chrono::steady_clock> m_StartTimepoint;
-    bool m_Stopped;
-  };
-
-
-  static inline void emitInstrumentationMark(const char* name) {
-    Instrumentor::Get().WriteProfile({name, FloatingPointMicroseconds{std::chrono::steady_clock::now().time_since_epoch()},
-                                      std::chrono::microseconds(0), std::this_thread::get_id(), 'M'});
-  }
-
-  namespace InstrumentorUtils {
-
-    template <size_t N>
-    struct ChangeResult {
-      char Data[N];
-    };
-
-    template <size_t N, size_t K>
-    constexpr auto CleanupOutputString(const char (&expr)[N], const char (&remove)[K]) {
-      ChangeResult<N> result = {};
-
-      size_t srcIndex = 0;
-      size_t dstIndex = 0;
-      while (srcIndex < N) {
-        size_t matchIndex = 0;
-        while (matchIndex < K - 1 && srcIndex + matchIndex < N - 1 && expr[srcIndex + matchIndex] == remove[matchIndex]) {
-          matchIndex++;
-        }
-        if (matchIndex == K - 1) {
-          srcIndex += matchIndex;
-        }
-        result.Data[dstIndex++] = expr[srcIndex] == '"' ? '\'' : expr[srcIndex];
-        srcIndex++;
-      }
-      return result;
-    }
-  }  // namespace InstrumentorUtils
-
-
-
-}  // namespace ren
 #ifdef REN_PROFILE
    // Resolve which function signature macro will be used. Note that this only
   // is resolved when the (pre)compiler starts, so the syntax highlighting
@@ -282,25 +28,19 @@ namespace ren {
     #define REN_FUNC_SIG "REN_FUNC_SIG unknown!"
   #endif
 
-  #define REN_PROFILE_BEGIN_SESSION(name, filepath) ::ren::Instrumentor::Get().BeginSession(name, filepath)
-  #define REN_PROFILE_END_SESSION() ::ren::Instrumentor::Get().EndSession()
-  #define REN_PROFILE_SCOPE_LINE2(name, line) ::ren::InstrumentationTimer timer##line(name)
-  #define REN_PROFILE_SCOPE_LINE(name, line) REN_PROFILE_SCOPE_LINE2(name, line)
-  #define REN_PROFILE_SCOPE(name) REN_PROFILE_SCOPE_LINE(name, __LINE__)
-  #define REN_PROFILE_FUNCTION() REN_PROFILE_SCOPE(REN_FUNC_SIG)
-  #define REN_PROFILE_MARK(name) ::ren::emitInstrumentationMark(name)
-  #define REN_PROFILE_OUTPUT(enable) ::ren::Instrumentor::Get().enableOutput(enable)
-  #define REN_PROFILE_OUTPUT_ENABLED() ::ren::Instrumentor::Get().isOutputEnabled()
-  #define REN_PROFILE_COUNTER(name, value) ::ren::Instrumentor::Get().writeCounter(name, value)
-  #define REN_PROFILE_RECORD_GPUTIME(name, duration_ms) ::ren::Instrumentor::Get().writeGPUTime(name, duration_ms)
+  #define REN_PROFILE_BEGIN(name) ftr_init_file(name ".fxt.gz")
+  #define REN_PROFILE_END_SESSION() ftr_close()
+  #define REN_PROFILE_SCOPE(name) FTR_SCOPE(name)
+  #define REN_PROFILE_FUNCTION() FTR_FUNCTION()
+  #define REN_PROFILE_MARK(name) FTR_MARK(name)
+  #define REN_PROFILE_COUNTER(name, value) FTR_COUNTER(name, value)
+  #define REN_PROFILE_EXPR(name, expr) FTR_EXPR(name, expr)
 #else
-  #define REN_PROFILE_BEGIN_SESSION(name, filepath)
+  #define REN_PROFILE_BEGIN(name)
   #define REN_PROFILE_END_SESSION()
   #define REN_PROFILE_SCOPE(name)
   #define REN_PROFILE_FUNCTION()
   #define REN_PROFILE_MARK(name)
-  #define REN_PROFILE_OUTPUT(enable)
-  #define REN_PROFILE_OUTPUT_ENABLED() (false)
   #define REN_PROFILE_COUNTER(name, value) ((void)(value))
-  #define REN_PROFILE_RECORD_GPUTIME(name, duration_ms) ((void)(duration_ms))
+  #define REN_PROFILE_EXPR(name, expr) (expr)
 #endif

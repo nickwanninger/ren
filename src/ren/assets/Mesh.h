@@ -5,12 +5,16 @@
 #include <ren/assets/Vertex.h>
 #include <ren/core/UUID.h>
 #include <ren/assets/MegaMeshBuffer.h>
+#include <ren/assets/BVH.h>
+
+#include <limits>
 
 namespace ren {
 
+  // An axis-aligned box. The default box is empty (min > max), so the first update() sets it to that point.
   struct AABB {
-    glm::vec3 min = glm::vec3(0.0f);
-    glm::vec3 max = glm::vec3(0.0f);
+    glm::vec3 min = glm::vec3(std::numeric_limits<float>::infinity());
+    glm::vec3 max = glm::vec3(-std::numeric_limits<float>::infinity());
 
     AABB() = default;
 
@@ -36,6 +40,9 @@ namespace ren {
     Mesh(const std::string &name, const std::vector<Vertex> &vertices,
          const std::vector<u32> &indices);
 
+    // Upload final geometry and its baked BVH. This path does no simplification or BVH build.
+    Mesh(const std::string &name, const std::vector<Vertex> &vertices, const std::vector<u32> &indices, const BakedMeshBVH &bakedBVH);
+
     ~Mesh();
 
     // Get the name of the mesh.
@@ -51,6 +58,8 @@ namespace ren {
     u32 getIndexCount(void) const { return indexCount; }
     u32 getVertexCount(void) const { return vertexCount; }
     const AABB &getAABB(void) const { return aabb; }
+    // Null when the mesh has no BVH.
+    const MeshBVH *getBVH(void) const { return bvh.get(); }
 
 
     // TEMP:
@@ -63,6 +72,7 @@ namespace ren {
     u32 vertexCount = 0;
     u32 indexCount = 0;
     AABB aabb;  // Axis-aligned bounding box for the mesh.
+    Box<MeshBVH> bvh;
   };
 
   using MeshRef = ref<Mesh>;

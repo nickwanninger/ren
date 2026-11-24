@@ -1,10 +1,17 @@
 #pragma once
 
+#include <ren/types.h>
+#include <ren/obj/Types.h>
 #include <flecs/flecs.h>
 #include <fmt/core.h>
+#include <cstddef>
+#include <deque>
+#include <type_traits>
 #include <vector>
 
 namespace ren {
+
+
 
 
   // When registering a component, you can provide additional optional information here.
@@ -12,15 +19,39 @@ namespace ren {
     // If provided, this name will be used to register the component in Lua bindings (perhaps...)
     const char *luaName = nullptr;
 
-
     // Don't mess with these fields, they get overwritten internally.
     // --- IGNORE ---
     const char *typeName = nullptr;
     uint64_t typeSize = 0;
     uint64_t typeAlignment = 0;
+
+    // The authoring schema. Its name is the stable name that scene documents use.
+    // Null when the component has no `describe()`.
+    const obj::Type *type = nullptr;
+
+    // Constructs authoring data from T{}. Null without an authoring schema.
+    obj::Value (*makeValue)() = nullptr;
+
+    // Registers the component with a world and attaches a ComponentInfoRef to
+    // it. Registration sets this, because only it knows the C++ type.
+    void (*bindToWorld)(flecs::world &world, const ComponentRegistrationInfo &info) = nullptr;
   };
 
-  std::vector<ComponentRegistrationInfo> &getRegisteredComponents();
+
+  // Attached to each flecs component entity, so that code which has only a
+  // flecs id (such as an editor) can find the registration info.
+  struct ComponentInfoRef {
+    const ComponentRegistrationInfo *info = nullptr;
+  };
+
+
+  // A deque, so that ComponentInfoRef pointers stay valid when more
+  // components register later (for example, from Lua).
+  std::deque<ComponentRegistrationInfo> &getRegisteredComponents();
+
+  // Calls `bindToWorld` for each registered component. Call it once, after the
+  // world exists and before anything reads ComponentInfoRef.
+  void bindRegisteredComponents(flecs::world &world);
 
 
 
@@ -35,10 +66,22 @@ namespace ren {
     info.typeSize = sizeof(T);
     info.typeAlignment = alignof(T);
 
+    // Components without `describe()` register with no schema.
+    if constexpr (requires(obj::TypeBuilder<T> &b) { T::describe(b); }) {
+      info.type = &obj::getType<T>();
+      info.makeValue = [] { return obj::readNative(T{}); };
+    }
+
+    info.bindToWorld = [](flecs::world &world, const ComponentRegistrationInfo &info) {
+      world.component<T>().template set<ComponentInfoRef>({&info});
+    };
+
     internal::doRegisterComponent(info);
 
     return true;
   }
+
+
 
 }  // namespace ren
 

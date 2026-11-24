@@ -119,21 +119,21 @@ namespace ren {
 
     operator u64() const { return m_UUID; }
 
-    friend void to_json(json& j, const UUID& uuid) {
-      if (uuid.m_UUID == UUID::null) {
-        j = "null";
-      } else {
-        j = uuid.m_UUID;
+
+    static UUID generate();
+
+    friend void to_json(json& j, const UUID& uuid) { j = uuid.to_string(); }
+    friend void from_json(const json& j, UUID& uuid) { uuid = UUID::parse(j.get<std::string>()).unwrap_or(UUID(UUID::null)); }
+
+
+    std::string to_string() const {
+      if (m_UUID == UUID::null) {
+        return "null";
       }
+      return fmt::format("{:016x}", m_UUID);
     }
 
-    friend void from_json(const json& j, UUID& uuid) {
-      if (j == "null") {
-        uuid.m_UUID = UUID::null;
-      } else {
-        uuid.m_UUID = j.get<u64>();
-      }
-    }
+    static Option<UUID> parse(std::string_view str);
 
    private:
     u64 m_UUID;

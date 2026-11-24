@@ -23,7 +23,9 @@ namespace ren {
            glm::vec2 texCoord = glm::vec2(0.0f, 0.0f))
         : pos(pos)
         , normal(normal)
-        , texCoord(texCoord) {}
+        , texCoord(texCoord)
+        , tangent(0.0f)
+        , bitangent(0.0f) {}
 
 
 

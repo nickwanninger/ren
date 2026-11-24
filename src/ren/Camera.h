@@ -7,7 +7,7 @@ namespace ren {
   struct Camera {
     static constexpr float FOV = 90.0f;
     static constexpr float NEAR_PLANE = 0.01f;
-    static constexpr float FAR_PLANE = 100.0f;
+    static constexpr float FAR_PLANE = 10000.0f;
 
     glm::vec3 velocity = {0.0f, 0.0f, 0.0f};
     glm::vec3 position = {0.0f, 0.0f, 3.0f};

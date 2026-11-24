@@ -18,12 +18,11 @@ namespace ren {
 
     DepthPrepassTask(ren::RenderGraph &G);
 
-    void run(ren::GraphRenderPassContext &ctx) override;
+    void run(ren::GraphRenderPassContext &ctx) const override;
   };
 
 
-  inline void addDepthPrepass(RenderGraph &G, ren::GraphHandle &depthHandle,
-                           ren::GraphHandle &normalHandle) {
+  inline void addDepthPrepass(GraphScope &G, ren::GraphHandle &depthHandle, ren::GraphHandle &normalHandle) {
     auto &dpp = G.addTask<DepthPrepassTask>("depth_prepass");
     depthHandle = dpp.depthOut;
     normalHandle = dpp.normalOut;

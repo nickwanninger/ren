@@ -1,14 +1,24 @@
 #define IMGUI_DEFINE_MATH_OPERATORS
 #include <ren/core/ui/EditorUI.h>
 
+#include <cstdarg>
+
 #include <imgui/imgui.h>
 #include <imgui/imgui_internal.h>
 #include <imnodes/imnodes.h>
 #include <ren/core/Application.h>
+#include <ren/core/Flag.h>
 
+
+static ren::Flag<int> kFontSize("font-size", 14, "Font size base in the editor ui.");
 namespace ren::eui {
 
   static ImFont *iconFont = nullptr;
+  static ImFont *defaultFont = nullptr;
+  static ImFont *monoFont = nullptr;
+
+
+  ImFont *detail::getMonoFont() { return monoFont; }
 
 
   bool ExtendedButton(const char *label, const char *icon, const Style &buttonStyle, ImVec2 size_arg) {
@@ -22,10 +32,10 @@ namespace ren::eui {
     }
 
 
-    ImVec4 bgColor = buttonStyle.bg.value_or(COLOR_FRAMEBG);
+    ImVec4 bgColor = buttonStyle.bg.value_or(ImGui::GetStyleColorVec4(ImGuiCol_Button));
     bgColor.w = 1.0f;  // ensure opaque background
 
-    ImVec4 fgColor = buttonStyle.fg.value_or(COLOR_FRAMEFG);
+    ImVec4 fgColor = buttonStyle.fg.value_or(ImGui::GetStyleColorVec4(ImGuiCol_Text));
     fgColor.w = 1.0f;  // ensure opaque foreground
 
     ImGuiWindow *window = ImGui::GetCurrentWindow();
@@ -73,10 +83,9 @@ namespace ren::eui {
     bool hovered, held;
     bool pressed = ImGui::ButtonBehavior(bb, id, &hovered, &held);
 
-    if (held) {
-      bgColor = bgColor + ImVec4(0.1f, 0.1f, 0.1f, 0.0f);
-    }
-    if (hovered) {
+    if (!buttonStyle.bg) {
+      bgColor = ImGui::GetStyleColorVec4(held ? ImGuiCol_ButtonActive : hovered ? ImGuiCol_ButtonHovered : ImGuiCol_Button);
+    } else if (held || hovered) {
       bgColor = bgColor + ImVec4(0.1f, 0.1f, 0.1f, 0.0f);
     }
 
@@ -132,6 +141,21 @@ namespace ren::eui {
   }
 
 
+  bool BeginTabBar(const char *id, ImGuiTabBarFlags flags) {
+    // Docked windows draw a strip behind their tabs, but plain tab bars do not.
+    // Without the strip, the selected tab blends into the window and the unselected tabs look like buttons.
+    // This rectangle matches the tab bar rectangle in ImGui::BeginTabBar.
+    ImGuiWindow *window = ImGui::GetCurrentWindow();
+    if (!window->SkipItems) {
+      ImVec2 min = window->DC.CursorPos;
+      ImVec2 max = ImVec2(window->WorkRect.Max.x, min.y + ImGui::GetFrameHeight());
+      window->DrawList->AddRectFilled(min, max, ImGui::GetColorU32(ImGuiCol_TitleBg), ImGui::GetStyle().TabRounding, ImDrawFlags_RoundCornersTop);
+    }
+
+    return ImGui::BeginTabBar(id, flags | ImGuiTabBarFlags_DrawSelectedOverline);
+  }
+
+
   void ShadowedText(const char *text) {
     ImVec2 pos = ImGui::GetCursorScreenPos();
     ImDrawList *drawList = ImGui::GetWindowDrawList();
@@ -150,6 +174,26 @@ namespace ren::eui {
     // Advance cursor (use CalcTextSize if you need precise layout)
     ImGui::Dummy(ImGui::CalcTextSize(text));
   }
+
+  void Text(const char *fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    ImGui::TextV(fmt, args);
+    va_end(args);
+  }
+
+
+  void TextMono(const char *fmt, ...) {
+    ImGui::PushFont(monoFont);
+
+    va_list args;
+    va_start(args, fmt);
+    ImGui::TextV(fmt, args);
+    va_end(args);
+
+    ImGui::PopFont();
+  }
+
 
   void loadRenFonts(ren::AssetManager &am) {
     auto &io = ImGui::GetIO();
@@ -170,128 +214,135 @@ namespace ren::eui {
       return nullptr;
     };
 
-    loadAndMergeFont("fonts/MapleMono-Medium.ttf", 11.0, false);
-    // loadAndMergeFont("fonts/Geist-Medium.ttf", 11.0, false);
+    monoFont = loadAndMergeFont("fonts/MapleMono-Medium.ttf", 11.0, false);
+    defaultFont = loadAndMergeFont("fonts/Inter-Regular.ttf", 13.0, false);
     iconFont = loadAndMergeFont("fonts/lucide.ttf", 10.0, false);
+    io.FontDefault = defaultFont;
   }
 
 
 
-  void configure() {
+  void applyTheme(const Theme &theme) {
     ImGuiStyle &style = ImGui::GetStyle();
-    // ImVec4 *colors = style.Colors;
-    ImVec4 *colors = ImGui::GetStyle().Colors;
-
-    auto primaryColor = hexImColor(0x008540);
-
-    // auto windowBackground = ImVec4(0.011f, 0.011f, 0.011f, 1.00f);
-    auto windowBackground = ImVec4(0.005f, 0.005f, 0.005f, 1.00f);
-    auto lighten = [](const ImVec4 &color, float amount) { return ImVec4(color.x + amount, color.y + amount, color.z + amount, color.w); };
+    ImVec4 *colors = style.Colors;
 
 
-    colors[ImGuiCol_CheckMark] = primaryColor;
-    colors[ImGuiCol_SliderGrab] = primaryColor;
-    colors[ImGuiCol_SliderGrabActive] = primaryColor;
-    colors[ImGuiCol_SeparatorHovered] = primaryColor;
-    colors[ImGuiCol_SeparatorActive] = primaryColor;
-    colors[ImGuiCol_ResizeGrip] = primaryColor;
-    colors[ImGuiCol_ResizeGripHovered] = primaryColor;
-    colors[ImGuiCol_ResizeGripActive] = primaryColor;
-    colors[ImGuiCol_TextLink] = primaryColor;
-    colors[ImGuiCol_NavCursor] = primaryColor;
+    // Reset first so every slot holds an sRGB value before the linear conversion below.
+    // This makes repeated calls safe.
+    ImGui::StyleColorsDark(&style);
 
 
-    colors[ImGuiCol_MenuBarBg] = ImVec4(0.00f, 0.00f, 0.00f, 1.00f);
-    colors[ImGuiCol_TextDisabled] = ImVec4(0.11f, 0.11f, 0.11f, 1.00f);
-    colors[ImGuiCol_MenuBarBg] = windowBackground;
-    colors[ImGuiCol_ScrollbarBg] = lighten(windowBackground, 0.02f);
-    colors[ImGuiCol_ScrollbarGrab] = ImVec4(0.09f, 0.09f, 0.09f, 1.00f);
-    colors[ImGuiCol_ScrollbarGrabHovered] = ImVec4(0.30f, 0.30f, 0.30f, 1.00f);
-    colors[ImGuiCol_ScrollbarGrabActive] = ImVec4(0.67f, 0.67f, 0.67f, 1.00f);
+    style.WindowBorderSize = 1.0f;
+    style.ChildBorderSize = 1.0f;
+    style.PopupBorderSize = 1.0f;
+    style.FrameBorderSize = 1.0f;
+    style.TabBorderSize = 0.0f;
+    style.TabBarBorderSize = 1.0f;
+    style.TabBarOverlineSize = theme.tabOverlineSize;
 
-    colors[ImGuiCol_Header] = ImVec4(0.02f, 0.02f, 0.02f, 1.00f);
-    colors[ImGuiCol_HeaderHovered] = ImVec4(0.05f, 0.05f, 0.05f, 1.00f);
-    colors[ImGuiCol_HeaderActive] = ImVec4(0.08f, 0.08f, 0.08f, 1.00f);
-    colors[ImGuiCol_Tab] = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
-    colors[ImGuiCol_TabSelected] = ImVec4(0.04f, 0.04f, 0.04f, 1.00f);
-    colors[ImGuiCol_TabHovered] = ImVec4(0.16f, 0.16f, 0.16f, 0.80f);
-    colors[ImGuiCol_TabSelectedOverline] = ImVec4(1.00f, 1.00f, 1.00f, 0.0f);
-    colors[ImGuiCol_TabDimmed] = windowBackground;
-    colors[ImGuiCol_TabDimmedSelected] = lighten(windowBackground, 0.02f);
-    colors[ImGuiCol_DockingPreview] = ImVec4(0.98f, 0.99f, 1.00f, 0.09f);
-    colors[ImGuiCol_DockingEmptyBg] = ImVec4(1.00f, 1.00f, 1.00f, 1.00f);
-    colors[ImGuiCol_TableHeaderBg] = hexImColor(0x161616);
-    colors[ImGuiCol_TableBorderStrong] = lighten(windowBackground, 0.02f);
-    colors[ImGuiCol_TableBorderLight] = ImVec4(0.07f, 0.07f, 0.07f, 1.00f);
-    colors[ImGuiCol_TableRowBg] = ImVec4(0.00f, 0.00f, 0.00f, 0.03f);
-    colors[ImGuiCol_TableRowBgAlt] = ImVec4(0.29f, 0.29f, 0.29f, 0.06f);
-    colors[ImGuiCol_TreeLines] = ImVec4(0.29f, 0.29f, 0.31f, 0.50f);
+    style.WindowRounding = 0.0f;
+    style.ChildRounding = theme.rounding;
+    style.FrameRounding = theme.rounding;
+    style.PopupRounding = theme.rounding;
+    style.GrabRounding = theme.rounding;
+    style.TabRounding = theme.rounding;
+    style.ScrollbarRounding = 6.0f;
+
+    style.WindowPadding = ImVec2(6.0f, 6.0f);
+    // ImGui sizes tabs from FramePadding, so this also sets the padding around tab titles.
+    style.FramePadding = ImVec2(5.0f, 3.0f);
+    style.ItemSpacing = ImVec2(6.0f, 4.0f);
+    style.ItemInnerSpacing = ImVec2(4.0f, 4.0f);
+
+    style.FontSizeBase = static_cast<float>(kFontSize.get());
+
+    auto c = [](u32 hex, float alpha = 1.0f) { return ren::hexImColor(hex, alpha); };
+
+    colors[ImGuiCol_Text] = c(theme.text);
+    colors[ImGuiCol_TextDisabled] = c(theme.textDisabled);
+    colors[ImGuiCol_TextSelectedBg] = c(theme.selection, 0.6f);
+    colors[ImGuiCol_TextLink] = c(theme.accent);
+
+    colors[ImGuiCol_WindowBg] = c(theme.windowBg);
+    colors[ImGuiCol_ChildBg] = c(0, 0.0f);
+    colors[ImGuiCol_PopupBg] = c(theme.popupBg);
+    colors[ImGuiCol_MenuBarBg] = c(theme.tabBarBg);
+    colors[ImGuiCol_Border] = c(theme.border);
+    colors[ImGuiCol_BorderShadow] = c(0, 0.0f);
+
+    // Input fields, checkboxes, sliders, and drag fields.
+    colors[ImGuiCol_FrameBg] = c(theme.inputBg);
+    colors[ImGuiCol_FrameBgHovered] = c(theme.inputBgHovered);
+    colors[ImGuiCol_FrameBgActive] = c(theme.inputBgActive);
+    colors[ImGuiCol_InputTextCursor] = c(theme.text);
+    colors[ImGuiCol_CheckMark] = c(theme.text);
+    colors[ImGuiCol_SliderGrab] = c(theme.button);
+    colors[ImGuiCol_SliderGrabActive] = c(theme.accent);
+
+    // Docked windows draw their tab strip with the title colors.
+    colors[ImGuiCol_TitleBg] = c(theme.tabBarBg);
+    colors[ImGuiCol_TitleBgActive] = c(theme.tabBarBg);
+    colors[ImGuiCol_TitleBgCollapsed] = c(theme.tabBarBg);
+
+    // The selected tab uses the window color so that it joins the panel below it.
+    colors[ImGuiCol_Tab] = c(theme.tabBarBg);
+    colors[ImGuiCol_TabHovered] = c(theme.tabHovered);
+    colors[ImGuiCol_TabSelected] = c(theme.windowBg);
+    colors[ImGuiCol_TabSelectedOverline] = c(theme.accent);
+    colors[ImGuiCol_TabDimmed] = c(theme.tabBarBg);
+    colors[ImGuiCol_TabDimmedSelected] = c(theme.windowBg);
+    colors[ImGuiCol_TabDimmedSelectedOverline] = c(0, 0.0f);
+
+    colors[ImGuiCol_Button] = c(theme.button);
+    colors[ImGuiCol_ButtonHovered] = c(theme.buttonHovered);
+    colors[ImGuiCol_ButtonActive] = c(theme.buttonActive);
+
+    // ImGui uses the header colors for collapsing headers, tree nodes, and selectables.
+    colors[ImGuiCol_Header] = c(theme.header);
+    colors[ImGuiCol_HeaderHovered] = c(theme.headerHovered);
+    colors[ImGuiCol_HeaderActive] = c(theme.selection);
+
+    colors[ImGuiCol_Separator] = c(theme.border);
+    colors[ImGuiCol_SeparatorHovered] = c(theme.accent, 0.7f);
+    colors[ImGuiCol_SeparatorActive] = c(theme.accent);
+    colors[ImGuiCol_ResizeGrip] = c(0, 0.0f);
+    colors[ImGuiCol_ResizeGripHovered] = c(theme.accent, 0.7f);
+    colors[ImGuiCol_ResizeGripActive] = c(theme.accent);
+
+    colors[ImGuiCol_ScrollbarBg] = c(theme.windowBg);
+    colors[ImGuiCol_ScrollbarGrab] = c(theme.scrollbarGrab);
+    colors[ImGuiCol_ScrollbarGrabHovered] = c(theme.scrollbarGrabHovered);
+    colors[ImGuiCol_ScrollbarGrabActive] = c(theme.scrollbarGrabHovered);
+
+    colors[ImGuiCol_DockingPreview] = c(theme.accent, 0.5f);
+    colors[ImGuiCol_DockingEmptyBg] = c(theme.tabBarBg);
+
+    colors[ImGuiCol_TableHeaderBg] = c(theme.header);
+    colors[ImGuiCol_TableBorderStrong] = c(theme.border);
+    colors[ImGuiCol_TableBorderLight] = c(theme.header);
+    colors[ImGuiCol_TableRowBg] = c(0, 0.0f);
+    colors[ImGuiCol_TableRowBgAlt] = c(0xFFFFFF, 0.03f);
+
+    colors[ImGuiCol_DragDropTarget] = c(theme.accent);
+    colors[ImGuiCol_NavCursor] = c(theme.accent);
 
 
-
-
-    colors[ImGuiCol_Text] = ImVec4(0.80f, 0.80f, 0.80f, 1.00f);
-
-    // Window and Child backgrounds.
-    colors[ImGuiCol_WindowBg] = windowBackground;
-    colors[ImGuiCol_PopupBg] = windowBackground;
-    colors[ImGuiCol_ChildBg] = windowBackground;
-    colors[ImGuiCol_Border] = lighten(windowBackground, 0.05f);
-    colors[ImGuiCol_BorderShadow] = ImVec4(0.00f, 0.00f, 0.00f, 1.00f);
-    colors[ImGuiCol_FrameBg] = COLOR_FRAMEBG;
-    colors[ImGuiCol_FrameBgHovered] = colors[ImGuiCol_FrameBg] + ImVec4(0.05f, 0.05f, 0.05f, 0.0f);
-    colors[ImGuiCol_FrameBgActive] = colors[ImGuiCol_FrameBg] + ImVec4(0.10f, 0.10f, 0.10f, 0.0f);
-
-    // Collapsable Headers.
-    colors[ImGuiCol_TitleBg] = ImVec4(0.00f, 0.00f, 0.00f, 1.00f);
-    colors[ImGuiCol_FrameBgActive] = ImVec4(0.08f, 0.08f, 0.08f, 1.00f);
-    colors[ImGuiCol_TitleBgActive] = windowBackground;
-    colors[ImGuiCol_TitleBgCollapsed] = windowBackground;
-
-    colors[ImGuiCol_ScrollbarBg] = windowBackground;
-    colors[ImGuiCol_Button] = ImVec4(0.02f, 0.02f, 0.02f, 1.00f);
-    colors[ImGuiCol_ButtonHovered] = ImVec4(0.30f, 0.30f, 0.30f, 1.00f);
-    colors[ImGuiCol_ButtonActive] = ImVec4(0.09f, 0.09f, 0.09f, 1.00f);
-    colors[ImGuiCol_TableBorderStrong] = ImVec4(0.03f, 0.03f, 0.03f, 1.00f);
-    colors[ImGuiCol_TableBorderLight] = ImVec4(0.04f, 0.04f, 0.04f, 1.00f);
-    colors[ImGuiCol_TableRowBg] = ImVec4(1.00f, 1.00f, 1.00f, 0.00f);
-    colors[ImGuiCol_TableRowBgAlt] = ImVec4(0.10f, 0.10f, 0.10f, 0.06f);
-
-
-
-
-    style.TabRounding = 0.0f;
-    style.WindowMenuButtonPosition = ImGuiDir_None;
-    style.FontSizeBase = 14.0f;
-    style.DockingSeparatorSize = 4.0f;
-    style.FrameRounding = 4.0f;
-    // style.FramePadding = ImVec2(8.0f, 2.0f);
-    // style.FrameBorderSize = 2.0f;
-    // style.WindowRounding = 5.0f;
-
-    style.WindowPadding = ImVec2(10.0f, 2.0f);
-
-
-    // imnodes style.
-    // set the titlebar color for all nodes
-    {
-      ImNodesStyle &style = ImNodes::GetStyle();
-      style.Colors[ImNodesCol_TitleBar] = ImColor(lighten(windowBackground, -0.1f));
-      style.Colors[ImNodesCol_TitleBarSelected] = ImColor(primaryColor);
-      style.Colors[ImNodesCol_TitleBarHovered] = ImColor(lighten(windowBackground, 0.05f));
-
-      style.Colors[ImNodesCol_NodeBackground] = ImColor(windowBackground);
-      style.Colors[ImNodesCol_NodeBackgroundHovered] = ImColor(lighten(windowBackground, 0.01f));
-      style.Colors[ImNodesCol_NodeBackgroundSelected] = ImColor(lighten(windowBackground, 0.01f));
-      style.Colors[ImNodesCol_NodeOutline] = ImColor(lighten(windowBackground, 0.06f));
-
-      style.Colors[ImNodesCol_GridBackground] = ImColor(lighten(windowBackground, 0.02f));
-      style.Colors[ImNodesCol_GridLine] = ImColor(lighten(windowBackground, 0.03f));
-      style.Colors[ImNodesCol_GridLinePrimary] = ImColor(lighten(windowBackground, 0.1f));
+    // The palette is sRGB. The ImGui render target is sRGB, so convert to linear.
+    auto srgbToLinear = [](const ImVec4 &c) -> ImVec4 {
+      auto toLinear = [](float x) -> float { return (x <= 0.04045f) ? x / 12.92f : std::pow((x + 0.055f) / 1.055f, 2.4f); };
+      return ImVec4(toLinear(c.x), toLinear(c.y), toLinear(c.z), c.w);
+    };
+    for (int i = 0; i < ImGuiCol_COUNT; i++) {
+      colors[i] = srgbToLinear(colors[i]);
     }
+  }
 
 
-    auto &am = ren::ensureResource<ren::AssetManager>();
+  void configure() {
+    applyTheme(Theme{});
+
+    auto &am = ren::Application::get().getAssetManager();
+
 
     loadRenFonts(am);
   }
