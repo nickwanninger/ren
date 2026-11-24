@@ -125,6 +125,7 @@ namespace ren {
       if (newMaterial) {
         // All materials of a batch use the same program, so they share the
         // schema and the stride.
+        draw.material->resolveTextures();
         const auto &data = draw.material->getCpuMaterialData();
         const size_t offset = materialBytes.size();
         materialBytes.resize(offset + materialStride, 0);

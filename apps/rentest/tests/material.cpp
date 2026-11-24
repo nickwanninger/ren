@@ -8,6 +8,7 @@
 #include <ren/assets/DerivedAsset.h>
 #include <ren/assets/Material.h>
 #include <ren/assets/NativeAsset.h>
+#include <ren/renderer/Texture.h>
 
 #include <cstring>
 #include <filesystem>
@@ -135,7 +136,8 @@ namespace {
     "unsignedVector": {"type": "vector<uint,2>", "value": [8, 9]},
     "matrix3":        {"type": "matrix<float,3,3>", "value": [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]]},
     "matrix4":        {"type": "matrix<float,4,4>", "value": [[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0],
-                                                              [9.0, 10.0, 11.0, 12.0], [13.0, 14.0, 15.0, 16.0]]}
+                                                              [9.0, 10.0, 11.0, 12.0], [13.0, 14.0, 15.0, 16.0]]},
+    "texture":        {"type": "BindlessTexture", "value": "a41e93c07b2d5f18"}
   })");
 
 
@@ -200,14 +202,12 @@ namespace {
     void onSetup(rentest::TestContext &ctx) override {
       auto fields = kStoredFields;
       fields["_padding"] = {{"type", "float"}, {"value", 3.0}};
-      fields["texture"] = {{"type", "BindlessTexture"}, {"value", "a41e93c07b2d5f18"}};
       fields["removed"] = {{"type", "float"}, {"value", 1.0}};
       fields["scalar"]["type"] = "int";  // A retyped field keeps its default.
 
       auto material = ren::deserializeNativeAsset<ren::Material>(makeFile(fields));
       const auto saved = ren::serializeNativeAsset(*material)["fields"];
       ctx.check(!saved.contains("_padding"), "'_padding' is not saved");
-      ctx.check(!saved.contains("texture"), "'texture' is not saved");
       ctx.check(!saved.contains("removed"), "'removed' is not saved");
       ctx.check(saved["scalar"]["value"] == 0.0, "the retyped 'scalar' keeps its default");
       ctx.check(saved["color"] == kStoredFields["color"], "the other fields load");
@@ -332,6 +332,45 @@ namespace {
     }
   };
 
+
+  // A texture field holds a handle. Its bytes are 0 until resolveTextures() writes the bindless
+  // index, and a Texture that code made saves as null.
+  class MaterialTextures : public rentest::RenderTest {
+    void onSetup(rentest::TestContext &ctx) override {
+      auto material = ren::make<ren::Material>("test/modules/material_fields");
+      const auto &field = findField(*material, "texture");
+      auto readBindless = [&]() {
+        ren::BindlessTexture bindless;
+        std::memcpy(&bindless, material->getCpuMaterialData().data() + field.byteOffset, sizeof(bindless));
+        return bindless;
+      };
+
+      auto made = ren::Texture::createSinglePixel("code", 0, 255, 0, 255);
+      material->setTexture("texture", made);
+      ctx.check(readBindless().value == 0, "the bytes are 0 before resolveTextures()");
+      material->resolveTextures();
+      ctx.check(readBindless() == made->bindless(), "resolveTextures() writes the bindless index");
+      ctx.check(ren::serializeNativeAsset(*material)["fields"]["texture"]["value"].is_null(), "a Texture that code made saves as null");
+
+      // An asset that does not resolve writes 0, and the ID still saves.
+      auto missing = ren::AssetID::generate();
+      material->setTexture("texture", missing);
+      material->resolveTextures();
+      ctx.check(readBindless().value == 0, "a handle that does not resolve writes 0");
+      ctx.check(ren::serializeNativeAsset(*material)["fields"]["texture"]["value"] == missing.to_string(), "an asset handle saves its ID");
+
+      // An empty handle clears the field.
+      material->setTexture("texture", ren::Handle<ren::Texture>());
+      ctx.check(!material->getTexture("texture"), "an empty handle clears the field");
+
+      try {
+        material->setTexture("scalar", made);
+        ctx.fail("setTexture() on a value field does not throw");
+      } catch (const std::invalid_argument &) {
+      }
+    }
+  };
+
 }  // namespace
 
 
@@ -342,3 +381,4 @@ REN_RENDER_TEST("material.bad_values", MaterialBadValues, {.frames = 1, .expect 
 REN_RENDER_TEST("material.example_file", MaterialExampleFile, {.frames = 1, .expect = "No image. The checks are in the log."});
 REN_RENDER_TEST("material.id_and_version", MaterialIdAndVersion, {.frames = 1, .expect = "No image. The checks are in the log."});
 REN_RENDER_TEST("material.derived_bundle", MaterialDerivedBundle, {.frames = 1, .expect = "No image. The checks are in the log."});
+REN_RENDER_TEST("material.textures", MaterialTextures, {.frames = 1, .expect = "No image. The checks are in the log."});

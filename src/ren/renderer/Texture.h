@@ -2,7 +2,7 @@
 
 #include <ren/types.h>
 #include <ren/renderer/Image.h>
-#include <ren/assets/Asset.h>
+#include <ren/assets/TextureAsset.h>
 #include <ren/renderer/BindlessTexture.h>
 #include <ren/renderer/SamplerCache.h>
 #include <ren/core/Builder.h>
@@ -16,8 +16,6 @@ namespace ren {
 
 
   // A texture is just a 2D image with a sampler.
-  class TextureAsset;
-
   class Texture : ren::VulkanResource, public RuntimeAsset {
    public:
     // The CPU form that AssetManager::resolve() loads a Texture from.

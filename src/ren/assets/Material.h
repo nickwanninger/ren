@@ -3,6 +3,7 @@
 
 #include <string>
 #include <vector>
+#include <ren/assets/Handle.h>
 #include <ren/assets/NativeAsset.h>
 #include <ren/renderer/Texture.h>
 #include <ren/renderer/shader/ShaderProgram.h>
@@ -14,10 +15,15 @@ namespace ren {
   // material struct. The bytes are the source of truth for field values:
   // setValue() encodes JSON into them, and getValue() decodes them.
   //
-  // A .material file stores the surface shader, the PSO, and the fields that
-  // isStoredField() accepts: scalars, vectors and matrices whose names do not
-  // start with '_'. Matrix values are arrays of columns. Use
-  // deserializeNativeAsset() and serializeNativeAsset() for the whole file.
+  // A texture field holds a Handle<Texture>. Its bytes are the bindless index of
+  // the texture, which resolveTextures() writes before the material is used.
+  //
+  // A .material file stores the surface shader, the PSO, the value fields that
+  // isStoredField() accepts, and the texture fields that isTextureField() accepts.
+  // Value fields are scalars, vectors and matrices whose names do not start with
+  // '_'; matrix values are arrays of columns. A texture field stores the asset ID
+  // of its handle, or null. Use deserializeNativeAsset() and serializeNativeAsset()
+  // for the whole file.
   class Material : public NativeAsset {
    public:
     static constexpr AssetType TYPE = AssetType::Material;
@@ -70,7 +76,17 @@ namespace ren {
     void setFloat3(std::string_view name, const glm::vec3 &value);
     void setFloat4(std::string_view name, const glm::vec4 &value);
     void setColor(std::string_view name, const glm::vec4 &color) { setFloat4(name, color); }
-    void setTexture(std::string_view name, const ref<Texture> &texture);
+
+    // Sets the texture of a texture field. The handle takes an asset ID or a Texture, and an
+    // empty handle clears the field. The field's bytes are 0, which the shader treats as no
+    // texture, until resolveTextures(). Throws if the field is not a texture field.
+    void setTexture(std::string_view name, Handle<Texture> texture);
+    // Returns an empty handle if the field has no texture. Throws as setTexture() does.
+    Handle<Texture> getTexture(std::string_view name) const;
+
+    // Resolves the handle of each texture field and writes its bindless index into the bytes.
+    // A handle that does not resolve writes 0. Call on the main thread before the bytes are used.
+    void resolveTextures(void);
 
     // Render the material to the imgui-based inspector.
     // This is used to inspect a material in the editor.
@@ -84,6 +100,10 @@ namespace ren {
     // Returns true if a .material file stores the field: a scalar, vector or matrix
     // whose name does not start with '_'.
     static bool isStoredField(const ShaderReflection::MaterialField &field);
+
+    // Returns true if the field holds a texture: a BindlessTexture whose name does not start
+    // with '_'.
+    static bool isTextureField(const ShaderReflection::MaterialField &field);
 
     // Encode and decode one field of the JSON value format. `out` and `data` point to the
     // field's bytes, field.byteSize long. Throws if the field is not stored, its reflected
@@ -103,7 +123,10 @@ namespace ren {
     // Zero-filled storage with the size of the reflected MaterialT.
     std::vector<u8> cpuMaterialData;
 
-    // to hold refcounts of bound textures.
-    std::map<std::string, ref<Texture>> boundTextures;
+    // The texture of each texture field that has one.
+    std::map<std::string, Handle<Texture>> textures;
+    // The Textures that resolveTextures() wrote into the bytes. They stay alive while the bytes
+    // refer to them, even if a reimport replaces the asset.
+    std::map<std::string, ref<Texture>> resolvedTextures;
   };
 }  // namespace ren

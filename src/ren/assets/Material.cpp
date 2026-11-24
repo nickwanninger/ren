@@ -1,4 +1,5 @@
 #include <ren/assets/Material.h>
+#include <ren/assets/DerivedAsset.h>
 #include <ren/renderer/shader/ShaderCache.h>
 
 #include <algorithm>
@@ -84,7 +85,7 @@ namespace ren {
         ren::warnln("Material {}: shader {} has no field '{}'", id.to_string(), surface, name);
         continue;
       }
-      if (!isStoredField(*target)) {
+      if (!isStoredField(*target) && !isTextureField(*target)) {
         ren::warnln("Material {}: field '{}' ({}) is not stored", id.to_string(), name, target->typeName);
         continue;
       }
@@ -93,7 +94,13 @@ namespace ren {
         continue;
       }
 
-      material->setValue(name, entry["value"]);
+      if (isTextureField(*target)) {
+        if (!entry["value"].is_null()) {
+          material->setTexture(name, parseAssetID(entry["value"]));
+        }
+      } else {
+        material->setValue(name, entry["value"]);
+      }
     }
     return material;
   }
@@ -115,6 +122,13 @@ namespace ren {
     for (const auto &target : getSchema()->fields) {
       if (isStoredField(target)) {
         fields[target.name] = {{"type", target.typeName}, {"value", getValue(target.name)}};
+      } else if (isTextureField(target)) {
+        // A Texture that code made has no file, so the field saves as empty.
+        const auto texture = getTexture(target.name);
+        if (texture && !texture.isPersistent()) {
+          ren::warnln("Material {}: field '{}' holds a Texture that code made, and saves as null", id.to_string(), target.name);
+        }
+        fields[target.name] = {{"type", target.typeName}, {"value", texture.isPersistent() ? json(texture.id().to_string()) : json(nullptr)}};
       }
     }
     j["fields"] = std::move(fields);
@@ -385,6 +399,11 @@ namespace ren {
   }
 
 
+  bool Material::isTextureField(const ShaderReflection::MaterialField &field) {
+    return !field.name.empty() && !field.name.starts_with('_') && field.typeName == "BindlessTexture";
+  }
+
+
   void Material::encodeValue(const ShaderReflection::MaterialField &field, const json &value, u8 *out) {
     checkLayout(field);
     switch (field.kind) {
@@ -467,12 +486,46 @@ namespace ren {
   void Material::setFloat4(std::string_view name, const glm::vec4 &value) { setValue(name, json::array({value.x, value.y, value.z, value.w})); }
 
 
-  void Material::setTexture(std::string_view name, const ref<Texture> &texture) {
+  void Material::setTexture(std::string_view name, Handle<Texture> texture) {
     const auto &target = field(name);
-    auto bindless = texture->bindless();
-    // TODO: validate that the target is a texture type.
-    writeField(target, ren::ByteSpan(bindless));
-    boundTextures[name.data()] = texture;
+    if (!isTextureField(target)) {
+      throw std::invalid_argument(fmt::format("Material field '{}' ({}) is not a texture field", name, target.typeName));
+    }
+
+    // The bytes refer to the old texture until resolveTextures() runs, so clear them now.
+    const BindlessTexture none{};
+    writeField(target, ren::ByteSpan(none));
+    resolvedTextures.erase(std::string(name));
+
+    if (texture) {
+      textures[std::string(name)] = std::move(texture);
+    } else {
+      textures.erase(std::string(name));
+    }
+  }
+
+
+  Handle<Texture> Material::getTexture(std::string_view name) const {
+    const auto &target = field(name);
+    if (!isTextureField(target)) {
+      throw std::invalid_argument(fmt::format("Material field '{}' ({}) is not a texture field", name, target.typeName));
+    }
+    auto it = textures.find(std::string(name));
+    return it == textures.end() ? Handle<Texture>() : it->second;
+  }
+
+
+  void Material::resolveTextures(void) {
+    for (const auto &[name, handle] : textures) {
+      auto texture = handle.resolve();
+      const BindlessTexture bindless = texture.isSome() ? texture.unwrap()->bindless() : BindlessTexture{};
+      writeField(field(name), ren::ByteSpan(bindless));
+      if (texture.isSome()) {
+        resolvedTextures[name] = texture.unwrap();
+      } else {
+        resolvedTextures.erase(name);
+      }
+    }
   }
 
   static void inspectMaterialFieldValueRecursive(const ShaderReflection::MaterialField &field, ren::ByteSpan rootData) {
