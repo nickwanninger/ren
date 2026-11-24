@@ -375,6 +375,8 @@ static void runImportTests() {
   size_t materials = 0;
   bool srgb = false;
   bool linear = false;
+  std::map<ren::AssetID, ren::PixelFormat> textureFormats;
+  ren::ref<ren::Material> material;
   for (const auto &asset : assets) {
     if (const auto *mesh = asset->as<ren::MeshAsset>()) {
       ++meshes;
@@ -382,7 +384,7 @@ static void runImportTests() {
     } else if (const auto *content = dynamic_cast<const ren::NativeContentAsset *>(asset.get())) {
       ++materials;
       // The fixture has no factors, so the glTF defaults apply: metallic and roughness are 1.
-      auto material = ren::deserializeNativeAsset<ren::Material>(content->serializeNativeFile());
+      material = ren::deserializeNativeAsset<ren::Material>(content->serializeNativeFile());
       verify(content->type == ren::AssetType::Material && material->getAssetID() == content->id, "Material output has a wrong type or ID");
       verify(material->getValue("baseColor") == json::array({1.0, 1.0, 1.0, 1.0}) && material->getValue("metallic") == 1.0 &&
                  material->getValue("roughness") == 1.0,
@@ -393,9 +395,20 @@ static void runImportTests() {
       verify(texture.width == 1 && texture.height == 1 && texture.pixels == std::vector<u8>({20, 40, 60, 255}), "Decoded pixels differ");
       srgb |= texture.pixelFormat == ren::PixelFormat::RGBA8_SRGB;
       linear |= texture.pixelFormat == ren::PixelFormat::RGBA8_UNORM;
+      textureFormats[texture.id] = texture.pixelFormat;
     }
   }
   verify(meshes == 1 && textures == 2 && materials == 1 && srgb && linear, "Import lost geometry, a material, or a texture format");
+
+  // The fixture material uses the one image as its base color and its normal map. Each field
+  // refers to a texture output of the import, in the format of its slot.
+  auto refersTo = [&](const char *field, ren::PixelFormat format) {
+    auto it = textureFormats.find(material->getTexture(field).id());
+    return it != textureFormats.end() && it->second == format;
+  };
+  verify(refersTo("baseColorTexture", ren::PixelFormat::RGBA8_SRGB), "Base color does not refer to the sRGB texture output");
+  verify(refersTo("normalTexture", ren::PixelFormat::RGBA8_UNORM), "Normal map does not refer to the linear texture output");
+  verify(!material->getTexture("emissiveTexture"), "A slot without a texture has a handle");
 
   // A failure must retain the last successful record, even with a changed source.
   std::ofstream(root / "triangle.glb", std::ios::binary | std::ios::trunc) << "invalid";
