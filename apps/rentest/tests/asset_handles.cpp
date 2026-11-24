@@ -78,11 +78,32 @@ namespace {
       ctx.check(manager.resolve<ren::Material>(textureID).isNone(), "a texture ID gives no Material");
       ctx.check(manager.resolve<ren::Texture>(textureID).isSome(), "the texture still resolves after a wrong-type request");
 
-      // A Handle is only an ID. Its resolve() uses the application's AssetManager, which does not
-      // have these temporary assets.
-      ren::Handle<ren::Texture> handle(textureID);
-      ctx.check(handle && handle.id() == textureID, "a Handle keeps its ID");
-      ctx.check(!ren::Handle<ren::Texture>(), "a default Handle is empty");
+      // An object from an asset becomes a reference to the asset. Its resolve() would use the
+      // application's AssetManager, which does not have these temporary assets.
+      ren::Handle<ren::Texture> fromAsset = texture.unwrap();
+      ctx.check(fromAsset.isPersistent() && fromAsset.id() == textureID, "a handle to an asset object keeps only its ID");
+      ctx.check(fromAsset == ren::Handle<ren::Texture>(textureID), "a handle to an asset object equals a handle to its ID");
+    }
+  };
+
+
+  // A handle to an object that code made keeps the object, and an empty handle resolves to None.
+  class AssetHandle : public rentest::RenderTest {
+    void onSetup(rentest::TestContext &ctx) override {
+      auto made = ren::Texture::createSinglePixel("code", 255, 0, 0, 255);
+      ren::Handle<ren::Texture> handle = made;
+      auto resolved = handle.resolve();
+      ctx.check(handle && !handle.isPersistent() && handle.id() == ren::UUID::null, "a handle to a code object is not persistent");
+      ctx.check(resolved.isSome() && resolved.unwrap() == made, "a handle to a code object resolves to the object");
+
+      // The handle keeps the object alive after the code drops its reference.
+      std::weak_ptr<ren::Texture> watch = made;
+      made.reset();
+      ctx.check(!watch.expired(), "a handle keeps its code object alive");
+
+      ren::Handle<ren::Texture> empty;
+      ctx.check(!empty && empty.resolve().isNone(), "an empty handle resolves to None");
+      ctx.check(!ren::Handle<ren::Texture>(ren::ref<ren::Texture>()), "a handle to a null object is empty");
     }
   };
 
@@ -90,3 +111,4 @@ namespace {
 
 
 REN_RENDER_TEST("assets.resolve", AssetResolve, {.frames = 1, .expect = "No image. The checks are in the log."});
+REN_RENDER_TEST("assets.handle", AssetHandle, {.frames = 1, .expect = "No image. The checks are in the log."});
