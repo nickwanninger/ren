@@ -68,7 +68,7 @@ namespace ren {
     // Materials
     void importMaterials(void);
     std::vector<MaterialSource> collectMaterials(void) const;
-    static ref<Material> makeMaterial(const MaterialSource &source);
+    ref<Material> makeMaterial(const MaterialSource &source) const;
   };
 
 }  // namespace ren

@@ -512,9 +512,18 @@ namespace ren {
   }
 
 
-  // Make a PBR material from the factors of an Assimp material.
-  // TODO: Set the texture fields to the IDs of the derived textures.
-  ref<Material> MeshImporter::makeMaterial(const MaterialSource &source) {
+  // The PBR texture field that reads each Assimp texture slot.
+  static constexpr std::pair<aiTextureType, const char *> kTextureSlots[] = {
+      {aiTextureType_DIFFUSE, "baseColorTexture"}, {aiTextureType_DIFFUSE_ROUGHNESS, "metallicRoughnessTexture"},
+      {aiTextureType_NORMALS, "normalTexture"},    {aiTextureType_LIGHTMAP, "occlusionTexture"},
+      {aiTextureType_EMISSIVE, "emissiveTexture"},
+  };
+
+
+  // Make a PBR material from the factors and textures of an Assimp material. A texture field
+  // refers to the texture output of its image, by the derived ID that importTextures() writes it
+  // under, so the material and the texture can be written in any order.
+  ref<Material> MeshImporter::makeMaterial(const MaterialSource &source) const {
     const auto &input = *source.material;
     auto material = make<Material>("ren/core/pbr");
 
@@ -550,6 +559,16 @@ namespace ren {
     int twoSided = 0;
     if (input.Get(AI_MATKEY_TWOSIDED, twoSided) == aiReturn_SUCCESS && twoSided) {
       material->getPSO().cullMode = CullMode::None;
+    }
+
+    // collectImages() gives each image a format for each slot that uses it, so this texture output exists.
+    for (const auto &[type, field] : kTextureSlots) {
+      aiString reference;
+      if (input.GetTexture(type, 0, &reference) != aiReturn_SUCCESS) {
+        continue;
+      }
+      auto name = getTextureName(getImageName(reference.C_Str()), getSlotFormat(type));
+      material->setTexture(field, context->derivedID(AssetType::Texture, name));
     }
     return material;
   }
