@@ -60,6 +60,9 @@ namespace {
       ctx.check(texture.isSome() && texture.unwrap()->getWidth() == source->width && texture.unwrap()->getHeight() == source->height,
                 "a derived texture resolves with the size of its pixels");
 
+      ctx.check(texture.isSome() && texture.unwrap()->getAssetID() == textureID, "a resolved texture has its asset ID");
+      ctx.check(ren::Texture::createSinglePixel("code", 0, 0, 0, 255)->getAssetID() == ren::UUID::null, "a texture made in code has no asset ID");
+
       auto again = manager.resolve<ren::Texture>(textureID);
       ctx.check(again.isSome() && again.unwrap() == texture.unwrap(), "a second resolve gives the same Texture");
 

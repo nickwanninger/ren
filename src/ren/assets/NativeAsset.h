@@ -20,11 +20,8 @@ namespace ren {
   //   static constexpr AssetType TYPE
   //   static constexpr u32 version                              The format version of the content.
   //   static ref<Derived> fromContent(AssetID id, const json &content)
-  class NativeAsset {
+  class NativeAsset : public RuntimeAsset {
    public:
-    virtual ~NativeAsset() = default;
-
-    AssetID getAssetID(void) const { return id; }
     virtual AssetType getType(void) const = 0;
 
     // Writes the content keys of the file. serializeNativeAsset() adds "version" and "id".
@@ -33,9 +30,7 @@ namespace ren {
    protected:
     NativeAsset() = default;
     explicit NativeAsset(AssetID id)
-        : id(id) {}
-
-    AssetID id;
+        : RuntimeAsset(id) {}
   };
 
 

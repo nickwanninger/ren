@@ -364,6 +364,7 @@ namespace ren {
     } else {
       try {
         asset = load(*libraryEntry);
+        asset->id = id;
       } catch (const std::exception &error) {
         ren::warnln("Cannot load asset {}: {}", id.to_string(), error.what());
       }
