@@ -68,6 +68,8 @@ namespace ren {
   void AssetManager::tick() {
     REN_PROFILE_SCOPE("AssetManager::tick");
 
+    // Before the idle check, so that a long task does not delay the new data of finished imports.
+    refreshRuntimeAssets();
 
     // if the manager is not idle, wait for the next tick.
     if (activity.load() != AssetActivity::Idle) {
@@ -150,6 +152,7 @@ namespace ren {
         failedImports[id] = {stats, error.unwrap()};
       } else {
         failedImports.erase(id);
+        reimportedSources.push_back(id);
       }
       pendingGeneration++;
     }
@@ -340,6 +343,30 @@ namespace ren {
   //=========================
 
   void AssetManager::releaseRuntimeAssets(void) { runtimeAssets.clear(); }
+
+
+  void AssetManager::refreshRuntimeAssets(void) {
+    std::vector<AssetID> reimported;
+    {
+      std::scoped_lock lock(pendingMutex);
+      reimported.swap(reimportedSources);
+    }
+    const auto version = library.getVersion();
+    if (reimported.empty() && version == runtimeLibraryVersion) {
+      return;
+    }
+    runtimeLibraryVersion = version;
+
+    // The library entry of a derived asset names the Source that owns it.
+    std::set<AssetID> sources(reimported.begin(), reimported.end());
+    std::erase_if(runtimeAssets, [&](const auto &item) {
+      if (!item.second) {
+        return true;
+      }
+      auto entry = library.find(item.first);
+      return entry && sources.contains(entry->source);
+    });
+  }
 
 
   ref<RuntimeAsset> AssetManager::findRuntimeAsset(AssetID id, AssetType type, const std::function<ref<RuntimeAsset>(const AssetEntry &)> &load) {

@@ -172,6 +172,11 @@ namespace ren {
     // null if the library entry has another type than `type`, or the load failed.
     ref<RuntimeAsset> findRuntimeAsset(AssetID id, AssetType type, const std::function<ref<RuntimeAsset>(const AssetEntry &)> &load);
 
+    // Drop the resolved assets that an import replaced, so that the next resolve() loads them
+    // again. When the library changes, drop the cached failures too, because an ID can now exist.
+    // tick() calls it on the main thread.
+    void refreshRuntimeAssets(void);
+
     // The source that assets are loaded from.
     ren::MultiAssetSource source;
     ren::AssetLibrary library;
@@ -204,6 +209,11 @@ namespace ren {
     std::unordered_map<AssetID, SourceStats> dismissedImports;
     std::unordered_map<AssetID, FailedImport> failedImports;
     std::atomic<u64> pendingGeneration{0};
+    // Sources that an import task imported since the last tick(). pendingMutex protects it.
+    std::vector<AssetID> reimportedSources;
+
+    // The library version that refreshRuntimeAssets() last saw. Only the main thread uses it.
+    u64 runtimeLibraryVersion = 0;
   };
 
   AssetManager &getAssetManager();

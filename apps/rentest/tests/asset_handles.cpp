@@ -9,7 +9,10 @@
 #include <ren/assets/TextureAsset.h>
 #include <ren/renderer/Texture.h>
 
+#include <chrono>
 #include <filesystem>
+#include <fstream>
+#include <thread>
 
 namespace {
 
@@ -42,6 +45,22 @@ namespace {
       }
     }
     throw std::runtime_error("The import has no output of type " + json(type).get<std::string>());
+  }
+
+
+  // Tick until a tick starts no task, and wait for each task.
+  void runTasks(ren::AssetManager &manager) {
+    for (int ticks = 0; ticks < 100; ticks++) {
+      auto finished = manager.getFinishedTaskCount();
+      manager.tick();
+      for (int i = 0; i < 30000 && manager.getActivity() != ren::AssetActivity::Idle; i++) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      }
+      if (manager.getFinishedTaskCount() == finished) {
+        return;
+      }
+    }
+    throw std::runtime_error("Asset tasks did not stop");
   }
 
 
@@ -107,8 +126,49 @@ namespace {
     }
   };
 
+
+  // A reimport replaces the cached object, and an ID that was unknown resolves after its import.
+  class AssetReimport : public rentest::RenderTest {
+    void onSetup(rentest::TestContext &ctx) override {
+      TemporaryAssets temporary;
+      ren::AssetManager manager;
+      manager.addFilesystemSource(temporary.root.string());
+      manager.setAutoImport(false);
+
+      auto stone = importTestFile(manager, temporary.root, "assets/test/stone.png");
+      auto sourceID = ren::parseAssetID(stone.at("sourceAsset"));
+      auto textureID = findOutput(stone, ren::AssetType::Texture);
+      auto before = manager.resolve<ren::Texture>(textureID);
+      ctx.check(before.isSome() && before.unwrap()->getWidth() == 16, "the first import resolves to the 16x16 image");
+
+      // An ID that the library does not know yet is a cached failure until the library changes.
+      std::filesystem::copy_file("assets/test/stone.png", temporary.root / "other.png");
+      auto other = manager.importFile("other.png");
+      auto otherID = findOutput(other, ren::AssetType::Texture);
+      ctx.check(manager.resolve<ren::Texture>(otherID).isNone(), "an output that the library does not know gives None");
+      manager.getLibrary().rescan("other.png");
+      manager.tick();
+      ctx.check(manager.resolve<ren::Texture>(otherID).isSome(), "the output resolves after the library knows it");
+
+      // Replace the image with a 1x1 PNG and reimport it through the task flow.
+      const std::vector<u8> pixel = {137, 80, 78, 71, 13, 10,  26,  10,  0,   0,   0, 13, 73, 72, 68, 82, 0,  0,   0,   1,  0,  0,   0,   1,
+                                     8,   6,  0,  0,  0,  31,  21,  196, 137, 0,   0, 0,  13, 73, 68, 65, 84, 120, 156, 99, 16, 209, 176, 249,
+                                     15,  0,  2,  68, 1,  120, 106, 40,  52,  133, 0, 0,  0,  0,  73, 69, 78, 68,  174, 66, 96, 130};
+      std::ofstream(temporary.root / "stone.png", std::ios::binary | std::ios::trunc)
+          .write(reinterpret_cast<const char *>(pixel.data()), pixel.size());
+      manager.scheduleImport({sourceID});
+      runTasks(manager);
+      manager.tick();
+
+      auto after = manager.resolve<ren::Texture>(textureID);
+      ctx.check(after.isSome() && after.unwrap() != before.unwrap() && after.unwrap()->getWidth() == 1, "a reimport replaces the cached texture");
+      ctx.check(before.unwrap()->getWidth() == 16, "a holder of the old texture keeps it");
+    }
+  };
+
 }  // namespace
 
 
 REN_RENDER_TEST("assets.resolve", AssetResolve, {.frames = 1, .expect = "No image. The checks are in the log."});
 REN_RENDER_TEST("assets.handle", AssetHandle, {.frames = 1, .expect = "No image. The checks are in the log."});
+REN_RENDER_TEST("assets.reimport", AssetReimport, {.frames = 1, .expect = "No image. The checks are in the log."});
